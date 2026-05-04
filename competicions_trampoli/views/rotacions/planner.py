@@ -79,7 +79,8 @@ def rotacions_planner(request, pk):
     program_item_labels = {str(group.id): group_labels_map[str(group.id)] for group in groups}
     program_item_labels.update({f"g:{group.id}": group_labels_map[str(group.id)] for group in groups})
     for serie in series_qs:
-        label = f"{getattr(serie.comp_aparell.aparell, 'nom', '')} · {serie_label(serie)}"
+        app_label = getattr(serie.comp_aparell, "display_nom", "") or getattr(serie.comp_aparell.aparell, "nom", "")
+        label = f"{app_label} · {serie_label(serie)}"
         program_item_labels[f"s:{serie.id}"] = label
         series_sidebar.append({
             "key": f"s:{serie.id}",

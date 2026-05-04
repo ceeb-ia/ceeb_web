@@ -58,8 +58,8 @@ def serialize_franja(franja):
 def serialize_comp_aparell(comp_aparell):
     return {
         "id": comp_aparell.id,
-        "label": str(getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
-        "code": str(getattr(comp_aparell.aparell, "codi", "") or ""),
+        "label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+        "code": str(getattr(comp_aparell, "display_codi", "") or getattr(comp_aparell.aparell, "codi", "") or ""),
         "ordre": comp_aparell.ordre,
         "subject_mode": "team" if is_team_context_app(comp_aparell) else "individual",
         "exercicis": list(range(1, clamp_exercici(999, comp_aparell) + 1)),
@@ -100,7 +100,7 @@ def _team_subjects_by_bucket(competicio, comp_aparells):
         if not is_team_context_app(comp_aparell):
             continue
         registry = build_team_subject_registry(competicio, comp_aparell)
-        app_name = str(getattr(comp_aparell.aparell, "nom", "") or "").strip()
+        app_name = str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "").strip()
         issues_by_app[str(comp_aparell.id)] = list(registry["issues"])
         for raw_subject in registry["subjects"]:
             subject = dict(raw_subject)
@@ -237,7 +237,7 @@ def build_notes_units_context(competicio):
             "franja_id": franja.id,
             "franja_label": franja.display_label,
             "comp_aparell_id": app_id,
-            "app_label": str(getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+            "app_label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
             "member_keys": member_keys,
             "subject_kind": subject_kind,
             "count": count,
@@ -262,7 +262,7 @@ def build_notes_units_context(competicio):
                     "franja_id": None,
                     "franja_label": "",
                     "comp_aparell_id": app_id,
-                    "app_label": str(getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+                    "app_label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
                     "member_keys": [bucket_key],
                     "subject_kind": "team_unit",
                     "count": len(subjects),
@@ -288,7 +288,7 @@ def build_notes_units_context(competicio):
                 "franja_id": None,
                 "franja_label": "",
                 "comp_aparell_id": app_id,
-                "app_label": str(getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+                "app_label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
                 "member_keys": [group_id],
                 "subject_kind": "inscripcio",
                 "count": count,

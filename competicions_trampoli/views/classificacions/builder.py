@@ -14,7 +14,7 @@ from ...live_cache import mark_live_dirty
 from ...models import Competicio, Equip, Inscripcio
 from ...models.classificacions import ClassificacioConfig
 from ...models.competicio import CompeticioAparell
-from ...models.scoring import ScoringSchema
+from ...services.scoring.schema_resolution import schema_by_comp_aparell_id
 from ...services.classificacions.builder import (
     build_cfg_status,
     collect_particio_value_choices,
@@ -71,15 +71,12 @@ class ClassificacionsHome(TemplateView):
             .select_related("aparell")
             .order_by("ordre", "id")
         )
-        aparell_ids = list(aparells_cfg.values_list("aparell_id", flat=True))
-        schemas_by_aparell = {
-            s.aparell_id: (s.schema or {})
-            for s in ScoringSchema.objects.filter(aparell_id__in=aparell_ids).only("aparell_id", "schema")
-        }
+        aparells_cfg = list(aparells_cfg)
+        schemas_by_app = schema_by_comp_aparell_id(aparells_cfg)
 
         aparell_field_options = {}
         for comp_aparell in aparells_cfg:
-            schema = schemas_by_aparell.get(comp_aparell.aparell_id, {}) or {}
+            schema = schemas_by_app.get(int(comp_aparell.id), {}) or {}
             opts = []
             field_meta = build_metric_meta_for_comp_aparell(comp_aparell, schema, strict_unknown=False)
             for field in (schema.get("fields") or []):
@@ -236,8 +233,10 @@ class ClassificacionsHome(TemplateView):
             aparell_payload.append(
                 {
                     "id": comp_aparell.id,
-                    "nom": comp_aparell.aparell.nom,
-                    "codi": comp_aparell.aparell.codi,
+                    "nom": comp_aparell.display_nom,
+                    "codi": comp_aparell.display_codi,
+                    "base_nom": comp_aparell.aparell.nom,
+                    "base_codi": comp_aparell.aparell.codi,
                     "nombre_exercicis": int(getattr(comp_aparell, "nombre_exercicis", 1) or 1),
                     "competition_unit": str(getattr(comp_aparell.aparell, "competition_unit", "") or "individual"),
                 }

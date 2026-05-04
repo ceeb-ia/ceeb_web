@@ -149,8 +149,8 @@ def _serialize_team_comp_aparell_sources(competicio: Competicio, context_code: s
         {
             "id": int(ca.id),
             "aparell_id": int(ca.aparell_id),
-            "nom": str(getattr(ca.aparell, "nom", "") or f"Aparell {ca.id}").strip(),
-            "codi": str(getattr(ca.aparell, "codi", "") or "").strip(),
+            "nom": str(getattr(ca, "display_nom", "") or getattr(ca.aparell, "nom", "") or f"Aparell {ca.id}").strip(),
+            "codi": str(getattr(ca, "display_codi", "") or getattr(ca.aparell, "codi", "") or "").strip(),
             "selected": int(ca.id) in selected_ids,
         }
         for ca in qs

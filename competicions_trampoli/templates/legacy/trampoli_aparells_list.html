@@ -40,8 +40,18 @@
         <tbody>
           {% for ca in aparells_cfg %}
             <tr>
-              <td class="fw-semibold">{{ ca.aparell.codi }}</td>
-              <td class="fw-semibold">{{ ca.aparell.nom }}</td>
+              <td class="fw-semibold">
+                {{ ca.display_codi }}
+                {% if ca.display_codi != ca.aparell.codi %}
+                  <div class="text-muted small">Base: {{ ca.aparell.codi }}</div>
+                {% endif %}
+              </td>
+              <td class="fw-semibold">
+                {{ ca.display_nom }}
+                {% if ca.display_nom != ca.aparell.nom %}
+                  <div class="text-muted small">Base: {{ ca.aparell.nom }}</div>
+                {% endif %}
+              </td>
               {% if show_owner %}
                 <td>
                   {% firstof ca.aparell.created_by.get_full_name ca.aparell.created_by.username %}

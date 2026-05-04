@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Imprimir QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }} · Ex {{ exercici }}</title>
+  <title>Imprimir QRs · {{ competicio.nom }} · {{ comp_aparell.display_nom }} · Ex {{ exercici }}</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; }
     .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <h2>QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }} · Exercici {{ exercici }}</h2>
+  <h2>QRs · {{ competicio.nom }} · {{ comp_aparell.display_nom }} · Exercici {{ exercici }}</h2>
   <div class="meta">Imprimeix i retalla (2 per fila).</div>
   <hr/>
 

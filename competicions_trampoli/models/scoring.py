@@ -36,12 +36,14 @@ class ScoringSchema(models.Model):
         if not isinstance(self.schema, dict):
             raise ValidationError({"schema": _("El schema ha de ser un objecte JSON (dict).")})
 
-        if self.comp_aparell_id and not self.aparell_id:
-            self.aparell = self.comp_aparell.aparell
         if not self.aparell_id:
-            raise ValidationError({"aparell": _("Cal informar l'aparell.")})
-        if self.comp_aparell_id and self.comp_aparell.aparell_id != self.aparell_id:
-            self.comp_aparell = None
+            if not self.comp_aparell_id:
+                raise ValidationError({"aparell": _("Cal informar l'aparell.")})
+            validation_aparell = self.comp_aparell.aparell
+        else:
+            validation_aparell = self.aparell
+        if self.comp_aparell_id and self.aparell_id and self.comp_aparell.aparell_id != self.aparell_id:
+            raise ValidationError({"aparell": _("L'aparell base no coincideix amb la instancia local.")})
 
         fields = self.schema.get("fields", [])
         computed = self.schema.get("computed", [])
@@ -60,13 +62,13 @@ class ScoringSchema(models.Model):
         if len(codes) != len(set(codes)):
             raise ValidationError({"schema": _("Hi ha 'code' duplicats a fields/computed.")})
         try:
-            validate_schema(self.schema, aparell=self.aparell)
+            validate_schema(self.schema, aparell=validation_aparell)
         except ValidationError as exc:
             raise ValidationError({"schema": exc.messages})
 
     def __str__(self):
         if self.comp_aparell_id:
-            return f"Schema {self.comp_aparell.competicio_id} / {self.comp_aparell.aparell.codi}"
+            return f"Schema {self.comp_aparell.competicio_id} / {self.comp_aparell.display_codi}"
         return f"Schema GLOBAL / {self.aparell.codi if self.aparell_id else '???'}"
 
 

@@ -627,6 +627,8 @@ def clone_competicio_for_work(source_competicio, *, benchmark_user, scenario: st
         comp_aparell_map[comp_aparell.id] = CompeticioAparell.objects.create(
             competicio=clone,
             aparell=comp_aparell.aparell,
+            nom_local=comp_aparell.nom_local,
+            codi_local=comp_aparell.codi_local,
             nombre_exercicis=comp_aparell.nombre_exercicis,
             ordre=comp_aparell.ordre,
             nombre_elements=comp_aparell.nombre_elements,

@@ -55,6 +55,8 @@ class Aparell(models.Model):
 class CompeticioAparell(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="aparells_cfg")
     aparell = models.ForeignKey(Aparell, on_delete=models.PROTECT, related_name="competicio_cfg")
+    nom_local = models.CharField(max_length=120, blank=True, default="")
+    codi_local = models.CharField(max_length=40, blank=True, default="", db_index=True)
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis")
     judge_ui_config = models.JSONField(default=dict, blank=True)
 
@@ -78,13 +80,66 @@ class CompeticioAparell(models.Model):
     class Meta:
         ordering = ["ordre", "id"]
         constraints = [
-            models.UniqueConstraint(fields=["competicio", "aparell"], name="uniq_competicio_aparell")
+            models.UniqueConstraint(
+                fields=["competicio", "codi_local"],
+                condition=~models.Q(codi_local=""),
+                name="uniq_competicio_comp_app_codi_local",
+            )
         ]
 
     def clean(self):
         super().clean()
+        self.nom_local = str(self.nom_local or "").strip()
+        self.codi_local = str(self.codi_local or "").strip().upper()
         if self.aparell_id and self.aparell.created_by_id is None:
             raise ValidationError({"aparell": "L'aparell seleccionat no es valid."})
+
+    @property
+    def display_nom(self) -> str:
+        return str(self.nom_local or "").strip() or str(getattr(self.aparell, "nom", "") or "Aparell")
+
+    @property
+    def display_codi(self) -> str:
+        return str(self.codi_local or "").strip() or str(getattr(self.aparell, "codi", "") or "")
+
+    def _candidate_local_code(self) -> str:
+        base = str(self.codi_local or getattr(self.aparell, "codi", "") or "APP").strip().upper()
+        if not self.competicio_id:
+            return base
+        candidate = base
+        suffix = 2
+        qs = CompeticioAparell.objects.filter(competicio_id=self.competicio_id, codi_local=candidate)
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        while qs.exists():
+            candidate = f"{base}-{suffix}"
+            qs = CompeticioAparell.objects.filter(competicio_id=self.competicio_id, codi_local=candidate)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            suffix += 1
+        return candidate
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            kwargs["update_fields"] = update_fields
+        self.nom_local = str(self.nom_local or "").strip()
+        self.codi_local = str(self.codi_local or "").strip().upper()
+        if not self.nom_local and self.aparell_id:
+            self.nom_local = str(getattr(self.aparell, "nom", "") or "").strip()
+            if update_fields is not None:
+                update_fields.add("nom_local")
+        if not self.codi_local and self.aparell_id:
+            self.codi_local = self._candidate_local_code()
+            if update_fields is not None:
+                update_fields.add("codi_local")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        code = self.display_codi
+        label = self.display_nom
+        return f"{label} ({code})" if code else label
 
     @property
     def is_team_context_mode(self) -> bool:

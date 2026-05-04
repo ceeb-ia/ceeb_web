@@ -6,7 +6,7 @@ from django.utils import timezone
 from ...models import Equip, Inscripcio
 from ...models.classificacions import ClassificacioConfig
 from ...models.competicio import CompeticioAparell
-from ...models.scoring import ScoringSchema
+from ...services.scoring.schema_resolution import schema_by_comp_aparell_id
 from .classificacio_templates import (
     json_clone,
     normalize_particions_custom,
@@ -289,10 +289,7 @@ def scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code
         .filter(competicio=competicio, actiu=True)
         .select_related("aparell")
     )
-    schemas_by_aparell = {
-        s.aparell_id: (s.schema or {})
-        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
-    }
+    schemas_by_app = schema_by_comp_aparell_id(active_apps)
     normalized_team_mode = normalize_team_mode(team_mode)
     eligible_team_app_ids = set()
     if normalized_team_mode == "native_team":
@@ -308,7 +305,7 @@ def scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code
                 continue
         elif str(tipus or "").strip().lower() == "equips" and normalized_team_mode == "native_team":
             continue
-        schema = schemas_by_aparell.get(comp_aparell.aparell_id, {}) or {}
+        schema = schemas_by_app.get(int(comp_aparell.id), {}) or {}
         meta = build_scoreable_meta_for_schema(schema, strict_unknown=True)
         out[int(comp_aparell.id)] = {code for code, info in (meta or {}).items() if (info or {}).get("scoreable")}
     return out

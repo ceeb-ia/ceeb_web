@@ -15,6 +15,10 @@ from ...models.competicio import Aparell, CompeticioAparell
 from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
 from ...services.scoring.scoring_subjects import subject_entry_model
+from ...services.scoring.schema_resolution import (
+    ensure_local_scoring_schema_for_comp_aparell,
+    resolve_scoring_schema_for_comp_aparell,
+)
 from ...services.scoring.judge_presence import (
     build_runtime_inputs_from_canonical,
     canonicalize_inputs_for_schema,
@@ -65,8 +69,8 @@ def _recalculate_scores_for_comp_aparell(
         "errors_preview": [],
     }
 
-    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
-    base_schema = copy.deepcopy(schema_override) if isinstance(schema_override, dict) else (ss.schema or {})
+    _schema_obj, resolved_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
+    base_schema = copy.deepcopy(schema_override) if isinstance(schema_override, dict) else (resolved_schema or {})
     is_team_app = is_team_context_app(comp_aparell)
     pending_updates = []
     if not is_team_app:
@@ -200,11 +204,7 @@ class ScoringSchemaUpdate(UpdateView):
     def get_object(self):
         # si estem en mode competició (competicio/<pk>/aparell/<ap_id>/schema/)
         if self.comp_aparell:
-            obj, _ = ScoringSchema.objects.get_or_create(
-                aparell=self.comp_aparell.aparell,
-                defaults={"schema": {}},
-            )
-            return obj
+            return ensure_local_scoring_schema_for_comp_aparell(self.comp_aparell)
 
         # si estem en mode global (trampoli/aparells/<pk>/puntuacio/)
         obj, _ = ScoringSchema.objects.get_or_create(

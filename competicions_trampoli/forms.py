@@ -588,6 +588,9 @@ class CompeticioAparellForm(forms.ModelForm):
             if not self.user.groups.filter(name="platform_admin").exists():
                 qs = qs.filter(created_by=self.user)
         self.fields["aparell"].queryset = qs.order_by("nom", "id")
+        if not self.is_bound and self.instance and self.instance.pk:
+            self.fields["nom_local"].initial = self.instance.display_nom
+            self.fields["codi_local"].initial = self.instance.display_codi
 
     def clean_aparell(self):
         aparell = self.cleaned_data.get("aparell")
@@ -607,20 +610,22 @@ class CompeticioAparellForm(forms.ModelForm):
                 code="forbidden_aparell_owner",
             )
 
-        qs = CompeticioAparell.objects.filter(
-            competicio=self.competicio,
-            aparell=aparell,
-        )
-
-        if self.instance and self.instance.pk:
-            qs = qs.exclude(pk=self.instance.pk)
-
-        if qs.exists():
-            raise ValidationError(
-                _("Aquest aparell ja esta afegit a la competicio."),
-                code="duplicate_aparell",
-            )
         return aparell
+
+    def _next_local_code(self, base_code):
+        base = str(base_code or "APP").strip().upper() or "APP"
+        if not self.competicio:
+            return base
+        candidate = base
+        suffix = 2
+        while True:
+            qs = CompeticioAparell.objects.filter(competicio=self.competicio, codi_local=candidate)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if not qs.exists():
+                return candidate
+            candidate = f"{base}-{suffix}"
+            suffix += 1
 
     def clean_nombre_exercicis(self):
         n = int(self.cleaned_data.get("nombre_exercicis") or 1)
@@ -636,17 +641,52 @@ class CompeticioAparellForm(forms.ModelForm):
         aparell = cleaned_data.get("aparell")
         if aparell and not getattr(aparell, "actiu", True):
             self.add_error("aparell", "Cal seleccionar un aparell actiu.")
+        if aparell:
+            nom_local = str(cleaned_data.get("nom_local") or "").strip()
+            codi_local = str(cleaned_data.get("codi_local") or "").strip().upper()
+            if not nom_local:
+                nom_local = str(getattr(aparell, "nom", "") or "").strip()
+            if not codi_local:
+                codi_local = self._next_local_code(getattr(aparell, "codi", ""))
+            cleaned_data["nom_local"] = nom_local
+            cleaned_data["codi_local"] = codi_local
+            if self.competicio:
+                qs = CompeticioAparell.objects.filter(competicio=self.competicio, codi_local=codi_local)
+                if self.instance and self.instance.pk:
+                    qs = qs.exclude(pk=self.instance.pk)
+                if qs.exists():
+                    self.add_error(
+                        "codi_local",
+                        ValidationError(
+                            _("Ja existeix una instancia d'aparell amb aquest codi local en aquesta competicio."),
+                            code="duplicate_local_code",
+                        ),
+                    )
         return cleaned_data
 
     class Meta:
         model = CompeticioAparell
         fields = [
             "aparell",
+            "nom_local",
+            "codi_local",
             "nombre_exercicis",
         ]
         widgets = {
             "aparell": forms.Select(attrs={"class": "form-select"}),
+            "nom_local": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Trampoli masculi"}),
+            "codi_local": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: TRAMP-M"}),
             "nombre_exercicis": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 10, "value": 1}),
+        }
+        labels = {
+            "aparell": "Aparell base",
+            "nom_local": "Nom local",
+            "codi_local": "Codi local",
+            "nombre_exercicis": "Nombre d'exercicis",
+        }
+        help_texts = {
+            "nom_local": "Nom visible d'aquesta instancia dins la competicio. Si el deixes buit, s'usara el nom base.",
+            "codi_local": "Codi unic dins la competicio. Si el deixes buit, es genera automaticament.",
         }
 
 

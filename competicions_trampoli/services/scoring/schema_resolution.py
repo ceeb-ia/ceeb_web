@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional, Tuple
+import copy
+from typing import Iterable, Optional, Tuple
 
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoringSchema
@@ -35,3 +36,44 @@ def resolve_scoring_schema_for_comp_aparell(
         defaults={"schema": {}},
     )
     return schema_obj, (schema_obj.schema if isinstance(schema_obj.schema, dict) else {})
+
+
+def ensure_local_scoring_schema_for_comp_aparell(comp_aparell: CompeticioAparell) -> ScoringSchema:
+    schema_obj = (
+        ScoringSchema.objects
+        .filter(comp_aparell=comp_aparell)
+        .select_related("aparell", "comp_aparell")
+        .first()
+    )
+    if schema_obj is not None:
+        return schema_obj
+
+    _global_obj, global_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
+    return ScoringSchema.objects.create(
+        comp_aparell=comp_aparell,
+        schema=copy.deepcopy(global_schema if isinstance(global_schema, dict) else {}),
+    )
+
+
+def schema_by_comp_aparell_id(comp_aparells: Iterable[CompeticioAparell]) -> dict[int, dict]:
+    apps = [app for app in comp_aparells if app is not None and getattr(app, "id", None)]
+    if not apps:
+        return {}
+
+    by_id = {int(app.id): {} for app in apps}
+    app_ids = list(by_id.keys())
+    aparell_ids = {int(app.aparell_id) for app in apps if getattr(app, "aparell_id", None)}
+
+    global_by_aparell = {
+        int(schema.aparell_id): (schema.schema if isinstance(schema.schema, dict) else {})
+        for schema in ScoringSchema.objects
+        .filter(comp_aparell__isnull=True, aparell_id__in=aparell_ids)
+        .only("aparell_id", "schema")
+    }
+    for app in apps:
+        by_id[int(app.id)] = global_by_aparell.get(int(app.aparell_id), {}) or {}
+
+    for schema in ScoringSchema.objects.filter(comp_aparell_id__in=app_ids).only("comp_aparell_id", "schema"):
+        by_id[int(schema.comp_aparell_id)] = schema.schema if isinstance(schema.schema, dict) else {}
+
+    return by_id

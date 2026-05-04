@@ -21,7 +21,7 @@
         </div>
         <div class="tab-select-card-tools">
           <span class="badge badge-light border" id="series-selected-app-badge">
-            {% if series_default_comp_aparell and series_default_comp_aparell.aparell %}{{ series_default_comp_aparell.aparell.nom }}{% else %}Sense aparell{% endif %}
+            {% if series_default_comp_aparell and series_default_comp_aparell.aparell %}{{ series_default_comp_aparell.display_nom }}{% else %}Sense aparell{% endif %}
           </span>
           <button
             type="button"
@@ -45,7 +45,7 @@
           <select id="series-comp-aparell-select" class="form-control form-control-sm" style="width:min(100%, 320px);">
             {% if series_team_aparells %}
               {% for comp_aparell in series_team_aparells %}
-                <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.aparell.nom }}</option>
+                <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.display_nom }}</option>
               {% endfor %}
             {% else %}
               <option value="">Sense aparell actiu</option>
@@ -102,7 +102,7 @@
           <div class="team-workspace-header-bar">
             <div class="team-workspace-header-main">
               <span class="badge badge-light border" id="series-workspace-badge">
-                {% if series_team_aparells %}{{ series_team_aparells.0.aparell.nom }}{% else %}Sense aparell{% endif %}
+                {% if series_team_aparells %}{{ series_team_aparells.0.display_nom }}{% else %}Sense aparell{% endif %}
               </span>
               <div class="team-workspace-title-wrap">
                 <div class="team-workspace-title" id="series-workspace-title">Workspace de series</div>
@@ -139,7 +139,7 @@
                       <select id="series-workspace-comp-aparell-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
                         {% if series_team_aparells %}
                           {% for comp_aparell in series_team_aparells %}
-                            <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.aparell.nom }}</option>
+                            <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.display_nom }}</option>
                           {% endfor %}
                         {% else %}
                           <option value="">Sense aparell actiu</option>

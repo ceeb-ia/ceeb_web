@@ -356,7 +356,7 @@ def get_comp_aparell_maps(competicio, active_only=True):
     by_id = {int(ca.id): ca for ca in apps}
     by_code = {}
     for ca in apps:
-        code = canon_app_code(getattr(ca.aparell, "codi", ""))
+        code = canon_app_code(getattr(ca, "display_codi", None) or getattr(ca.aparell, "codi", ""))
         if code and code not in by_code:
             by_code[code] = ca
     return apps, by_id, by_code
@@ -395,6 +395,8 @@ def resolve_app_code_for_template(raw, by_id, by_code):
         obj = by_id.get(app_id)
         if not obj:
             return None
+        if isinstance(obj, CompeticioAparell):
+            return canon_app_code(getattr(obj, "display_codi", ""))
         app = getattr(obj, "aparell", obj)
         return canon_app_code(getattr(app, "codi", ""))
     try:
@@ -404,6 +406,8 @@ def resolve_app_code_for_template(raw, by_id, by_code):
     obj = by_id.get(app_id)
     if not obj:
         return None
+    if isinstance(obj, CompeticioAparell):
+        return canon_app_code(getattr(obj, "display_codi", ""))
     app = getattr(obj, "aparell", obj)
     return canon_app_code(getattr(app, "codi", ""))
 

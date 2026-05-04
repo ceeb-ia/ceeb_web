@@ -397,8 +397,8 @@ def _build_workspace_payload(competicio, comp_aparell, payload):
         "issues": issues,
         "comp_aparell": {
             "id": int(comp_aparell.id),
-            "nom": str(getattr(comp_aparell.aparell, "nom", "") or "").strip(),
-            "codi": str(getattr(comp_aparell.aparell, "codi", "") or "").strip(),
+            "nom": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "").strip(),
+            "codi": str(getattr(comp_aparell, "display_codi", "") or getattr(comp_aparell.aparell, "codi", "") or "").strip(),
         },
         "programmed_series_ids": sorted(programmed_ids),
     }
@@ -1204,7 +1204,7 @@ def series_start_list_export(request, pk):
     if unassigned_rows:
         rows_by_block.append({"title": "Sense serie", "rows": unassigned_rows})
     wb = _build_series_workbook(
-        f"Start list - {competicio.nom} - {getattr(comp_aparell.aparell, 'nom', '')}",
+        f"Start list - {competicio.nom} - {getattr(comp_aparell, 'display_nom', '') or getattr(comp_aparell.aparell, 'nom', '')}",
         rows_by_block,
     )
     response = HttpResponse(

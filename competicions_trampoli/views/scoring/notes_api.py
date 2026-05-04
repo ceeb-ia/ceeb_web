@@ -11,10 +11,10 @@ from ...models.scoring import (
     ScoreEntry,
     ScoreEntryVideo,
     ScoreWarningAcknowledgement,
-    ScoringSchema,
     TeamScoreEntry,
     TeamScoreEntryVideo,
 )
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.notes_units import (
     build_notes_units_context,
     clamp_exercici,
@@ -40,16 +40,14 @@ from .helpers import (
 
 
 def _schema_payload(comp_aparell, competicio):
-    schema_obj, _created = ScoringSchema.objects.get_or_create(
-        aparell=comp_aparell.aparell,
-        defaults={"schema": {}},
-    )
-    logical_schema = _logical_schema_for_notes_ui(schema_obj.schema or {}, comp_aparell)
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
+    base_schema = base_schema or {}
+    logical_schema = _logical_schema_for_notes_ui(base_schema, comp_aparell)
     if is_team_context_app(comp_aparell):
         registry = build_team_subject_registry(competicio, comp_aparell)
-        schema = runtime_schema_for_team_subjects(schema_obj.schema or {}, comp_aparell, registry["subjects"])
+        schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, registry["subjects"])
     else:
-        schema = runtime_schema_for_comp_aparell(schema_obj.schema or {}, comp_aparell)
+        schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell)
     return schema, logical_schema
 
 
@@ -271,7 +269,7 @@ def _enrich_warnings(warnings, *, unit, comp_aparell, exercici, subjects_by_warn
     }
     app_payload = {
         "id": comp_aparell.id,
-        "label": str(getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+        "label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
     }
     navigation = _warning_navigation_payload(unit, comp_aparell, exercici)
     for warning in warnings:

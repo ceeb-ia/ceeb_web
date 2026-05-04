@@ -8,13 +8,13 @@ from django.views.decorators.http import require_POST
 
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell
-from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
 from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
     resolve_scoring_subject,
     serialize_subject_payload,
 )
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.judge_presence import (
     build_runtime_inputs_from_canonical,
     canonicalize_inputs_for_schema,
@@ -74,10 +74,10 @@ def scoring_save(request, pk):
     if error_response is not None:
         return error_response
 
-    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
     team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None
     team_member_count = len(getattr(team_subject, "member_ids", []) or []) if team_subject is not None else 0
-    base_schema = ss.schema or {}
+    base_schema = base_schema or {}
     schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell, member_count=team_member_count)
     if team_subject is not None:
         allowed = _logical_team_input_codes(base_schema)
@@ -178,9 +178,9 @@ def scoring_save_partial(request, pk):
     max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
     exercici = max(1, min(max_ex, exercici))
 
-    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
     team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None
-    base_schema = ss.schema or {}
+    base_schema = base_schema or {}
     team_member_count = len(getattr(team_subject, "member_ids", []) or []) if team_subject is not None else 0
     schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell, member_count=team_member_count)
 

@@ -2,8 +2,8 @@ import ast
 import re
 
 from ...models.competicio import CompeticioAparell, CompeticioAparellEquipContextSource
-from ...models.scoring import ScoringSchema
 from ..shared.birth_year_ranges import validate_birth_year_range_partition_config
+from ..scoring.schema_resolution import schema_by_comp_aparell_id
 from .classificacio_templates import (
     json_clone,
     normalize_particions_custom,
@@ -1446,12 +1446,7 @@ def _validate_desempat_mode_compatibility(
         .filter(competicio=competicio, actiu=True)
         .select_related("aparell")
     }
-    schemas_by_aparell = {
-        s.aparell_id: (s.schema or {})
-        for s in ScoringSchema.objects.filter(
-            aparell_id__in=[ca.aparell_id for ca in active_apps.values()]
-        ).only("aparell_id", "schema")
-    }
+    schemas_by_app = schema_by_comp_aparell_id(active_apps.values())
     metric_meta_cache = {}
     errors = []
 
@@ -1491,7 +1486,7 @@ def _validate_desempat_mode_compatibility(
             if int(app_id) not in metric_meta_cache:
                 metric_meta_cache[int(app_id)] = build_metric_meta_for_comp_aparell(
                     comp_aparell,
-                    schemas_by_aparell.get(comp_aparell.aparell_id, {}) or {},
+                    schemas_by_app.get(int(comp_aparell.id), {}) or {},
                     strict_unknown=True,
                 )
             metric_meta = metric_meta_cache[int(app_id)]
@@ -1528,10 +1523,7 @@ def _validate_camps_per_aparell(competicio, schema: dict):
     if not app_by_id:
         return []
 
-    schemas_by_aparell = {
-        s.aparell_id: (s.schema or {})
-        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
-    }
+    schemas_by_app = schema_by_comp_aparell_id(active_apps)
 
     _, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
     selected_ids = selected_ids or set(app_by_id.keys())
@@ -1566,7 +1558,7 @@ def _validate_camps_per_aparell(competicio, schema: dict):
             continue
 
         if app_id not in meta_cache:
-            sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+            sch = schemas_by_app.get(int(app_id), {}) or {}
             meta_cache[app_id] = build_scoreable_meta_for_schema(sch, strict_unknown=True)
         meta = meta_cache[app_id]
 
@@ -1654,10 +1646,7 @@ def _validate_camps_per_exercici_per_aparell(competicio, schema: dict):
     if not app_by_id:
         return []
 
-    schemas_by_aparell = {
-        s.aparell_id: (s.schema or {})
-        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
-    }
+    schemas_by_app = schema_by_comp_aparell_id(active_apps)
 
     _, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
     selected_ids = selected_ids or set(app_by_id.keys())
@@ -1722,7 +1711,7 @@ def _validate_camps_per_exercici_per_aparell(competicio, schema: dict):
                 )
             else:
                 if app_id not in meta_cache:
-                    sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+                    sch = schemas_by_app.get(int(app_id), {}) or {}
                     meta_cache[app_id] = build_scoreable_meta_for_schema(sch, strict_unknown=True)
                 meta = meta_cache[app_id]
 
@@ -1809,10 +1798,7 @@ def _validate_presentacio_columns_details(competicio, schema: dict, tipus="indiv
     )
     app_by_id = {ca.id: ca for ca in active_apps}
     _, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
-    schemas_by_aparell = {
-        s.aparell_id: (s.schema or {})
-        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
-    }
+    schemas_by_app = schema_by_comp_aparell_id(active_apps)
 
     meta_cache = {}
     errors = []
@@ -1854,7 +1840,7 @@ def _validate_presentacio_columns_details(competicio, schema: dict, tipus="indiv
                 continue
 
             if app_id not in meta_cache:
-                sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+                sch = schemas_by_app.get(int(app_id), {}) or {}
                 meta_cache[app_id] = build_metric_meta_for_comp_aparell(
                     app_by_id[app_id],
                     sch,
@@ -1904,7 +1890,7 @@ def _validate_presentacio_columns_details(competicio, schema: dict, tipus="indiv
             comp_app = app_by_id.get(app_id)
             if comp_app is None:
                 return None
-            sch = schemas_by_aparell.get(comp_app.aparell_id, {}) or {}
+            sch = schemas_by_app.get(int(comp_app.id), {}) or {}
             meta_cache[app_id] = build_metric_meta_for_comp_aparell(
                 comp_app,
                 sch,
@@ -2060,10 +2046,7 @@ def _validate_tie_camps_per_aparell(competicio, schema: dict):
     if not app_by_id:
         return []
 
-    schemas_by_aparell = {
-        s.aparell_id: (s.schema or {})
-        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
-    }
+    schemas_by_app = schema_by_comp_aparell_id(active_apps)
 
     _, selected_ids_main = _get_active_and_selected_app_ids(competicio, punt)
     active_app_ids = set(app_by_id.keys())
@@ -2099,7 +2082,7 @@ def _validate_tie_camps_per_aparell(competicio, schema: dict):
                 continue
 
             if app_id not in meta_cache:
-                sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+                sch = schemas_by_app.get(int(app_id), {}) or {}
                 meta_cache[app_id] = build_scoreable_meta_for_schema(sch, strict_unknown=True)
             meta = meta_cache[app_id]
 
