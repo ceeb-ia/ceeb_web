@@ -194,6 +194,10 @@
         </form>
         <a class="btn btn-sm btn-primary" href="{% url 'designacions_runs_list' %}">Tornar a designacions</a>
 
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_run_analytics' run.id %}">
+          Analitica
+        </a>
+
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">
           Tornar al seguiment
         </a>
@@ -209,7 +213,7 @@
     {% endif %}
     {% if mobility_summary.mobility_warning_count %}
     <div class="alert alert-warning mb-3" id="mobilityWarningBanner">
-      Hi ha {{ mobility_summary.mobility_warning_count }} tutors atenent diferents clusters de forma valida.
+      Hi ha {{ mobility_summary.mobility_warning_count }} avisos informatius de mobilitat per revisar.
     </div>
     {% else %}
     <div class="alert alert-warning mb-3 d-none" id="mobilityWarningBanner"></div>
@@ -295,10 +299,52 @@
                     <option value="">Tots</option>
                     <option value="mobility_error">Amb error mobilitat</option>
                     <option value="mobility_warning">Amb warning mobilitat</option>
+                    <option value="engine_warning">Amb warning motor</option>
                     <option value="manual_warning">Amb warning manual</option>
                     <option value="locked">Amb bloquejats</option>
                     <option value="clean">Sense incidencies</option>
                   </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Origen</div>
+                  <select id="filterAssignmentOrigin" class="form-control form-control-sm">
+                    <option value="">Tots</option>
+                    {% for key, label in filter_origin_options %}
+                    <option value="{{ key }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Vehicle tutor</div>
+                  <select id="filterTutorVehicle" class="form-control form-control-sm">
+                    <option value="">Tots</option>
+                    <option value="with">Amb vehicle</option>
+                    <option value="without">Sense vehicle</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Partits assignats al tutor</div>
+                  <div class="d-flex align-items-center">
+                    <input id="filterTutorAssignmentsMin" type="number" min="0" step="1" class="form-control form-control-sm" aria-label="Minim de partits assignats" placeholder="Min">
+                    <span class="mx-2 text-muted">a</span>
+                    <input id="filterTutorAssignmentsMax" type="number" min="0" step="1" class="form-control form-control-sm" aria-label="Maxim de partits assignats" placeholder="Max">
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Disponibilitat tutor</div>
+                  <div class="d-flex align-items-center">
+                    <input id="filterTutorAvailabilityStart" type="time" class="form-control form-control-sm" aria-label="Disponibilitat des de">
+                    <span class="mx-2 text-muted">a</span>
+                    <input id="filterTutorAvailabilityEnd" type="time" class="form-control form-control-sm" aria-label="Disponibilitat fins a">
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Hora partit arbitrat</div>
+                  <div class="d-flex align-items-center">
+                    <input id="filterAssignmentTimeStart" type="time" class="form-control form-control-sm" aria-label="Partits des de">
+                    <span class="mx-2 text-muted">a</span>
+                    <input id="filterAssignmentTimeEnd" type="time" class="form-control form-control-sm" aria-label="Partits fins a">
+                  </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl-3 mb-3">
                   <div class="filter-panel__label">Categoria partit</div>
@@ -325,15 +371,22 @@
         <div id="asgAccordion" class="w-100">
           {% for g in groups %}
           <div class="card tutor-group mb-2 w-100"
-               data-tutor="{{ g.referee.code }} {{ g.referee.name|default:'' }}"
+               data-tutor="{{ g.referee.code }} {{ g.referee.name|default:'' }} {{ g.referee.transport|default:'' }}"
                data-level="{{ g.level }}"
                data-modality="{{ g.modality }}"
                data-has-mobility-error="{% if g.has_mobility_error %}1{% else %}0{% endif %}"
                data-has-mobility-warning="{% if g.has_mobility_warning %}1{% else %}0{% endif %}"
                data-has-manual-warning="{% if g.has_manual_override %}1{% else %}0{% endif %}"
+               data-has-engine-warning="{% if g.has_trace_warning %}1{% else %}0{% endif %}"
                data-has-locked="{% if g.has_locked %}1{% else %}0{% endif %}"
-               data-categories="{% for category in g.categories %}{{ category }} {% endfor %}"
+               data-has-vehicle="{% if g.has_vehicle %}1{% else %}0{% endif %}"
+               data-assignment-count="{{ g.total }}"
+               data-availability-windows="{% for window in g.availability_windows %}{{ window }} {% endfor %}"
+               data-assignment-times="{% for time_token in g.assignment_time_tokens %}{{ time_token }} {% endfor %}"
+               data-categories="{{ g.categories|join:'||' }}"
                data-venues="{% for venue in g.venues %}{{ venue }} {% endfor %}"
+               data-origins="{{ g.origins|join:'||' }}"
+               data-match-text="{{ g.match_filter_text }}"
                style="width:100%">
 
             <div class="card-header p-0" id="h{{ g.referee.id }}">
@@ -371,12 +424,16 @@
                       <tr>
                         <th>Codi</th>
                         <th>Local</th>
+                        <th>Pos. local</th>
                         <th>Visitant</th>
+                        <th>Pos. visitant</th>
                         <th>Data</th>
                         <th>Hora</th>
                         <th>Pista</th>
                         <th>Categoria</th>
+                        <th>Origen</th>
                         <th>Nivell tutor</th>
+                        <th>Vehicle</th>
                         <th>Disponibilitat tutor</th>
                         <th>Nota</th>
                         <th>Warning</th>
@@ -394,7 +451,10 @@
                           data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}"
                           data-category="{{ a.match.category|default:'' }}"
                           data-venue="{{ a.match.venue|default:'' }}"
+                          data-origin="{{ a.origin_key|default:'missing_trace' }}"
+                          data-is-locked="{% if a.locked %}1{% else %}0{% endif %}"
                           data-has-manual-warning="{% if a.manual_override_warning %}1{% else %}0{% endif %}"
+                          data-has-engine-warning="{% if a.trace_warning_messages %}1{% else %}0{% endif %}"
                           data-has-mobility-error="{% if mobility_errors %}1{% else %}0{% endif %}"
                           data-has-mobility-warning="{% if mobility_warnings %}1{% else %}0{% endif %}">
                         <td class="font-weight-bold">
@@ -406,12 +466,19 @@
                           {% endif %}
                         </td>
                         <td>{{ a.match.equip_local|default:"-" }}</td>
+                        <td class="text-center">{{ a.match.posicio_equip_local|default:"-" }}</td>
                         <td>{{ a.match.equip_visitant|default:"-" }}</td>
+                        <td class="text-center">{{ a.match.posicio_equip_visitant|default:"-" }}</td>
                         <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                         <td>{{ a.match.hour_raw|default:"-" }}</td>
                         <td>{{ a.match.venue|default:"-" }}</td>
                         <td class="text-center">{{ a.match.category|default:"-" }}</td>
+                        <td>
+                          <div>{{ a.origin_label|default:"Origen no disponible" }}</div>
+                          <div class="text-muted small">{{ a.origin_route_label|default:"Partit individual" }}</div>
+                        </td>
                         <td class="text-center">{{ g.referee.level|default:"-" }}</td>
+                        <td class="text-center">{{ g.referee.transport|default:"-" }}</td>
 
                         <td class="text-center">
                           {% with hi=raw|get_item:"Hora Inici" hf=raw|get_item:"Hora Fi" %}
@@ -448,6 +515,8 @@
                             {% with first_warning=mobility_warnings|first %}
                               <div class="warning-box">{{ first_warning|get_item:"message" }}</div>
                             {% endwith %}
+                          {% elif a.trace_warning_messages %}
+                            <div class="warning-box">{{ a.trace_warning_messages.0 }}</div>
                           {% else %}
                             <span class="text-muted small">Sense warning</span>
                           {% endif %}
@@ -905,6 +974,14 @@
     var matchInput = document.getElementById('searchMatch');
     var levelSelect = document.getElementById('filterTutorLevel');
     var statusSelect = document.getElementById('filterAssignmentStatus');
+    var originSelect = document.getElementById('filterAssignmentOrigin');
+    var vehicleSelect = document.getElementById('filterTutorVehicle');
+    var assignmentsMinInput = document.getElementById('filterTutorAssignmentsMin');
+    var assignmentsMaxInput = document.getElementById('filterTutorAssignmentsMax');
+    var availabilityStartInput = document.getElementById('filterTutorAvailabilityStart');
+    var availabilityEndInput = document.getElementById('filterTutorAvailabilityEnd');
+    var assignmentTimeStartInput = document.getElementById('filterAssignmentTimeStart');
+    var assignmentTimeEndInput = document.getElementById('filterAssignmentTimeEnd');
     var categorySelect = document.getElementById('filterMatchCategory');
     var venueInput = document.getElementById('filterMatchVenue');
     var resetFiltersButton = document.getElementById('assignmentFiltersReset');
@@ -969,7 +1046,7 @@
       var warningBanner = document.getElementById('mobilityWarningBanner');
       if (warningBanner) {
         var warningCount = summary.mobility_warning_count || 0;
-        warningBanner.textContent = 'Hi ha ' + warningCount + ' tutors atenent diferents clusters de forma valida.';
+        warningBanner.textContent = 'Hi ha ' + warningCount + ' avisos informatius de mobilitat per revisar.';
         warningBanner.classList.toggle('d-none', !warningCount);
       }
     }
@@ -987,6 +1064,27 @@
         row.classList.remove('table-warning');
         row.dataset.hasManualWarning = '0';
       }
+      refreshGroupFilterState(row.closest('.tutor-group'));
+    }
+
+    function refreshGroupFilterState(group){
+      if (!group) return;
+      var rows = Array.from(group.querySelectorAll('.match-row'));
+      group.setAttribute('data-has-manual-warning', rows.some(function(row){
+        return row.dataset.hasManualWarning === '1';
+      }) ? '1' : '0');
+      group.setAttribute('data-has-mobility-error', rows.some(function(row){
+        return row.dataset.hasMobilityError === '1';
+      }) ? '1' : '0');
+      group.setAttribute('data-has-mobility-warning', rows.some(function(row){
+        return row.dataset.hasMobilityWarning === '1';
+      }) ? '1' : '0');
+      group.setAttribute('data-has-engine-warning', rows.some(function(row){
+        return row.dataset.hasEngineWarning === '1';
+      }) ? '1' : '0');
+      group.setAttribute('data-has-locked', rows.some(function(row){
+        return row.dataset.isLocked === '1';
+      }) ? '1' : '0');
     }
 
     function countActiveAssignmentFilters(){
@@ -995,6 +1093,14 @@
         matchInput ? matchInput.value : '',
         levelSelect ? levelSelect.value : '',
         statusSelect ? statusSelect.value : '',
+        originSelect ? originSelect.value : '',
+        vehicleSelect ? vehicleSelect.value : '',
+        assignmentsMinInput ? assignmentsMinInput.value : '',
+        assignmentsMaxInput ? assignmentsMaxInput.value : '',
+        availabilityStartInput ? availabilityStartInput.value : '',
+        availabilityEndInput ? availabilityEndInput.value : '',
+        assignmentTimeStartInput ? assignmentTimeStartInput.value : '',
+        assignmentTimeEndInput ? assignmentTimeEndInput.value : '',
         categorySelect ? categorySelect.value : '',
         venueInput ? venueInput.value : ''
       ];
@@ -1017,11 +1123,101 @@
       return true;
     }
 
+    function groupMatchesAssignmentStatus(group, status){
+      if (!status) return true;
+      var hasManualWarning = group.getAttribute('data-has-manual-warning') === '1';
+      var hasMobilityError = group.getAttribute('data-has-mobility-error') === '1';
+      var hasMobilityWarning = group.getAttribute('data-has-mobility-warning') === '1';
+      var hasEngineWarning = group.getAttribute('data-has-engine-warning') === '1';
+      var hasLocked = group.getAttribute('data-has-locked') === '1';
+
+      if (status === 'mobility_error') return hasMobilityError;
+      if (status === 'mobility_warning') return hasMobilityWarning;
+      if (status === 'engine_warning') return hasEngineWarning;
+      if (status === 'manual_warning') return hasManualWarning;
+      if (status === 'locked') return hasLocked;
+      if (status === 'clean') return !hasManualWarning && !hasMobilityError && !hasMobilityWarning && !hasEngineWarning && !hasLocked;
+      return true;
+    }
+
+    function timeToMinutes(value){
+      var normalized = normalize(value);
+      if (!normalized) return null;
+      var parts = normalized.split(':');
+      if (parts.length < 2) return null;
+      var hours = parseInt(parts[0], 10);
+      var minutes = parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes)) return null;
+      return (hours * 60) + minutes;
+    }
+
+    function numberOrNull(value){
+      var raw = normalize(value);
+      if (!raw) return null;
+      var parsed = parseInt(raw, 10);
+      return isNaN(parsed) ? null : parsed;
+    }
+
+    function tutorMatchesAssignmentCount(group, minCount, maxCount){
+      if (minCount === null && maxCount === null) return true;
+      var count = numberOrNull(group.getAttribute('data-assignment-count'));
+      if (count === null) return false;
+      if (minCount !== null && count < minCount) return false;
+      if (maxCount !== null && count > maxCount) return false;
+      return true;
+    }
+
+    function tutorMatchesAvailabilityWindow(group, requestedStart, requestedEnd){
+      if (requestedStart === null && requestedEnd === null) return true;
+      var rawWindows = normalize(group.getAttribute('data-availability-windows'));
+      if (!rawWindows) return false;
+      return rawWindows.split(/\s+/).some(function(windowToken){
+        var parts = windowToken.split('-');
+        if (parts.length !== 2) return false;
+        var windowStart = timeToMinutes(parts[0]);
+        var windowEnd = timeToMinutes(parts[1]);
+        if (windowStart === null || windowEnd === null) return false;
+        if (requestedStart !== null && windowStart > requestedStart) return false;
+        if (requestedEnd !== null && windowEnd < requestedEnd) return false;
+        return true;
+      });
+    }
+
+    function tutorHasAssignmentInWindow(group, requestedStart, requestedEnd){
+      if (requestedStart === null && requestedEnd === null) return true;
+      var rawTimes = normalize(group.getAttribute('data-assignment-times'));
+      if (!rawTimes) return false;
+      return rawTimes.split(/\s+/).some(function(timeToken){
+        var minutes = timeToMinutes(timeToken);
+        if (minutes === null) return false;
+        if (requestedStart !== null && minutes < requestedStart) return false;
+        if (requestedEnd !== null && minutes > requestedEnd) return false;
+        return true;
+      });
+    }
+
+    function delimitedListContains(rawValue, query){
+      if (!query) return true;
+      var normalized = normalize(rawValue);
+      if (!normalized) return false;
+      return normalized.split('||').some(function(item){
+        return normalize(item) === query;
+      });
+    }
+
     function applyFilters(){
       var tutorQ = normalize(tutorInput ? tutorInput.value : '');
       var matchQ = normalize(matchInput ? matchInput.value : '');
       var levelQ = normalize(levelSelect ? levelSelect.value : '');
       var statusQ = normalize(statusSelect ? statusSelect.value : '');
+      var originQ = normalize(originSelect ? originSelect.value : '');
+      var vehicleQ = normalize(vehicleSelect ? vehicleSelect.value : '');
+      var assignmentsMin = numberOrNull(assignmentsMinInput ? assignmentsMinInput.value : '');
+      var assignmentsMax = numberOrNull(assignmentsMaxInput ? assignmentsMaxInput.value : '');
+      var availabilityStart = timeToMinutes(availabilityStartInput ? availabilityStartInput.value : '');
+      var availabilityEnd = timeToMinutes(availabilityEndInput ? availabilityEndInput.value : '');
+      var assignmentTimeStart = timeToMinutes(assignmentTimeStartInput ? assignmentTimeStartInput.value : '');
+      var assignmentTimeEnd = timeToMinutes(assignmentTimeEndInput ? assignmentTimeEndInput.value : '');
       var categoryQ = normalize(categorySelect ? categorySelect.value : '');
       var venueQ = normalize(venueInput ? venueInput.value : '');
       var unassignedMatchQ = normalize(unassignedMatchInput ? unassignedMatchInput.value : '');
@@ -1035,29 +1231,33 @@
       groups.forEach(function(group){
         var tutorText = normalize(group.getAttribute('data-tutor'));
         var groupLevel = normalize(group.getAttribute('data-level'));
+        var groupMatchText = normalize(group.getAttribute('data-match-text'));
+        var groupCategories = group.getAttribute('data-categories') || '';
+        var groupVenues = normalize(group.getAttribute('data-venues'));
+        var groupOrigins = group.getAttribute('data-origins') || '';
         var tutorOk = !tutorQ || tutorText.indexOf(tutorQ) !== -1;
         var levelOk = !levelQ || (levelQ === '__missing__' ? !groupLevel : groupLevel === levelQ);
-        var groupStatusOk = !statusQ || statusQ !== 'locked' || group.getAttribute('data-has-locked') === '1';
-        var anyMatchVisible = false;
+        var hasVehicle = group.getAttribute('data-has-vehicle') === '1';
+        var vehicleOk = !vehicleQ || (vehicleQ === 'with' ? hasVehicle : !hasVehicle);
+        var assignmentCountOk = tutorMatchesAssignmentCount(group, assignmentsMin, assignmentsMax);
+        var availabilityOk = tutorMatchesAvailabilityWindow(group, availabilityStart, availabilityEnd);
+        var assignmentTimeOk = tutorHasAssignmentInWindow(group, assignmentTimeStart, assignmentTimeEnd);
+        var groupStatusOk = groupMatchesAssignmentStatus(group, statusQ);
+        var matchOk = !matchQ || groupMatchText.indexOf(matchQ) !== -1;
+        var categoryOk = delimitedListContains(groupCategories, categoryQ);
+        var venueOk = !venueQ || groupVenues.indexOf(venueQ) !== -1;
+        var originOk = delimitedListContains(groupOrigins, originQ);
+        var groupVisible = tutorOk && levelOk && vehicleOk && assignmentCountOk && availabilityOk && assignmentTimeOk && groupStatusOk && matchOk && categoryOk && venueOk && originOk;
+        var groupRows = Array.from(group.querySelectorAll('.match-row'));
 
-        group.querySelectorAll('.match-row').forEach(function(row){
+        groupRows.forEach(function(row){
           totalRows += 1;
-          var rowMatch = normalize(row.getAttribute('data-match'));
-          var rowCategory = normalize(row.getAttribute('data-category'));
-          var rowVenue = normalize(row.getAttribute('data-venue'));
-          var matchOk = !matchQ || rowMatch.indexOf(matchQ) !== -1;
-          var categoryOk = !categoryQ || rowCategory === categoryQ;
-          var venueOk = !venueQ || rowVenue.indexOf(venueQ) !== -1;
-          var statusOk = statusQ === 'locked' ? true : rowMatchesAssignmentStatus(row, statusQ);
-          var rowVisible = matchOk && categoryOk && venueOk && statusOk;
-          row.style.display = rowVisible ? '' : 'none';
-          if (rowVisible) {
-            anyMatchVisible = true;
+          row.style.display = groupVisible ? '' : 'none';
+          if (groupVisible) {
             visibleRows += 1;
           }
         });
 
-        var groupVisible = tutorOk && levelOk && groupStatusOk && anyMatchVisible;
         group.style.display = groupVisible ? '' : 'none';
         if (groupVisible) {
           visibleGroups += 1;
@@ -1104,6 +1304,14 @@
       if (matchInput) matchInput.value = '';
       if (levelSelect) levelSelect.value = '';
       if (statusSelect) statusSelect.value = '';
+      if (originSelect) originSelect.value = '';
+      if (vehicleSelect) vehicleSelect.value = '';
+      if (assignmentsMinInput) assignmentsMinInput.value = '';
+      if (assignmentsMaxInput) assignmentsMaxInput.value = '';
+      if (availabilityStartInput) availabilityStartInput.value = '';
+      if (availabilityEndInput) availabilityEndInput.value = '';
+      if (assignmentTimeStartInput) assignmentTimeStartInput.value = '';
+      if (assignmentTimeEndInput) assignmentTimeEndInput.value = '';
       if (categorySelect) categorySelect.value = '';
       if (venueInput) venueInput.value = '';
       applyFilters();
@@ -1183,6 +1391,33 @@
 
       var explanation = payload.explanation;
       var alternatives = payload.better_alternatives || [];
+      var origin = explanation.assignment_origin || {};
+      var routeContext = explanation.route_context || [];
+      var originHtml = '';
+      if (origin.label || origin.summary) {
+        originHtml = '<div class="mb-2">' +
+          '<div class="font-weight-bold">' + escapeHtml(origin.label || '') + '</div>' +
+          '<div class="text-muted small">' + escapeHtml(origin.summary || '') + '</div>' +
+        '</div>';
+      }
+      var routeHtml = '';
+      if (routeContext.length) {
+        routeHtml = '<div class="mb-2"><div class="font-weight-bold small">Sequencia del tutor</div>' +
+          routeContext.map(function(item){
+            return '<div class="text-muted small">' +
+              escapeHtml(item.hour || '-') + ' ' +
+              escapeHtml(item.venue || '-') + ' · ' +
+              escapeHtml(item.code || '') +
+            '</div>';
+          }).join('') +
+        '</div>';
+      }
+      var warningsHtml = '';
+      if (origin.warning_codes && origin.warning_codes.length) {
+        warningsHtml = '<div class="text-warning small mb-2">Revisio recomanada: ' +
+          escapeHtml(origin.warning_codes.join(', ')) +
+        '</div>';
+      }
       var alternativesHtml = '';
       if (alternatives.length) {
         alternativesHtml = '<div class="explanation-alternatives"><div class="font-weight-bold mb-1">Alternatives millors</div>' +
@@ -1199,6 +1434,9 @@
 
       details.innerHTML = '' +
         '<div class="explanation-box">' +
+          originHtml +
+          routeHtml +
+          warningsHtml +
           '<div class="proposal-meta">' +
             renderQualityBadge(explanation.quality_label) +
             '<span class="text-muted small">' + escapeHtml(levelFitText(explanation.level_fit)) + '</span>' +
@@ -1648,6 +1886,14 @@
     if (matchInput) matchInput.addEventListener('input', applyFilters);
     if (levelSelect) levelSelect.addEventListener('change', applyFilters);
     if (statusSelect) statusSelect.addEventListener('change', applyFilters);
+    if (originSelect) originSelect.addEventListener('change', applyFilters);
+    if (vehicleSelect) vehicleSelect.addEventListener('change', applyFilters);
+    if (assignmentsMinInput) assignmentsMinInput.addEventListener('input', applyFilters);
+    if (assignmentsMaxInput) assignmentsMaxInput.addEventListener('input', applyFilters);
+    if (availabilityStartInput) availabilityStartInput.addEventListener('input', applyFilters);
+    if (availabilityEndInput) availabilityEndInput.addEventListener('input', applyFilters);
+    if (assignmentTimeStartInput) assignmentTimeStartInput.addEventListener('input', applyFilters);
+    if (assignmentTimeEndInput) assignmentTimeEndInput.addEventListener('input', applyFilters);
     if (categorySelect) categorySelect.addEventListener('change', applyFilters);
     if (venueInput) venueInput.addEventListener('input', applyFilters);
     if (resetFiltersButton) resetFiltersButton.addEventListener('click', resetAssignmentFilters);

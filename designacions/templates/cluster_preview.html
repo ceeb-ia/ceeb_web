@@ -7,7 +7,9 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h2 class="mb-0">Previsualitzacio de geolocalitzacio</h2>
-        <div class="text-muted small">Preview {{ preview_id }}</div>
+        <div class="text-muted small">
+          {% if payload.run_name %}{{ payload.run_name }} Â· {% endif %}Preview {{ preview_id }}
+        </div>
       </div>
       <div class="d-flex gap-2">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_upload' %}">Tornar</a>
@@ -28,17 +30,6 @@
       <span class="text-muted small" id="preview-pct">{% if payload.progress %}{{ payload.progress }}%{% endif %}</span>
     </div>
 
-    <div class="text-muted small mb-2" id="preview-updated-at">
-      {% if payload.seconds_since_update is not None %}
-      Darrera actualitzacio fa {{ payload.seconds_since_update }} s
-      {% else %}
-      Esperant la primera actualitzacio del worker
-      {% endif %}
-    </div>
-
-    <div class="alert alert-warning small mb-3{% if not payload.stalled %} d-none{% endif %}" id="preview-stalled-alert">
-      {{ payload.stalled_message|default:"Fa estona que no arriba cap actualitzacio del worker." }}
-    </div>
 
     <div class="progress mb-3" style="height: 10px;">
       <div class="progress-bar" id="preview-progress-bar" role="progressbar" style="width:{% if payload.progress %}{{ payload.progress }}{% else %}0{% endif %}%"></div>
@@ -46,7 +37,11 @@
 
     {% if payload.status == "FAILURE" %}
     <div class="alert alert-danger">
-      {{ payload.error|default:payload.message|default:"La previsualitzacio ha fallat." }}
+      {% if payload.error %}{{ payload.error }}{% elif payload.message %}{{ payload.message }}{% else %}La previsualitzacio ha fallat.{% endif %}
+    </div>
+    {% elif payload.status == "SUCCESS" and payload.message %}
+    <div class="alert alert-success">
+      {{ payload.message }}
     </div>
     {% endif %}
 
@@ -87,7 +82,7 @@
                 <tbody id="preview-logs-tbody">
                   {% if payload.log_events %}
                     {% for event in payload.log_events %}
-                    <tr><td>{{ event.message|default:event|default:"-" }}</td></tr>
+                    <tr><td>{% if event.message %}{{ event.message }}{% else %}-{% endif %}</td></tr>
                     {% endfor %}
                   {% else %}
                   <tr><td class="text-muted">Encara no hi ha logs.</td></tr>
@@ -106,6 +101,23 @@
 {% block extra_scripts %}
 {{ payload.log_events|json_script:"preview-log-events" }}
 {{ scenario_summaries|json_script:"preview-scenario-summaries" }}
+{% if selected_scenario and selected_scenario.venues %}
+{{ selected_scenario.venues|json_script:"preview-initial-venues" }}
+{% else %}
+<script id="preview-initial-venues" type="application/json">[]</script>
+{% endif %}
+{% if selected_scenario and selected_scenario.active_overrides %}
+{{ selected_scenario.active_overrides|json_script:"preview-initial-active-overrides" }}
+{% else %}
+<script id="preview-initial-active-overrides" type="application/json">[]</script>
+{% endif %}
+{% if selected_scenario and selected_scenario.override_actions %}
+{{ selected_scenario.override_actions|json_script:"preview-initial-override-actions" }}
+{% elif payload.override_actions %}
+{{ payload.override_actions|json_script:"preview-initial-override-actions" }}
+{% else %}
+<script id="preview-initial-override-actions" type="application/json">{}</script>
+{% endif %}
 <script>
 (function(){
   const initialStatus = "{{ payload.status }}";
@@ -119,19 +131,65 @@
   const stalledAlert = document.getElementById('preview-stalled-alert');
   const initialLogEvents = JSON.parse(document.getElementById('preview-log-events').textContent || '[]');
   const scenarioSummaries = JSON.parse(document.getElementById('preview-scenario-summaries').textContent || '[]');
+  const initialVenues = JSON.parse(document.getElementById('preview-initial-venues').textContent || '[]');
+  const initialActiveOverrides = JSON.parse(document.getElementById('preview-initial-active-overrides').textContent || '[]');
+  const initialOverrideActions = JSON.parse(document.getElementById('preview-initial-override-actions').textContent || '{}');
   const scenarioSelect = document.getElementById('preview-scenario-select');
   const selectedEpsValue = document.getElementById('selected-eps-value');
+  const selectedEpsValueSide = document.getElementById('selected-eps-value-side');
   const runSelectedEpsInput = document.getElementById('run-selected-eps-input');
   const mapFrame = document.getElementById('preview-map-frame');
   const mapOpenLink = document.getElementById('preview-map-open-link');
+  const mapSelectedVenue = document.getElementById('preview-map-selected-venue');
   const metricClusterCount = document.getElementById('metric-cluster-count');
   const metricOutlierPoints = document.getElementById('metric-outlier-points');
   const metricMissingGeocode = document.getElementById('metric-missing-geocode');
   const metricSubgroups = document.getElementById('metric-subgroups');
   const modalityBreakdownTbody = document.getElementById('preview-modality-breakdown-tbody');
+  const venueSearchInput = document.getElementById('preview-venue-search');
+  const venueFilterSelect = document.getElementById('preview-venue-filter');
+  const venueTbody = document.getElementById('preview-venues-tbody');
+  const venueTotalCount = document.getElementById('preview-venue-total-count');
+  const venueManualCount = document.getElementById('preview-venue-manual-count');
+  const venueExceptionCount = document.getElementById('preview-venue-exception-count');
+  const venueSelectedBadge = document.getElementById('preview-venue-selected-badge');
+  const venueDetailName = document.getElementById('preview-venue-detail-name');
+  const venueDetailAddress = document.getElementById('preview-venue-detail-address');
+  const venueDetailStatus = document.getElementById('preview-venue-detail-status');
+  const venueDetailCluster = document.getElementById('preview-venue-detail-cluster');
+  const venueDetailOverride = document.getElementById('preview-venue-detail-override');
+  const venueDetailMatches = document.getElementById('preview-venue-detail-matches');
+  const venueDetailModalities = document.getElementById('preview-venue-detail-modalities');
+  const venueFeedback = document.getElementById('preview-venue-action-feedback');
+  const venueClearSelectionButton = document.getElementById('preview-venue-clear-selection-btn');
+  const venueMergeForm = document.getElementById('preview-venue-merge-form');
+  const venueMergeTargetSelect = document.getElementById('preview-venue-merge-target-select');
+  const venueMergeButton = document.getElementById('preview-venue-merge-btn');
+  const venueMergeSourceInput = document.getElementById('preview-venue-merge-source-input');
+  const venueMergeTargetInput = document.getElementById('preview-venue-merge-target-input');
+  const venueMergeEpsInput = document.getElementById('preview-venue-merge-eps-input');
+  const venueIsolateForm = document.getElementById('preview-venue-isolate-form');
+  const venueIsolateButton = document.getElementById('preview-venue-isolate-btn');
+  const venueIsolateSourceInput = document.getElementById('preview-venue-isolate-source-input');
+  const venueIsolateEpsInput = document.getElementById('preview-venue-isolate-eps-input');
+  const venueRestoreForm = document.getElementById('preview-venue-restore-form');
+  const venueRestoreButton = document.getElementById('preview-venue-restore-btn');
+  const venueRestoreSourceInput = document.getElementById('preview-venue-restore-source-input');
+  const venueRestoreEpsInput = document.getElementById('preview-venue-restore-eps-input');
+  const overridesList = document.getElementById('preview-active-overrides-list');
+  const overridesEmpty = document.getElementById('preview-active-overrides-empty');
   let lastUpdatedAt = {% if payload.updated_at is not None %}{{ payload.updated_at }}{% else %}null{% endif %};
   let staleMessageShown = {{ payload.stalled|yesno:"true,false" }};
   let lastAppendedLogMessage = initialLogEvents.length ? (initialLogEvents[initialLogEvents.length - 1].message || '') : '';
+  let currentScenarioEps = {% if result.selected_eps_m %}{{ result.selected_eps_m }}{% elif selected_scenario and selected_scenario.eps_m %}{{ selected_scenario.eps_m }}{% else %}null{% endif %};
+  let selectedVenueId = null;
+  let currentVenueFilter = 'all';
+  let currentVenueQuery = '';
+  let pendingMapHighlight = null;
+  let pendingMapViewRestore = null;
+  let latestMapViewState = null;
+  let selectionExplicitlyCleared = false;
+  const previewUiStateKey = 'cluster-preview-ui-state-{{ preview_id }}';
 
   function formatSinceUpdate(seconds){
     if (typeof seconds !== 'number' || Number.isNaN(seconds)) {
@@ -143,25 +201,37 @@
   function updateUpdatedAt(updatedAt){
     if (typeof updatedAt === 'number') {
       lastUpdatedAt = updatedAt;
-      updatedAtNode.textContent = formatSinceUpdate(0);
-      stalledAlert.classList.add('d-none');
+      if (updatedAtNode) {
+        updatedAtNode.textContent = formatSinceUpdate(0);
+      }
+      if (stalledAlert) {
+        stalledAlert.classList.add('d-none');
+      }
       staleMessageShown = false;
       return;
     }
     if (lastUpdatedAt === null) {
-      updatedAtNode.textContent = formatSinceUpdate(null);
+      if (updatedAtNode) {
+        updatedAtNode.textContent = formatSinceUpdate(null);
+      }
       return;
     }
     const seconds = Math.max(0, Math.floor(Date.now() / 1000 - lastUpdatedAt));
-    updatedAtNode.textContent = formatSinceUpdate(seconds);
+    if (updatedAtNode) {
+      updatedAtNode.textContent = formatSinceUpdate(seconds);
+    }
     if (seconds >= 20) {
-      stalledAlert.classList.remove('d-none');
+      if (stalledAlert) {
+        stalledAlert.classList.remove('d-none');
+      }
       if (!staleMessageShown) {
         appendLog('Sense activitat nova des de fa una estona. El worker pot estar geocodificant, esperant quota o bloquejat.');
         staleMessageShown = true;
       }
     } else {
-      stalledAlert.classList.add('d-none');
+      if (stalledAlert) {
+        stalledAlert.classList.add('d-none');
+      }
       staleMessageShown = false;
     }
   }
@@ -200,9 +270,619 @@
     return scenarioSummaries.find((item) => String(item.eps_m) === String(eps)) || null;
   }
 
-  function updateScenarioSelection(eps){
+  function buildMapHighlightMessage(addressId, eps){
+    if (addressId === null || addressId === undefined || addressId === '') {
+      return null;
+    }
+    return {
+      type: 'cluster_preview_highlight_address',
+      addressId: String(addressId),
+      epsM: eps ?? currentScenarioEps,
+    };
+  }
+
+  function buildMapClearSelectionMessage(eps){
+    return {
+      type: 'cluster_preview_clear_selection',
+      epsM: eps ?? currentScenarioEps,
+    };
+  }
+
+  function postMessageToMap(message, delayMs){
+    if (!mapFrame || !mapFrame.contentWindow || !message) return;
+    const send = () => {
+      if (!mapFrame.contentWindow) return;
+      mapFrame.contentWindow.postMessage(message, '*');
+    };
+    if (delayMs && delayMs > 0) {
+      window.setTimeout(send, delayMs);
+      return;
+    }
+    send();
+  }
+
+  function requestMapViewState(){
+    if (!mapFrame || !mapFrame.contentWindow) return;
+    postMessageToMap({
+      type: 'cluster_preview_capture_view',
+      epsM: currentScenarioEps,
+    });
+  }
+
+  function captureMapViewStateFromFrame(){
+    if (!mapFrame || !mapFrame.contentWindow) return null;
+    try {
+      const frameWindow = mapFrame.contentWindow;
+      const keys = Object.keys(frameWindow);
+      for (const key of keys) {
+        const candidate = frameWindow[key];
+        if (
+          candidate
+          && typeof candidate.getCenter === 'function'
+          && typeof candidate.getZoom === 'function'
+        ) {
+          const center = candidate.getCenter();
+          if (center && typeof center.lat === 'number' && typeof center.lng === 'number') {
+            return {
+              epsM: currentScenarioEps,
+              center: { lat: center.lat, lng: center.lng },
+              zoom: candidate.getZoom(),
+            };
+          }
+        }
+      }
+    } catch (err) {
+      return null;
+    }
+    return null;
+  }
+
+  function restoreMapViewState(viewState, delayMs){
+    if (!viewState || !viewState.center) return;
+    postMessageToMap({
+      type: 'cluster_preview_set_view',
+      epsM: viewState.epsM || currentScenarioEps,
+      center: viewState.center,
+      zoom: viewState.zoom,
+    }, delayMs || 0);
+  }
+
+  function savePreviewUiState(action){
+    try {
+      requestMapViewState();
+      latestMapViewState = captureMapViewStateFromFrame() || latestMapViewState;
+      const payload = {
+        action: action || '',
+        savedAt: Date.now(),
+        epsM: currentScenarioEps,
+        selectedVenueId,
+        currentVenueFilter,
+        currentVenueQuery,
+        selectionExplicitlyCleared,
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        targetClusterId: venueMergeTargetSelect ? venueMergeTargetSelect.value : '',
+        mapView: latestMapViewState,
+      };
+      window.sessionStorage.setItem(previewUiStateKey, JSON.stringify(payload));
+    } catch (err) {
+      // Non-critical: the action must continue even if browser storage is unavailable.
+    }
+  }
+
+  function readPreviewUiState(){
+    try {
+      const raw = window.sessionStorage.getItem(previewUiStateKey);
+      if (!raw) return null;
+      const payload = JSON.parse(raw);
+      if (!payload || !payload.savedAt || Date.now() - payload.savedAt > 24 * 60 * 60 * 1000) {
+        window.sessionStorage.removeItem(previewUiStateKey);
+        return null;
+      }
+      return payload;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function restorePreviewUiState(){
+    const state = readPreviewUiState();
+    if (!state) return false;
+    if (venueSearchInput && state.currentVenueQuery) {
+      venueSearchInput.value = state.currentVenueQuery;
+    }
+    if (venueFilterSelect && state.currentVenueFilter) {
+      venueFilterSelect.value = state.currentVenueFilter;
+    }
+    currentVenueQuery = String(state.currentVenueQuery || '').trim().toLowerCase();
+    currentVenueFilter = state.currentVenueFilter || 'all';
+    selectedVenueId = state.selectedVenueId ? String(state.selectedVenueId) : null;
+    selectionExplicitlyCleared = Boolean(state.selectionExplicitlyCleared);
+    if (state.mapView) {
+      pendingMapViewRestore = state.mapView;
+    }
+    const scenario = findScenario(state.epsM) || findScenario(currentScenarioEps);
+    if (scenario) {
+      updateScenarioSelection(scenario.eps_m, {
+        selectedAddressId: selectedVenueId,
+        forceMapReload: true,
+        syncMapSelection: !pendingMapViewRestore,
+      });
+    }
+    if (venueMergeTargetSelect && state.targetClusterId) {
+      venueMergeTargetSelect.value = state.targetClusterId;
+      if (venueMergeTargetInput) venueMergeTargetInput.value = state.targetClusterId;
+      if (venueMergeButton) {
+        venueMergeButton.disabled = !(venueMergeForm && venueMergeForm.getAttribute('action') && venueMergeTargetSelect.value);
+      }
+    }
+    window.setTimeout(() => {
+      window.scrollTo(0, Number(state.scrollY || 0));
+    }, 150);
+    return true;
+  }
+
+  function syncSelectedVenueToMap(scenario, options){
+    const resolvedOptions = options || {};
+    const message = buildMapHighlightMessage(selectedVenueId, scenario?.eps_m ?? currentScenarioEps);
+    pendingMapHighlight = message;
+    if (!message || resolvedOptions.skipImmediatePost) {
+      return;
+    }
+    postMessageToMap(message, resolvedOptions.delayMs || 0);
+  }
+
+  function clearSelectedVenueOnMap(scenario, options){
+    const resolvedOptions = options || {};
+    const message = buildMapClearSelectionMessage(scenario?.eps_m ?? currentScenarioEps);
+    pendingMapHighlight = null;
+    if (resolvedOptions.skipImmediatePost) {
+      return;
+    }
+    postMessageToMap(message, resolvedOptions.delayMs || 0);
+  }
+
+  function getScenarioVenues(scenario){
+    if (scenario && Array.isArray(scenario.venues)) {
+      return scenario.venues;
+    }
+    if (scenario && String(scenario.eps_m) === String(currentScenarioEps) && Array.isArray(initialVenues)) {
+      return initialVenues;
+    }
+    return [];
+  }
+
+  function getScenarioOverrides(scenario){
+    if (scenario && Array.isArray(scenario.active_overrides)) {
+      return scenario.active_overrides;
+    }
+    if (scenario && String(scenario.eps_m) === String(currentScenarioEps) && Array.isArray(initialActiveOverrides)) {
+      return initialActiveOverrides;
+    }
+    return [];
+  }
+
+  function getScenarioClusters(scenario){
+    if (scenario && Array.isArray(scenario.cluster_options)) {
+      return scenario.cluster_options;
+    }
+    const byCluster = new Map();
+    getScenarioVenues(scenario).forEach((venue) => {
+      const clusterId = venue?.cluster_id;
+      if (clusterId === null || clusterId === undefined || clusterId === '') return;
+      const key = String(clusterId);
+      if (!byCluster.has(key)) {
+        byCluster.set(key, { cluster_id: clusterId, venue_count: 0, match_count: 0, sample_names: [] });
+      }
+      const item = byCluster.get(key);
+      item.venue_count += 1;
+      item.match_count += Number(getVenueMatches(venue) || 0);
+      if (item.sample_names.length < 3) item.sample_names.push(getVenueName(venue));
+    });
+    return Array.from(byCluster.values()).sort((a, b) => (b.match_count - a.match_count) || (Number(a.cluster_id) - Number(b.cluster_id)));
+  }
+
+  function getScenarioActions(scenario){
+    if (scenario && scenario.override_actions && typeof scenario.override_actions === 'object') {
+      return scenario.override_actions;
+    }
+    if (scenario && scenario.override_endpoints && typeof scenario.override_endpoints === 'object') {
+      return scenario.override_endpoints;
+    }
+    return initialOverrideActions || {};
+  }
+
+  function getVenueId(venue){
+    return String(venue?.id ?? venue?.address_id ?? venue?.venue_id ?? venue?.pk ?? '');
+  }
+
+  function getVenueName(venue){
+    return venue?.display_name || venue?.venue_name || venue?.name || venue?.adreca || 'Seu';
+  }
+
+  function getVenueAddress(venue){
+    return venue?.address || venue?.adreca || venue?.normalized_address || venue?.address_text || '-';
+  }
+
+  function getVenueClusterLabel(venue){
+    return venue?.cluster_label || venue?.cluster_name || venue?.cluster_id || '-';
+  }
+
+  function getVenueStatus(venue){
+    return venue?.cluster_status || venue?.status || venue?.geocode_status || 'clustered';
+  }
+
+  function getVenueOverrideState(venue){
+    if (venue?.override_state) return venue.override_state;
+    if (venue?.manual_state) return venue.manual_state;
+    if (venue?.is_manual) return 'manual';
+    return 'auto';
+  }
+
+  function getVenueModalities(venue){
+    const modalities = venue?.modalities || venue?.modalitats || [];
+    if (Array.isArray(modalities)) {
+      return modalities.filter(Boolean);
+    }
+    if (typeof modalities === 'string' && modalities.trim()) {
+      return modalities.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function getVenueMatches(venue){
+    return venue?.match_count ?? venue?.matches ?? 0;
+  }
+
+  function getVenueOverrideSummary(venue){
+    return venue?.override_summary || venue?.manual_summary || venue?.override_label || '';
+  }
+
+  function isVenueException(venue){
+    const status = String(getVenueStatus(venue)).toLowerCase();
+    return status === 'outlier' || status === 'missing_geocode' || status === 'pending' || status === 'not_found';
+  }
+
+  function formatStatusLabel(status){
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'missing_geocode') return 'sense geocodificar';
+    if (normalized === 'not_found') return 'no trobada';
+    if (normalized === 'clustered') return 'clusteritzada';
+    if (normalized === 'pending') return 'pendent';
+    if (normalized === 'outlier') return 'outlier';
+    return status || '-';
+  }
+
+  function formatOverrideLabel(state){
+    const normalized = String(state || '').toLowerCase();
+    if (!normalized || normalized === 'auto') return 'Automatic';
+    if (normalized === 'isolated') return 'Aillada manualment';
+    if (normalized === 'merged') return 'Moguda manualment';
+    return state;
+  }
+
+  function escapeHtml(value){
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getFilteredVenues(venues){
+    return venues.filter((venue) => {
+      const name = getVenueName(venue).toLowerCase();
+      const address = getVenueAddress(venue).toLowerCase();
+      const modalities = getVenueModalities(venue).join(' ').toLowerCase();
+      const status = String(getVenueStatus(venue)).toLowerCase();
+      const overrideState = String(getVenueOverrideState(venue)).toLowerCase();
+      const matchesQuery = !currentVenueQuery || name.includes(currentVenueQuery) || address.includes(currentVenueQuery) || modalities.includes(currentVenueQuery);
+      if (!matchesQuery) return false;
+      if (currentVenueFilter === 'manual') {
+        return overrideState !== 'auto';
+      }
+      if (currentVenueFilter === 'clustered') {
+        return status === 'clustered';
+      }
+      if (currentVenueFilter === 'outlier') {
+        return status === 'outlier';
+      }
+      if (currentVenueFilter === 'missing_geocode') {
+        return status === 'missing_geocode' || status === 'pending' || status === 'not_found';
+      }
+      return true;
+    });
+  }
+
+  function ensureSelectedVenue(venues){
+    const filteredVenues = getFilteredVenues(venues);
+    const allIds = venues.map((venue) => getVenueId(venue));
+    const filteredIds = filteredVenues.map((venue) => getVenueId(venue));
+    if (!selectedVenueId && selectionExplicitlyCleared) {
+      return;
+    }
+    if (selectedVenueId && filteredIds.includes(String(selectedVenueId))) {
+      return;
+    }
+    if (selectedVenueId && allIds.includes(String(selectedVenueId)) && !filteredIds.length) {
+      return;
+    }
+    selectedVenueId = filteredIds[0] || allIds[0] || null;
+  }
+
+  function updateVenueCounts(venues, overrides){
+    if (venueTotalCount) {
+      venueTotalCount.textContent = venues.length;
+    }
+    if (venueManualCount) {
+      const manualCount = Array.isArray(overrides) && overrides.length
+        ? overrides.length
+        : venues.filter((venue) => String(getVenueOverrideState(venue)).toLowerCase() !== 'auto').length;
+      venueManualCount.textContent = manualCount;
+    }
+    if (venueExceptionCount) {
+      venueExceptionCount.textContent = venues.filter((venue) => isVenueException(venue)).length;
+    }
+  }
+
+  function renderOverridesList(overrides){
+    if (!overridesList || !overridesEmpty) return;
+    overridesList.innerHTML = '';
+    if (!Array.isArray(overrides) || !overrides.length) {
+      overridesEmpty.classList.remove('d-none');
+      return;
+    }
+    overridesEmpty.classList.add('d-none');
+    overrides.forEach((override) => {
+      const item = document.createElement('div');
+      item.className = 'list-group-item px-0 py-2';
+
+      const title = document.createElement('div');
+      title.className = 'fw-semibold small';
+      title.textContent = override.label || override.kind || 'Override manual';
+      item.appendChild(title);
+
+      const description = document.createElement('div');
+      description.className = 'text-muted small';
+      description.textContent = override.description || override.summary || override.source_name || 'Canvi manual aplicat al radi seleccionat.';
+      item.appendChild(description);
+
+      overridesList.appendChild(item);
+    });
+  }
+
+  function renderVenueRows(scenario){
+    if (!venueTbody) return;
+    const venues = getScenarioVenues(scenario);
+    ensureSelectedVenue(venues);
+    const filteredVenues = getFilteredVenues(venues);
+    venueTbody.innerHTML = '';
+
+    if (!filteredVenues.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.className = 'text-muted small';
+      td.textContent = venues.length
+        ? 'Cap seu coincideix amb el filtre actual.'
+        : 'Aquest radi encara no te detall de seus disponible.';
+      tr.appendChild(td);
+      venueTbody.appendChild(tr);
+      return;
+    }
+
+    filteredVenues.forEach((venue) => {
+      const venueId = getVenueId(venue);
+      const tr = document.createElement('tr');
+      tr.className = String(venueId) === String(selectedVenueId) ? 'table-primary' : '';
+
+      const nameCell = document.createElement('td');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-link btn-sm p-0 text-start';
+      button.textContent = getVenueName(venue);
+      button.addEventListener('click', () => {
+        selectVenue(venueId, { scenario });
+      });
+      nameCell.appendChild(button);
+
+      const address = document.createElement('div');
+      address.className = 'small text-muted';
+      address.textContent = getVenueAddress(venue);
+      nameCell.appendChild(address);
+
+      if (String(getVenueOverrideState(venue)).toLowerCase() !== 'auto') {
+        const badgeWrap = document.createElement('div');
+        badgeWrap.className = 'mt-1';
+        const badge = document.createElement('span');
+        badge.className = 'badge text-bg-warning';
+        badge.textContent = 'manual';
+        badgeWrap.appendChild(badge);
+        nameCell.appendChild(badgeWrap);
+      }
+
+      const clusterCell = document.createElement('td');
+      clusterCell.textContent = getVenueClusterLabel(venue);
+
+      const statusCell = document.createElement('td');
+      statusCell.textContent = formatStatusLabel(getVenueStatus(venue));
+
+      const matchesCell = document.createElement('td');
+      matchesCell.textContent = String(getVenueMatches(venue));
+
+      tr.appendChild(nameCell);
+      tr.appendChild(clusterCell);
+      tr.appendChild(statusCell);
+      tr.appendChild(matchesCell);
+      venueTbody.appendChild(tr);
+    });
+  }
+
+  function updateMergeOptions(venues, selectedVenue){
+    if (!venueMergeTargetSelect) return;
+    const selectedId = selectedVenue ? getVenueId(selectedVenue) : null;
+    const previousValue = venueMergeTargetSelect.value;
+    venueMergeTargetSelect.innerHTML = '<option value="">Selecciona una altra seu</option>';
+    venues
+      .filter((venue) => String(getVenueId(venue)) !== String(selectedId))
+      .forEach((venue) => {
+        const option = document.createElement('option');
+        option.value = getVenueId(venue);
+        option.textContent = `${getVenueName(venue)} · ${getVenueClusterLabel(venue)}`;
+        venueMergeTargetSelect.appendChild(option);
+      });
+    if (previousValue && Array.from(venueMergeTargetSelect.options).some((option) => option.value === previousValue)) {
+      venueMergeTargetSelect.value = previousValue;
+    }
+  }
+
+  function updateClusterMergeOptions(scenario, selectedVenue){
+    if (!venueMergeTargetSelect) return;
+    const selectedClusterId = selectedVenue ? selectedVenue.cluster_id : null;
+    const previousValue = venueMergeTargetSelect.value;
+    venueMergeTargetSelect.innerHTML = '<option value="">Selecciona un cluster</option>';
+    getScenarioClusters(scenario)
+      .filter((cluster) => String(cluster.cluster_id) !== String(selectedClusterId))
+      .forEach((cluster) => {
+        const option = document.createElement('option');
+        option.value = cluster.cluster_id;
+        const samples = Array.isArray(cluster.sample_names) && cluster.sample_names.length ? ` - ${cluster.sample_names.join(', ')}` : '';
+        option.textContent = `Cluster ${cluster.cluster_id} - ${cluster.venue_count || 0} seus${samples}`;
+        venueMergeTargetSelect.appendChild(option);
+      });
+    if (previousValue && Array.from(venueMergeTargetSelect.options).some((option) => option.value === previousValue)) {
+      venueMergeTargetSelect.value = previousValue;
+    }
+  }
+
+  function updateVenueDetail(scenario){
+    const venues = getScenarioVenues(scenario);
+    const overrides = getScenarioOverrides(scenario);
+    const actions = getScenarioActions(scenario);
+    const selectedVenue = venues.find((venue) => String(getVenueId(venue)) === String(selectedVenueId)) || null;
+
+    updateVenueCounts(venues, overrides);
+    renderOverridesList(overrides);
+    updateClusterMergeOptions(scenario, selectedVenue);
+
+    if (venueMergeEpsInput) venueMergeEpsInput.value = scenario?.eps_m ?? '';
+    if (venueIsolateEpsInput) venueIsolateEpsInput.value = scenario?.eps_m ?? '';
+    if (venueRestoreEpsInput) venueRestoreEpsInput.value = scenario?.eps_m ?? '';
+
+    const mergeUrl = actions.merge_url || actions.merge || '';
+    const isolateUrl = actions.isolate_url || actions.isolate || '';
+    const restoreUrl = actions.restore_url || actions.restore || '';
+
+    if (venueMergeForm) venueMergeForm.action = mergeUrl;
+    if (venueIsolateForm) venueIsolateForm.action = isolateUrl;
+    if (venueRestoreForm) venueRestoreForm.action = restoreUrl;
+
+    if (!selectedVenue) {
+      if (venueSelectedBadge) venueSelectedBadge.textContent = 'Cap seu seleccionada';
+      if (mapSelectedVenue) mapSelectedVenue.textContent = 'Selecciona una seu al workspace inferior per preparar overrides manuals.';
+      if (venueDetailName) venueDetailName.textContent = 'Cap seu seleccionada';
+      if (venueDetailAddress) venueDetailAddress.textContent = 'Selecciona una fila per veure\'n el detall operatiu.';
+      if (venueDetailStatus) venueDetailStatus.textContent = 'sense seleccio';
+      if (venueDetailStatus) venueDetailStatus.className = 'badge text-bg-secondary';
+      if (venueDetailCluster) venueDetailCluster.textContent = '-';
+      if (venueDetailOverride) venueDetailOverride.textContent = 'Automatic';
+      if (venueDetailMatches) venueDetailMatches.textContent = '0';
+      if (venueDetailModalities) venueDetailModalities.textContent = '-';
+      if (venueFeedback) {
+        venueFeedback.className = 'alert alert-light small py-2 mb-3';
+        venueFeedback.textContent = 'Selecciona una seu i, si cal, mou-la a un altre cluster del radi actual.';
+      }
+      if (venueMergeSourceInput) venueMergeSourceInput.value = '';
+      if (venueMergeTargetInput) venueMergeTargetInput.value = '';
+      if (venueIsolateSourceInput) venueIsolateSourceInput.value = '';
+      if (venueRestoreSourceInput) venueRestoreSourceInput.value = '';
+      if (venueClearSelectionButton) venueClearSelectionButton.disabled = true;
+      if (venueMergeButton) venueMergeButton.disabled = true;
+      if (venueIsolateButton) venueIsolateButton.disabled = true;
+      if (venueRestoreButton) venueRestoreButton.disabled = true;
+      return;
+    }
+
+    const venueId = getVenueId(selectedVenue);
+    const overrideState = getVenueOverrideState(selectedVenue);
+    const status = getVenueStatus(selectedVenue);
+    const modalities = getVenueModalities(selectedVenue);
+    const overrideSummary = getVenueOverrideSummary(selectedVenue);
+
+    if (venueSelectedBadge) venueSelectedBadge.textContent = getVenueName(selectedVenue);
+    if (mapSelectedVenue) {
+      mapSelectedVenue.textContent = `${getVenueName(selectedVenue)} · cluster ${getVenueClusterLabel(selectedVenue)} · ${formatStatusLabel(status)}`;
+    }
+    if (venueDetailName) venueDetailName.textContent = getVenueName(selectedVenue);
+    if (venueDetailAddress) venueDetailAddress.textContent = getVenueAddress(selectedVenue);
+    if (venueDetailStatus) {
+      venueDetailStatus.textContent = formatStatusLabel(status);
+      venueDetailStatus.className = `badge ${String(status).toLowerCase() === 'outlier' || String(status).toLowerCase() === 'missing_geocode' ? 'text-bg-warning' : 'text-bg-primary'}`;
+    }
+    if (venueDetailCluster) venueDetailCluster.textContent = getVenueClusterLabel(selectedVenue);
+    if (venueDetailOverride) venueDetailOverride.textContent = overrideSummary || formatOverrideLabel(overrideState);
+    if (venueDetailMatches) venueDetailMatches.textContent = String(getVenueMatches(selectedVenue));
+    if (venueDetailModalities) venueDetailModalities.textContent = modalities.length ? modalities.join(', ') : '-';
+
+    if (venueFeedback) {
+      venueFeedback.className = 'alert alert-light small py-2 mb-3';
+      venueFeedback.textContent = overrideSummary || 'Pots moure aquesta seu a un altre cluster, aillar-la o restaurar el comportament automatic.';
+    }
+
+    if (venueMergeSourceInput) venueMergeSourceInput.value = venueId;
+    if (venueIsolateSourceInput) venueIsolateSourceInput.value = venueId;
+    if (venueRestoreSourceInput) venueRestoreSourceInput.value = venueId;
+
+    if (venueClearSelectionButton) venueClearSelectionButton.disabled = false;
+    if (venueMergeButton) venueMergeButton.disabled = !(mergeUrl && venueMergeTargetSelect && venueMergeTargetSelect.value);
+    if (venueIsolateButton) venueIsolateButton.disabled = !isolateUrl;
+    if (venueRestoreButton) {
+      const hasManualOverride = String(overrideState).toLowerCase() !== 'auto';
+      venueRestoreButton.disabled = !restoreUrl || !hasManualOverride;
+    }
+  }
+
+  function renderVenuePanel(scenario){
+    renderVenueRows(scenario);
+    updateVenueDetail(scenario);
+  }
+
+  function selectVenue(addressId, options){
+    if (addressId === null || addressId === undefined || addressId === '') {
+      return;
+    }
+    selectionExplicitlyCleared = false;
+    selectedVenueId = String(addressId);
+    const resolvedScenario = (options && options.scenario) || findScenario(currentScenarioEps);
+    if (!resolvedScenario) {
+      return;
+    }
+    renderVenuePanel(resolvedScenario);
+    syncSelectedVenueToMap(resolvedScenario, {
+      skipImmediatePost: Boolean(options && options.syncMap === false),
+    });
+  }
+
+  function deselectVenue(options){
+    const resolvedScenario = (options && options.scenario) || findScenario(currentScenarioEps);
+    selectionExplicitlyCleared = true;
+    selectedVenueId = null;
+    if (!resolvedScenario) {
+      clearSelectedVenueOnMap(null);
+      return;
+    }
+    renderVenuePanel(resolvedScenario);
+    clearSelectedVenueOnMap(resolvedScenario, {
+      skipImmediatePost: Boolean(options && options.syncMap === false),
+    });
+  }
+
+  function updateScenarioSelection(eps, options){
     const scenario = findScenario(eps);
     if (!scenario) return;
+    const resolvedOptions = options || {};
+    const previousScenarioEps = currentScenarioEps;
+    currentScenarioEps = scenario.eps_m;
 
     if (scenarioSelect) {
       scenarioSelect.value = String(scenario.eps_m);
@@ -212,6 +892,9 @@
     }
     if (selectedEpsValue) {
       selectedEpsValue.textContent = `${scenario.eps_m} m`;
+    }
+    if (selectedEpsValueSide) {
+      selectedEpsValueSide.textContent = `${scenario.eps_m} m`;
     }
     if (metricClusterCount) {
       metricClusterCount.textContent = scenario.metrics.cluster_count ?? 0;
@@ -243,11 +926,27 @@
         `).join('');
       }
     }
-    if (mapFrame && scenario.map_url) {
+    if (resolvedOptions.selectedAddressId !== null && resolvedOptions.selectedAddressId !== undefined && resolvedOptions.selectedAddressId !== '') {
+      selectionExplicitlyCleared = false;
+      selectedVenueId = String(resolvedOptions.selectedAddressId);
+    }
+    renderVenuePanel(scenario);
+    const shouldReloadMap = Boolean(
+      mapFrame &&
+      scenario.map_url &&
+      resolvedOptions.reloadMap !== false &&
+      (resolvedOptions.forceMapReload || String(previousScenarioEps) !== String(scenario.eps_m))
+    );
+    if (shouldReloadMap) {
       mapFrame.src = `${scenario.map_url}${scenario.map_url.includes('?') ? '&' : '?'}_ts=${Date.now()}`;
     }
     if (mapOpenLink && scenario.map_url) {
       mapOpenLink.href = scenario.map_url;
+    }
+    if (!shouldReloadMap && resolvedOptions.syncMapSelection !== false) {
+      syncSelectedVenueToMap(scenario);
+    } else if (shouldReloadMap) {
+      syncSelectedVenueToMap(scenario, { skipImmediatePost: true });
     }
 
     document.querySelectorAll('[data-scenario-row="true"]').forEach((row) => {
@@ -296,7 +995,7 @@
       const payload = await response.json();
       updateProgress(payload.progress, payload.status, payload.message);
       updateUpdatedAt(typeof payload.updated_at === 'number' ? payload.updated_at : null);
-      if (payload.stalled && payload.stalled_message) {
+      if (payload.stalled && payload.stalled_message && stalledAlert) {
         stalledAlert.textContent = payload.stalled_message;
         stalledAlert.classList.remove('d-none');
       }
@@ -316,14 +1015,154 @@
   if (scenarioSelect) {
     scenarioSelect.addEventListener('change', (event) => updateScenarioSelection(event.target.value));
   }
+  if (mapFrame) {
+    mapFrame.addEventListener('load', () => {
+      const scenario = findScenario(currentScenarioEps);
+      if (!scenario) return;
+      if (!pendingMapHighlight && selectedVenueId) {
+        pendingMapHighlight = buildMapHighlightMessage(selectedVenueId, scenario.eps_m);
+      }
+      if (pendingMapHighlight) {
+        postMessageToMap(pendingMapHighlight, 150);
+      }
+      if (pendingMapViewRestore) {
+        restoreMapViewState(pendingMapViewRestore, 300);
+        pendingMapViewRestore = null;
+      }
+    });
+  }
+  if (venueSearchInput) {
+    venueSearchInput.addEventListener('input', (event) => {
+      currentVenueQuery = String(event.target.value || '').trim().toLowerCase();
+      const scenario = findScenario(currentScenarioEps);
+      if (scenario) {
+        renderVenuePanel(scenario);
+      }
+    });
+  }
+  if (venueClearSelectionButton) {
+    venueClearSelectionButton.addEventListener('click', () => {
+      deselectVenue();
+    });
+  }
+  if (venueFilterSelect) {
+    venueFilterSelect.addEventListener('change', (event) => {
+      currentVenueFilter = event.target.value || 'all';
+      const scenario = findScenario(currentScenarioEps);
+      if (scenario) {
+        renderVenuePanel(scenario);
+      }
+    });
+  }
+  if (venueMergeTargetSelect) {
+    venueMergeTargetSelect.addEventListener('change', (event) => {
+      if (venueMergeTargetInput) {
+        venueMergeTargetInput.value = event.target.value || '';
+      }
+      if (venueMergeButton) {
+        venueMergeButton.disabled = !(venueMergeForm && venueMergeForm.getAttribute('action') && event.target.value);
+      }
+    });
+  }
+  if (venueMergeForm) {
+    venueMergeForm.addEventListener('submit', (event) => {
+      const actionUrl = venueMergeForm.getAttribute('action');
+      const targetId = venueMergeTargetSelect ? venueMergeTargetSelect.value : '';
+      if (!actionUrl) {
+        event.preventDefault();
+        if (venueFeedback) {
+          venueFeedback.className = 'alert alert-warning small py-2 mb-3';
+          venueFeedback.textContent = 'El backend encara no ha exposat l\'endpoint per moure seus entre clusters.';
+        }
+        return;
+      }
+      if (!selectedVenueId || !targetId) {
+        event.preventDefault();
+        if (venueFeedback) {
+          venueFeedback.className = 'alert alert-warning small py-2 mb-3';
+          venueFeedback.textContent = 'Selecciona una seu origen i un cluster desti abans de moure-la.';
+        }
+        return;
+      }
+      if (venueMergeSourceInput) venueMergeSourceInput.value = selectedVenueId;
+      if (venueMergeTargetInput) venueMergeTargetInput.value = targetId;
+      savePreviewUiState('move');
+    });
+  }
+  if (venueIsolateForm) {
+    venueIsolateForm.addEventListener('submit', (event) => {
+      const actionUrl = venueIsolateForm.getAttribute('action');
+      if (!actionUrl || !selectedVenueId) {
+        event.preventDefault();
+        if (venueFeedback) {
+          venueFeedback.className = 'alert alert-warning small py-2 mb-3';
+          venueFeedback.textContent = !actionUrl
+            ? 'El backend encara no ha exposat l\'endpoint per aillar una seu.'
+            : 'Selecciona una seu abans d\'aplicar l\'override.';
+        }
+        return;
+      }
+      if (venueIsolateSourceInput) venueIsolateSourceInput.value = selectedVenueId;
+      savePreviewUiState('isolate');
+    });
+  }
+  if (venueRestoreForm) {
+    venueRestoreForm.addEventListener('submit', (event) => {
+      const actionUrl = venueRestoreForm.getAttribute('action');
+      if (!actionUrl || !selectedVenueId) {
+        event.preventDefault();
+        if (venueFeedback) {
+          venueFeedback.className = 'alert alert-warning small py-2 mb-3';
+          venueFeedback.textContent = !actionUrl
+            ? 'El backend encara no ha exposat l\'endpoint per restaurar una seu.'
+            : 'Selecciona una seu abans de restaurar l\'override.';
+        }
+        return;
+      }
+      if (venueRestoreSourceInput) venueRestoreSourceInput.value = selectedVenueId;
+      savePreviewUiState('restore');
+    });
+  }
+  window.addEventListener('message', (event) => {
+    const data = event && event.data ? event.data : null;
+    if (data && data.type === 'cluster_preview_map_view') {
+      if (!data.epsM || String(data.epsM) === String(currentScenarioEps)) {
+        latestMapViewState = {
+          epsM: data.epsM || currentScenarioEps,
+          center: data.center,
+          zoom: data.zoom,
+        };
+      }
+      return;
+    }
+    if (!data || data.type !== 'cluster_preview_select_address') {
+      return;
+    }
+    const requestedScenario = data.epsM && findScenario(data.epsM) ? findScenario(data.epsM) : findScenario(currentScenarioEps);
+    if (requestedScenario && String(requestedScenario.eps_m) !== String(currentScenarioEps)) {
+      updateScenarioSelection(requestedScenario.eps_m, {
+        selectedAddressId: data.addressId || null,
+      });
+      return;
+    }
+    if (data.addressId) {
+      selectVenue(data.addressId, {
+        scenario: requestedScenario || undefined,
+      });
+    }
+  });
   document.querySelectorAll('.preview-scenario-trigger').forEach((button) => {
     button.addEventListener('click', () => updateScenarioSelection(button.getAttribute('data-eps')));
   });
   if (scenarioSummaries.length) {
+    const restoredState = restorePreviewUiState();
     const initialScenario = scenarioSummaries.find((item) => item.selected) || scenarioSummaries[0];
-    if (initialScenario) {
+    if (!restoredState && initialScenario) {
       updateScenarioSelection(initialScenario.eps_m);
     }
+  }
+  if (currentScenarioEps !== null && findScenario(currentScenarioEps)) {
+    renderVenuePanel(findScenario(currentScenarioEps));
   }
   updateUpdatedAt(lastUpdatedAt);
   window.setInterval(() => updateUpdatedAt(null), 1000);

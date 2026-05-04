@@ -7,7 +7,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h2 class="mb-0">Execució #{{ run.id }}</h2>
-        <div class="text-muted small">Task: {{ run.task_id }}</div>
+        <div class="text-muted small">{{ run.name }} · Task: {{ run.task_id }}</div>
       </div>
       <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_upload' %}">Nova execució</a>
     </div>
@@ -49,8 +49,15 @@
           <div class="fw-bold mb-2">Accions</div>
           <div id="next-link" class="d-grid gap-2">
             {% if run.status == "done" %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_run_analytics' run.id %}">
+              Veure analitica del run
+            </a>
             <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">
               Veure i editar assignacions
+            </a>
+            {% elif run.status == "preview" %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_cluster_preview_detail' run.task_id %}">
+              Continuar preview
             </a>
             {% elif run.status == "failed" %}
             <div class="alert alert-danger small mb-0">
@@ -63,12 +70,66 @@
     </div>
 
     {% if run.status == "done" %}
+    {% if origin_summary %}
+    <div class="row g-2 mb-3">
+      <div class="col-12">
+        <div class="border rounded p-3">
+          <div class="fw-bold mb-2">Origen de les assignacions</div>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Origen</th>
+                  <th class="text-end">Partits</th>
+                  <th class="text-end">Sequencies</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in origin_summary %}
+                <tr>
+                  <td>
+                    <div>{{ item.label }}</div>
+                    <div class="text-muted small">{{ item.stage }}</div>
+                  </td>
+                  <td class="text-end">{{ item.match_count }}</td>
+                  <td class="text-end">{{ item.route_count }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% if run.result_summary.engine_name == "phased_route_solver" %}
+    <div class="row g-2 mb-3">
+      <div class="col-12">
+        <div class="border rounded p-3">
+          <div class="fw-bold mb-2">Motor per fases i rutes</div>
+          <div class="small mb-2">
+            Rutes seleccionades: <strong>{{ run.result_summary.selected_route_count|default:0 }}</strong>
+            Â· Candidats: <strong>{{ run.result_summary.candidate_route_count|default:0 }}</strong>
+            Â· Recomanacions: <strong>{{ run.result_summary.swap_recommendations|length }}</strong>
+          </div>
+          {% if run.result_summary.phase_solver_summary %}
+          <ul class="small mb-0">
+            {% for item in run.result_summary.phase_solver_summary %}
+            <li>{{ item.modality }}: {{ item.selected_match_count }} assignats, {{ item.unassigned_match_count }} pendents</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
     <div class="row g-2 mb-3">
       <div class="col-12">
         <div class="border rounded p-3">
           <div class="fw-bold mb-2">Validacions mobilitat</div>
           <div class="small mb-2">
             Warnings: <strong>{{ mobility_summary.mobility_warning_count }}</strong>
+            · Canvis de pista: <strong>{{ mobility_summary.pitch_change_warning_count }}</strong>
             · Errors: <strong>{{ mobility_summary.mobility_error_count }}</strong>
           </div>
           {% if mobility_summary.mobility_error_count %}
@@ -78,7 +139,7 @@
           {% endif %}
           {% if mobility_summary.mobility_warning_count %}
           <div class="alert alert-warning small mb-2">
-            Hi ha tutors que atenen mes d'un cluster de forma valida.
+            Hi ha avisos informatius de mobilitat per revisar.
           </div>
           {% endif %}
           {% if mobility_summary.mobility_warnings or mobility_summary.mobility_errors %}
@@ -228,11 +289,15 @@
         progressBar.style.width = '100%';
         setStep("import","done"); setStep("engine","done"); setStep("map","done"); setStep("done","done");
 
-        nextLink.innerHTML = `
-          <a class="btn btn-sm btn-outline-primary" href="/designacions/run/${runId}/assignments/">
-            Veure i editar assignacions
-          </a>
-        `;
+        if (data.detail_url) {
+          nextLink.innerHTML = `<a class="btn btn-sm btn-outline-primary" href="${data.detail_url}">Continuar preview</a>`;
+        } else {
+          nextLink.innerHTML = `
+            <a class="btn btn-sm btn-outline-primary" href="/designacions/run/${runId}/assignments/">
+              Veure i editar assignacions
+            </a>
+          `;
+        }
         if (es) es.close();
         return;
       }

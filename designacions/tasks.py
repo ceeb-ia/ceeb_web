@@ -213,10 +213,25 @@ def build_cluster_preview_task(
     path_disponibilitats: str,
     path_partits: str,
     params: dict | None = None,
+    run_id: int | None = None,
 ):
     params = params or {}
+    if run_id is None:
+        try:
+            run_id = int(params.get("preview_run_id"))
+        except (TypeError, ValueError):
+            run_id = None
+    run = DesignationRun.objects.filter(id=run_id).first() if run_id is not None else None
 
     try:
+        if run is not None:
+            run.status = "processing"
+            run.map_status = "processing"
+            run.started_at = timezone.now()
+            run.params = params
+            run.error = ""
+            run.save(update_fields=["status", "map_status", "started_at", "params", "error"])
+
         async_to_sync(_write_job)(
             task_id,
             {
@@ -260,10 +275,23 @@ def build_cluster_preview_task(
                 "map_path": map_path,
             },
         )
+        if run is not None:
+            run.status = "preview"
+            run.map_status = "ready" if map_path else "failed"
+            run.result_summary = payload
+            run.map_path = map_path
+            run.finished_at = timezone.now()
+            run.save(update_fields=["status", "map_status", "result_summary", "map_path", "finished_at"])
         async_to_sync(push_log)(task_id, "Previsualitzacio completada.", 100, status="done")
         return {"preview_id": task_id, "map_path": map_path, "result": payload}
 
     except Exception as exc:
+        if run is not None:
+            run.status = "failed"
+            run.map_status = "failed"
+            run.error = str(exc)
+            run.finished_at = timezone.now()
+            run.save(update_fields=["status", "map_status", "error", "finished_at"])
         async_to_sync(_write_job)(
             task_id,
             {

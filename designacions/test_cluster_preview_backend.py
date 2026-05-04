@@ -16,6 +16,9 @@ from .views import (
     cluster_preview_create_view,
     cluster_preview_detail_view,
     cluster_preview_map_view,
+    cluster_preview_override_isolate_view,
+    cluster_preview_override_merge_view,
+    cluster_preview_override_restore_view,
     cluster_preview_run_view,
     cluster_preview_status_view,
 )
@@ -92,11 +95,13 @@ class ClusterPreviewBackendViewTests(SimpleTestCase):
                 "date_from": "2026-04-17",
                 "date_to": "2026-04-19",
                 "fase": "FS2",
+                "run_name": "Preview prova",
             },
         )
 
         with self.settings(MEDIA_ROOT=self.media_tmp.name), \
              patch("designacions.views.uuid.uuid4", return_value=SimpleNamespace(hex="preview-123")), \
+             patch("designacions.views.DesignationRun.objects.create", return_value=SimpleNamespace(id=55, name="Preview prova")) as create_run_mock, \
              patch("designacions.views.write_job_sync") as write_job_sync_mock, \
              patch("designacions.views.build_cluster_preview_task.delay") as delay_mock:
             response = cluster_preview_create_view(request)
@@ -114,12 +119,14 @@ class ClusterPreviewBackendViewTests(SimpleTestCase):
         self.assertTrue(payload["status_url"].endswith("/designacions/cluster-preview/preview-123/status/"))
         self.assertTrue(payload["map_url"].endswith("/designacions/cluster-preview/preview-123/map/"))
 
+        create_run_mock.assert_called_once()
         write_job_sync_mock.assert_called_once()
         delay_args = delay_mock.call_args.args
         self.assertEqual(delay_args[0], "preview-123")
         self.assertIn("preview-123__preview__disponibilitats", delay_args[1])
         self.assertIn("preview-123__preview__partits", delay_args[2])
         self.assertEqual(delay_args[3]["date_from"], "2026-04-17")
+        self.assertEqual(delay_args[3]["preview_run_id"], 55)
 
     def test_cluster_preview_detail_view_exposes_done_result(self):
         request = self.factory.get(reverse("designacions_cluster_preview_detail", args=["preview-123"]))
@@ -237,6 +244,7 @@ class ClusterPreviewBackendViewTests(SimpleTestCase):
         }
 
         with patch("designacions.views.read_job_sync", return_value=job), \
+             patch("designacions.views.load_preview_overrides", return_value=[{"kind": "isolate_address", "source_address_id": 11}]), \
              patch("designacions.views.uuid.uuid4", return_value=SimpleNamespace(hex="run-123")), \
              patch("designacions.views.DesignationRun.objects.create", return_value=SimpleNamespace(id=77)) as create_run_mock, \
              patch("designacions.views.write_job_sync") as write_job_sync_mock, \
@@ -248,6 +256,7 @@ class ClusterPreviewBackendViewTests(SimpleTestCase):
         create_run_mock.assert_called_once()
         self.assertEqual(create_run_mock.call_args.kwargs["params"]["cluster_eps_m"], 650)
         self.assertEqual(create_run_mock.call_args.kwargs["params"]["source_preview_id"], "preview-123")
+        self.assertEqual(create_run_mock.call_args.kwargs["params"]["preview_cluster_overrides"][0]["kind"], "isolate_address")
         write_job_sync_mock.assert_called_once()
         delay_args = delay_mock.call_args.args
         self.assertEqual(delay_args[0], 77)
@@ -256,8 +265,60 @@ class ClusterPreviewBackendViewTests(SimpleTestCase):
         self.assertEqual(delay_args[3], path_partits.name)
         self.assertEqual(delay_args[4]["cluster_eps_m"], 650)
 
+    def test_cluster_preview_override_views_update_static_result(self):
+        path_partits = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        path_disponibilitats = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        self.addCleanup(lambda: os.path.exists(path_partits.name) and os.remove(path_partits.name))
+        self.addCleanup(lambda: os.path.exists(path_disponibilitats.name) and os.remove(path_disponibilitats.name))
+        path_partits.close()
+        path_disponibilitats.close()
+
+        job = {
+            "status": "done",
+            "params": {"cluster_eps_m": 500.0},
+            "path_partits": path_partits.name,
+            "path_disponibilitats": path_disponibilitats.name,
+        }
+
+        merge_request = self.factory.post(
+            reverse("designacions_cluster_preview_override_merge", args=["preview-123"]),
+            data={"selected_eps_m": "650", "source_venue_id": "10", "target_cluster_id": "4"},
+        )
+        isolate_request = self.factory.post(
+            reverse("designacions_cluster_preview_override_isolate", args=["preview-123"]),
+            data={"selected_eps_m": "650", "source_venue_id": "10"},
+        )
+        restore_request = self.factory.post(
+            reverse("designacions_cluster_preview_override_restore", args=["preview-123"]),
+            data={"selected_eps_m": "650", "source_venue_id": "10"},
+        )
+
+        with patch("designacions.views.read_job_sync", return_value=job), \
+             patch("designacions.views.load_preview_overrides", return_value=[]), \
+             patch("designacions.views.add_preview_override", return_value=[{"kind": "merge_with_address", "source_address_id": 10, "target_cluster_id": 4, "eps_m": 650}]) as add_override_mock, \
+             patch("designacions.views.remove_preview_override", return_value=[]) as remove_override_mock, \
+             patch("designacions.views.write_job_sync") as write_job_sync_mock, \
+             patch("designacions.views._apply_static_preview_overrides", return_value={"map_path": "designacions/previews/preview-123__eps_650.html"}) as static_update_mock, \
+             patch("designacions.views.build_cluster_preview_task.delay") as delay_mock:
+            merge_response = cluster_preview_override_merge_view(merge_request, "preview-123")
+            isolate_response = cluster_preview_override_isolate_view(isolate_request, "preview-123")
+            restore_response = cluster_preview_override_restore_view(restore_request, "preview-123")
+
+        self.assertEqual(merge_response.status_code, 302)
+        self.assertEqual(isolate_response.status_code, 302)
+        self.assertEqual(restore_response.status_code, 302)
+        self.assertEqual(add_override_mock.call_count, 2)
+        remove_override_mock.assert_called_once_with("preview-123", source_address_id=10, eps_m=650)
+        self.assertEqual(write_job_sync_mock.call_count, 3)
+        self.assertEqual(static_update_mock.call_count, 3)
+        delay_mock.assert_not_called()
+
 
 class ClusterPreviewBackendTaskTests(SimpleTestCase):
+    def setUp(self):
+        self.media_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.media_tmp.cleanup)
+
     def _async_to_sync_wrapper(self, func):
         def wrapped(*args, **kwargs):
             return asyncio.run(func(*args, **kwargs))
@@ -311,7 +372,7 @@ class ClusterPreviewBackendTaskTests(SimpleTestCase):
         self.assertEqual(captured["path_disponibilitats"], "tmp/disponibilitats.xlsx")
         self.assertEqual(captured["path_partits"], "tmp/partits.xlsx")
         self.assertEqual(captured["params"]["cluster_eps_m"], 500.0)
-        self.assertTrue(captured["out_map_abs"].endswith("designacions\\previews\\preview-123.html"))
+        self.assertTrue(captured["out_map_abs"].replace("\\", "/").endswith("designacions/previews/preview-123.html"))
         write_map_mock.assert_not_called()
         self.assertEqual(writes[0][1]["status"], "processing")
         self.assertEqual(writes[-1][1]["status"], "done")

@@ -19,6 +19,7 @@ from .contracts import PreviewAddressPoint, PreviewResult, PreviewScenario
 from .engine import cluster_points_dataframe
 from .maps import render_preview_map
 from .metrics import build_preview_metrics
+from .overrides import apply_preview_overrides, enrich_preview_overrides, resolve_preview_overrides
 from .selectors import build_eps_options, pick_recommended_scenario
 
 
@@ -233,6 +234,7 @@ def _scenario_map_abs_path(base_out_map_abs: str, eps_m: int) -> str:
 
 def build_cluster_preview(
     *,
+    preview_id: str | None = None,
     path_disponibilitats: str | None = None,
     path_partits: str | None = None,
     params: dict | None = None,
@@ -284,17 +286,34 @@ def build_cluster_preview(
     preview_counts = _build_preview_counts(points_df, df_partits_preview)
     availability_counts = _build_availability_counts(df_dispos)
     geocoding_issues = _build_geocoding_issues(points_df)
+    raw_overrides = params.get("cluster_overrides") or params.get("preview_cluster_overrides") or []
+    base_inline_overrides = raw_overrides if isinstance(raw_overrides, list) else []
+    effective_overrides = resolve_preview_overrides(
+        preview_id=preview_id,
+        inline_overrides=base_inline_overrides,
+        eps_m=cluster_eps_m,
+    )
+    override_payload = enrich_preview_overrides(points_df, effective_overrides)
 
     _log(task_id, "Calculant escenaris de clusteritzacio.", 58)
     if out_map_abs:
         _log(task_id, "Renderitzant mapes de preview per radi.", 82)
     scenarios = []
     for eps_m in eps_options:
+        scenario_overrides = resolve_preview_overrides(
+            preview_id=preview_id,
+            inline_overrides=base_inline_overrides,
+            eps_m=int(eps_m),
+        )
         scenario_points_df = cluster_points_dataframe(
             points_df,
             eps_m=eps_m,
             min_samples=cluster_min_samples,
             max_points_per_subcluster=max_partits_subgrup,
+        )
+        scenario_points_df, scenario_override_effects, scenario_override_summary = apply_preview_overrides(
+            scenario_points_df,
+            scenario_overrides,
         )
         scenario_matches_df = _attach_clusters_to_matches(df_partits_preview, scenario_points_df)
         metrics = build_preview_metrics(
@@ -320,6 +339,13 @@ def build_cluster_preview(
                 modalities=list(row.get("modalities") or []),
                 cluster=int(row["cluster"]) if pd.notna(row.get("cluster")) and int(row.get("cluster")) != -1 else None,
                 cluster_status=str(row.get("cluster_status", "") or "pending"),
+                auto_cluster=int(row["auto_cluster"]) if pd.notna(row.get("auto_cluster")) and int(row.get("auto_cluster")) != -1 else None,
+                auto_cluster_status=str(row.get("auto_cluster_status", "") or "pending"),
+                is_manual=bool(row.get("is_manual", False)),
+                manual_role=str(row.get("manual_role")) if row.get("manual_role") else None,
+                cluster_origin=str(row.get("cluster_origin", "") or "automatic"),
+                manual_override_ids=list(row.get("manual_override_ids") or []),
+                manual_override_kinds=list(row.get("manual_override_kinds") or []),
             )
             for _, row in scenario_points_df.iterrows()
         ]
@@ -336,6 +362,10 @@ def build_cluster_preview(
                 gap_diff_pitch_min=gap_diff_pitch_min,
                 max_partits_subgrup=max_partits_subgrup,
             ),
+            active_overrides=scenario_override_effects,
+            manual_point_count=int(scenario_override_summary.get("manual_point_count") or 0),
+            manual_cluster_count=int(scenario_override_summary.get("manual_cluster_count") or 0),
+            override_summary=scenario_override_summary,
         )
         if out_map_abs:
             saved_abs_path = render_preview_map(scenario, _scenario_map_abs_path(out_map_abs, int(eps_m)))
@@ -366,6 +396,8 @@ def build_cluster_preview(
         "scenario_count": len(scenarios),
         "fresh_geocoded_points": int(sum(1 for scenario in scenarios[:1] for point in scenario.points if point.is_fresh_geocode)),
         "missing_geocode_points": int(len(geocoding_issues)),
+        "active_override_count": len(override_payload),
+        "manual_point_count": int(selected_scenario.manual_point_count) if selected_scenario else 0,
     }
 
     _log(task_id, "Preview de clusters preparat.", 92)
@@ -379,4 +411,11 @@ def build_cluster_preview(
         geocoding_issues=geocoding_issues,
         preview_counts=preview_counts,
         availability_counts=availability_counts,
+        cluster_overrides=override_payload,
+        override_summary={
+            "active_override_count": len(override_payload),
+            "override_kinds": sorted({override.kind for override in override_payload}),
+            "manual_point_count": int(selected_scenario.manual_point_count) if selected_scenario else 0,
+            "manual_cluster_count": int(selected_scenario.manual_cluster_count) if selected_scenario else 0,
+        },
     )

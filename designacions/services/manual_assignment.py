@@ -15,6 +15,7 @@ from .assignment_feasibility import (
     DEFAULT_GAP_DIFF_PITCH_MIN,
     DEFAULT_GAP_SAME_PITCH_MIN,
     availability_covers_descriptors,
+    availability_respects_buffer_descriptors,
     build_match_descriptor,
     combine_date_time,
     inspect_mobility_transitions,
@@ -39,13 +40,20 @@ MATCH_LEVEL_ORDER = [
 WARNING_MESSAGES = {
     "modality_mismatch": "Modalitat diferent de la del partit.",
     "outside_availability_window": "Fora de la franja de disponibilitat del tutor.",
+    "availability_end_buffer_warning": "Dins la disponibilitat declarada, pero massa a prop de l'hora final. Cal confirmar-ho amb el tutor.",
     "same_cluster_gap_violation": "Gap insuficient per atendre dos partits dins del mateix cluster.",
+    "same_cluster_pitch_change_warning": "Canvi de pista dins del mateix cluster. Assignacio viable, pendent de revisio.",
+    "cross_cluster_with_vehicle_warning": "Canvi de cluster amb vehicle i gap suficient. Assignacio viable, pendent de revisio.",
     "cross_cluster_gap_violation": "Gap insuficient per canviar de cluster.",
     "cross_cluster_without_vehicle": "Canvi de cluster no permes per a un tutor sense vehicle.",
     "missing_cluster_for_mobility_validation": "Falta cluster per validar la mobilitat del tutor.",
+    "missing_cluster_mobility_warning": "Falta cluster o geocodificacio per validar completament el canvi de pista.",
     "outlier_cluster_for_mobility_validation": "La ubicacio ha quedat fora de cluster i no es pot validar la mobilitat del tutor.",
+    "outlier_mobility_warning": "Almenys una ubicacio del canvi de pista no te cluster fiable.",
     "missing_availability_for_day": "Sense disponibilitat registrada per al dia del partit.",
     "missing_match_datetime": "No es pot validar l'horari del partit.",
+    "time_conflict_same_pitch": "Solapament o gap insuficient entre partits a la mateixa pista.",
+    "time_conflict_diff_pitch": "Solapament o gap insuficient entre partits en pistes diferents.",
 }
 
 REASON_MESSAGES = {
@@ -56,6 +64,19 @@ REASON_MESSAGES = {
 _FAVORITE_TUTOR_CODE_FRAGMENT = "5413"
 _FAVORITE_CLUSTER_IDS = {"12", "13", "9", "6", "10", "15"}
 LOAD_BALANCING_PENALTY_PER_ASSIGNMENT = 50
+
+INFORMATIONAL_MOBILITY_REASON_CODES = {
+    "same_cluster_pitch_change_warning",
+    "cross_cluster_with_vehicle_warning",
+    "missing_cluster_mobility_warning",
+    "outlier_mobility_warning",
+}
+PITCH_CHANGE_WARNING_REASON_CODES = {
+    "same_cluster_pitch_change_warning",
+    "cross_cluster_with_vehicle_warning",
+    "missing_cluster_mobility_warning",
+    "outlier_mobility_warning",
+}
 
 
 @dataclass(frozen=True)
@@ -384,8 +405,8 @@ def build_manual_assignment_context(run, referees_with_counts=None):
     }
 
 
-def _availability_covers_match(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
-    descriptor = build_match_descriptor(
+def _availability_descriptor_for_match(match):
+    return build_match_descriptor(
         identifier=match.id,
         date_value=match.date,
         time_value=match.hour_raw,
@@ -393,8 +414,18 @@ def _availability_covers_match(raw: dict | None, match, availability_end_buffer_
         modality=match.modality,
         category=match.category,
     )
-    return availability_covers_descriptors(raw, [descriptor], availability_end_buffer_min)
 
+
+def _availability_covers_match(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
+    return availability_covers_descriptors(raw, [_availability_descriptor_for_match(match)], availability_end_buffer_min)
+
+
+def _availability_respects_buffer(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
+    return availability_respects_buffer_descriptors(
+        raw,
+        [_availability_descriptor_for_match(match)],
+        availability_end_buffer_min,
+    )
 
 def _build_assignment_descriptor(assignment, match_location_by_match_id):
     match = assignment.match
@@ -435,6 +466,43 @@ def _detect_mobility_conflicts(
         gap_diff_pitch_min=gap_diff_pitch_min,
         gap_diff_cluster_min=gap_diff_cluster_min,
     )
+
+
+def _is_informational_mobility_issue(issue) -> bool:
+    reason_code = _normalize_text(getattr(issue, "reason_code", ""))
+    return reason_code in INFORMATIONAL_MOBILITY_REASON_CODES or reason_code.endswith("_warning")
+
+
+def _is_pitch_change_warning(reason_code: str) -> bool:
+    normalized = _normalize_text(reason_code)
+    return normalized in PITCH_CHANGE_WARNING_REASON_CODES or "pitch_change" in normalized
+
+
+def _mobility_issue_summary_item(issue, referee_id, referee, left_assignment, right_assignment) -> dict:
+    return {
+        "referee_id": referee_id,
+        "referee_code": _referee_field(referee, "code"),
+        "referee_name": _referee_field(referee, "name"),
+        "reason_code": issue.reason_code,
+        "message": WARNING_MESSAGES.get(issue.reason_code, issue.reason_code),
+        "clusters": [cluster for cluster in [issue.left_cluster_id, issue.right_cluster_id] if cluster is not None],
+        "match_codes": [
+            left_assignment.match.code if left_assignment else str(issue.left_identifier),
+            right_assignment.match.code if right_assignment else str(issue.right_identifier),
+        ],
+        "assignment_ids": [
+            left_assignment.id if left_assignment else None,
+            right_assignment.id if right_assignment else None,
+        ],
+        "manual_override": bool(
+            (left_assignment and left_assignment.manual_override_warning)
+            or (right_assignment and right_assignment.manual_override_warning)
+        ),
+        "required_gap_min": issue.required_gap_min,
+        "actual_gap_min": issue.actual_gap_min,
+        "same_pitch": issue.same_pitch,
+        "severity": getattr(issue, "severity", "blocking"),
+    }
 
 
 def classify_level_fit(match, referee) -> dict:
@@ -542,7 +610,8 @@ def diagnose_assignment_for_referee(
 
     match = assignment.match
     reason_codes = []
-    warning_codes = []
+    blocking_codes = []
+    advisory_codes = []
     availability = availability_lookup.get((referee.id, match.date)) if match.date else None
 
     match_dt = _match_datetime(match)
@@ -551,14 +620,16 @@ def diagnose_assignment_for_referee(
     referee_modality = _normalize_text(_referee_field(referee, "modality")).lower()
     match_modality = _normalize_text(match.modality).lower()
     if referee_modality and match_modality and referee_modality != match_modality:
-        warning_codes.append("modality_mismatch")
+        blocking_codes.append("modality_mismatch")
 
     if not has_match_datetime:
-        warning_codes.append("missing_match_datetime")
+        blocking_codes.append("missing_match_datetime")
     elif availability is None:
-        warning_codes.append("missing_availability_for_day")
+        blocking_codes.append("missing_availability_for_day")
     elif not _availability_covers_match(availability, match, availability_end_buffer_min):
-        warning_codes.append("outside_availability_window")
+        blocking_codes.append("outside_availability_window")
+    elif not _availability_respects_buffer(availability, match, availability_end_buffer_min):
+        advisory_codes.append("availability_end_buffer_warning")
 
     mobility_issues = _detect_mobility_conflicts(
         assignment,
@@ -569,11 +640,17 @@ def diagnose_assignment_for_referee(
         gap_diff_pitch_min=gap_diff_pitch_min,
         gap_diff_cluster_min=gap_diff_cluster_min,
     )
-    warning_codes.extend(issue.reason_code for issue in mobility_issues)
+    for issue in mobility_issues:
+        if _is_informational_mobility_issue(issue):
+            advisory_codes.append(issue.reason_code)
+        else:
+            blocking_codes.append(issue.reason_code)
 
+    warning_codes = []
     seen_warning_codes = set()
-    for code in warning_codes:
+    for code in [*blocking_codes, *advisory_codes]:
         if code not in seen_warning_codes:
+            warning_codes.append(code)
             reason_codes.append(code)
             seen_warning_codes.add(code)
 
@@ -591,7 +668,9 @@ def diagnose_assignment_for_referee(
         "assignment": assignment,
         "referee": referee,
         "availability": availability,
-        "is_valid": not warning_codes,
+        "is_valid": not blocking_codes,
+        "blocking_reasons": list(dict.fromkeys(blocking_codes)),
+        "advisory_reasons": list(dict.fromkeys(advisory_codes)),
         "warning_reasons": warning_codes,
         "warning_messages": warning_messages,
         "warning_text": "; ".join(warning_messages),
@@ -617,6 +696,7 @@ def build_run_mobility_summary(run, *, context=None):
 
     warnings = []
     errors = []
+    pitch_change_warnings = []
     warning_assignment_ids = defaultdict(list)
     error_assignment_ids = defaultdict(list)
     warning_counts_by_referee = Counter()
@@ -659,11 +739,14 @@ def build_run_mobility_summary(run, *, context=None):
                 "referee_id": referee_id,
                 "referee_code": _referee_field(referee, "code"),
                 "referee_name": _referee_field(referee, "name"),
+                "reason_code": "cross_cluster_with_vehicle_warning",
                 "clusters": valid_clusters,
                 "match_codes": sorted_match_codes,
-                "message": f"Aten partits de clusters diferents de forma valida ({', '.join(valid_clusters)}).",
+                "assignment_ids": [assignment.id for assignment in assignments],
+                "message": WARNING_MESSAGES["cross_cluster_with_vehicle_warning"],
             }
             warnings.append(warning)
+            pitch_change_warnings.append(warning)
             warning_counts_by_referee[referee_id] += 1
             for assignment in assignments:
                 warning_assignment_ids[assignment.id].append(warning)
@@ -671,41 +754,32 @@ def build_run_mobility_summary(run, *, context=None):
         for issue in issues:
             left_assignment = assignment_by_id.get(str(issue.left_identifier))
             right_assignment = assignment_by_id.get(str(issue.right_identifier))
-            error = {
-                "referee_id": referee_id,
-                "referee_code": _referee_field(referee, "code"),
-                "referee_name": _referee_field(referee, "name"),
-                "reason_code": issue.reason_code,
-                "message": WARNING_MESSAGES.get(issue.reason_code, issue.reason_code),
-                "clusters": [cluster for cluster in [issue.left_cluster_id, issue.right_cluster_id] if cluster is not None],
-                "match_codes": [
-                    left_assignment.match.code if left_assignment else str(issue.left_identifier),
-                    right_assignment.match.code if right_assignment else str(issue.right_identifier),
-                ],
-                "assignment_ids": [
-                    left_assignment.id if left_assignment else None,
-                    right_assignment.id if right_assignment else None,
-                ],
-                "manual_override": bool(
-                    (left_assignment and left_assignment.manual_override_warning)
-                    or (right_assignment and right_assignment.manual_override_warning)
-                ),
-                "required_gap_min": issue.required_gap_min,
-                "actual_gap_min": issue.actual_gap_min,
-                "same_pitch": issue.same_pitch,
-            }
-            errors.append(error)
+            item = _mobility_issue_summary_item(issue, referee_id, referee, left_assignment, right_assignment)
+            if _is_informational_mobility_issue(issue):
+                warnings.append(item)
+                if _is_pitch_change_warning(issue.reason_code):
+                    pitch_change_warnings.append(item)
+                warning_counts_by_referee[referee_id] += 1
+                if left_assignment is not None:
+                    warning_assignment_ids[left_assignment.id].append(item)
+                if right_assignment is not None:
+                    warning_assignment_ids[right_assignment.id].append(item)
+                continue
+
+            errors.append(item)
             error_counts_by_referee[referee_id] += 1
             if left_assignment is not None:
-                error_assignment_ids[left_assignment.id].append(error)
+                error_assignment_ids[left_assignment.id].append(item)
             if right_assignment is not None:
-                error_assignment_ids[right_assignment.id].append(error)
+                error_assignment_ids[right_assignment.id].append(item)
 
     return {
         "mobility_warning_count": len(warnings),
         "mobility_error_count": len(errors),
         "mobility_warnings": warnings,
         "mobility_errors": errors,
+        "pitch_change_warning_count": len(pitch_change_warnings),
+        "pitch_change_warnings": pitch_change_warnings,
         "warning_assignment_ids": dict(warning_assignment_ids),
         "error_assignment_ids": dict(error_assignment_ids),
         "warning_counts_by_referee": dict(warning_counts_by_referee),
@@ -722,6 +796,8 @@ def update_run_mobility_summary(run, *, context=None, save: bool = True):
             "mobility_error_count": summary["mobility_error_count"],
             "mobility_warnings": summary["mobility_warnings"],
             "mobility_errors": summary["mobility_errors"],
+            "pitch_change_warning_count": summary["pitch_change_warning_count"],
+            "pitch_change_warnings": summary["pitch_change_warnings"],
         }
     )
     run.result_summary = merged
