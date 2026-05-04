@@ -1,10 +1,10 @@
 {% if off_program %}
-<div id="off-program-card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
+<div id="off-program-card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripció' }}">
   <div class="d-flex justify-content-between align-items-center">
     <div>
       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
       <div class="judge-meta">
-        Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
+        Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
       </div>
       <div class="judge-exercise-chip-row">
         {% for ex in exercicis %}
@@ -22,12 +22,12 @@
   </div>
 </div>
 {% else %}
-<div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.name|default:'Inscripcio' }}">
+<div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.name|default:'Inscripció' }}">
   <div class="d-flex justify-content-between align-items-center">
     <div>
       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
       <div class="judge-meta">
-        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
+        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
       </div>
       {% if team_subject_mode and ins.members %}
       <div class="judge-meta">

@@ -6,7 +6,7 @@
           {% if not judge_kiosk %}<span class="judge-portal-mode">Entrada per QR</span>{% endif %}
         </h2>
         <div class="judge-portal-context">
-          <span>Competicio: <span class="fw-semibold">{{ competicio.nom }}</span></span>
+          <span>Competició: <span class="fw-semibold">{{ competicio.nom }}</span></span>
           {% if token_obj.label %}
             <span>QR: <span class="fw-semibold">{{ token_obj.label }}</span></span>
           {% endif %}
@@ -19,11 +19,11 @@
         {% endif %}
         <div class="mt-2">
           <div class="judge-meta">
-            Ordre segons la franja assignada a cada {% if team_subject_mode %}serie{% else %}grup{% endif %}.
+            Ordre segons la franja assignada a cada {% if team_subject_mode %}sèrie{% else %}grup{% endif %}.
             {% if exercicis|length > 1 and portal_display_mode != "competition_order" %}
               Exercici inicial obert: {{ exercici }}.
             {% elif exercicis|length > 1 %}
-              Mode ordre competicio: exercicis desplegats en sequencia.
+              Mode ordre competició: exercicis desplegats en seqüència.
             {% endif %}
             {% if franja_override %}
               Override actiu: {{ franja_override.titol|default:"Franja" }} - {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
@@ -31,8 +31,8 @@
           </div>
           {% if exercicis|length > 1 %}
           <div class="judge-view-mode mt-2">
-            <span class="judge-view-mode-label">Visualitzacio</span>
-            <select class="form-select form-select-sm judge-view-mode-select" id="portalViewModeSelect" aria-label="Canviar visualitzacio del portal">
+            <span class="judge-view-mode-label">Visualització</span>
+            <select class="form-select form-select-sm judge-view-mode-select" id="portalViewModeSelect" aria-label="Canviar visualització del portal">
               {% for value, label in portal_display_mode_options %}
                 <option value="{{ value }}" {% if value == portal_display_mode %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
@@ -49,18 +49,18 @@
         <button
           type="button"
           class="btn btn-sm btn-primary"
-          onclick="if(window.openCompetitionModeFromCurrentGroup){ openCompetitionModeFromCurrentGroup(); } else { alert('Cal incloure els scripts del mode competicio.'); }"
+          onclick="if(window.openCompetitionModeFromCurrentGroup){ openCompetitionModeFromCurrentGroup(); } else { alert('Cal incloure els scripts del mode competició.'); }"
         >
-          Mode competicio
+          Mode competició
         </button>
         <button
           type="button"
           class="judge-nav-toggle"
           id="insNavToggle"
-          aria-label="Obrir navegacio d'inscripcions"
+          aria-label="Obrir navegació d'inscripcions"
           aria-controls="insNavDrawer"
           aria-expanded="false"
-          title="Navegacio"
+          title="Navegació"
         >
           <span class="judge-nav-toggle-icon" aria-hidden="true">&#9662;</span>
         </button>
@@ -68,7 +68,7 @@
           type="button"
           class="judge-support-toggle"
           id="supportNavToggle"
-          aria-label="Obrir suport tecnic"
+          aria-label="Obrir suport tècnic"
           aria-controls="supportNavDrawer"
           aria-expanded="false"
           title="Suport"

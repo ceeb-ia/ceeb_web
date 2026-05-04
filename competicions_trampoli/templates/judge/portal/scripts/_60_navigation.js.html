@@ -166,14 +166,14 @@
           a.dataset.exercici = rowExercise;
           a.innerHTML = `
             <span class="judge-nav-link-main">
-              <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)} · ${escHtml(`Ex${rowExercise}`)}</span>
+              <span class="judge-nav-label">${escHtml(row.name || `Inscripció ${row.insId}`)} · ${escHtml(`Ex${rowExercise}`)}</span>
               <span class="judge-nav-status is-empty" data-nav-entry-status="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(rowExercise)}">Pendent</span>
             </span>
           `;
         } else {
           a.innerHTML = `
             <span class="judge-nav-link-main">
-              <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)}</span>
+              <span class="judge-nav-label">${escHtml(row.name || `Inscripció ${row.insId}`)}</span>
               <span class="judge-nav-status is-empty" data-nav-status="1" data-ins-id="${escHtml(row.insId)}">Pendent</span>
             </span>
             <span class="judge-nav-ex-row">

@@ -54,9 +54,12 @@
     const total = COMPETITION_MODE.queue.length;
     const pos = COMPETITION_MODE.index + 1;
 
-    if(els.title) els.title.textContent = item.name || `Inscripcio ${item.insId}`;
+    if(els.title){
+      const participantName = item.name || `Inscripció ${item.insId}`;
+      els.title.textContent = `${participantName} · Exercici ${item.exercici}`;
+    }
     if(els.subtitle){
-      const bits = [item.groupLabel, `Exercici ${item.exercici}`, item.orderLabel].filter(Boolean);
+      const bits = [item.groupLabel, item.orderLabel].filter(Boolean);
       els.subtitle.textContent = bits.join(" - ");
     }
     if(els.position) els.position.textContent = `${pos} / ${total}`;
@@ -78,7 +81,7 @@
       } else {
         els.host.innerHTML = `
           <div class="alert alert-info mb-0">
-            El mode competicio ja te la cua preparada. Falta integrar el renderer
+            El mode competició ja té la cua preparada. Falta integrar el renderer
             <code>renderEditorInto(host, insId, exercici, opts)</code> per mostrar l'editor dins del modal sense duplicar ids.
           </div>
         `;
@@ -89,7 +92,7 @@
   function showCompetitionModeModal(){
     const els = competitionModeElements();
     if(!els.modal){
-      window.alert("Cal incloure el parcial del modal de mode competicio.");
+      window.alert("Cal incloure el parcial del modal de mode competició.");
       return;
     }
     els.modal.classList.remove("d-none");
@@ -124,6 +127,10 @@
     const item = competitionModeCurrentItem();
     const els = competitionModeElements();
     if(els.modal){
+      const active = document.activeElement;
+      if(active && els.modal.contains(active) && typeof active.blur === "function"){
+        active.blur();
+      }
       els.modal.classList.add("d-none");
       els.modal.setAttribute("aria-hidden", "true");
     }
