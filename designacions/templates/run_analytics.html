@@ -200,6 +200,7 @@
         <div class="text-muted small">{{ run.name }} · {{ analytics.summary.total_matches }} partits · buffer disponibilitat {{ analytics.summary.availability_end_buffer_min }} min</div>
       </div>
       <div class="text-right">
+        <a class="btn btn-sm btn-primary" href="{% url 'designacions_export_analytics_pdf' run.id %}">Exportar PDF</a>
         <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">Assignacions</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">Seguiment</a>
       </div>
@@ -223,9 +224,9 @@
         <div class="analytics-card">
           <div class="analytics-title">Demanda, cobertura i oferta per hora</div>
           <div class="analytics-note">
-            Disponibilitat crua = franja de l'Excel. Poden pitar per horari = franja aplicant el buffer final.
-            Lliures efectius = poden pitar per horari i no tenen cap partit assignat dins el gap minim de mateixa pista.
-            Si hi ha mes d'una data, es compten disponibilitats tutor-dia.
+            Poden pitar per horari = tutors dins la seva franja de disponibilitat aplicant el buffer final.
+            No disponibles per ruta propera = tutors que ja tenen algun partit assignat massa a prop d'aquesta hora segons el gap minim.
+            Lliures efectius = poden pitar per horari i no tenen cap partit assignat dins aquest gap. Si hi ha mes d'una data, es compten tutor-dia.
           </div>
           <div class="chart-panel chart-panel--embedded">
             <div class="chart-head">
@@ -239,7 +240,7 @@
               <span><strong>Eix X:</strong> hora del partit.</span>
               <span><strong>Eix Y:</strong> nombre de partits o tutors.</span>
               <span><strong>Assignats/Pendents:</strong> cobertura final d'aquella hora.</span>
-              <span><strong>Lliures:</strong> tutors amb horari valid i sense bloqueig de gap.</span>
+              <span><strong>Lliures:</strong> tutors amb horari valid i sense partit assignat dins el gap minim.</span>
             </div>
             <canvas class="chart-canvas" id="chart-hour-pressure"></canvas>
           </div>
@@ -248,13 +249,10 @@
               <thead>
                 <tr>
                   <th>Hora</th>
-                  <th class="text-right">Partits</th>
-                  <th class="text-right">Assignats</th>
+                  <th class="text-right">Assignats/Total</th>
                   <th class="text-right">Pendents</th>
-                  <th class="text-right">Disp. crua</th>
                   <th class="text-right">Poden pitar</th>
-                  <th class="text-right">Ocupats hora</th>
-                  <th class="text-right">Ocupats/gap</th>
+                  <th class="text-right">No disponibles per ruta propera</th>
                   <th class="text-right">Lliures efectius</th>
                   <th class="text-right">Clusters atesos</th>
                   <th style="min-width:160px;">Demanda</th>
@@ -264,12 +262,9 @@
                 {% for row in analytics.demand_by_hour %}
                 <tr>
                   <td>{{ row.label }}</td>
-                  <td class="text-right">{{ row.total }}</td>
-                  <td class="text-right">{{ row.assigned }}</td>
+                  <td class="text-right">{{ row.assigned }}/{{ row.total }}</td>
                   <td class="text-right">{{ row.unassigned }}</td>
-                  <td class="text-right">{{ row.raw_available_tutors }}</td>
                   <td class="text-right">{{ row.schedule_available_tutors }}</td>
-                  <td class="text-right">{{ row.occupied_tutors }}</td>
                   <td class="text-right">{{ row.gap_blocked_tutors }}</td>
                   <td class="text-right">{{ row.free_effective_tutors }}</td>
                   <td class="text-right">{{ row.served_clusters }}/{{ row.demand_clusters }}</td>
@@ -278,7 +273,7 @@
                   </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="11" class="text-muted">Sense dades horaries.</td></tr>
+                <tr><td colspan="8" class="text-muted">Sense dades horaries.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -385,7 +380,7 @@
       <div class="col-12 col-xl-6 mb-3">
         <div class="analytics-card">
           <div class="analytics-title">Tutors viables per partit pendent</div>
-          <div class="analytics-note">Quan hi ha molts 0 o 1, el problema no es nomes el solver: hi ha coll d'ampolla real.</div>
+          <div class="analytics-note">Compta viables del motor: modalitat, disponibilitat, mobilitat i nivell informat. Els tutors sense nivell es mostren com a bloqueig.</div>
           <div class="chart-panel chart-panel--embedded">
             <div class="chart-head">
               <div>
@@ -449,18 +444,19 @@
       <div class="col-12 mb-3">
         <div class="analytics-card">
           <div class="analytics-title">Progressio de cobertura per fase</div>
-          <div class="analytics-note">Ordre real de les passades del motor i com baixa el volum de partits pendents.</div>
+          <div class="analytics-note">Ordre real de les passades del motor, quants partits entra a mirar cada pas i com baixa el volum de pendents.</div>
           <div class="chart-panel chart-panel--embedded">
             <div class="chart-head">
               <div>
                 <div class="chart-title">Cobertura acumulada per fase</div>
-                <div class="chart-note">Les barres mostren els partits coberts per cada pas; la linia mostra pendents despres del pas.</div>
+                <div class="chart-note">Les barres mostren els partits coberts per cada pas; les linies mostren considerats i pendents despres del pas.</div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-phase-progress" data-chart-title="Cobertura acumulada per fase">Ampliar</button>
             </div>
             <div class="chart-explain">
               <span><strong>Eix X:</strong> fase o repesca.</span>
               <span><strong>Eix Y:</strong> nombre de partits.</span>
+              <span><strong>Blau:</strong> partits considerats pel pas.</span>
               <span><strong>Verd:</strong> coberts en el pas.</span>
               <span><strong>Taronja:</strong> pendents restants.</span>
             </div>
@@ -472,8 +468,11 @@
                 <tr>
                   <th>Pas</th>
                   <th class="text-right">Pendents abans</th>
+                  <th class="text-right">Considerats</th>
                   <th class="text-right">Coberts</th>
+                  <th class="text-right">Incidencia fase</th>
                   <th class="text-right">Pendents despres</th>
+                  <th class="text-right">Cobertura acum.</th>
                   <th class="text-right">Rutes</th>
                   <th class="text-right">Candidats viables</th>
                 </tr>
@@ -486,8 +485,11 @@
                     <div class="text-muted small">{{ row.description }}</div>
                   </td>
                   <td class="text-right">{{ row.pending_before }}</td>
+                  <td class="text-right">{{ row.considered_matches }}</td>
                   <td class="text-right">{{ row.matches }}</td>
+                  <td class="text-right">{{ row.phase_coverage_pct }}%</td>
                   <td class="text-right">{{ row.pending_after }}</td>
+                  <td class="text-right">{{ row.cumulative_matches }} ({{ row.cumulative_pct }}%)</td>
                   <td class="text-right">{{ row.routes }}</td>
                   <td class="text-right">
                     {% if row.candidate_count %}
@@ -498,7 +500,7 @@
                   </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6" class="text-muted">Sense trace d'origen.</td></tr>
+                <tr><td colspan="9" class="text-muted">Sense trace d'origen.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -776,9 +778,10 @@
     const box = {left: 48, top: 20, right: width - 18, bottom: height - 58};
     box.width = box.right - box.left;
     box.height = box.bottom - box.top;
+    const considered = chart.considered || [];
     const covered = chart.covered || [];
     const pending = chart.pending_after || [];
-    const maxY = maxValue([covered, pending]);
+    const maxY = maxValue([considered, covered, pending]);
     drawAxes(ctx, box, maxY, labels);
     const group = box.width / labels.length;
     const barWidth = Math.max(10, Math.min(28, group * .36));
@@ -788,8 +791,13 @@
       ctx.fillStyle = palette.green;
       ctx.fillRect(x - barWidth / 2, box.bottom - h, barWidth, h);
     });
+    drawLine(ctx, box, labels, considered, maxY, palette.blue);
     drawLine(ctx, box, labels, pending, maxY, palette.orange);
-    drawLegend(ctx, [{label: "Coberts", color: palette.green}, {label: "Pendents", color: palette.orange}], box.left, 12);
+    drawLegend(ctx, [
+      {label: "Considerats", color: palette.blue},
+      {label: "Coberts", color: palette.green},
+      {label: "Pendents", color: palette.orange}
+    ], box.left, 12);
   }
 
   function drawRouteSize(){

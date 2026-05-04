@@ -27,6 +27,7 @@ from .services.jobstore import (
     write_job_sync,
 )
 from .services.excel_export import export_run_to_excel
+from .services.run_analytics_pdf import render_run_analytics_pdf
 from .services.assignment_explainer import (
     explain_candidate_for_assignment,
     explain_current_assignment,
@@ -1384,6 +1385,16 @@ def run_analytics_view(request, run_id: int):
     run = get_object_or_404(DesignationRun, id=run_id)
     analytics = build_run_analytics(run)
     return render(request, "run_analytics.html", {"run": run, "analytics": analytics})
+
+
+@require_GET
+def export_analytics_pdf_view(request, run_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+    analytics = build_run_analytics(run)
+    pdf = render_run_analytics_pdf(run, analytics, base_url=request.build_absolute_uri("/"))
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="analitica_run_{run.id}.pdf"'
+    return response
 
 def _serialize_terminal_run_status(run, job: dict | None = None):
     job = job or {}

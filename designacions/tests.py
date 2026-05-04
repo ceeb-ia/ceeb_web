@@ -64,11 +64,12 @@ from .optimization.package_generation import generate_package_candidates
 from .optimization.package_scoring import build_assignment_candidates
 from .optimization.level_fragments import build_level_fragments
 from .optimization.phases import PhaseSpec
-from .optimization.phase_runner import run_phased_route_solver
+from .optimization.phase_runner import _phase_assignment_config, run_phased_route_solver
 from .optimization.peak_pressure import build_peak_anchors
+from .optimization.phase_solver import solve_phase_routes
 from .optimization.pressure import build_pressure_summary
 from .optimization.rescue import run_individual_rescue, run_partial_rescue
-from .optimization.route_generation import generate_phase_route_candidates
+from .optimization.route_generation import RouteCandidate, generate_phase_route_candidates
 from .optimization.solver import solve_assignment_candidates
 from .optimization.state import apply_route_assignment, create_initial_state
 
@@ -412,6 +413,75 @@ class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
 
         self.assertEqual(len(selected_match_ids), len(set(selected_match_ids)))
         self.assertEqual(set(selected_match_ids), {"M1", "M2"})
+
+    def test_phase_assignment_config_relaxes_route_pruning_for_ilp_phases(self):
+        config = _phase_assignment_config({"phase_solver_backend": "cp_sat"})
+
+        self.assertEqual(config["phase_solver_backend"], "cp_sat")
+        self.assertGreaterEqual(config["route_top_n_per_tutor"], 100000)
+        self.assertGreaterEqual(config["route_top_n_per_match"], 100000)
+        self.assertGreater(config["peak_anchor_top_n"], 8)
+
+    def test_phase_assignment_config_can_preserve_existing_pruning(self):
+        config = _phase_assignment_config(
+            {
+                "phase_solver_backend": "cp_sat",
+                "phase_ilp_preserve_route_pruning": True,
+                "route_top_n_per_tutor": 7,
+                "route_top_n_per_match": 3,
+            }
+        )
+
+        self.assertEqual(config["route_top_n_per_tutor"], 7)
+        self.assertEqual(config["route_top_n_per_match"], 3)
+
+    def test_cp_sat_phase_solver_maximizes_coverage_beyond_greedy_ordering(self):
+        try:
+            import ortools  # noqa: F401
+        except Exception:
+            self.skipTest("OR-Tools no disponible en aquest entorn")
+
+        def candidate(route_id, tutor_id, match_ids, weighted):
+            return RouteCandidate(
+                id=route_id,
+                phase_name="general",
+                tutor_id=tutor_id,
+                new_match_ids=list(match_ids),
+                full_route_match_ids=list(match_ids),
+                inserted_into_existing_route=False,
+                date="2026-03-01",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                level_demand="ALEVÍ",
+                level_fit="ideal",
+                requires_vehicle=False,
+                cost=0.0,
+                score_breakdown={"weighted_coverage_value": float(weighted), "high_level_value": 0.0},
+            )
+
+        candidates = [
+            candidate("A", "T1", ["M1", "M2", "M3"], 10.0),
+            candidate("B", "T2", ["M1"], 1.0),
+            candidate("C", "T3", ["M2"], 1.0),
+            candidate("D", "T4", ["M3"], 1.0),
+            candidate("E", "T1", ["M4"], 1.0),
+        ]
+
+        greedy_result = solve_phase_routes(candidates, {"phase_solver_backend": "greedy", "set_packing_exact_candidate_limit": 0})
+        cp_sat_result = solve_phase_routes(
+            candidates,
+            {
+                "phase_solver_backend": "cp_sat",
+                "set_packing_exact_candidate_limit": 0,
+                "cp_sat_phase_time_limit_sec": 10,
+            },
+        )
+
+        greedy_covered = {match_id for route in greedy_result.selected_routes for match_id in route.new_match_ids}
+        cp_sat_covered = {match_id for route in cp_sat_result.selected_routes for match_id in route.new_match_ids}
+        self.assertEqual(greedy_covered, {"M1", "M2", "M3"})
+        self.assertEqual(cp_sat_covered, {"M1", "M2", "M3", "M4"})
+        self.assertEqual(cp_sat_result.objective_summary["strategy"], "cp_sat_optimal")
 
     def test_medium_partial_rescue_summary_is_recorded_when_empty(self):
         subgroup = BaseSubgroup(

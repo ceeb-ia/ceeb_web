@@ -9,6 +9,7 @@ urlpatterns = [
     path("designacions/", app_authenticated_view(views.upload_view, "designacions"), name="designacions_upload"),
     path("designacions/run/<int:run_id>/", app_authenticated_view(views.run_detail_view, "designacions"), name="designacions_run_detail"),
     path("designacions/run/<int:run_id>/analytics/", app_authenticated_view(views.run_analytics_view, "designacions"), name="designacions_run_analytics"),
+    path("designacions/run/<int:run_id>/analytics/export.pdf", app_authenticated_view(views.export_analytics_pdf_view, "designacions"), name="designacions_export_analytics_pdf"),
     path("designacions/run/<int:run_id>/assignments/", app_authenticated_view(views.assignments_view, "designacions"), name="designacions_assignments"),
     path("designacions/run/<int:run_id>/assignments/<int:assignment_id>/explanation/", app_authenticated_view(views.assignment_explanation_view, "designacions"), name="designacions_assignment_explanation"),
     path("designacions/run/<int:run_id>/assignments/<int:assignment_id>/manual-options/", app_authenticated_view(views.manual_assignment_options_view, "designacions"), name="designacions_manual_assignment_options"),

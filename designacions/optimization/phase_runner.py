@@ -52,24 +52,26 @@ def run_phased_route_solver(
     for phase in default_phase_specs(config):
         pending_fragments = _pending_phase_fragments(fragments, state, phase)
         eligible_tutors = [tutor for tutor in tutor_list if phase_allows_tutor(tutor, phase)]
-        route_candidates = generate_phase_route_candidates(pending_fragments, eligible_tutors, state, phase, config)
-        phase_result = solve_phase_routes(route_candidates, config)
+        phase_config = _phase_assignment_config(config)
+        route_candidates = generate_phase_route_candidates(pending_fragments, eligible_tutors, state, phase, phase_config)
+        phase_result = solve_phase_routes(route_candidates, phase_config)
 
         for route in phase_result.selected_routes:
             _apply_selected_route(state, route, stage=f"phase:{phase.name}")
             selected_routes.append(route)
 
         pending_after = _pending_match_ids(fragments, state)
-        phase_summaries.append(
-            build_phase_summary(
-                phase.name,
-                eligible_tutors=eligible_tutors,
-                pending_fragments_before=pending_fragments,
-                route_candidates=route_candidates,
-                selected_routes=phase_result.selected_routes,
-                pending_match_ids_after=pending_after,
-            )
+        phase_summary = build_phase_summary(
+            phase.name,
+            eligible_tutors=eligible_tutors,
+            pending_fragments_before=pending_fragments,
+            route_candidates=route_candidates,
+            selected_routes=phase_result.selected_routes,
+            pending_match_ids_after=pending_after,
         )
+        phase_summary["solver_objective_summary"] = dict(phase_result.objective_summary or {})
+        phase_summary["solver_strategy"] = (phase_result.objective_summary or {}).get("strategy", "")
+        phase_summaries.append(phase_summary)
 
         if phase.rescue_after_phase and pending_fragments:
             rescue_phase_name = f"partial_rescue:{phase.name}"
@@ -153,6 +155,39 @@ def run_phased_route_solver(
         swap_recommendations=swap_recommendations,
         engine_summary=engine_summary,
     )
+
+
+def _phase_assignment_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    cfg = dict(config or {})
+    backend = str(cfg.get("phase_solver_backend", cfg.get("solver_backend", "cp_sat")) or "cp_sat").strip().lower()
+    if backend not in {"cp_sat", "cpsat", "ilp", "auto"}:
+        return cfg
+    if cfg.get("phase_ilp_preserve_route_pruning", False):
+        return cfg
+
+    large_limit = int(cfg.get("phase_ilp_route_limit", 100000) or 100000)
+    cfg["phase_solver_backend"] = "cp_sat"
+    cfg["route_top_n_per_tutor"] = int(cfg.get("phase_ilp_route_top_n_per_tutor", large_limit) or large_limit)
+    cfg["route_top_n_per_match"] = int(cfg.get("phase_ilp_route_top_n_per_match", large_limit) or large_limit)
+    cfg["peak_anchor_top_n"] = int(cfg.get("phase_ilp_peak_anchor_top_n", cfg.get("peak_anchor_top_n", 50)) or 50)
+    cfg["peak_top_n_per_phase"] = int(
+        cfg.get("phase_ilp_peak_top_n_per_phase", cfg["peak_anchor_top_n"]) or cfg["peak_anchor_top_n"]
+    )
+    cfg["peak_anchor_neighbor_limit"] = int(
+        cfg.get("phase_ilp_peak_anchor_neighbor_limit", cfg.get("peak_anchor_neighbor_limit", 20)) or 20
+    )
+    cfg["peak_anchor_route_limit_per_anchor"] = int(
+        cfg.get("phase_ilp_peak_anchor_route_limit_per_anchor", cfg.get("peak_anchor_route_limit_per_anchor", large_limit))
+        or large_limit
+    )
+    cfg["route_general_neighbor_limit"] = int(
+        cfg.get("phase_ilp_route_general_neighbor_limit", cfg.get("route_general_neighbor_limit", 12)) or 12
+    )
+    cfg["route_general_deep_limit_per_center"] = int(
+        cfg.get("phase_ilp_route_general_deep_limit_per_center", cfg.get("route_general_deep_limit_per_center", large_limit))
+        or large_limit
+    )
+    return cfg
 
 
 def _pending_phase_fragments(fragments: Iterable[Any], state: DesignationState, phase: PhaseSpec) -> list[Any]:

@@ -23,6 +23,7 @@ class _Window:
     start_min: int | None
     end_min: int | None
     effective_end_min: int | None
+    has_level: bool = True
 
 
 def build_run_analytics(run: DesignationRun) -> dict[str, Any]:
@@ -112,7 +113,10 @@ def _demand_by_hour(run: DesignationRun, assignments: list[Assignment], windows:
                 "schedule_available_tutors": 0,
                 "occupied_tutors": 0,
                 "gap_blocked_tutors": 0,
+                "gap_blocked_other_tutors": 0,
                 "free_effective_tutors": 0,
+                "free_effective_tutors_with_level": 0,
+                "free_effective_tutors_missing_level": 0,
                 "demand_clusters": 0,
                 "served_clusters": 0,
                 },
@@ -158,6 +162,15 @@ def _demand_by_hour(run: DesignationRun, assignments: list[Assignment], windows:
         }
         occupied_available = schedule_available & occupied
         gap_blocked_available = schedule_available & gap_blocked
+        schedule_available_with_level = {
+            _window_slot_key(window)
+            for window in windows
+            if window.has_level
+            and _window_contains_any_date(window, dates)
+            and _window_contains(window, minutes, effective=True)
+        }
+        free_effective = schedule_available - gap_blocked
+        free_effective_with_level = schedule_available_with_level - gap_blocked
         demanded_clusters = set()
         served_clusters = set()
         for assignment in assignments:
@@ -173,7 +186,10 @@ def _demand_by_hour(run: DesignationRun, assignments: list[Assignment], windows:
         row["schedule_available_tutors"] = len(schedule_available)
         row["occupied_tutors"] = len(occupied_available)
         row["gap_blocked_tutors"] = len(gap_blocked_available)
-        row["free_effective_tutors"] = max(0, len(schedule_available - gap_blocked))
+        row["gap_blocked_other_tutors"] = len(gap_blocked_available - occupied_available)
+        row["free_effective_tutors"] = max(0, len(free_effective))
+        row["free_effective_tutors_with_level"] = max(0, len(free_effective_with_level))
+        row["free_effective_tutors_missing_level"] = max(0, len(free_effective - free_effective_with_level))
         row["demand_clusters"] = len(demanded_clusters)
         row["served_clusters"] = len(served_clusters)
         row["coverage_pct"] = _percent(row["assigned"], row["total"])
@@ -397,8 +413,10 @@ def _tutor_level_hour_heatmap(
 def _phase_progress_chart(origin_rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "labels": [row["label"] for row in origin_rows],
+        "considered": [int(row.get("considered_matches") or 0) for row in origin_rows],
         "covered": [int(row.get("matches") or 0) for row in origin_rows],
         "pending_after": [int(row.get("pending_after") or 0) for row in origin_rows],
+        "cumulative": [int(row.get("cumulative_matches") or 0) for row in origin_rows],
         "routes": [int(row.get("routes") or 0) for row in origin_rows],
     }
 
@@ -470,6 +488,7 @@ def _origin_rows(run: DesignationRun, assigned: list[Assignment], total_matches:
             {
                 "key": key,
                 "matches": row["matches"],
+                "considered_matches": row["matches"],
                 "routes": len(row["routes"]),
                 "candidate_count": None,
                 "viable_candidate_count": None,
@@ -488,6 +507,7 @@ def _origin_timeline_rows(steps: list[dict[str, Any]], total_matches: int) -> li
         matches = int(step.get("matches") or 0)
         routes = int(step.get("routes") or 0)
         pending_before = max(0, total_matches - covered)
+        considered_matches = max(matches, _summary_considered_match_count(step, fallback=matches))
         covered += matches
         pending_after = max(0, total_matches - covered)
         candidate_count = step.get("candidate_count")
@@ -497,9 +517,13 @@ def _origin_timeline_rows(steps: list[dict[str, Any]], total_matches: int) -> li
                 "label": _origin_label(key),
                 "description": _origin_description(key),
                 "matches": matches,
+                "considered_matches": considered_matches,
+                "phase_coverage_pct": _percent(matches, considered_matches),
                 "routes": routes,
                 "pending_before": pending_before,
                 "pending_after": pending_after,
+                "cumulative_matches": covered,
+                "cumulative_pct": _percent(covered, total_matches),
                 "candidate_count": candidate_count,
                 "viable_candidate_count": viable_candidate_count,
             }
@@ -528,11 +552,11 @@ def _origin_steps_from_summary(run: DesignationRun) -> list[dict[str, Any]]:
         final_summary = solver_summary.get("final_rescue_summary") or {}
         if isinstance(final_summary, dict):
             existing_final = final_summary.get("existing_final_rescue") or {}
-            if isinstance(existing_final, dict):
+            if isinstance(existing_final, dict) and existing_final:
                 _add_origin_step(aggregated, "final_rescue", existing_final)
 
             individual = final_summary.get("individual_rescue") or {}
-            if isinstance(individual, dict):
+            if isinstance(individual, dict) and individual:
                 iteration_summaries = individual.get("iteration_summaries") or []
                 if iteration_summaries:
                     for iteration_summary in iteration_summaries:
@@ -555,12 +579,14 @@ def _add_origin_step(target: dict[str, dict[str, Any]], key: str, source: dict[s
         {
             "key": key,
             "matches": 0,
+            "considered_matches": 0,
             "routes": 0,
             "candidate_count": 0,
             "viable_candidate_count": 0,
         },
     )
     row["matches"] += _summary_match_count(source)
+    row["considered_matches"] += _summary_considered_match_count(source)
     row["routes"] += int(source.get("selected_route_count") or source.get("selected_count") or 0)
     row["candidate_count"] += int(source.get("candidate_count") or source.get("route_candidate_count") or 0)
     row["viable_candidate_count"] += int(
@@ -573,6 +599,18 @@ def _summary_match_count(source: dict[str, Any]) -> int:
         source.get("selected_match_count")
         or source.get("recovered_match_count")
         or source.get("selected_count")
+        or 0
+    )
+
+
+def _summary_considered_match_count(source: dict[str, Any], fallback: int = 0) -> int:
+    return int(
+        source.get("considered_matches")
+        or source.get("pending_match_count_before")
+        or source.get("attempted_match_count")
+        or source.get("pending_before")
+        or source.get("pending_fragment_count_before")
+        or fallback
         or 0
     )
 
@@ -602,6 +640,7 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
 
     for assignment in unassigned:
         viable_count = 0
+        manual_only_missing_level_count = 0
         candidate_count = 0
         hour_label = _hour_label(_time_to_minutes(assignment.match.hour_raw))
         for referee in referees_by_assignment.get(assignment.id, []):
@@ -615,7 +654,12 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
                 cluster_by_match_id=cluster_by_match_id,
             )
             if diagnosis["is_valid"]:
-                viable_count += 1
+                if _referee_has_engine_level(referee):
+                    viable_count += 1
+                else:
+                    manual_only_missing_level_count += 1
+                    blocking_counter["missing_referee_level"] += 1
+                    blocking_by_hour[hour_label]["missing_referee_level"] += 1
                 continue
             for reason in diagnosis.get("blocking_reasons") or []:
                 blocking_counter[reason] += 1
@@ -631,6 +675,7 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
                 "category": assignment.match.category or "-",
                 "venue": assignment.match.venue or "-",
                 "viable_count": viable_count,
+                "manual_only_missing_level_count": manual_only_missing_level_count,
                 "candidate_count": candidate_count,
             }
         )
@@ -641,6 +686,7 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
                 "category": assignment.match.category or "-",
                 "venue": assignment.match.venue or "-",
                 "viable_count": viable_count,
+                "manual_only_missing_level_count": manual_only_missing_level_count,
                 "candidate_count": candidate_count,
             }
         )
@@ -703,6 +749,8 @@ def _availability_window(row: Any, buffer_min: int) -> _Window:
     start_min = _time_to_minutes(row.raw.get("Hora Inici") if isinstance(row.raw, dict) else None)
     end_min = _time_to_minutes(row.raw.get("Hora Fi") if isinstance(row.raw, dict) else None)
     availability_date = _date_value(row.raw.get("Data") if isinstance(row.raw, dict) else None)
+    raw_level = row.raw.get("Nivell") if isinstance(row.raw, dict) else None
+    referee_level = getattr(getattr(row, "referee", None), "level", None)
     effective_end = None if end_min is None else max(0, end_min - int(buffer_min or 0))
     return _Window(
         referee_id=row.referee_id,
@@ -710,7 +758,12 @@ def _availability_window(row: Any, buffer_min: int) -> _Window:
         start_min=start_min,
         end_min=end_min,
         effective_end_min=effective_end,
+        has_level=bool(_clean(raw_level) or _clean(referee_level)),
     )
+
+
+def _referee_has_engine_level(referee: Any) -> bool:
+    return bool(_clean(getattr(referee, "level", None)))
 
 
 def _window_contains_any_date(window: _Window, dates: set[date | None]) -> bool:
@@ -844,6 +897,7 @@ def _blocking_reason_label(code: str) -> str:
         "outlier_cluster_for_mobility_validation": "Descartat per criteris de mobilitat a seus fora del cluster",
         "vehicle_required": "Descartat per requerir vehicle",
         "gap_too_short": "Descartat per gap horari insuficient",
+        "missing_referee_level": "Descartat pel motor per manca de nivell del tutor",
     }
     return labels.get(code, code.replace("_", " "))
 
@@ -862,6 +916,7 @@ def _blocking_reason_short_label(code: str) -> str:
         "outlier_cluster_for_mobility_validation": "Mobilitat fora cluster",
         "vehicle_required": "Vehicle requerit",
         "gap_too_short": "Gap insuficient",
+        "missing_referee_level": "Tutor sense nivell",
     }
     return labels.get(code, code.replace("_", " ").title())
 

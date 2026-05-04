@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import Any, Iterable
 
 from .levels import LEVEL_FIT_EXCEPTIONAL
@@ -20,13 +21,18 @@ def solve_phase_routes(candidates: Iterable[RouteCandidate], config: dict[str, A
     all_candidates = list(candidates or [])
     viable = [candidate for candidate in all_candidates if not candidate.blocking_reasons]
     exact_limit = int(config.get("set_packing_exact_candidate_limit", config.get("exact_solver_candidate_limit", 80)))
+    solver_meta: dict[str, Any] = {}
 
-    if len(viable) <= exact_limit:
+    cp_sat_result = _cp_sat_select(viable, config) if _cp_sat_enabled(config) else None
+    if cp_sat_result is not None:
+        selected, solver_meta = cp_sat_result
+        strategy = solver_meta.get("strategy", "cp_sat")
+    elif len(viable) <= exact_limit:
         selected = _exact_select(viable)
         strategy = "bounded_exact"
     else:
         selected = _greedy_select(viable)
-        strategy = "greedy"
+        strategy = "greedy_fallback"
 
     covered = _covered_matches(selected)
     all_match_ids = []
@@ -44,6 +50,7 @@ def solve_phase_routes(candidates: Iterable[RouteCandidate], config: dict[str, A
         rejected_candidates_summary=_rejected_summary(all_candidates, viable, selected),
         objective_summary={
             "strategy": strategy,
+            **solver_meta,
             "candidate_count": len(all_candidates),
             "viable_candidate_count": len(viable),
             "selected_route_count": len(selected),
@@ -57,6 +64,146 @@ def solve_phase_routes(candidates: Iterable[RouteCandidate], config: dict[str, A
             "warning_count": sum(len(candidate.warning_codes) for candidate in selected),
         },
     )
+
+
+def _cp_sat_select(candidates: list[RouteCandidate], config: dict[str, Any]) -> tuple[list[RouteCandidate], dict[str, Any]] | None:
+    if not _cp_sat_enabled(config):
+        return None
+    try:
+        from ortools.sat.python import cp_model
+    except Exception as exc:
+        return (
+            [],
+            {
+                "strategy": "cp_sat_unavailable",
+                "solver_backend": "cp_sat",
+                "solver_status": "IMPORT_ERROR",
+                "fallback_reason": str(exc),
+            },
+        ) if bool(config.get("phase_solver_fail_closed", False)) else None
+
+    if not candidates:
+        return [], {"strategy": "cp_sat_empty", "solver_backend": "cp_sat", "solver_status": "EMPTY"}
+
+    objectives = _cp_sat_objectives(candidates)
+    fixed: list[tuple[list[int], int]] = []
+    selected: list[RouteCandidate] = []
+    statuses: list[dict[str, Any]] = []
+    started = monotonic()
+    total_limit = float(config.get("cp_sat_phase_time_limit_sec", config.get("ilp_phase_time_limit_sec", 120.0)) or 120.0)
+    step_limit = float(
+        config.get(
+            "cp_sat_phase_step_time_limit_sec",
+            config.get("ilp_phase_step_time_limit_sec", max(1.0, total_limit / max(len(objectives), 1))),
+        )
+        or 1.0
+    )
+
+    for name, coefficients, maximize in objectives:
+        elapsed = monotonic() - started
+        remaining = total_limit - elapsed
+        if remaining <= 0:
+            return selected, {
+                "strategy": "cp_sat_feasible",
+                "solver_backend": "cp_sat",
+                "solver_status": "TIME_LIMIT",
+                "solver_objective_steps": statuses,
+                "solver_elapsed_sec": round(elapsed, 4),
+            }
+
+        model, variables = _build_cp_sat_model(cp_model, candidates, fixed)
+        expression = sum(int(coefficients[index]) * variables[index] for index in range(len(candidates)))
+        if maximize:
+            model.Maximize(expression)
+        else:
+            model.Minimize(expression)
+
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = max(0.1, min(step_limit, remaining))
+        solver.parameters.num_search_workers = int(config.get("cp_sat_num_workers", config.get("ilp_num_workers", 8)) or 8)
+        status = solver.Solve(model)
+        status_name = solver.StatusName(status)
+        statuses.append({"objective": name, "status": status_name, "maximize": maximize})
+
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            if selected:
+                return selected, {
+                    "strategy": "cp_sat_feasible",
+                    "solver_backend": "cp_sat",
+                    "solver_status": status_name,
+                    "solver_objective_steps": statuses,
+                    "solver_elapsed_sec": round(monotonic() - started, 4),
+                }
+            return None
+
+        selected_indexes = [index for index, variable in enumerate(variables) if solver.BooleanValue(variable)]
+        selected = [candidates[index] for index in selected_indexes]
+        objective_value = int(round(solver.ObjectiveValue()))
+
+        if status == cp_model.OPTIMAL:
+            fixed.append((coefficients, objective_value))
+            statuses[-1]["value"] = objective_value
+            continue
+
+        return selected, {
+            "strategy": "cp_sat_feasible",
+            "solver_backend": "cp_sat",
+            "solver_status": status_name,
+            "solver_objective_steps": statuses,
+            "solver_elapsed_sec": round(monotonic() - started, 4),
+        }
+
+    return selected, {
+        "strategy": "cp_sat_optimal",
+        "solver_backend": "cp_sat",
+        "solver_status": "OPTIMAL",
+        "solver_objective_steps": statuses,
+        "solver_elapsed_sec": round(monotonic() - started, 4),
+    }
+
+
+def _cp_sat_enabled(config: dict[str, Any]) -> bool:
+    backend = str(config.get("phase_solver_backend", config.get("solver_backend", "cp_sat")) or "cp_sat").strip().lower()
+    return backend in {"cp_sat", "cpsat", "ilp", "auto"}
+
+
+def _build_cp_sat_model(cp_model: Any, candidates: list[RouteCandidate], fixed: list[tuple[list[int], int]]) -> tuple[Any, list[Any]]:
+    model = cp_model.CpModel()
+    variables = [model.NewBoolVar(f"route_{index}") for index in range(len(candidates))]
+
+    by_match: dict[str, list[Any]] = {}
+    by_tutor_day: dict[tuple[str, str], list[Any]] = {}
+    for index, candidate in enumerate(candidates):
+        for match_id in candidate.new_match_ids:
+            by_match.setdefault(str(match_id), []).append(variables[index])
+        by_tutor_day.setdefault(_tutor_day(candidate), []).append(variables[index])
+
+    for match_variables in by_match.values():
+        model.Add(sum(match_variables) <= 1)
+    for tutor_day_variables in by_tutor_day.values():
+        model.Add(sum(tutor_day_variables) <= 1)
+    for coefficients, value in fixed:
+        model.Add(sum(int(coefficients[index]) * variables[index] for index in range(len(candidates))) == int(value))
+
+    return model, variables
+
+
+def _cp_sat_objectives(candidates: list[RouteCandidate]) -> list[tuple[str, list[int], bool]]:
+    return [
+        ("selected_match_count", [len(candidate.new_match_ids) for candidate in candidates], True),
+        ("weighted_covered_value", [_scaled(_weighted_value(candidate), 1000) for candidate in candidates], True),
+        ("high_level_covered_value", [_scaled(_high_level_value(candidate), 1000) for candidate in candidates], True),
+        ("selected_exceptional_level_count", [1 if _is_exceptional(candidate) else 0 for candidate in candidates], False),
+        ("load_penalty_total", [_scaled(_breakdown_float(candidate, "load_penalty"), 100) for candidate in candidates], False),
+        ("mobility_cost_total", [_scaled(_mobility_vehicle_cost(candidate), 100) for candidate in candidates], False),
+        ("warning_count", [len(candidate.warning_codes) for candidate in candidates], False),
+        ("total_cost", [_scaled(float(candidate.cost), 100) for candidate in candidates], False),
+        ("selected_route_count", [1 for _candidate in candidates], False),
+    ]
+
+
+def _scaled(value: float, factor: int) -> int:
+    return int(round(float(value or 0.0) * int(factor)))
 
 
 def _exact_select(candidates: list[RouteCandidate]) -> list[RouteCandidate]:

@@ -17,6 +17,11 @@ def build_phase_summary(
     candidates = [_object_to_dict(candidate) for candidate in (route_candidates or [])]
     selected = [_object_to_dict(route) for route in (selected_routes or [])]
     pending_before = list(pending_fragments_before or [])
+    pending_match_ids_before = {
+        match_id
+        for fragment in pending_before
+        for match_id in _match_ids(_object_to_dict(fragment))
+    }
     blocking_reason_counts: Counter[str] = Counter()
     for candidate in candidates:
         blocking_reason_counts.update(_normalize_ids(candidate.get("blocking_reasons")))
@@ -24,6 +29,7 @@ def build_phase_summary(
         "phase_name": phase_name,
         "eligible_tutor_count": len(list(eligible_tutors or [])),
         "pending_fragment_count_before": len(pending_before),
+        "pending_match_count_before": len(pending_match_ids_before),
         "route_candidate_count": len(candidates),
         "viable_route_candidate_count": sum(1 for candidate in candidates if not candidate.get("blocking_reasons")),
         "selected_route_count": len(selected),
