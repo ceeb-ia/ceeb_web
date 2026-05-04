@@ -230,7 +230,7 @@
         parent.appendChild(block);
         return;
       }
-      block.innerHTML = `<div class="text-muted small">Camp no disponible al schema: ${perm.field_code}</div>`;
+      block.innerHTML = `<div class="text-muted small">Camp no disponible a l'esquema: ${perm.field_code}</div>`;
       parent.appendChild(block);
       return;
     }
@@ -285,7 +285,7 @@
     wrap.innerHTML = "";
     const resolvedPerms = resolvedPermsForIns(insId);
     if(!resolvedPerms.length){
-      wrap.innerHTML = `<div class="text-muted small">No hi ha configuracio de permisos.</div>`;
+      wrap.innerHTML = `<div class="text-muted small">No hi ha configuració de permisos.</div>`;
       wrap.dataset.editorRendered = "1";
       return;
     }

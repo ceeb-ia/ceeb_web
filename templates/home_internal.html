@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Inici intern{% endblock %}
 
@@ -18,7 +19,7 @@
     <div class="row">
       {% for app in internal_nav_apps %}
 
-      {% if app.app_key== "designacions" %}
+      {% if app.app_key == "designacions" %}
 
       <div class="card">
           <img src="{% static 'images/designacions.jpg' %}" class="card-img-top" alt="Designacions">
@@ -41,9 +42,9 @@
           </div>
         </div>
       </div>
+      {% endif %}
       {% endfor %}
     </div>
-    {% endif %}
     {% endif %}
   </div>
 </section>

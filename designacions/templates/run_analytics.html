@@ -1,0 +1,1032 @@
+{% extends "base.html" %}
+{% block title %}Analitica - Run {{ run.id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .analytics-grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap:.75rem;
+      margin-bottom:1rem;
+    }
+    .metric-box{
+      border:1px solid #d8dee6;
+      border-radius:8px;
+      background:#fbfcfe;
+      padding:.8rem .9rem;
+      min-height:92px;
+    }
+    .metric-label{
+      font-size:.78rem;
+      font-weight:700;
+      color:#5f6b76;
+      text-transform:uppercase;
+      letter-spacing:.02em;
+      margin-bottom:.25rem;
+    }
+    .metric-value{
+      font-size:1.45rem;
+      font-weight:700;
+      color:#1f2937;
+      line-height:1.1;
+    }
+    .metric-sub{
+      font-size:.82rem;
+      color:#6b7280;
+      margin-top:.3rem;
+    }
+    .analytics-card{
+      border:1px solid #d8dee6;
+      border-radius:8px;
+      background:white;
+      padding:1rem;
+      height:100%;
+    }
+    .analytics-title{
+      font-weight:700;
+      margin-bottom:.35rem;
+    }
+    .analytics-note{
+      color:#6b7280;
+      font-size:.83rem;
+      margin-bottom:.75rem;
+    }
+    .bar-row{
+      display:grid;
+      grid-template-columns:minmax(96px, 180px) 1fr minmax(96px, auto);
+      gap:.75rem;
+      align-items:center;
+      padding:.38rem 0;
+      border-bottom:1px solid #f1f3f5;
+    }
+    .bar-row:last-child{ border-bottom:0; }
+    .bar-label{
+      font-size:.86rem;
+      color:#374151;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .bar-row--reason{
+      grid-template-columns:minmax(0, 1.15fr) minmax(76px, .85fr) minmax(42px, auto);
+      align-items:start;
+    }
+    .bar-label--reason{
+      overflow:visible;
+      white-space:normal;
+      text-overflow:clip;
+      line-height:1.2;
+    }
+    .reason-label{
+      font-weight:700;
+      color:#1f2937;
+    }
+    .reason-detail{
+      color:#6b7280;
+      font-size:.76rem;
+      margin-top:.12rem;
+    }
+    .bar-track{
+      height:12px;
+      border-radius:999px;
+      background:#eef2f7;
+      overflow:hidden;
+    }
+    .bar-fill{
+      height:100%;
+      min-width:2px;
+      border-radius:999px;
+      background:#2563eb;
+    }
+    .bar-fill--assigned{ background:#16a34a; }
+    .bar-fill--warning{ background:#d97706; }
+    .bar-value{
+      font-size:.82rem;
+      color:#4b5563;
+      text-align:right;
+      white-space:nowrap;
+    }
+    .compact-table{
+      font-size:.86rem;
+    }
+    .chart-panel{
+      border:1px solid #e5e9ef;
+      border-radius:8px;
+      background:#fff;
+      padding:.9rem;
+      margin-bottom:1rem;
+    }
+    .chart-panel--embedded{ background:#fbfcfe; }
+    .chart-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:.75rem;
+      margin-bottom:.45rem;
+    }
+    .chart-title{
+      font-weight:700;
+      font-size:.95rem;
+      margin-bottom:.2rem;
+    }
+    .chart-note{
+      color:#6b7280;
+      font-size:.78rem;
+      margin-bottom:.55rem;
+    }
+    .chart-explain{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+      gap:.35rem .85rem;
+      color:#4b5563;
+      font-size:.78rem;
+      margin:.35rem 0 .65rem;
+    }
+    .chart-explain span strong{ color:#1f2937; }
+    .chart-canvas{
+      width:100%;
+      height:390px;
+      display:block;
+    }
+    .chart-canvas--compact{ height:300px; }
+    .chart-canvas--tall{ height:520px; }
+    .chart-expand{
+      white-space:nowrap;
+    }
+    .chart-modal{
+      position:fixed;
+      inset:0;
+      z-index:2000;
+      display:none;
+      background:rgba(15,23,42,.62);
+      padding:2.5vh 2.5vw;
+    }
+    .chart-modal.is-open{ display:block; }
+    .chart-modal__dialog{
+      background:#fff;
+      border-radius:8px;
+      height:95vh;
+      display:flex;
+      flex-direction:column;
+      box-shadow:0 20px 50px rgba(15,23,42,.28);
+      overflow:hidden;
+    }
+    .chart-modal__head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:1rem;
+      padding:1rem 1.15rem;
+      border-bottom:1px solid #e5e7eb;
+    }
+    .chart-modal__body{
+      padding:1rem;
+      flex:1;
+      min-height:0;
+    }
+    .chart-modal__canvas{
+      width:100%;
+      height:100%;
+      display:block;
+    }
+    .section-gap{ margin-top:1rem; }
+  </style>
+
+  <div class="card-surface p-3">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-0">Analitica del run #{{ run.id }}</h2>
+        <div class="text-muted small">{{ run.name }} · {{ analytics.summary.total_matches }} partits · buffer disponibilitat {{ analytics.summary.availability_end_buffer_min }} min</div>
+      </div>
+      <div class="text-right">
+        <a class="btn btn-sm btn-primary" href="{% url 'designacions_export_analytics_pdf' run.id %}">Exportar PDF</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">Assignacions</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">Seguiment</a>
+      </div>
+    </div>
+
+    <div class="analytics-grid">
+      {% for item in analytics.kpis %}
+      <div class="metric-box">
+        <div class="metric-label">{{ item.label }}</div>
+        <div class="metric-value">{{ item.value }}</div>
+        {% if item.pct != None %}
+        <div class="metric-sub">{{ item.pct }}%</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {{ analytics.charts|json_script:"analytics-charts-data" }}
+
+    <div class="row section-gap">
+      <div class="col-12 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Demanda, cobertura i oferta per hora</div>
+          <div class="analytics-note">
+            Poden pitar per horari = tutors dins la seva franja de disponibilitat aplicant el buffer final.
+            No disponibles per ruta propera = tutors que ja tenen algun partit assignat massa a prop d'aquesta hora segons el gap minim.
+            Lliures efectius = poden pitar per horari i no tenen cap partit assignat dins aquest gap. Si hi ha mes d'una data, es compten tutor-dia.
+          </div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Pressio per hora</div>
+                <div class="chart-note">Permet veure si una franja queda curta per demanda real o per falta de tutors lliures.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-hour-pressure" data-chart-title="Pressio per hora">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> hora del partit.</span>
+              <span><strong>Eix Y:</strong> nombre de partits o tutors.</span>
+              <span><strong>Assignats/Pendents:</strong> cobertura final d'aquella hora.</span>
+              <span><strong>Lliures:</strong> tutors amb horari valid i sense partit assignat dins el gap minim.</span>
+            </div>
+            <canvas class="chart-canvas" id="chart-hour-pressure"></canvas>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm compact-table mb-0">
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th class="text-right">Assignats/Total</th>
+                  <th class="text-right">Pendents</th>
+                  <th class="text-right">Poden pitar</th>
+                  <th class="text-right">No disponibles per ruta propera</th>
+                  <th class="text-right">Lliures efectius</th>
+                  <th class="text-right">Clusters atesos</th>
+                  <th style="min-width:160px;">Demanda</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in analytics.demand_by_hour %}
+                <tr>
+                  <td>{{ row.label }}</td>
+                  <td class="text-right">{{ row.assigned }}/{{ row.total }}</td>
+                  <td class="text-right">{{ row.unassigned }}</td>
+                  <td class="text-right">{{ row.schedule_available_tutors }}</td>
+                  <td class="text-right">{{ row.gap_blocked_tutors }}</td>
+                  <td class="text-right">{{ row.free_effective_tutors }}</td>
+                  <td class="text-right">{{ row.served_clusters }}/{{ row.demand_clusters }}</td>
+                  <td>
+                    <div class="bar-track"><div class="bar-fill" style="width:{{ row.demand_pct }}%"></div></div>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-muted">Sense dades horaries.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-5 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Distribucio de carrega per tutor</div>
+          <div class="analytics-note">Detecta si el motor deixa tutors sense usar o concentra massa partits.</div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Mida de les rutes</div>
+                <div class="chart-note">Mostra si la cobertura depen sobretot de rutes d'1 partit o si el motor construeix seqüencies.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-route-size" data-chart-title="Mida de les rutes">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> partits per ruta.</span>
+              <span><strong>Eix Y:</strong> nombre de rutes finals.</span>
+            </div>
+            <canvas class="chart-canvas chart-canvas--compact" id="chart-route-size"></canvas>
+          </div>
+          {% for row in analytics.load_distribution %}
+          <div class="bar-row">
+            <div class="bar-label">{{ row.label }} partits</div>
+            <div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.bar_pct }}%"></div></div>
+            <div class="bar-value">{{ row.tutors }} tutors</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="row section-gap">
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Cobertura per categoria</div>
+          <div class="analytics-note">Categories amb pendents o baixa cobertura.</div>
+          {% for row in analytics.coverage_by_category %}
+          <div class="bar-row">
+            <div class="bar-label" title="{{ row.label }}">{{ row.label }}</div>
+            <div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.coverage_pct }}%"></div></div>
+            <div class="bar-value">{{ row.assigned }}/{{ row.total }} · {{ row.coverage_pct }}%</div>
+          </div>
+          {% empty %}
+          <div class="text-muted small">Sense categories.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Tutors per nivell</div>
+          <div class="analytics-note">Compara oferta disponible i tutors realment utilitzats.</div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Disponibilitat per nivell i hora</div>
+                <div class="chart-note">Color mes intens vol dir mes tutors disponibles efectius en aquell nivell i franja.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-level-hour" data-chart-title="Disponibilitat per nivell i hora">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> hora.</span>
+              <span><strong>Eix Y:</strong> nivell del tutor.</span>
+              <span><strong>Cel·la:</strong> tutors que poden pitar aplicant el buffer final.</span>
+            </div>
+            <canvas class="chart-canvas chart-canvas--tall" id="chart-level-hour"></canvas>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm compact-table mb-0">
+              <thead>
+                <tr>
+                  <th>Nivell</th>
+                  <th class="text-right">Disponibles</th>
+                  <th class="text-right">Usats</th>
+                  <th class="text-right">Sense usar</th>
+                  <th style="min-width:140px;">Us</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in analytics.tutor_level_rows %}
+                <tr>
+                  <td>{{ row.label }}</td>
+                  <td class="text-right">{{ row.available }}</td>
+                  <td class="text-right">{{ row.used }}</td>
+                  <td class="text-right">{{ row.idle }}</td>
+                  <td><div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.used_pct }}%"></div></div></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-muted">Sense tutors.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row section-gap">
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Tutors viables per partit pendent</div>
+          <div class="analytics-note">Compta viables del motor: modalitat, disponibilitat, mobilitat i nivell informat. Els tutors sense nivell es mostren com a bloqueig.</div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Viabilitat dels pendents</div>
+                <div class="chart-note">Cada punt es un partit pendent. Els punts baixos son els mes dificils de recuperar.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-pending-viability" data-chart-title="Viabilitat dels pendents">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> hora del partit pendent.</span>
+              <span><strong>Eix Y:</strong> tutors viables.</span>
+              <span><strong>Mida del punt:</strong> tutors candidats revisats.</span>
+              <span><strong>Taronja:</strong> 0 o 1 tutor viable.</span>
+            </div>
+            <canvas class="chart-canvas" id="chart-pending-viability"></canvas>
+          </div>
+          {% for row in analytics.unassigned_analysis.viability_bins %}
+          <div class="bar-row">
+            <div class="bar-label">{{ row.label }} viables</div>
+            <div class="bar-track"><div class="bar-fill bar-fill--warning" style="width:{{ row.bar_pct }}%"></div></div>
+            <div class="bar-value">{{ row.matches }} partits</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Bloquejos mes frequents</div>
+          <div class="analytics-note">Motius que impedeixen reassignar partits pendents a tutors compatibles de modalitat.</div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Bloquejos per hora</div>
+                <div class="chart-note">Ajuda a veure si un problema es concentra en una franja concreta.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-blocking-hour" data-chart-title="Bloquejos per hora">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> hora del partit pendent.</span>
+              <span><strong>Eix Y:</strong> motiu de bloqueig.</span>
+              <span><strong>Color:</strong> nombre de descartaments.</span>
+            </div>
+            <canvas class="chart-canvas" id="chart-blocking-hour"></canvas>
+          </div>
+          {% for row in analytics.unassigned_analysis.blocking_reasons %}
+          <div class="bar-row bar-row--reason">
+            <div class="bar-label bar-label--reason" title="{{ row.code }} · {{ row.label }}">
+              <div class="reason-label">{{ row.short_label }}</div>
+              <div class="reason-detail">{{ row.label }}</div>
+            </div>
+            <div class="bar-track"><div class="bar-fill bar-fill--warning" style="width:{{ row.bar_pct }}%"></div></div>
+            <div class="bar-value">{{ row.count }}</div>
+          </div>
+          {% empty %}
+          <div class="text-muted small">No hi ha bloquejos en partits pendents.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="col-12 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Progressio de cobertura per fase</div>
+          <div class="analytics-note">Ordre real de les passades del motor, quants partits entra a mirar cada pas i com baixa el volum de pendents.</div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Cobertura acumulada per fase</div>
+                <div class="chart-note">Les barres mostren els partits coberts per cada pas; les linies mostren considerats i pendents despres del pas.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-phase-progress" data-chart-title="Cobertura acumulada per fase">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> fase o repesca.</span>
+              <span><strong>Eix Y:</strong> nombre de partits.</span>
+              <span><strong>Blau:</strong> partits considerats pel pas.</span>
+              <span><strong>Verd:</strong> coberts en el pas.</span>
+              <span><strong>Taronja:</strong> pendents restants.</span>
+            </div>
+            <canvas class="chart-canvas" id="chart-phase-progress"></canvas>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm compact-table mb-0">
+              <thead>
+                <tr>
+                  <th>Pas</th>
+                  <th class="text-right">Pendents abans</th>
+                  <th class="text-right">Considerats</th>
+                  <th class="text-right">Coberts</th>
+                  <th class="text-right">Incidencia fase</th>
+                  <th class="text-right">Pendents despres</th>
+                  <th class="text-right">Cobertura acum.</th>
+                  <th class="text-right">Rutes</th>
+                  <th class="text-right">Candidats viables</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in analytics.origin_rows %}
+                <tr>
+                  <td>
+                    <div>{{ row.label }}</div>
+                    <div class="text-muted small">{{ row.description }}</div>
+                  </td>
+                  <td class="text-right">{{ row.pending_before }}</td>
+                  <td class="text-right">{{ row.considered_matches }}</td>
+                  <td class="text-right">{{ row.matches }}</td>
+                  <td class="text-right">{{ row.phase_coverage_pct }}%</td>
+                  <td class="text-right">{{ row.pending_after }}</td>
+                  <td class="text-right">{{ row.cumulative_matches }} ({{ row.cumulative_pct }}%)</td>
+                  <td class="text-right">{{ row.routes }}</td>
+                  <td class="text-right">
+                    {% if row.candidate_count %}
+                      {{ row.viable_candidate_count }}/{{ row.candidate_count }}
+                    {% else %}
+                      <span class="text-muted">-</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="9" class="text-muted">Sense trace d'origen.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row section-gap">
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Colls d'ampolla pendents</div>
+          <div class="analytics-note">Partits pendents amb menys tutors viables segons disponibilitat, nivell, mobilitat i carrega actual.</div>
+          <div class="table-responsive">
+            <table class="table table-sm compact-table mb-0">
+              <thead>
+                <tr>
+                  <th>Codi</th>
+                  <th>Hora</th>
+                  <th>Categoria</th>
+                  <th>Pista</th>
+                  <th class="text-right">Viables</th>
+                  <th class="text-right">Candidats</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in analytics.unassigned_analysis.bottlenecks %}
+                <tr>
+                  <td class="font-weight-bold">{{ row.code }}</td>
+                  <td>{{ row.hour }}</td>
+                  <td>{{ row.category }}</td>
+                  <td>{{ row.venue }}</td>
+                  <td class="text-right">{{ row.viable_count }}</td>
+                  <td class="text-right">{{ row.candidate_count }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-muted">No hi ha partits pendents.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Clusters i geocodificacio</div>
+          <div class="analytics-note">Zones amb alta demanda, outliers o punts sense cluster.</div>
+          <div class="chart-panel chart-panel--embedded">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">Demanda per cluster i hora</div>
+                <div class="chart-note">El heatmap mostra on es concentra la demanda territorial en cada franja.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary chart-expand" data-chart-target="chart-cluster-hour" data-chart-title="Demanda per cluster i hora">Ampliar</button>
+            </div>
+            <div class="chart-explain">
+              <span><strong>Eix X:</strong> hora.</span>
+              <span><strong>Eix Y:</strong> cluster o estat geocodificacio.</span>
+              <span><strong>Color:</strong> partits totals.</span>
+              <span><strong>Text:</strong> assignats/total.</span>
+            </div>
+            <canvas class="chart-canvas chart-canvas--tall" id="chart-cluster-hour"></canvas>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm compact-table mb-0">
+              <thead>
+                <tr>
+                  <th>Estat</th>
+                  <th>Cluster</th>
+                  <th class="text-right">Partits</th>
+                  <th class="text-right">Assignats</th>
+                  <th class="text-right">Cobertura</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in analytics.geography_rows|slice:":14" %}
+                <tr>
+                  <td>{{ row.status }}</td>
+                  <td>{{ row.label }}</td>
+                  <td class="text-right">{{ row.total }}</td>
+                  <td class="text-right">{{ row.assigned }}</td>
+                  <td class="text-right">{{ row.coverage_pct }}%</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-muted">Sense dades de cluster.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row section-gap">
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Cobertura per modalitat</div>
+          {% for row in analytics.coverage_by_modality %}
+          <div class="bar-row">
+            <div class="bar-label" title="{{ row.label }}">{{ row.label }}</div>
+            <div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.coverage_pct }}%"></div></div>
+            <div class="bar-value">{{ row.assigned }}/{{ row.total }} · {{ row.coverage_pct }}%</div>
+          </div>
+          {% empty %}
+          <div class="text-muted small">Sense modalitats.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="analytics-card">
+          <div class="analytics-title">Vehicle</div>
+          {% for row in analytics.vehicle_rows %}
+          <div class="bar-row">
+            <div class="bar-label">{{ row.label }}</div>
+            <div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.used_pct }}%"></div></div>
+            <div class="bar-value">{{ row.used }}/{{ row.available }} usats</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="chart-modal" id="chart-modal" aria-hidden="true">
+      <div class="chart-modal__dialog">
+        <div class="chart-modal__head">
+          <div>
+            <div class="analytics-title mb-1" id="chart-modal-title">Grafic</div>
+            <div class="analytics-note mb-0" id="chart-modal-note"></div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="chart-modal-close">Tancar</button>
+        </div>
+        <div class="chart-modal__body">
+          <canvas class="chart-modal__canvas" id="chart-modal-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const raw = document.getElementById("analytics-charts-data");
+  if (!raw) return;
+  const charts = JSON.parse(raw.textContent || "{}");
+  const palette = {
+    blue: "#2563eb",
+    green: "#16a34a",
+    orange: "#d97706",
+    red: "#dc2626",
+    slate: "#475569",
+    grid: "#e5e7eb",
+    text: "#374151",
+    muted: "#6b7280"
+  };
+
+  function setup(canvas){
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(320, rect.width || canvas.parentElement.clientWidth || 320);
+    const height = Math.max(220, rect.height || 260);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    ctx.lineWidth = 1;
+    return {ctx, width, height};
+  }
+
+  function maxValue(values){
+    return Math.max(1, ...values.flat().map((value) => Number(value) || 0));
+  }
+
+  function drawAxes(ctx, box, maxY, labels){
+    ctx.strokeStyle = palette.grid;
+    ctx.fillStyle = palette.muted;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i <= 4; i += 1) {
+      const value = Math.round((maxY * i) / 4);
+      const y = box.bottom - (box.height * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(box.left, y);
+      ctx.lineTo(box.right, y);
+      ctx.stroke();
+      ctx.fillText(String(value), box.left - 8, y);
+    }
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const step = Math.max(1, Math.ceil(labels.length / 8));
+    labels.forEach((label, index) => {
+      if (index % step !== 0 && index !== labels.length - 1) return;
+      const x = box.left + (box.width * (index + .5)) / labels.length;
+      ctx.fillText(label, x, box.bottom + 8);
+    });
+  }
+
+  function drawLegend(ctx, items, x, y){
+    let cursor = x;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    items.forEach((item) => {
+      ctx.fillStyle = item.color;
+      ctx.fillRect(cursor, y - 5, 10, 10);
+      ctx.fillStyle = palette.text;
+      ctx.fillText(item.label, cursor + 14, y);
+      cursor += ctx.measureText(item.label).width + 44;
+    });
+  }
+
+  function drawHourPressure(){
+    const canvas = document.getElementById("chart-hour-pressure");
+    const chart = charts.hour_pressure || {};
+    const labels = chart.labels || [];
+    if (!labels.length) return drawEmpty(canvas);
+    const s = chart.datasets || {};
+    const state = setup(canvas);
+    if (!state) return;
+    const {ctx, width, height} = state;
+    const box = {left: 44, top: 20, right: width - 18, bottom: height - 42};
+    box.width = box.right - box.left;
+    box.height = box.bottom - box.top;
+    const maxY = maxValue([s.demand || [], s.assigned || [], s.unassigned || [], s.free_effective || [], s.schedule_available || []]);
+    drawAxes(ctx, box, maxY, labels);
+    const group = box.width / labels.length;
+    const barWidth = Math.max(3, Math.min(16, group / 5));
+    labels.forEach((label, index) => {
+      const values = [
+        {v: (s.assigned || [])[index] || 0, color: palette.green},
+        {v: (s.unassigned || [])[index] || 0, color: palette.orange},
+        {v: (s.free_effective || [])[index] || 0, color: palette.blue}
+      ];
+      values.forEach((item, offset) => {
+        const h = (item.v / maxY) * box.height;
+        const x = box.left + index * group + group / 2 + (offset - 1) * (barWidth + 2);
+        ctx.fillStyle = item.color;
+        ctx.fillRect(x - barWidth / 2, box.bottom - h, barWidth, h);
+      });
+    });
+    drawLine(ctx, box, labels, s.schedule_available || [], maxY, palette.slate);
+    drawLegend(ctx, [
+      {label: "Assignats", color: palette.green},
+      {label: "Pendents", color: palette.orange},
+      {label: "Lliures", color: palette.blue},
+      {label: "Poden pitar", color: palette.slate}
+    ], box.left, 12);
+  }
+
+  function drawLine(ctx, box, labels, values, maxY, color){
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    labels.forEach((label, index) => {
+      const x = box.left + (box.width * (index + .5)) / labels.length;
+      const y = box.bottom - ((Number(values[index]) || 0) / maxY) * box.height;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function drawPhaseProgress(){
+    const canvas = document.getElementById("chart-phase-progress");
+    const chart = charts.phase_progress || {};
+    const labels = chart.labels || [];
+    if (!labels.length) return drawEmpty(canvas);
+    const state = setup(canvas);
+    if (!state) return;
+    const {ctx, width, height} = state;
+    const box = {left: 48, top: 20, right: width - 18, bottom: height - 58};
+    box.width = box.right - box.left;
+    box.height = box.bottom - box.top;
+    const considered = chart.considered || [];
+    const covered = chart.covered || [];
+    const pending = chart.pending_after || [];
+    const maxY = maxValue([considered, covered, pending]);
+    drawAxes(ctx, box, maxY, labels);
+    const group = box.width / labels.length;
+    const barWidth = Math.max(10, Math.min(28, group * .36));
+    covered.forEach((value, index) => {
+      const h = ((Number(value) || 0) / maxY) * box.height;
+      const x = box.left + index * group + group / 2;
+      ctx.fillStyle = palette.green;
+      ctx.fillRect(x - barWidth / 2, box.bottom - h, barWidth, h);
+    });
+    drawLine(ctx, box, labels, considered, maxY, palette.blue);
+    drawLine(ctx, box, labels, pending, maxY, palette.orange);
+    drawLegend(ctx, [
+      {label: "Considerats", color: palette.blue},
+      {label: "Coberts", color: palette.green},
+      {label: "Pendents", color: palette.orange}
+    ], box.left, 12);
+  }
+
+  function drawRouteSize(){
+    const canvas = document.getElementById("chart-route-size");
+    const chart = charts.route_size_distribution || {};
+    const labels = chart.labels || [];
+    if (!labels.length) return drawEmpty(canvas);
+    drawSimpleBars(canvas, labels, chart.routes || [], palette.blue, "rutes");
+  }
+
+  function drawSimpleBars(canvas, labels, values, color, unit){
+    const state = setup(canvas);
+    if (!state) return;
+    const {ctx, width, height} = state;
+    const box = {left: 42, top: 18, right: width - 18, bottom: height - 36};
+    box.width = box.right - box.left;
+    box.height = box.bottom - box.top;
+    const maxY = maxValue([values]);
+    drawAxes(ctx, box, maxY, labels);
+    const group = box.width / labels.length;
+    const barWidth = Math.max(18, Math.min(46, group * .45));
+    values.forEach((value, index) => {
+      const h = ((Number(value) || 0) / maxY) * box.height;
+      const x = box.left + index * group + group / 2;
+      ctx.fillStyle = color;
+      ctx.fillRect(x - barWidth / 2, box.bottom - h, barWidth, h);
+      ctx.fillStyle = palette.text;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(`${value}`, x, box.bottom - h - 4);
+    });
+  }
+
+  function drawHeatmap(canvasId, chart, rowKey, valueKey, labelFormatter){
+    const canvas = document.getElementById(canvasId);
+    const hours = chart.hours || [];
+    const rows = chart[rowKey] || [];
+    if (!hours.length || !rows.length) return drawEmpty(canvas);
+    const state = setup(canvas);
+    if (!state) return;
+    const {ctx, width, height} = state;
+    const left = Math.min(118, Math.max(82, width * .24));
+    const top = 24;
+    const bottom = height - 28;
+    const right = width - 12;
+    const cellW = (right - left) / hours.length;
+    const cellH = Math.max(18, (bottom - top) / rows.length);
+    const maxCell = maxValue(rows.map((row) => (row.values || []).map((rawCell) => {
+      const cell = (rawCell && typeof rawCell === "object") ? rawCell : {value: Number(rawCell) || 0, total: Number(rawCell) || 0};
+      return Number(cell[valueKey]) || 0;
+    })));
+    ctx.textBaseline = "middle";
+    rows.forEach((row, rowIndex) => {
+      const y = top + rowIndex * cellH;
+      ctx.fillStyle = palette.text;
+      ctx.textAlign = "right";
+      ctx.fillText(String(row.label).slice(0, 18), left - 8, y + cellH / 2);
+      (row.values || []).forEach((rawCell, colIndex) => {
+        const cell = (rawCell && typeof rawCell === "object") ? rawCell : {value: Number(rawCell) || 0, total: Number(rawCell) || 0};
+        const value = Number(cell[valueKey]) || 0;
+        const intensity = maxCell ? value / maxCell : 0;
+        const color = heatColor(intensity);
+        const x = left + colIndex * cellW;
+        ctx.fillStyle = color;
+        ctx.fillRect(x + 1, y + 1, Math.max(1, cellW - 2), Math.max(1, cellH - 2));
+        if (cellW > 28 && cellH > 19 && value > 0) {
+          ctx.fillStyle = intensity > .55 ? "#fff" : "#1f2937";
+          ctx.textAlign = "center";
+          ctx.font = "11px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+          ctx.fillText(labelFormatter(cell), x + cellW / 2, y + cellH / 2);
+        }
+      });
+    });
+    ctx.fillStyle = palette.muted;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const step = Math.max(1, Math.ceil(hours.length / 8));
+    hours.forEach((hour, index) => {
+      if (index % step !== 0 && index !== hours.length - 1) return;
+      ctx.fillText(hour, left + index * cellW + cellW / 2, bottom + 8);
+    });
+  }
+
+  function heatColor(t){
+    const clamped = Math.max(0, Math.min(1, t));
+    const r = Math.round(239 - clamped * 205);
+    const g = Math.round(246 - clamped * 104);
+    const b = Math.round(255 - clamped * 36);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function drawBlockingByHour(){
+    const canvas = document.getElementById("chart-blocking-hour");
+    const chart = charts.blocking_by_hour || {};
+    const hours = chart.hours || [];
+    const reasons = chart.reasons || [];
+    if (!hours.length || !reasons.length) return drawEmpty(canvas);
+    const rows = reasons.map((reason, index) => ({
+      label: reason.label,
+      values: (chart.matrix || [])[index] || []
+    }));
+    drawHeatmap("chart-blocking-hour", {hours, rows}, "rows", "value", (cell) => String(cell.value || ""));
+  }
+
+  function drawPendingViability(){
+    const canvas = document.getElementById("chart-pending-viability");
+    const chart = charts.pending_viability || {};
+    const points = chart.points || [];
+    if (!points.length) return drawEmpty(canvas);
+    const state = setup(canvas);
+    if (!state) return;
+    const {ctx, width, height} = state;
+    const box = {left: 44, top: 20, right: width - 18, bottom: height - 42};
+    box.width = box.right - box.left;
+    box.height = box.bottom - box.top;
+    const minutes = points.map((p) => Number(p.hour_minutes)).filter((v) => Number.isFinite(v));
+    const minX = Math.min(...minutes);
+    const maxX = Math.max(...minutes);
+    const maxY = Math.max(3, ...points.map((p) => Number(p.viable_count) || 0));
+    drawAxes(ctx, box, maxY, []);
+    ctx.fillStyle = palette.muted;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const hourLabels = Array.from(new Set(points.map((p) => p.hour))).sort((a, b) => (toMinutes(a) || 0) - (toMinutes(b) || 0));
+    hourLabels.forEach((label) => {
+      const x = box.left + (((toMinutes(label) || minX) - minX) / Math.max(1, maxX - minX)) * box.width;
+      ctx.fillText(label, x, box.bottom + 8);
+    });
+    points.forEach((point) => {
+      const x = box.left + (((Number(point.hour_minutes) || minX) - minX) / Math.max(1, maxX - minX)) * box.width;
+      const y = box.bottom - ((Number(point.viable_count) || 0) / maxY) * box.height;
+      const radius = Math.min(9, 4 + Math.sqrt(Number(point.candidate_count) || 0) * .6);
+      ctx.fillStyle = Number(point.viable_count) <= 1 ? palette.orange : palette.blue;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function toMinutes(label){
+    const parts = String(label || "").split(":");
+    if (parts.length < 2) return null;
+    return Number(parts[0]) * 60 + Number(parts[1]);
+  }
+
+  function drawEmpty(canvas){
+    const state = setup(canvas);
+    if (!state) return;
+    const {ctx, width, height} = state;
+    ctx.fillStyle = palette.muted;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Sense dades per aquest grafic", width / 2, height / 2);
+  }
+
+  function drawAll(){
+    drawHourPressure();
+    drawPhaseProgress();
+    drawHeatmap("chart-cluster-hour", charts.cluster_hour_heatmap || {}, "clusters", "total", (cell) => cell.total ? `${cell.assigned}/${cell.total}` : "");
+    drawHeatmap("chart-level-hour", charts.tutor_level_hour_heatmap || {}, "levels", "value", (cell) => String(cell.value || ""));
+    drawRouteSize();
+    drawBlockingByHour();
+    drawPendingViability();
+  }
+
+  function copyCanvasToModal(sourceId){
+    const source = document.getElementById(sourceId);
+    const modalCanvas = document.getElementById("chart-modal-canvas");
+    const state = setup(modalCanvas);
+    if (!source || !state) return;
+    const {ctx, width, height} = state;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, width, height);
+    const padding = 8;
+    ctx.drawImage(source, padding, padding, Math.max(1, width - padding * 2), Math.max(1, height - padding * 2));
+  }
+
+  function openChartModal(button){
+    const sourceId = button.getAttribute("data-chart-target");
+    const modal = document.getElementById("chart-modal");
+    const title = document.getElementById("chart-modal-title");
+    const note = document.getElementById("chart-modal-note");
+    const source = document.getElementById(sourceId);
+    if (!modal || !source) return;
+    title.textContent = button.getAttribute("data-chart-title") || "Grafic";
+    const panel = source.closest(".chart-panel");
+    const explain = panel ? panel.querySelector(".chart-explain") : null;
+    note.textContent = explain ? explain.innerText.replace(/\s+/g, " ").trim() : "";
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+    modal.setAttribute("data-source-chart", sourceId);
+    window.setTimeout(() => copyCanvasToModal(sourceId), 40);
+  }
+
+  function closeChartModal(){
+    const modal = document.getElementById("chart-modal");
+    if (!modal) return;
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    modal.removeAttribute("data-source-chart");
+  }
+
+  document.querySelectorAll(".chart-expand").forEach((button) => {
+    button.addEventListener("click", () => openChartModal(button));
+  });
+  const modal = document.getElementById("chart-modal");
+  const closeButton = document.getElementById("chart-modal-close");
+  if (closeButton) closeButton.addEventListener("click", closeChartModal);
+  if (modal) {
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeChartModal();
+    });
+  }
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeChartModal();
+  });
+
+  drawAll();
+  window.addEventListener("resize", () => {
+    window.clearTimeout(window.__analyticsChartsResize);
+    window.__analyticsChartsResize = window.setTimeout(() => {
+      drawAll();
+      const openModal = document.getElementById("chart-modal");
+      const sourceId = openModal ? openModal.getAttribute("data-source-chart") : "";
+      if (openModal && openModal.classList.contains("is-open") && sourceId) {
+        copyCanvasToModal(sourceId);
+      }
+    }, 120);
+  });
+})();
+</script>
+{% endblock %}

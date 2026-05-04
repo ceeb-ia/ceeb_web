@@ -130,7 +130,7 @@
     if(VIDEO_CAPTURE_ENABLED && !opts.skipVideo){
       const videoState = getVideoState(insId, resolvedExercise);
       if(!canRecordVideo()){
-        setVideoStatus(insId, resolvedExercise, "err", "Camera no disponible en aquest navegador.");
+        setVideoStatus(insId, resolvedExercise, "err", "Càmera no disponible en aquest navegador.");
         applyVideoUiState(insId, resolvedExercise, {
           busy: false,
           hasPending: !!videoState.pendingBlob,
@@ -167,7 +167,7 @@
 
     const videoState = getVideoState(insId, exercici);
     if(!canRecordVideo()){
-      setVideoStatus(insId, exercici, "err", "Camera no disponible en aquest navegador.");
+      setVideoStatus(insId, exercici, "err", "Càmera no disponible en aquest navegador.");
       applyVideoUiState(insId, exercici, {
         busy: false,
         hasPending: !!videoState.pendingBlob,

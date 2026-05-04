@@ -2,14 +2,14 @@
   <div class="judge-exercise-panel-head">
     <div>
       <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
-      <div class="judge-exercise-panel-subtitle">{{ exercise_subtitle|default:"Puntuacio i video agrupats en aquest exercici." }}</div>
+      <div class="judge-exercise-panel-subtitle">{{ exercise_subtitle|default:"Puntuació i vídeo agrupats en aquest exercici." }}</div>
     </div>
     <div class="judge-meta" id="status-{{ ins.id }}-{{ ex }}"></div>
   </div>
   <div id="editor-inner-{{ ins.id }}-{{ ex }}"></div>
   {% include "judge/portal/modes/_video_panel.html" with ins=ins ex=ex video_capture_enabled=video_capture_enabled only %}
   <div class="judge-exercise-actions">
-    <button type="button" class="btn btn-sm btn-outline-primary" onclick="if(window.openCompetitionModeFromEntry){ openCompetitionModeFromEntry('{{ ins.id }}', '{{ ex }}'); } else { alert('Cal incloure els scripts del mode competicio.'); }">Comencar des d'aqui</button>
+    <button type="button" class="btn btn-sm btn-outline-primary" onclick="if(window.openCompetitionModeFromEntry){ openCompetitionModeFromEntry('{{ ins.id }}', '{{ ex }}'); } else { alert('Cal incloure els scripts del mode competició.'); }">Començar des d'aquí</button>
     {% if not judge_kiosk %}
     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}', '{{ ex }}')">Copia anterior</button>
     {% endif %}

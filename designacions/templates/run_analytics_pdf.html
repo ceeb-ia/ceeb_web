@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ca">
+<head>
+  <meta charset="utf-8">
+  <title>Analitica run {{ run.id }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 13mm;
+      @bottom-right {
+        content: "Pagina " counter(page) " / " counter(pages);
+        color: #6b7280;
+        font-size: 8pt;
+      }
+    }
+    body {
+      color: #1f2937;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9pt;
+      line-height: 1.35;
+    }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 20pt; }
+    h2 {
+      border-bottom: 1px solid #d8dee6;
+      color: #111827;
+      font-size: 13pt;
+      margin: 18px 0 8px;
+      padding-bottom: 4px;
+    }
+    h3 {
+      color: #1f2937;
+      font-size: 10pt;
+      margin: 10px 0 4px;
+    }
+    .muted { color: #6b7280; }
+    .header {
+      border-bottom: 2px solid #1f2937;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+    }
+    .header-meta {
+      color: #4b5563;
+      font-size: 9pt;
+      margin-top: 4px;
+    }
+    .kpi-grid {
+      display: grid;
+      gap: 7px;
+      grid-template-columns: repeat(3, 1fr);
+      margin: 10px 0 4px;
+    }
+    .kpi {
+      border: 1px solid #d8dee6;
+      border-radius: 5px;
+      padding: 7px 8px;
+    }
+    .kpi-label {
+      color: #6b7280;
+      font-size: 7.5pt;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    .kpi-value {
+      font-size: 15pt;
+      font-weight: bold;
+      margin-top: 2px;
+    }
+    .section {
+      break-inside: avoid;
+      margin-bottom: 10px;
+    }
+    .chart-note {
+      background: #f4f7fb;
+      border-left: 3px solid #2563eb;
+      color: #374151;
+      margin: 4px 0 7px;
+      padding: 6px 8px;
+    }
+    table {
+      border-collapse: collapse;
+      margin: 6px 0 10px;
+      width: 100%;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 4px 5px;
+      vertical-align: top;
+    }
+    th {
+      background: #f9fafb;
+      color: #4b5563;
+      font-size: 7.5pt;
+      text-align: left;
+      text-transform: uppercase;
+    }
+    .text-right { text-align: right; }
+    .nowrap { white-space: nowrap; }
+    .bar-track {
+      background: #edf2f7;
+      border-radius: 999px;
+      height: 7px;
+      overflow: hidden;
+      width: 100%;
+    }
+    .bar-fill {
+      background: #2563eb;
+      height: 7px;
+    }
+    .bar-fill--assigned { background: #16a34a; }
+    .bar-fill--warning { background: #f59e0b; }
+    .two-col {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr 1fr;
+    }
+    .page-break { break-before: page; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Analitica del run #{{ run.id }}</h1>
+    <div class="header-meta">
+      {{ run.name }} | estat {{ run.status }} | generat {{ generated_at|date:"d/m/Y H:i" }} |
+      {{ analytics.summary.total_matches }} partits | buffer disponibilitat {{ analytics.summary.availability_end_buffer_min }} min
+    </div>
+  </div>
+
+  <h2>Resum del run</h2>
+  <div class="kpi-grid">
+    {% for item in analytics.kpis %}
+    <div class="kpi">
+      <div class="kpi-label">{{ item.label }}</div>
+      <div class="kpi-value">{{ item.value }}</div>
+      {% if item.pct != None %}<div class="muted">{{ item.pct }}%</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="two-col">
+    <div class="section">
+      <h3>Cobertura per modalitat</h3>
+      <div class="chart-note">Lectura: compara el percentatge de partits coberts per cada modalitat per detectar modalitats amb pendents concentrats.</div>
+      <table>
+        <thead><tr><th>Modalitat</th><th class="text-right">Assignats/Total</th><th class="text-right">Cobertura</th></tr></thead>
+        <tbody>
+          {% for row in analytics.coverage_by_modality %}
+          <tr><td>{{ row.label }}</td><td class="text-right nowrap">{{ row.assigned }}/{{ row.total }}</td><td class="text-right">{{ row.coverage_pct }}%</td></tr>
+          {% empty %}
+          <tr><td colspan="3" class="muted">Sense modalitats.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h3>Vehicle</h3>
+      <div class="chart-note">Lectura: mostra si els tutors amb vehicle s'han utilitzat i ajuda a interpretar problemes de mobilitat entre pistes.</div>
+      <table>
+        <thead><tr><th>Grup</th><th class="text-right">Usats/Disponibles</th><th>Us</th></tr></thead>
+        <tbody>
+          {% for row in analytics.vehicle_rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="text-right nowrap">{{ row.used }}/{{ row.available }}</td>
+            <td><div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.used_pct }}%"></div></div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2>Demanda, cobertura i oferta per hora</h2>
+  <div class="chart-note">
+    Grafic: Pressio per hora. Compara partits assignats, pendents i tutors lliures efectius per franja. "Lliures efectius" vol dir tutors dins horari valid i sense cap partit assignat dins el gap minim.
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Hora</th>
+        <th class="text-right">Assignats/Total</th>
+        <th class="text-right">Pendents</th>
+        <th class="text-right">Poden pitar</th>
+        <th class="text-right">Ruta propera</th>
+        <th class="text-right">Lliures efectius</th>
+        <th class="text-right">Clusters</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in analytics.demand_by_hour %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td class="text-right nowrap">{{ row.assigned }}/{{ row.total }}</td>
+        <td class="text-right">{{ row.unassigned }}</td>
+        <td class="text-right">{{ row.schedule_available_tutors }}</td>
+        <td class="text-right">{{ row.gap_blocked_tutors }}</td>
+        <td class="text-right">{{ row.free_effective_tutors }}</td>
+        <td class="text-right nowrap">{{ row.served_clusters }}/{{ row.demand_clusters }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="muted">Sense dades horaries.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="two-col">
+    <div class="section">
+      <h3>Distribucio de carrega per tutor</h3>
+      <div class="chart-note">Grafic: Mida de les rutes. Indica si la cobertura final depen de rutes curtes o de sequencies de diversos partits.</div>
+      <table>
+        <thead><tr><th>Partits per ruta</th><th class="text-right">Tutors</th><th>Pes</th></tr></thead>
+        <tbody>
+          {% for row in analytics.load_distribution %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="text-right">{{ row.tutors }}</td>
+            <td><div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.bar_pct }}%"></div></div></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" class="muted">Sense rutes.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h3>Cobertura per categoria</h3>
+      <div class="chart-note">Lectura: posa en evidencia categories amb baixa cobertura o amb volum alt de pendents.</div>
+      <table>
+        <thead><tr><th>Categoria</th><th class="text-right">Assignats/Total</th><th class="text-right">Cobertura</th></tr></thead>
+        <tbody>
+          {% for row in analytics.coverage_by_category|slice:":12" %}
+          <tr><td>{{ row.label }}</td><td class="text-right nowrap">{{ row.assigned }}/{{ row.total }}</td><td class="text-right">{{ row.coverage_pct }}%</td></tr>
+          {% empty %}
+          <tr><td colspan="3" class="muted">Sense categories.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2 class="page-break">Progressio de cobertura per fase</h2>
+  <div class="chart-note">
+    Grafic: Cobertura acumulada per fase. Les barres representen partits coberts en cada pas; la linia de considerats indica quants partits entraven al motor en aquell pas i la linia de pendents mostra que queda despres.
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Pas</th>
+        <th class="text-right">Pendents abans</th>
+        <th class="text-right">Considerats</th>
+        <th class="text-right">Coberts</th>
+        <th class="text-right">Incidencia</th>
+        <th class="text-right">Pendents despres</th>
+        <th class="text-right">Cobertura acum.</th>
+        <th class="text-right">Candidats</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in analytics.origin_rows %}
+      <tr>
+        <td><strong>{{ row.label }}</strong><br><span class="muted">{{ row.description }}</span></td>
+        <td class="text-right">{{ row.pending_before }}</td>
+        <td class="text-right">{{ row.considered_matches }}</td>
+        <td class="text-right">{{ row.matches }}</td>
+        <td class="text-right">{{ row.phase_coverage_pct }}%</td>
+        <td class="text-right">{{ row.pending_after }}</td>
+        <td class="text-right nowrap">{{ row.cumulative_matches }} ({{ row.cumulative_pct }}%)</td>
+        <td class="text-right nowrap">
+          {% if row.candidate_count %}{{ row.viable_candidate_count }}/{{ row.candidate_count }}{% else %}-{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="muted">Sense trace d'origen.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="two-col">
+    <div class="section">
+      <h3>Tutors viables per partit pendent</h3>
+      <div class="chart-note">Grafic: Viabilitat dels pendents. Cada punt del grafic web equival a un partit pendent; valors 0 o 1 indiquen colls d'ampolla reals.</div>
+      <table>
+        <thead><tr><th>Viables</th><th class="text-right">Partits</th><th>Pes</th></tr></thead>
+        <tbody>
+          {% for row in analytics.unassigned_analysis.viability_bins %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="text-right">{{ row.matches }}</td>
+            <td><div class="bar-track"><div class="bar-fill bar-fill--warning" style="width:{{ row.bar_pct }}%"></div></div></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" class="muted">Sense partits pendents.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h3>Bloquejos mes frequents</h3>
+      <div class="chart-note">Grafic: Bloquejos per hora. Ajuda a veure si els descartaments venen de disponibilitat, nivell, mobilitat o carrega ja assignada.</div>
+      <table>
+        <thead><tr><th>Motiu</th><th class="text-right">Comptador</th></tr></thead>
+        <tbody>
+          {% for row in analytics.unassigned_analysis.blocking_reasons|slice:":10" %}
+          <tr><td>{{ row.short_label }}<br><span class="muted">{{ row.label }}</span></td><td class="text-right">{{ row.count }}</td></tr>
+          {% empty %}
+          <tr><td colspan="2" class="muted">No hi ha bloquejos en partits pendents.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2>Colls d'ampolla i territori</h2>
+  <div class="two-col">
+    <div class="section">
+      <h3>Partits pendents mes dificils</h3>
+      <div class="chart-note">Lectura: ordena els pendents amb menys tutors viables per prioritzar revisio manual o canvis de criteri.</div>
+      <table>
+        <thead><tr><th>Codi</th><th>Hora</th><th>Categoria</th><th class="text-right">Viables</th></tr></thead>
+        <tbody>
+          {% for row in analytics.unassigned_analysis.bottlenecks|slice:":12" %}
+          <tr><td>{{ row.code }}</td><td>{{ row.hour }}</td><td>{{ row.category }}</td><td class="text-right">{{ row.viable_count }}</td></tr>
+          {% empty %}
+          <tr><td colspan="4" class="muted">No hi ha partits pendents.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h3>Clusters i geocodificacio</h3>
+      <div class="chart-note">Grafic: Demanda per cluster i hora. Mostra on es concentra territorialment la demanda i si hi ha punts sense cluster o outliers.</div>
+      <table>
+        <thead><tr><th>Estat</th><th>Cluster</th><th class="text-right">Assignats/Total</th><th class="text-right">Cobertura</th></tr></thead>
+        <tbody>
+          {% for row in analytics.geography_rows|slice:":14" %}
+          <tr><td>{{ row.status }}</td><td>{{ row.label }}</td><td class="text-right nowrap">{{ row.assigned }}/{{ row.total }}</td><td class="text-right">{{ row.coverage_pct }}%</td></tr>
+          {% empty %}
+          <tr><td colspan="4" class="muted">Sense dades de cluster.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2>Tutors per nivell</h2>
+  <div class="chart-note">
+    Grafic: Disponibilitat per nivell i hora. En la web es mostra com a mapa de calor; en aquest informe es resumeix oferta disponible, tutors usats i tutors sense usar per nivell.
+  </div>
+  <table>
+    <thead><tr><th>Nivell</th><th class="text-right">Disponibles</th><th class="text-right">Usats</th><th class="text-right">Sense usar</th><th>Us</th></tr></thead>
+    <tbody>
+      {% for row in analytics.tutor_level_rows %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td class="text-right">{{ row.available }}</td>
+        <td class="text-right">{{ row.used }}</td>
+        <td class="text-right">{{ row.idle }}</td>
+        <td><div class="bar-track"><div class="bar-fill bar-fill--assigned" style="width:{{ row.used_pct }}%"></div></div></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">Sense tutors.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

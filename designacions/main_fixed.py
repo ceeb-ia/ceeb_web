@@ -22,15 +22,31 @@ from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.utils.dateparse import parse_date
 from .services.geocoding_db import geocodifica_adreces, addresses_to_df
+from .clusteritzacio.overrides import apply_preview_overrides, resolve_preview_overrides
 from .services.addressing import build_address_payload, resolve_address
 from .services.assignment_feasibility import (
     DEFAULT_GAP_DIFF_CLUSTER_MIN,
     build_match_descriptor,
     diagnose_segment_feasibility,
+    has_vehicle,
     primary_reason_code,
 )
+from .services.vehicle_policy import (
+    build_vehicle_assignment_record,
+    build_vehicle_policy_context,
+    summarize_vehicle_assignments,
+    vehicle_policy_penalty,
+)
+from .optimization.base_subgroups import build_base_subgroups_from_rows
+from .optimization.contracts import TutorCandidate
+from .optimization.package_generation import generate_package_candidates
+from .optimization.package_scoring import build_assignment_candidates
+from .optimization.phase_runner import run_phased_route_solver
+from .optimization.pressure import build_pressure_summary
+from .optimization.solver import solve_assignment_candidates
 from .models import AddressCluster, DesignationRun
 from .services.manual_assignment import update_run_mobility_summary
+from .clusteritzacio.maps import add_base_tile_layers
 
 
 
@@ -134,6 +150,44 @@ def _cluster_status_from_values(cluster_value, lat_value, lon_value) -> str:
     except (TypeError, ValueError):
         pass
     return "clustered"
+
+
+def _apply_frozen_cluster_assignments(domicilis_clusteritzats: pd.DataFrame, frozen_assignments) -> pd.DataFrame:
+    if domicilis_clusteritzats.empty or not frozen_assignments:
+        return domicilis_clusteritzats
+
+    assignment_by_address_id = {}
+    for item in frozen_assignments:
+        if not isinstance(item, dict):
+            continue
+        try:
+            address_id = int(item.get("address_id"))
+        except (TypeError, ValueError):
+            continue
+        assignment_by_address_id[address_id] = item
+
+    if not assignment_by_address_id:
+        return domicilis_clusteritzats
+
+    out = domicilis_clusteritzats.copy()
+    for idx, row in out.iterrows():
+        address_id = row.get("address_id")
+        if pd.isna(address_id):
+            continue
+        assignment = assignment_by_address_id.get(int(address_id))
+        if assignment is None:
+            continue
+        cluster_value = assignment.get("cluster")
+        out.at[idx, "cluster"] = pd.NA if cluster_value is None else cluster_value
+        out.at[idx, "cluster_status"] = assignment.get("cluster_status") or _cluster_status_from_values(
+            cluster_value,
+            row.get("lat"),
+            row.get("lon"),
+        )
+
+    if "cluster" in out.columns:
+        out["cluster"] = pd.to_numeric(out["cluster"], errors="coerce").astype("Int64")
+    return out
 
 
 def _build_tutor_working_id(row) -> str:
@@ -332,8 +386,7 @@ def _availability_penalty_for_subgroup(tutor_row, subgrup, availability_end_buff
     if pd.isna(sub_inici_dt) or pd.isna(sub_final_dt) or pd.isna(dispo_inici_dt) or pd.isna(dispo_final_dt):
         return penalty
 
-    dispo_final_adj = dispo_final_dt - timedelta(minutes=availability_end_buffer_min)
-    if dispo_inici_dt > sub_inici_dt or dispo_final_adj < sub_final_dt:
+    if dispo_inici_dt > sub_inici_dt or dispo_final_dt < sub_final_dt:
         return penalty
     return 0.0
 
@@ -396,6 +449,231 @@ def _build_tutor_transport(tutor_row):
     if pd.isna(transport):
         return ""
     return transport
+
+
+def _build_optimization_tutors(df_dispos_modalitat: pd.DataFrame) -> list[TutorCandidate]:
+    tutors = []
+    for _, row in df_dispos_modalitat.iterrows():
+        date_key = _date_token(row.get("Data"))
+        tutor_id = row.get("ID")
+        if pd.isna(tutor_id) or str(tutor_id).strip() == "":
+            tutor_id = row.get("Codi Tutor de Joc", "")
+        availability_by_date = {}
+        if date_key:
+            availability_by_date[date_key] = [
+                {
+                    "start": row.get("Hora Inici"),
+                    "end": row.get("Hora Fi"),
+                }
+            ]
+        tutors.append(
+            TutorCandidate(
+                id=tutor_id,
+                code=row.get("Codi Tutor de Joc", ""),
+                modality=row.get("Modalitat", ""),
+                level=row.get("Nivell", ""),
+                transport=_build_tutor_transport(row),
+                has_vehicle=has_vehicle(_build_tutor_transport(row)),
+                availability_by_date=availability_by_date,
+            )
+        )
+    return tutors
+
+
+def _tutor_candidate_id_from_row(row):
+    tutor_id = row.get("ID")
+    if pd.isna(tutor_id) or str(tutor_id).strip() == "":
+        tutor_id = row.get("Codi Tutor de Joc", "")
+    return str(tutor_id)
+
+
+def _package_solver_selected_records(solver_result, packages, tutor_rows_by_id, match_rows_by_id):
+    package_by_id = {str(package.id): package for package in packages}
+    records = []
+    for assignment in solver_result.selected_assignments:
+        package = package_by_id.get(str(assignment.package_id))
+        tutor_row = tutor_rows_by_id.get(str(assignment.tutor_id))
+        if package is None or tutor_row is None:
+            continue
+        segment = [
+            match_rows_by_id[match_id]
+            for match_id in assignment.match_ids
+            if match_id in match_rows_by_id
+        ]
+        if not segment:
+            continue
+        records.append((assignment, package, tutor_row, segment))
+    return records
+
+
+def _route_value(route, *names, default=None):
+    for name in names:
+        if isinstance(route, dict) and name in route:
+            return route[name]
+        try:
+            value = route.get(name)
+            if value is not None:
+                return value
+        except AttributeError:
+            pass
+        if hasattr(route, name):
+            return getattr(route, name)
+    return default
+
+
+def _route_match_ids(route):
+    values = _route_value(route, "route_match_ids", "full_route_match_ids", "new_match_ids", "match_ids", default=[])
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [part.strip() for part in values.replace(";", ",").replace("|", ",").split(",") if part.strip()]
+    try:
+        return [str(value).strip() for value in values if str(value).strip()]
+    except TypeError:
+        value = str(values).strip()
+        return [value] if value else []
+
+
+def _route_new_match_ids(route):
+    values = _route_value(route, "new_match_ids", "match_ids", default=[])
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [part.strip() for part in values.replace(";", ",").replace("|", ",").split(",") if part.strip()]
+    try:
+        return [str(value).strip() for value in values if str(value).strip()]
+    except TypeError:
+        value = str(values).strip()
+        return [value] if value else []
+
+
+def _phased_route_selected_records(phased_result, tutor_rows_by_id, match_rows_by_id):
+    records = []
+    for route in getattr(phased_result, "selected_routes", []) or []:
+        tutor_row = tutor_rows_by_id.get(str(_route_value(route, "tutor_id", default="")))
+        if tutor_row is None:
+            continue
+        segment = [
+            match_rows_by_id[match_id]
+            for match_id in _route_new_match_ids(route)
+            if match_id in match_rows_by_id
+        ]
+        if not segment:
+            continue
+        records.append((route, tutor_row, segment))
+    return records
+
+
+def _json_trace_value(value):
+    if isinstance(value, dict):
+        return {str(key): _json_trace_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_trace_value(item) for item in value]
+    if hasattr(value, "isoformat") and callable(value.isoformat):
+        return value.isoformat()
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def _trace_match_ids_from_segment(segment):
+    return [str(partit.get("ID", "")).strip() for partit in segment if str(partit.get("ID", "")).strip()]
+
+
+def _trace_match_codes_from_segment(segment):
+    return [str(partit.get("Codi", "")).strip() for partit in segment if str(partit.get("Codi", "")).strip()]
+
+
+def _stage_parts(stage: str) -> tuple[str, int | None]:
+    stage = str(stage or "")
+    rescue_kind = ""
+    rescue_iteration = None
+    if stage.startswith("partial_rescue"):
+        rescue_kind = "partial_rescue"
+    elif stage in {"final_rescue", "new_route_rescue"}:
+        rescue_kind = stage
+    elif stage.startswith("individual_rescue"):
+        rescue_kind = "individual_rescue"
+        try:
+            rescue_iteration = int(stage.split(":", 1)[1])
+        except (IndexError, TypeError, ValueError):
+            rescue_iteration = None
+    return rescue_kind, rescue_iteration
+
+
+def _build_assignment_trace_records(
+    *,
+    engine_name: str,
+    stage: str,
+    tutor_row,
+    segment,
+    route=None,
+    selected_cost=None,
+    level_fit=None,
+):
+    route = route or {}
+    segment = list(segment or [])
+    route_match_ids = _route_match_ids(route) or _trace_match_ids_from_segment(segment)
+    route_match_codes = _trace_match_codes_from_segment(segment)
+    route_size = int(_route_value(route, "route_size", default=len(route_match_ids) or len(segment)) or 1)
+    phase_name = str(_route_value(route, "phase_name", default=stage) or "")
+    rescue_kind, rescue_iteration = _stage_parts(stage)
+    cost_value = selected_cost if selected_cost is not None else _route_value(route, "selected_cost", "cost", default=None)
+    selected_score = _route_value(route, "selected_score", "score", default=None)
+    level_fit_value = level_fit if level_fit is not None else _route_value(route, "level_fit", "level_fit_label", default="")
+    warning_codes = _route_value(route, "warning_codes", default=[]) or []
+    score_breakdown = _route_value(route, "score_breakdown", default={}) or {}
+    route_id = str(_route_value(route, "route_id", "id", default="") or "")
+    if not route_id:
+        route_id = f"{engine_name}:{stage}:{tutor_row.get('ID', '')}:{'-'.join(route_match_ids)}"
+    candidate_id = str(_route_value(route, "candidate_id", "id", default=route_id) or route_id)
+    records = []
+    for partit in segment:
+        match_id = str(partit.get("ID", "")).strip()
+        match_code = str(partit.get("Codi", "")).strip()
+        if not match_id and not match_code:
+            continue
+        records.append(
+            {
+                "match_engine_id": match_id,
+                "match_code": match_code,
+                "referee_code": str(tutor_row.get("Codi Tutor de Joc", "")).strip(),
+                "engine_name": engine_name,
+                "stage": stage,
+                "phase_name": phase_name,
+                "rescue_kind": rescue_kind,
+                "rescue_iteration": rescue_iteration,
+                "route_id": route_id,
+                "candidate_id": candidate_id,
+                "tutor_id": str(tutor_row.get("ID", "")).strip(),
+                "route_match_ids": list(route_match_ids),
+                "route_match_codes": list(route_match_codes),
+                "route_size": route_size,
+                "inserted_into_existing_route": bool(
+                    _route_value(route, "inserted_into_existing_route", default=False)
+                ),
+                "selected_cost": cost_value,
+                "selected_score": selected_score,
+                "level_fit": str(level_fit_value or ""),
+                "warning_codes": list(warning_codes) if not isinstance(warning_codes, str) else [warning_codes],
+                "mobility_summary": {
+                    "requires_vehicle": bool(_route_value(route, "requires_vehicle", default=False)),
+                    "cluster_ids": _json_trace_value(_route_value(route, "cluster_ids", default=[])),
+                    "cluster_statuses": _json_trace_value(_route_value(route, "cluster_statuses", default=[])),
+                    "venues": _json_trace_value(_route_value(route, "venues", default=[])),
+                },
+                "debug_payload": _json_trace_value(
+                    {
+                        "score_breakdown": score_breakdown,
+                        "route": route if isinstance(route, dict) else _route_value(route, "id", default=""),
+                    }
+                ),
+            }
+        )
+    return records
 
 
 def _dedupe_preserve_order(values):
@@ -503,6 +781,33 @@ def _evaluate_subgroup_candidate(
         "reason_codes": reason_codes,
         "descriptors": descriptors,
     }
+
+
+def _apply_vehicle_policy_to_evaluation(
+    evaluation,
+    tutor_row,
+    subgrup,
+    *,
+    vehicle_policy_context,
+    candidate_referees,
+    raw_evaluator,
+):
+    penalty, diagnostics = vehicle_policy_penalty(
+        tutor_row,
+        subgrup,
+        evaluation.get("descriptors", []),
+        vehicle_policy_context,
+        candidate_referees,
+        raw_evaluator,
+    )
+    if penalty:
+        evaluation = dict(evaluation)
+        evaluation["cost"] = float(evaluation["cost"] + penalty)
+        evaluation["vehicle_policy_penalty"] = penalty
+    if diagnostics:
+        evaluation = dict(evaluation)
+        evaluation["vehicle_policy"] = diagnostics
+    return evaluation
 
 
 def _build_subgroup_cost_matrix(
@@ -788,7 +1093,8 @@ def mapa_assignacions_interactiu(
         raise ValueError("No hi ha partits amb coordenades (lat/lon) per dibuixar el mapa.")
 
     center = [d_ok[lat_col].astype(float).mean(), d_ok[lon_col].astype(float).mean()]
-    m = folium.Map(location=center, zoom_start=zoom_start, control_scale=True)
+    m = folium.Map(location=center, zoom_start=zoom_start, control_scale=True, tiles=None)
+    add_base_tile_layers(m)
 
     # Apply _parse_times to the time column (returns a Series) instead of
     # applying row-wise which returned a Series per row and caused the
@@ -969,6 +1275,7 @@ def persist_assignacions_to_db(
     df_partits: pd.DataFrame,
     df_dispos: pd.DataFrame,
     df_assignacions: pd.DataFrame,
+    assignment_traces: list[dict] | None = None,
 ):
     """
     Desa a BD:
@@ -980,9 +1287,13 @@ def persist_assignacions_to_db(
     - No toca assignacions locked=True.
     - Manté referee=None si el partit queda sense assignar.
     """
-    from .models import DesignationRun, Referee, Match, Assignment
+    from .models import DesignationRun, Referee, Match, Assignment, AssignmentTrace
 
     run = DesignationRun.objects.get(id=run_id)
+
+    def _classification_position(value):
+        parsed = _safe_position_int(value, default=-1)
+        return parsed if parsed > 0 else None
 
     # Mapa ràpid: referee_code -> (nom complet)
     # df_dispos té 'Codi Tutor de Joc', 'Nom', 'Cognoms'
@@ -1039,6 +1350,8 @@ def persist_assignacions_to_db(
                     "club_local": p.get("Club Local"),
                     "equip_local": p.get("Equip local"),
                     "equip_visitant": p.get("Equip visitant"),
+                    "posicio_equip_local": _classification_position(p.get("Posició Equip Local")),
+                    "posicio_equip_visitant": _classification_position(p.get("Posició Equip Visitant")),
                     "lliga": p.get("Lliga"),
                     "group": p.get("Grup"),
                     "jornada": p.get("Jornada"),
@@ -1056,7 +1369,8 @@ def persist_assignacions_to_db(
             )
 
         # 2) Upsert assignments (respectant locked)
-        matches = {m.code: m for m in Match.objects.filter(run=run)}
+        matches_qs = Match.objects.filter(run=run)
+        matches = {m.code: m for m in matches_qs}
 
         for match_code, match in matches.items():
             tutor_code = assigned_map.get(match_code, None)
@@ -1083,6 +1397,57 @@ def persist_assignacions_to_db(
                 asg.referee = ref
                 asg.save(update_fields=["referee", "updated_at"])
 
+        if assignment_traces is not None:
+            AssignmentTrace.objects.filter(run=run).delete()
+            matches_by_code = {m.code: m for m in Match.objects.filter(run=run)}
+            matches_by_engine_id = {
+                str(m.engine_id): m
+                for m in matches_by_code.values()
+                if m.engine_id
+            }
+            refs_by_code = {ref.code: ref for ref in Referee.objects.filter(code__in={str(item.get("referee_code") or "") for item in assignment_traces})}
+            assignments_by_match_id = {
+                assignment.match_id: assignment
+                for assignment in Assignment.objects.filter(run=run).select_related("match")
+            }
+            traces_to_create = []
+            for item in assignment_traces:
+                match = matches_by_engine_id.get(str(item.get("match_engine_id") or "")) or matches_by_code.get(
+                    str(item.get("match_code") or "")
+                )
+                if match is None:
+                    continue
+                referee = refs_by_code.get(str(item.get("referee_code") or ""))
+                assignment = assignments_by_match_id.get(match.id)
+                traces_to_create.append(
+                    AssignmentTrace(
+                        run=run,
+                        assignment=assignment,
+                        match=match,
+                        referee=referee,
+                        engine_name=str(item.get("engine_name") or ""),
+                        stage=str(item.get("stage") or ""),
+                        phase_name=str(item.get("phase_name") or ""),
+                        rescue_kind=str(item.get("rescue_kind") or ""),
+                        rescue_iteration=item.get("rescue_iteration"),
+                        route_id=str(item.get("route_id") or ""),
+                        candidate_id=str(item.get("candidate_id") or ""),
+                        tutor_id=str(item.get("tutor_id") or ""),
+                        route_match_ids=item.get("route_match_ids") or [],
+                        route_match_codes=item.get("route_match_codes") or [],
+                        route_size=int(item.get("route_size") or 1),
+                        inserted_into_existing_route=bool(item.get("inserted_into_existing_route")),
+                        selected_score=item.get("selected_score"),
+                        selected_cost=item.get("selected_cost"),
+                        level_fit=str(item.get("level_fit") or ""),
+                        warning_codes=item.get("warning_codes") or [],
+                        mobility_summary=item.get("mobility_summary") or {},
+                        debug_payload=item.get("debug_payload") or {},
+                    )
+                )
+            if traces_to_create:
+                AssignmentTrace.objects.bulk_create(traces_to_create, batch_size=500)
+
 
 def main(
     path_disposicions: str,
@@ -1106,6 +1471,7 @@ def main(
     modalitats_filter = config.get("modalitats") or []
     date_from = config.get("date_from") or None
     date_to = config.get("date_to") or None
+    assignment_engine = str(config.get("assignment_engine") or "legacy").strip().lower()
     fase = str(config.get("fase", "FS1") or "FS1").strip().upper()
     if fase not in {"FS1", "FS2"}:
         fase = "FS1"
@@ -1219,10 +1585,15 @@ def main(
             "classification_cache_hits": 0,
             "classification_failed_requests": 0,
             "classification_groups_without_data": [],
+            "engine_name": assignment_engine,
+            "package_solver_summary": [],
+            "phase_solver_summary": [],
             "mobility_warning_count": 0,
             "mobility_error_count": 0,
             "mobility_warnings": [],
             "mobility_errors": [],
+            "pitch_change_warning_count": 0,
+            "pitch_change_warnings": [],
             "map_path": None,
         }
 
@@ -1263,6 +1634,18 @@ def main(
             min_samples=cluster_min_samples,
             max_punts_per_subcluster=max_partits_subgrup,
         )
+
+    frozen_cluster_assignments = config.get("preview_cluster_assignments") or []
+    if not domicilis_clusteritzats.empty and frozen_cluster_assignments:
+        domicilis_clusteritzats = _apply_frozen_cluster_assignments(domicilis_clusteritzats, frozen_cluster_assignments)
+
+    preview_overrides = resolve_preview_overrides(
+        preview_id=str(config.get("source_preview_id") or "") or None,
+        inline_overrides=config.get("preview_cluster_overrides") or config.get("cluster_overrides") or [],
+        eps_m=int(cluster_eps_m) if cluster_eps_m else None,
+    )
+    if not domicilis_clusteritzats.empty and preview_overrides and not frozen_cluster_assignments:
+        domicilis_clusteritzats, _, _ = apply_preview_overrides(domicilis_clusteritzats, preview_overrides)
 
     if not domicilis_clusteritzats.empty:
         domicilis_clusteritzats["cluster_status"] = domicilis_clusteritzats.apply(
@@ -1346,6 +1729,11 @@ def main(
     rescue_rounds_count = 0
     remaining_unassigned_details = []
     remaining_unassigned_breakdown = Counter()
+    vehicle_assignment_records = []
+    assignment_trace_records = []
+    vehicle_policy_contexts = []
+    package_solver_summaries = []
+    phase_solver_summaries = []
     classification_cache = {}
     classification_parsed_cache = {}
     classification_cache_hits = 0
@@ -1463,6 +1851,14 @@ def main(
                 # Afegim al df dues columnes que indiquin la posicio
                 df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Local'] = pos_local
                 df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Visitant'] = pos_visitant
+        for position_column in ("Posició Equip Local", "Posició Equip Visitant"):
+            if position_column in df_partits_modalitat.columns:
+                if position_column not in df_partits.columns:
+                    df_partits[position_column] = pd.NA
+                positions_by_id = df_partits_modalitat.set_index("ID")[position_column]
+                df_partits.loc[df_partits["ID"].isin(positions_by_id.index), position_column] = (
+                    df_partits.loc[df_partits["ID"].isin(positions_by_id.index), "ID"].map(positions_by_id)
+                )
         df_partits_modalitat['Hora'] = _parse_times(df_partits_modalitat['Hora'])
         df_dispos_modalitat['Hora Inici'] = _parse_times(df_dispos_modalitat['Hora Inici'])
         df_dispos_modalitat['Hora Fi'] = _parse_times(df_dispos_modalitat['Hora Fi'])
@@ -1484,6 +1880,12 @@ def main(
         final_subgrups = subgroup_stats["subgroups"]
         initial_subgroups_count += subgroup_stats["base_subgroups"]
         fused_subgroups_count += subgroup_stats["fused_subgroups"]
+        vehicle_policy_context = build_vehicle_policy_context(
+            [_build_subgroup_descriptors(subgrup) for subgrup in final_subgrups],
+            df_dispos_modalitat,
+            config,
+        )
+        vehicle_policy_contexts.append(vehicle_policy_context)
         if task_id:
             async_to_sync(push_log)(
                 task_id,
@@ -1493,8 +1895,205 @@ def main(
                 ),
             )
 
+        if assignment_engine == "phased_route_solver":
+            if task_id:
+                async_to_sync(push_log)(task_id, "Executant motor per fases i rutes.", 72)
+
+            base_subgroups = build_base_subgroups_from_rows(final_subgrups)
+            optimization_tutors = _build_optimization_tutors(df_dispos_modalitat)
+            phased_result = run_phased_route_solver(base_subgroups, optimization_tutors, config)
+
+            tutor_rows_by_id = {_tutor_candidate_id_from_row(row): row for _, row in df_dispos_modalitat.iterrows()}
+            match_rows_by_id = {
+                str(row.get("ID")): row
+                for subgrup in final_subgrups
+                for row in subgrup
+            }
+            selected_records = _phased_route_selected_records(
+                phased_result,
+                tutor_rows_by_id,
+                match_rows_by_id,
+            )
+            for route, tutor_row, segment in selected_records:
+                stage = _route_value(route, "phase_name", default="phased_route_solver")
+                vehicle_assignment_records.append(
+                    build_vehicle_assignment_record(
+                        tutor_row,
+                        _build_subgroup_descriptors(segment),
+                        stage=stage,
+                    )
+                )
+                assignment_trace_records.extend(
+                    _build_assignment_trace_records(
+                        engine_name="phased_route_solver",
+                        stage=stage,
+                        tutor_row=tutor_row,
+                        segment=segment,
+                        route=route,
+                    )
+                )
+                _append_segment_assignment(
+                    tutor_row=tutor_row,
+                    segment=segment,
+                    assigned_tutors=assigned_tutors,
+                    assigned_partit_ids=assigned_partit_ids,
+                    assigned_tutor_ids=assigned_tutor_ids,
+                    assigned_descriptors_by_tutor=assigned_descriptors_by_tutor,
+                )
+                initial_assigned_matches_count += len(segment)
+
+            remaining_ids = {str(match_id) for match_id in phased_result.unassigned_match_ids}
+            for match_id in remaining_ids:
+                partit = match_rows_by_id.get(match_id)
+                if partit is None:
+                    continue
+                reason = "no_viable_phased_route_assignment"
+                remaining_unassigned_details.append(
+                    {
+                        "match_id": partit.get("ID", ""),
+                        "match_code": partit.get("Codi", ""),
+                        "modality": partit.get("Modalitat", ""),
+                        "reason": reason,
+                    }
+                )
+                remaining_unassigned_breakdown[reason] += 1
+
+            selected_match_count = sum(len(segment) for _, _, segment in selected_records)
+            phase_payload = phased_result.to_dict()
+            phase_solver_summaries.append(
+                {
+                    "modality": modalitat,
+                    "base_subgroup_count": len(base_subgroups),
+                    "level_fragment_count": len(phased_result.fragments),
+                    "selected_route_count": len(phased_result.selected_routes),
+                    "selected_match_count": selected_match_count,
+                    "unassigned_match_count": len(remaining_ids),
+                    "phase_summaries": phased_result.phase_summaries,
+                    "final_rescue_summary": phased_result.final_rescue_summary,
+                    "swap_recommendation_count": len(phased_result.swap_recommendations),
+                    "swap_recommendations": phase_payload.get("swap_recommendations", []),
+                    "engine_summary": phase_payload.get("engine_summary", {}),
+                }
+            )
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Phased route solver {modalitat}: {selected_match_count} partits assignats, {len(remaining_ids)} pendents.",
+                    82,
+                )
+            continue
+
+        if assignment_engine == "package_solver":
+            if task_id:
+                async_to_sync(push_log)(task_id, "Construint paquets i rutes candidates.", 72)
+
+            base_subgroups = build_base_subgroups_from_rows(final_subgrups)
+            optimization_tutors = _build_optimization_tutors(df_dispos_modalitat)
+            pressure_result = build_pressure_summary(base_subgroups, optimization_tutors, config)
+            packages = generate_package_candidates(base_subgroups, optimization_tutors, pressure_result, config)
+            assignment_candidates = build_assignment_candidates(packages, optimization_tutors, pressure_result, config)
+            solver_result = solve_assignment_candidates(assignment_candidates, packages, optimization_tutors, config)
+
+            tutor_rows_by_id = {_tutor_candidate_id_from_row(row): row for _, row in df_dispos_modalitat.iterrows()}
+            match_rows_by_id = {
+                str(row.get("ID")): row
+                for subgrup in final_subgrups
+                for row in subgrup
+            }
+            selected_records = _package_solver_selected_records(
+                solver_result,
+                packages,
+                tutor_rows_by_id,
+                match_rows_by_id,
+            )
+            for _assignment, _package, tutor_row, segment in selected_records:
+                vehicle_assignment_records.append(
+                    build_vehicle_assignment_record(
+                        tutor_row,
+                        _build_subgroup_descriptors(segment),
+                        stage="package_solver",
+                    )
+                )
+                assignment_trace_records.extend(
+                    _build_assignment_trace_records(
+                        engine_name="package_solver",
+                        stage="package_solver",
+                        tutor_row=tutor_row,
+                        segment=segment,
+                        route=_package,
+                        selected_cost=_route_value(_assignment, "cost", default=None),
+                        level_fit=(_route_value(_assignment, "score_breakdown", default={}) or {}).get("level_fit")
+                        if isinstance(_route_value(_assignment, "score_breakdown", default={}), dict)
+                        else _route_value(_assignment, "level_fit", default=""),
+                    )
+                )
+                _append_segment_assignment(
+                    tutor_row=tutor_row,
+                    segment=segment,
+                    assigned_tutors=assigned_tutors,
+                    assigned_partit_ids=assigned_partit_ids,
+                    assigned_tutor_ids=assigned_tutor_ids,
+                    assigned_descriptors_by_tutor=assigned_descriptors_by_tutor,
+                )
+                initial_assigned_matches_count += len(segment)
+
+            remaining_ids = {str(match_id) for match_id in solver_result.unassigned_match_ids}
+            for match_id in remaining_ids:
+                partit = match_rows_by_id.get(match_id)
+                if partit is None:
+                    continue
+                reason = "no_viable_package_solver_assignment"
+                remaining_unassigned_details.append(
+                    {
+                        "match_id": partit.get("ID", ""),
+                        "match_code": partit.get("Codi", ""),
+                        "modality": partit.get("Modalitat", ""),
+                        "reason": reason,
+                    }
+                )
+                remaining_unassigned_breakdown[reason] += 1
+
+            selected_match_count = sum(len(segment) for _, _, _, segment in selected_records)
+            level_blocking_counts = Counter()
+            selected_by_level_fit = Counter()
+            for candidate in assignment_candidates:
+                breakdown = getattr(candidate, "score_breakdown", {}) or {}
+                level_fit_label = str(breakdown.get("level_fit") or "unknown")
+                if "level_forbidden" in set(getattr(candidate, "blocking_reasons", ()) or ()):
+                    level_blocking_counts[level_fit_label] += 1
+            for assignment in solver_result.selected_assignments:
+                breakdown = getattr(assignment, "score_breakdown", {}) or {}
+                selected_by_level_fit[str(breakdown.get("level_fit") or "unknown")] += 1
+            package_solver_summaries.append(
+                {
+                    "modality": modalitat,
+                    "base_subgroup_count": len(base_subgroups),
+                    "candidate_package_count": len(packages),
+                    "assignment_candidate_count": len(assignment_candidates),
+                    "selected_assignment_count": len(solver_result.selected_assignments),
+                    "selected_match_count": selected_match_count,
+                    "unassigned_match_count": len(remaining_ids),
+                    "pressure_summary": pressure_result.get("pressure_summary", {}),
+                    "solver_objective": solver_result.objective_summary,
+                    "rejected_candidates_summary": solver_result.rejected_candidates_summary,
+                    "level_forbidden_candidate_count": int(sum(level_blocking_counts.values())),
+                    "level_blocking_counts": dict(sorted(level_blocking_counts.items())),
+                    "selected_by_level_fit": dict(sorted(selected_by_level_fit.items())),
+                    "level_exceptional_selected_count": int(
+                        solver_result.objective_summary.get("selected_exceptional_level_count", 0)
+                    ),
+                }
+            )
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Package solver {modalitat}: {selected_match_count} partits assignats, {len(remaining_ids)} pendents.",
+                    82,
+                )
+            continue
+
         # --- matriu costos ---
-        def subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
+        def raw_subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
             return _evaluate_subgroup_candidate(
                 tutor_row,
                 subgrup,
@@ -1506,6 +2105,25 @@ def main(
                 gap_diff_pitch_min=gap_diff_pitch_min,
                 gap_diff_cluster_min=gap_diff_cluster_min,
                 existing_descriptors=existing_descriptors,
+            )
+
+        def subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
+            evaluation = raw_subgroup_eval_fn(
+                tutor_row,
+                subgrup,
+                existing_descriptors=existing_descriptors,
+            )
+            return _apply_vehicle_policy_to_evaluation(
+                evaluation,
+                tutor_row,
+                subgrup,
+                vehicle_policy_context=vehicle_policy_context,
+                candidate_referees=df_dispos_modalitat,
+                raw_evaluator=lambda candidate_row, candidate_segment: raw_subgroup_eval_fn(
+                    candidate_row,
+                    candidate_segment,
+                    existing_descriptors=existing_descriptors,
+                ),
             )
 
         def initial_cost_fn(tutor_row, subgrup):
@@ -1529,6 +2147,21 @@ def main(
             subgrup = final_subgrups[subgrup_idx]
             if C[tutor_idx, subgrup_idx] >= 1e5:
                 continue
+            vehicle_assignment_records.append(
+                build_vehicle_assignment_record(
+                    tutor_row,
+                    _build_subgroup_descriptors(subgrup),
+                    stage="initial",
+                )
+            )
+            assignment_trace_records.extend(
+                _build_assignment_trace_records(
+                    engine_name="legacy",
+                    stage="initial",
+                    tutor_row=tutor_row,
+                    segment=subgrup,
+                )
+            )
             _append_segment_assignment(
                 tutor_row=tutor_row,
                 segment=subgrup,
@@ -1584,6 +2217,21 @@ def main(
         rescue_matches_recovered_count += idle_rescue["matches_recovered"]
         for assigned_segment in idle_rescue["assigned_segments"]:
             tutor_row = idle_referees.iloc[assigned_segment["tutor_idx"]]
+            vehicle_assignment_records.append(
+                build_vehicle_assignment_record(
+                    tutor_row,
+                    _build_subgroup_descriptors(assigned_segment["segment"]),
+                    stage="rescue_idle",
+                )
+            )
+            assignment_trace_records.extend(
+                _build_assignment_trace_records(
+                    engine_name="legacy",
+                    stage="rescue_idle",
+                    tutor_row=tutor_row,
+                    segment=assigned_segment["segment"],
+                )
+            )
             _append_segment_assignment(
                 tutor_row=tutor_row,
                 segment=assigned_segment["segment"],
@@ -1605,6 +2253,21 @@ def main(
         rescue_matches_recovered_count += reused_rescue["matches_recovered"]
         for assigned_segment in reused_rescue["assigned_segments"]:
             tutor_row = reusable_referees.iloc[assigned_segment["tutor_idx"]]
+            vehicle_assignment_records.append(
+                build_vehicle_assignment_record(
+                    tutor_row,
+                    _build_subgroup_descriptors(assigned_segment["segment"]),
+                    stage="rescue_reused",
+                )
+            )
+            assignment_trace_records.extend(
+                _build_assignment_trace_records(
+                    engine_name="legacy",
+                    stage="rescue_reused",
+                    tutor_row=tutor_row,
+                    segment=assigned_segment["segment"],
+                )
+            )
             _append_segment_assignment(
                 tutor_row=tutor_row,
                 segment=assigned_segment["segment"],
@@ -1674,6 +2337,7 @@ def main(
             df_partits=df_partits,
             df_dispos=df_dispos,
             df_assignacions=df_assignacions,
+            assignment_traces=assignment_trace_records,
         )
 
     # --- Mapa: desa dins MEDIA_ROOT/designacions/maps/ ---
@@ -1719,6 +2383,16 @@ def main(
     if task_id:
         async_to_sync(push_log)(task_id, "Procés del motor finalitzat.", 96)
 
+    vehicle_usage_summary = summarize_vehicle_assignments(vehicle_assignment_records)
+    vehicle_usage_summary.update(
+        {
+            "vehicle_required_segments": int(sum(ctx.vehicle_required_count for ctx in vehicle_policy_contexts)),
+            "vehicle_preferred_segments": int(sum(ctx.vehicle_preferred_count for ctx in vehicle_policy_contexts)),
+            "vehicle_not_needed_segments": int(sum(ctx.vehicle_not_needed_count for ctx in vehicle_policy_contexts)),
+            "vehicle_pressure": any(ctx.has_vehicle_pressure for ctx in vehicle_policy_contexts),
+        }
+    )
+
     result = {
         "assigned": int(len(df_assignacions)) if df_assignacions is not None else 0,
         "unassigned_matches": int(len(df_unassigned)) if df_unassigned is not None else 0,
@@ -1741,6 +2415,28 @@ def main(
         "classification_cache_hits": int(classification_cache_hits),
         "classification_failed_requests": int(classification_failed_requests),
         "classification_groups_without_data": sorted(classification_groups_without_data),
+        "engine_name": assignment_engine,
+        "package_solver_summary": package_solver_summaries,
+        "phase_solver_summary": phase_solver_summaries,
+        "swap_recommendations": [
+            recommendation
+            for item in phase_solver_summaries
+            for recommendation in item.get("swap_recommendations", [])
+        ],
+        "candidate_package_count": int(sum(item.get("candidate_package_count", 0) for item in package_solver_summaries)),
+        "selected_package_count": int(sum(item.get("selected_assignment_count", 0) for item in package_solver_summaries)),
+        "candidate_route_count": int(
+            sum(
+                phase.get("route_candidate_count", 0)
+                for item in phase_solver_summaries
+                for phase in item.get("phase_summaries", [])
+            )
+        ),
+        "selected_route_count": int(sum(item.get("selected_route_count", 0) for item in phase_solver_summaries)),
+        "assignment_trace_count": int(len(assignment_trace_records)),
+        "vehicle_usage_summary": vehicle_usage_summary,
+        "vehicle_used_on_easy_segments": vehicle_usage_summary["vehicle_used_on_easy_segments"],
+        "vehicle_reserved_count": int(vehicle_usage_summary["vehicle_reserved_count"]),
         "map_path": map_rel_path,   # relatiu a MEDIA_ROOT
     }
     if run_id is not None:
@@ -1757,6 +2453,8 @@ def main(
                     "mobility_error_count": int(mobility_summary["mobility_error_count"]),
                     "mobility_warnings": mobility_summary["mobility_warnings"],
                     "mobility_errors": mobility_summary["mobility_errors"],
+                    "pitch_change_warning_count": int(mobility_summary["pitch_change_warning_count"]),
+                    "pitch_change_warnings": mobility_summary["pitch_change_warnings"],
                 }
             )
         else:
@@ -1766,6 +2464,8 @@ def main(
                     "mobility_error_count": 0,
                     "mobility_warnings": [],
                     "mobility_errors": [],
+                    "pitch_change_warning_count": 0,
+                    "pitch_change_warnings": [],
                 }
             )
     else:
@@ -1775,6 +2475,8 @@ def main(
                 "mobility_error_count": 0,
                 "mobility_warnings": [],
                 "mobility_errors": [],
+                "pitch_change_warning_count": 0,
+                "pitch_change_warnings": [],
             }
         )
     # Retornem un resum (no Excel)

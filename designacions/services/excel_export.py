@@ -42,6 +42,35 @@ GROUP_BORDER = Border(
     bottom=Side(style="thin", color="FFE5E7EB"),
 )
 
+ORIGIN_LABELS = {
+    "high": "Assignacio prioritaria",
+    "medium": "Assignacio de nivell mitja/alt",
+    "general": "Assignacio general",
+    "partial_rescue": "Recuperacio parcial",
+    "final_rescue": "Recuperacio final",
+    "new_route_rescue": "Nova sequencia recuperada",
+    "individual_rescue": "Recuperacio individual",
+    "package_solver": "Assignacio per paquet",
+    "initial": "Assignacio inicial",
+    "rescue_idle": "Recuperacio amb tutor lliure",
+    "rescue_reused": "Recuperacio afegida",
+    "manual_override": "Assignacio manual",
+    "manual_unassigned": "Desassignacio manual",
+}
+
+
+def _excel_origin_label(trace) -> str:
+    if trace is None:
+        return "Origen no disponible"
+    key = trace.rescue_kind or trace.phase_name or trace.stage
+    if str(key).startswith("phase:"):
+        key = str(key).split(":", 1)[1]
+    elif str(key).startswith("partial_rescue"):
+        key = "partial_rescue"
+    elif str(key).startswith("individual_rescue"):
+        key = "individual_rescue"
+    return ORIGIN_LABELS.get(str(key), "Assignacio automatica")
+
 
 @lru_cache(maxsize=None)
 def _alignment(horizontal: str, wrap: bool) -> Alignment:
@@ -166,7 +195,7 @@ def _write_sheet(ws, columns: list[ColumnSpec], rows: list[dict]):
 
 def export_run_to_excel(run, output_path: str):
     assigned_qs = (
-        run.assignments.select_related("match", "referee")
+        run.assignments.select_related("match", "referee", "trace")
         .filter(referee__isnull=False)
         .order_by("referee__code", "match__date", "match__hour_raw", "match__code")
     )
@@ -200,6 +229,11 @@ def export_run_to_excel(run, output_path: str):
         ColumnSpec("Equip visitant", "away_team", 26),
         ColumnSpec("Pista", "venue", 28),
         ColumnSpec("Categoria", "category", 14, "center"),
+        ColumnSpec("Origen", "origin_label", 24),
+        ColumnSpec("Stage", "origin_stage", 18, "center"),
+        ColumnSpec("Route ID", "route_id", 18, "center"),
+        ColumnSpec("Sequencia", "route_match_codes", 28, wrap=True),
+        ColumnSpec("Warnings tracking", "warning_codes", 24, wrap=True),
         ColumnSpec("Nota", "note", 26, wrap=True),
         ColumnSpec("Bloquejat", "locked", 12, "center"),
     ]
@@ -210,6 +244,7 @@ def export_run_to_excel(run, output_path: str):
         referee = assignment.referee
         referee_summary = referee_summary_by_id.get(referee.id, referee)
         match = assignment.match
+        trace = getattr(assignment, "trace", None)
         if referee.id != current_referee_id:
             current_referee_id = referee.id
             group_index += 1
@@ -237,6 +272,11 @@ def export_run_to_excel(run, output_path: str):
                 "away_team": match.equip_visitant or "",
                 "venue": match.venue or "",
                 "category": match.category or "",
+                "origin_label": _excel_origin_label(trace),
+                "origin_stage": getattr(trace, "stage", "") if trace else "",
+                "route_id": getattr(trace, "route_id", "") if trace else "",
+                "route_match_codes": ", ".join(getattr(trace, "route_match_codes", []) or []) if trace else "",
+                "warning_codes": ", ".join(getattr(trace, "warning_codes", []) or []) if trace else "",
                 "note": assignment.note or "",
                 "locked": "Si" if assignment.locked else "No",
                 "_fill": fill,

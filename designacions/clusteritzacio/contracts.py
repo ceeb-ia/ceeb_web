@@ -19,6 +19,28 @@ class PreviewAddressPoint:
     modalities: list[str] = field(default_factory=list)
     cluster: int | None = None
     cluster_status: str = "pending"
+    auto_cluster: int | None = None
+    auto_cluster_status: str = "pending"
+    is_manual: bool = False
+    manual_role: str | None = None
+    cluster_origin: str = "automatic"
+    manual_override_ids: list[str] = field(default_factory=list)
+    manual_override_kinds: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PreviewClusterOverride:
+    override_id: str
+    kind: str
+    source_address_id: int
+    target_address_id: int | None = None
+    target_cluster_id: int | None = None
+    source_adreca: str = ""
+    target_adreca: str = ""
+    created_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -68,6 +90,10 @@ class PreviewScenario:
     map_path: str | None = None
     recommended: bool = False
     selected: bool = False
+    active_overrides: list[dict[str, Any]] = field(default_factory=list)
+    manual_point_count: int = 0
+    manual_cluster_count: int = 0
+    override_summary: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -80,6 +106,10 @@ class PreviewScenario:
             "map_path": self.map_path,
             "recommended": self.recommended,
             "selected": self.selected,
+            "active_overrides": list(self.active_overrides),
+            "manual_point_count": self.manual_point_count,
+            "manual_cluster_count": self.manual_cluster_count,
+            "override_summary": dict(self.override_summary),
         }
         return payload
 
@@ -95,6 +125,8 @@ class PreviewResult:
     geocoding_issues: list[dict[str, Any]] = field(default_factory=list)
     preview_counts: dict[str, Any] = field(default_factory=dict)
     availability_counts: dict[str, Any] = field(default_factory=dict)
+    cluster_overrides: list[PreviewClusterOverride] = field(default_factory=list)
+    override_summary: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -107,4 +139,6 @@ class PreviewResult:
             "geocoding_issues": list(self.geocoding_issues),
             "preview_counts": dict(self.preview_counts),
             "availability_counts": dict(self.availability_counts),
+            "cluster_overrides": [override.to_dict() for override in self.cluster_overrides],
+            "override_summary": dict(self.override_summary),
         }

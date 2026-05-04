@@ -18,6 +18,22 @@
       {% csrf_token %}
 
       <div class="mb-3">
+        <label class="form-label" for="runNameInput">Nom del run</label>
+        <input
+          type="text"
+          id="runNameInput"
+          name="run_name"
+          class="form-control"
+          maxlength="160"
+          required
+          placeholder="Ex. Futbol 5 27/04 - FS2"
+        >
+        <div class="form-text text-muted">
+          Aquest nom apareixera a l'historic i tambe identifica els previews guardats.
+        </div>
+      </div>
+
+      <div class="mb-3">
         <label class="form-label">
           Selecciona l'arxiu de disponibilitats i el de partits (.xlsx)
         </label>
@@ -117,6 +133,18 @@
             <div class="form-group col-md-2">
               <label>Data fins a</label>
               <input type="date" name="date_to" class="form-control form-control-sm" value="{{ defaults.date_to }}">
+            </div>
+          </div>
+
+          <div class="form-row row">
+            <div class="form-group col-md-4">
+              <label>Motor d'assignacio</label>
+              <select name="assignment_engine" class="form-control form-control-sm">
+                <option value="legacy" {% if defaults.assignment_engine == "legacy" %}selected{% endif %}>Legacy estable</option>
+                <option value="package_solver" {% if defaults.assignment_engine == "package_solver" %}selected{% endif %}>Package solver experimental</option>
+                <option value="phased_route_solver" {% if defaults.assignment_engine == "phased_route_solver" %}selected{% endif %}>Fases i rutes experimental</option>
+              </select>
+              <small class="form-text text-muted">El motor per fases crea rutes incrementals i guarda recomanacions per revisar.</small>
             </div>
           </div>
 

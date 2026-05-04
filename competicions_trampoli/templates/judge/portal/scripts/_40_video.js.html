@@ -111,7 +111,7 @@
       const res = await fetch(url.toString(), { headers: { "Accept":"application/json" } });
       const data = await res.json().catch(()=> ({}));
       if(!res.ok || !data.ok){
-        throw new Error(data.error || "Error carregant estat de video");
+        throw new Error(data.error || "Error carregant estat de vídeo");
       }
 
       st.loaded = true;
@@ -125,13 +125,13 @@
           els.preview.src = data.video.url || "";
           els.preview.style.display = data.video.url ? "" : "none";
         }
-        setVideoStatus(insId, exercici, "ok", "Video vinculat");
+        setVideoStatus(insId, exercici, "ok", "Vídeo vinculat");
       } else if(!st.pendingBlob){
         if(els.preview){
           els.preview.removeAttribute("src");
           els.preview.style.display = "none";
         }
-        setVideoStatus(insId, exercici, "", "Sense video");
+        setVideoStatus(insId, exercici, "", "Sense vídeo");
       }
 
       applyVideoUiState(insId, exercici, {
@@ -141,7 +141,7 @@
         busy: false,
       });
     } catch(e){
-      setVideoStatus(insId, exercici, "err", e.message || "Error carregant video");
+      setVideoStatus(insId, exercici, "err", e.message || "Error carregant vídeo");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
     }
   }
@@ -160,13 +160,13 @@
     }
 
     if(!canRecordVideo()){
-      setVideoStatus(insId, exercici, "err", "Aquest dispositiu no suporta gravacio.");
+      setVideoStatus(insId, exercici, "err", "Aquest dispositiu no suporta gravació.");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
       return;
     }
 
     if(currentRecordingEntryKey && currentRecordingEntryKey !== key){
-      setVideoStatus(insId, exercici, "err", "Ja hi ha una gravacio activa en una altra fila.");
+      setVideoStatus(insId, exercici, "err", "Ja hi ha una gravació activa en una altra fila.");
       return;
     }
 
@@ -211,7 +211,7 @@
       };
 
       recorder.onerror = () => {
-        setVideoStatus(insId, exercici, "err", "Error de gravacio.");
+        setVideoStatus(insId, exercici, "err", "Error de gravació.");
       };
 
       recorder.onstop = async () => {
@@ -229,12 +229,12 @@
         currentRecordingEntryKey = null;
 
         if(!blob || blob.size <= 0){
-          setVideoStatus(insId, exercici, "err", "No s'ha pogut generar el video.");
+          setVideoStatus(insId, exercici, "err", "No s'ha pogut generar el vídeo.");
           applyVideoUiState(insId, exercici, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
           return;
         }
         if(blob.size > VIDEO_MAX_SIZE_BYTES){
-          setVideoStatus(insId, exercici, "err", "El video supera la mida maxima permesa.");
+          setVideoStatus(insId, exercici, "err", "El vídeo supera la mida màxima permesa.");
           applyVideoUiState(insId, exercici, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
           return;
         }
@@ -251,7 +251,7 @@
           els.preview.style.display = "";
         }
 
-        setVideoStatus(insId, exercici, "info", "Pujant video...");
+        setVideoStatus(insId, exercici, "info", "Pujant vídeo...");
         applyVideoUiState(insId, exercici, { isRecording: false, hasPending: true, hasStored: !!st.hasStored, busy: true });
         await uploadRecorded(insId, exercici, { auto: true });
       };
@@ -263,7 +263,7 @@
       st.recorder = null;
       st.chunks = [];
       currentRecordingEntryKey = null;
-      setVideoStatus(insId, exercici, "err", "No s'ha pogut obrir la camera.");
+      setVideoStatus(insId, exercici, "err", "No s'ha pogut obrir la càmera.");
       applyVideoUiState(insId, exercici, { isRecording: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, busy: false });
     }
   }
@@ -274,7 +274,7 @@
     const st = getVideoState(insId, exercici);
     const blob = st.pendingBlob;
     if(!blob){
-      setVideoStatus(insId, exercici, "err", "No hi ha cap video pendent de pujar.");
+      setVideoStatus(insId, exercici, "err", "No hi ha cap vídeo pendent de pujar.");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: !!st.hasStored, isRecording: false });
       return;
     }
@@ -309,7 +309,7 @@
       });
       const data = await res.json().catch(()=> ({}));
       if(!res.ok || !data.ok){
-        throw new Error(data.error || "Error pujant video");
+        throw new Error(data.error || "Error pujant vídeo");
       }
 
       st.pendingBlob = null;
@@ -326,11 +326,11 @@
         els.preview.style.display = "";
       }
 
-      setVideoStatus(insId, exercici, "ok", (opts && opts.auto) ? "Video vinculat" : "Video pujat");
+      setVideoStatus(insId, exercici, "ok", (opts && opts.auto) ? "Vídeo vinculat" : "Vídeo pujat");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: true, isRecording: false });
     } catch(e){
       st.busy = false;
-      setVideoStatus(insId, exercici, "err", e.message || "Error pujant video");
+      setVideoStatus(insId, exercici, "err", e.message || "Error pujant vídeo");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
     }
   }
@@ -364,7 +364,7 @@
       });
       const data = await res.json().catch(()=> ({}));
       if(!res.ok || !data.ok){
-        throw new Error(data.error || "Error eliminant video");
+        throw new Error(data.error || "Error eliminant vídeo");
       }
 
       clearPreviewUrl(insId, exercici);
@@ -381,11 +381,11 @@
         els.preview.style.display = "none";
       }
 
-      setVideoStatus(insId, exercici, "", "Sense video");
+      setVideoStatus(insId, exercici, "", "Sense vídeo");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: false, isRecording: false });
     } catch(e){
       st.busy = false;
-      setVideoStatus(insId, exercici, "err", e.message || "Error eliminant video");
+      setVideoStatus(insId, exercici, "err", e.message || "Error eliminant vídeo");
       applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
     }
   }

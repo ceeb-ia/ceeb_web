@@ -145,8 +145,40 @@
       // ignore unsupported selection APIs
     }
   }
+  function ensureInputVisibleInsideContainer(input, container){
+    if(!input || !container || typeof input.getBoundingClientRect !== "function") return;
+    const inputRect = input.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const topMargin = 16;
+    const bottomMargin = 72;
+    const isAbove = inputRect.top < containerRect.top + topMargin;
+    const isBelow = inputRect.bottom > containerRect.bottom - bottomMargin;
+    if(!isAbove && !isBelow) return;
+
+    const delta = isAbove
+      ? inputRect.top - containerRect.top - topMargin
+      : inputRect.bottom - containerRect.bottom + bottomMargin;
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    const nextTop = Math.max(0, Math.min(maxScroll, container.scrollTop + delta));
+    if(typeof container.scrollTo === "function"){
+      container.scrollTo({
+        top: nextTop,
+        behavior: "smooth",
+      });
+    } else {
+      container.scrollTop = nextTop;
+    }
+  }
   function ensureInputVisible(input){
     if(!input || typeof input.getBoundingClientRect !== "function") return;
+
+    const competitionModalBody = input.closest("#competitionModeModal .modal-body");
+    if(competitionModalBody){
+      const scrollModalIfNeeded = () => ensureInputVisibleInsideContainer(input, competitionModalBody);
+      scrollModalIfNeeded();
+      window.setTimeout(scrollModalIfNeeded, 90);
+      return;
+    }
 
     const scrollIfNeeded = () => {
       const rect = input.getBoundingClientRect();

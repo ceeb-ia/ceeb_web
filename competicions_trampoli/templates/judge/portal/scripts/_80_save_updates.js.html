@@ -68,7 +68,7 @@
             <div class="modal-content">
               <div class="modal-header">
                 <div>
-                  <h5 class="modal-title mb-1" id="scoreConfirmModalTitle">Confirmacio de puntuacio</h5>
+                  <h5 class="modal-title mb-1" id="scoreConfirmModalTitle">Confirmació de puntuació</h5>
                   <div class="small text-muted" id="scoreConfirmModalSubtitle">Revisa els canvis abans de desar.</div>
                 </div>
                 <button type="button" class="close" id="scoreConfirmModalClose" aria-label="Tancar"><span aria-hidden="true">&times;</span></button>
@@ -79,7 +79,7 @@
               </div>
               <div class="modal-footer">
                 <div class="small text-muted mr-auto" id="scoreConfirmModalStatus"></div>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="scoreConfirmModalCancel">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="scoreConfirmModalCancel">Cancel·lar</button>
                 <button type="button" class="btn btn-sm btn-primary" id="scoreConfirmModalConfirm">Confirmar i desar</button>
               </div>
             </div>
@@ -147,6 +147,10 @@
   function hideScoreConfirmDom(){
     const els = scoreConfirmEls();
     if(!els.modal) return;
+    const active = document.activeElement;
+    if(active && els.modal.contains(active) && typeof active.blur === "function"){
+      active.blur();
+    }
     els.modal.classList.remove("show");
     els.modal.style.display = "none";
     els.modal.setAttribute("aria-hidden", "true");
@@ -169,7 +173,7 @@
       || subject.name
       || subject.nom_i_cognoms
       || subject.label
-      || `Inscripcio ${insId}`
+      || `Inscripció ${insId}`
     );
   }
 
@@ -181,14 +185,16 @@
   }
 
   function fieldDisplay(field, code){
-    const label = field && field.label ? String(field.label) : String(code || "Camp");
-    const cleanCode = String(code || "");
-    return cleanCode && cleanCode !== label ? `${label} [${cleanCode}]` : label;
+    return field && field.label ? String(field.label) : String(code || "Camp");
   }
 
-  function permMetaParts(perm){
+  function summaryTitle(field, code, itemLabel){
+    return [fieldDisplay(field, code), itemLabel].filter(Boolean).join(" · ");
+  }
+
+  function permMetaParts(perm, opts = {}){
     const parts = [`Jutge ${Math.max(1, Number(perm && perm.judge_index || 1))}`];
-    if(perm && perm.item_count){
+    if(perm && perm.item_count && opts.includeItemRange !== false){
       const start = Math.max(1, Number(perm.item_start || 1));
       parts.push(`Items ${start}-${start + Math.max(1, Number(perm.item_count || 1)) - 1}`);
     }
@@ -223,7 +229,12 @@
       const label = crashAt > 0
         ? `${getItemDisplayLabel(perm.field_code || baseCode, crashAt)} (${crashAt})`
         : "Sense crash";
-      appendSummaryRow(rows, `Crash - ${fieldDisplay(field, perm.runtime_field_code || baseCode)}`, permMetaParts(perm), label);
+      appendSummaryRow(
+        rows,
+        summaryTitle(field, perm.runtime_field_code || baseCode, "Crash"),
+        permMetaParts(perm, { includeItemRange: false }),
+        label
+      );
     });
   }
 
@@ -254,7 +265,12 @@
         for(let k = 0; k < count; k += 1){
           const idx1 = start + k;
           const itemLabel = getItemDisplayLabel(perm.field_code || code, idx1);
-          appendSummaryRow(rows, title, meta.concat([`${itemLabel} (${idx1})`]), row[idx1 - 1]);
+          appendSummaryRow(
+            rows,
+            summaryTitle(field, perm.runtime_field_code || code, itemLabel),
+            permMetaParts(perm, { includeItemRange: false }),
+            row[idx1 - 1]
+          );
         }
         return;
       }
@@ -295,19 +311,26 @@
     }
     rows.forEach((row) => {
       const item = document.createElement("div");
-      item.className = "list-group-item px-0";
+      item.className = "score-confirm-row";
       const title = document.createElement("div");
-      title.className = "fw-semibold";
+      title.className = "score-confirm-row-title";
       title.textContent = row.title;
       const meta = document.createElement("div");
-      meta.className = "small text-muted";
+      meta.className = "score-confirm-row-meta";
       meta.textContent = row.meta;
-      const value = document.createElement("div");
-      value.className = "mt-1";
+      const valueWrap = document.createElement("div");
+      valueWrap.className = "score-confirm-row-value";
+      const valueLabel = document.createElement("span");
+      valueLabel.className = "score-confirm-value-label";
+      valueLabel.textContent = "Valor:";
+      const value = document.createElement("span");
+      value.className = "score-confirm-value";
       value.textContent = row.value;
+      valueWrap.appendChild(valueLabel);
+      valueWrap.appendChild(value);
       item.appendChild(title);
       if(row.meta) item.appendChild(meta);
-      item.appendChild(value);
+      item.appendChild(valueWrap);
       els.summary.appendChild(item);
     });
   }

@@ -28,3 +28,4 @@ qrcode
 setuptools
 playwright
 chromium
+ortools>=9.10,<10
