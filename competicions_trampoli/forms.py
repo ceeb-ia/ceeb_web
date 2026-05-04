@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
-from .models.competicio import Aparell, CompeticioAparell
+from .models.competicio import Aparell, CompeticioAparell, CompeticioAparellFase, ProgramUnit
 from .models.scoring import ScoringSchema
 from .services.shared.competition_groups import get_competicio_groups, group_label
 from .services.teams.equip_contexts import (
@@ -688,6 +688,87 @@ class CompeticioAparellForm(forms.ModelForm):
             "nom_local": "Nom visible d'aquesta instancia dins la competicio. Si el deixes buit, s'usara el nom base.",
             "codi_local": "Codi unic dins la competicio. Si el deixes buit, es genera automaticament.",
         }
+
+
+class CompeticioAparellFaseForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        self.comp_aparell = kwargs.pop("comp_aparell", None)
+        super().__init__(*args, **kwargs)
+        if self.comp_aparell is not None and getattr(self.comp_aparell, "id", None):
+            self.instance.comp_aparell = self.comp_aparell
+            self.instance.competicio = self.comp_aparell.competicio
+        parent_qs = CompeticioAparellFase.objects.none()
+        if self.comp_aparell is not None and getattr(self.comp_aparell, "id", None):
+            parent_qs = CompeticioAparellFase.objects.filter(comp_aparell=self.comp_aparell).order_by("ordre", "id")
+        if self.instance and self.instance.pk:
+            parent_qs = parent_qs.exclude(pk=self.instance.pk)
+        self.fields["parent"].queryset = parent_qs
+
+    def clean_codi(self):
+        return str(self.cleaned_data.get("codi") or "").strip().upper()
+
+    class Meta:
+        model = CompeticioAparellFase
+        fields = ["parent", "nom", "codi", "ordre", "estat"]
+        widgets = {
+            "parent": forms.Select(attrs={"class": "form-select"}),
+            "nom": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Semifinal"}),
+            "codi": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: SEMI"}),
+            "ordre": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
+            "estat": forms.Select(attrs={"class": "form-select"}),
+        }
+        labels = {
+            "parent": "Fase pare",
+            "nom": "Nom",
+            "codi": "Codi",
+            "ordre": "Ordre",
+            "estat": "Estat",
+        }
+
+
+class ProgramUnitManualForm(forms.Form):
+    nom = forms.CharField(
+        label="Nom",
+        max_length=180,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Final Infantil F"}),
+    )
+    capacity = forms.IntegerField(
+        label="Slots",
+        min_value=1,
+        max_value=200,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+    )
+    tipus = forms.ChoiceField(
+        label="Tipus",
+        choices=ProgramUnit.Tipus.choices,
+        initial=ProgramUnit.Tipus.CUSTOM,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    partition_key = forms.CharField(
+        label="Particio",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
+    )
+
+
+class ProgramUnitPartitionForm(forms.Form):
+    label = forms.CharField(
+        label="Etiqueta",
+        max_length=180,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Infantil F"}),
+    )
+    key = forms.CharField(
+        label="Clau",
+        max_length=255,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
+    )
+    capacity = forms.IntegerField(
+        label="Slots",
+        min_value=1,
+        max_value=200,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+    )
 
 
 class AparellForm(forms.ModelForm):

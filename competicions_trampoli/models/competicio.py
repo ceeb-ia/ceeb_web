@@ -150,6 +150,241 @@ class CompeticioAparell(models.Model):
         return bool(self.aparell_id and self.aparell.is_team_competition_unit)
 
 
+class CompeticioAparellFase(models.Model):
+    class Estat(models.TextChoices):
+        PLANNED = "planned", "Planificada"
+        GENERATED = "generated", "Generada"
+        PARTIALLY_CONFIRMED = "partially_confirmed", "Parcialment confirmada"
+        CONFIRMED = "confirmed", "Confirmada"
+        PUBLISHED = "published", "Publicada"
+        CLOSED = "closed", "Tancada"
+        STALE = "stale", "Obsoleta"
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="aparell_fases",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="fases",
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="children",
+    )
+    nom = models.CharField(max_length=120)
+    codi = models.CharField(max_length=40, db_index=True)
+    ordre = models.PositiveSmallIntegerField(default=1)
+    estat = models.CharField(max_length=30, choices=Estat.choices, default=Estat.PLANNED)
+    config = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["comp_aparell_id", "ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "comp_aparell", "codi"],
+                name="uniq_comp_app_fase_codi",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell", "ordre"], name="compfase_comp_app_ordre_idx"),
+            models.Index(fields=["competicio", "estat"], name="compfase_comp_estat_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.nom = str(self.nom or "").strip()
+        self.codi = str(self.codi or "").strip().upper()
+        if not self.nom:
+            errors["nom"] = "Cal informar el nom de la fase."
+        if not self.codi:
+            errors["codi"] = "Cal informar el codi de la fase."
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = "L'aparell no pertany a la mateixa competicio."
+        if self.parent_id:
+            if self.pk and self.parent_id == self.pk:
+                errors["parent"] = "Una fase no pot ser pare de si mateixa."
+            elif self.parent.comp_aparell_id != self.comp_aparell_id:
+                errors["parent"] = "La fase pare ha de pertanyer al mateix aparell local."
+            elif self.parent.competicio_id != self.competicio_id:
+                errors["parent"] = "La fase pare ha de pertanyer a la mateixa competicio."
+            elif self.pk:
+                ancestor = self.parent
+                seen = set()
+                while ancestor is not None and ancestor.pk:
+                    if ancestor.pk in seen:
+                        errors["parent"] = "L'arbre de fases conte un cicle."
+                        break
+                    if ancestor.pk == self.pk:
+                        errors["parent"] = "L'arbre de fases no pot contenir cicles."
+                        break
+                    seen.add(ancestor.pk)
+                    ancestor = ancestor.parent
+        if not isinstance(self.config, dict):
+            errors["config"] = "La configuracio de fase ha de ser un objecte JSON."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            kwargs["update_fields"] = update_fields
+        self.nom = str(self.nom or "").strip()
+        self.codi = str(self.codi or "").strip().upper()
+        if self.comp_aparell_id and not self.competicio_id:
+            self.competicio_id = self.comp_aparell.competicio_id
+            if update_fields is not None:
+                update_fields.add("competicio")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.comp_aparell.display_nom} / {self.nom}"
+
+
+class ProgramUnit(models.Model):
+    class Tipus(models.TextChoices):
+        GROUP = "group", "Grup"
+        SERIE = "serie", "Serie"
+        BLOCK = "block", "Bloc"
+        TEAM = "team", "Equip"
+        CUSTOM = "custom", "Custom"
+
+    class Status(models.TextChoices):
+        PLANNED = "planned", "Planificada"
+        GENERATED = "generated", "Generada"
+        CONFIRMED = "confirmed", "Confirmada"
+        PUBLISHED = "published", "Publicada"
+
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.CASCADE,
+        related_name="program_units",
+    )
+    nom = models.CharField(max_length=180)
+    tipus = models.CharField(max_length=30, choices=Tipus.choices, default=Tipus.CUSTOM)
+    ordre = models.PositiveIntegerField(default=1)
+    partition_key = models.CharField(max_length=255, blank=True, default="")
+    partition_values = models.JSONField(default=dict, blank=True)
+    capacity = models.PositiveIntegerField(null=True, blank=True)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.PLANNED)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fase_id", "ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["fase", "ordre"], name="uniq_program_unit_fase_ordre"),
+        ]
+        indexes = [
+            models.Index(fields=["fase", "status"], name="programunit_fase_status_idx"),
+            models.Index(fields=["fase", "tipus"], name="programunit_fase_tipus_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.nom = str(self.nom or "").strip()
+        self.partition_key = str(self.partition_key or "").strip()
+        if not self.nom:
+            errors["nom"] = "Cal informar el nom de la unitat programable."
+        if not isinstance(self.partition_values, dict):
+            errors["partition_values"] = "Els valors de particio han de ser un objecte JSON."
+        if not isinstance(self.metadata, dict):
+            errors["metadata"] = "La metadata ha de ser un objecte JSON."
+        if self.capacity is not None and int(self.capacity) <= 0:
+            errors["capacity"] = "La capacitat ha de ser positiva."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.nom = str(self.nom or "").strip()
+        self.partition_key = str(self.partition_key or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.fase} / {self.nom}"
+
+
+class ProgramUnitSlot(models.Model):
+    class Status(models.TextChoices):
+        EMPTY = "empty", "Buida"
+        FILLED = "filled", "Omplerta"
+        RESERVE = "reserve", "Reserva"
+        PENDING_DECISION = "pending_decision", "Pendent de decisio"
+        WITHDRAWN = "withdrawn", "Baixa"
+        MANUAL = "manual", "Manual"
+
+    unit = models.ForeignKey(
+        ProgramUnit,
+        on_delete=models.CASCADE,
+        related_name="slots",
+    )
+    slot_index = models.PositiveIntegerField()
+    ordre = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.EMPTY)
+    subject_kind = models.CharField(max_length=50, blank=True, default="")
+    subject_id = models.PositiveBigIntegerField(null=True, blank=True)
+    source_classificacio = models.ForeignKey(
+        "competicions_trampoli.ClassificacioConfig",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="program_unit_slots",
+    )
+    source_particio_key = models.CharField(max_length=255, blank=True, default="")
+    source_position = models.PositiveIntegerField(null=True, blank=True)
+    source_score = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    source_row = models.JSONField(default=dict, blank=True)
+    locked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["unit_id", "ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["unit", "slot_index"], name="uniq_program_slot_unit_index"),
+            models.UniqueConstraint(fields=["unit", "ordre"], name="uniq_program_slot_unit_ordre"),
+        ]
+        indexes = [
+            models.Index(fields=["unit", "status"], name="programslot_unit_status_idx"),
+            models.Index(fields=["subject_kind", "subject_id"], name="programslot_subject_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.subject_kind = str(self.subject_kind or "").strip().lower()
+        self.source_particio_key = str(self.source_particio_key or "").strip()
+        if self.status in {self.Status.FILLED, self.Status.RESERVE, self.Status.MANUAL}:
+            if not self.subject_kind or not self.subject_id:
+                errors["subject_id"] = "Aquest estat de slot requereix subjecte."
+        if self.status == self.Status.EMPTY and (self.subject_kind or self.subject_id):
+            errors["status"] = "Un slot buit no pot tenir subjecte assignat."
+        if not isinstance(self.source_row, dict):
+            errors["source_row"] = "La fila d'origen ha de ser un objecte JSON."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.subject_kind = str(self.subject_kind or "").strip().lower()
+        self.source_particio_key = str(self.source_particio_key or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        subject = f"{self.subject_kind}:{self.subject_id}" if self.subject_kind and self.subject_id else "-"
+        return f"{self.unit} / slot {self.slot_index} / {subject}"
+
+
 class CompeticioAparellEquipContextSource(models.Model):
     competicio = models.ForeignKey(
         Competicio,

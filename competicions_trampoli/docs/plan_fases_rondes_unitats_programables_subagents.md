@@ -577,6 +577,81 @@
 - Una fase no pot pertanyer a un `CompeticioAparell` d'una altra competicio.
 - L'arbre no permet parent d'una altra instancia.
 
+### Tancament Implementat
+- Estat: completada.
+- Implementacio feta:
+  - Afegit `CompeticioAparellFase` a `models/competicio.py`.
+  - Camps implementats:
+    - `competicio`
+    - `comp_aparell`
+    - `parent`
+    - `nom`
+    - `codi`
+    - `ordre`
+    - `estat`
+    - `config`
+    - `created_at`
+    - `updated_at`
+  - Estats disponibles:
+    - `planned`
+    - `generated`
+    - `partially_confirmed`
+    - `confirmed`
+    - `published`
+    - `closed`
+    - `stale`
+  - Afegida unicitat `competicio + comp_aparell + codi`.
+  - Afegides validacions de coherencia:
+    - la fase ha de pertanyer a la mateixa competicio que el seu `comp_aparell`
+    - la fase pare ha de pertanyer al mateix `CompeticioAparell`
+    - es rebutgen cicles directes o indirectes en l'arbre de fases
+    - `config` ha de ser un objecte JSON
+  - Afegit admin basic per `CompeticioAparellFase`.
+  - Afegit paquet de servei `services/fases`.
+  - Afegits helpers:
+    - `ensure_default_phase_for_comp_aparell`
+    - `get_default_phase_for_comp_aparell`
+  - La fase unica per defecte usa:
+    - `nom`: `Fase unica`
+    - `codi`: `DEFAULT`
+    - `estat`: `published`
+    - `config.source_mode`: `legacy_default`
+    - `config.implicit`: `true`
+  - El helper de fase default es idempotent i usa `get_or_create`.
+- Migracio:
+  - `0060_competicioaparellfase.py`.
+  - Crea la taula de fases.
+  - Fa backfill d'una fase `DEFAULT / Fase unica` per cada `CompeticioAparell` existent.
+- Guardrails respectats:
+  - No s'ha afegit dimensio de fase a `ScoreEntry`.
+  - No s'ha afegit dimensio de fase a `TeamScoreEntry`.
+  - No s'ha modificat `ClassificacioConfig`.
+  - No s'ha modificat `JudgeDeviceToken`.
+  - No s'ha modificat `RotacioAssignacio`.
+  - El runtime de notes, classificacions, rotacions i portal de jutges continua funcionant per `CompeticioAparell` com abans.
+- Tests afegits:
+  - contracte del model de fase
+  - scoping per `CompeticioAparell`
+  - unicitat de codi dins un aparell local
+  - validacio de parent d'un altre aparell local
+  - validacio de `comp_aparell` d'una altra competicio
+  - helper de fase default
+  - idempotencia del helper
+  - fases default separades per instancia local
+  - guardrail que `ScoreEntry` i `TeamScoreEntry` encara no tenen camp de fase
+  - backfill de migracio `0060`
+- Verificacio executada:
+  - `python -m py_compile` dels fitxers Python tocats.
+  - `docker compose exec -T web python manage.py check`.
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases --verbosity 1 --keepdb`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.access.test_aparell_catalog_ownership --verbosity 1 --keepdb`.
+- Notes per fases seguents:
+  - La fase default ja existeix com a estructura persistent, pero encara no filtra ni separa notes.
+  - La Fase 3 pot construir `ProgramUnit` i `ProgramUnitSlot` sota `CompeticioAparellFase`.
+  - La Fase 5 podra fer que `ClassificacioConfig` apunti a una fase, pero aquesta iteracio ho ha deixat expressament fora.
+  - La Fase 8 haura d'afegir fase a `ScoreEntry` i `TeamScoreEntry`; aquesta iteracio nomes deixa el punt d'ancoratge.
+
 ## Fase 3. Unitats Programables I Slots
 
 ### Objectiu
@@ -613,6 +688,80 @@
 - Una unitat pot tenir slots sense participant.
 - Una unitat pot tenir slots de reserva.
 - La mateixa inscripcio pot existir en unitats de fases diferents.
+
+### Tancament Implementat
+- Estat: completada com a base backend.
+- Implementacio feta:
+  - Afegit `ProgramUnit` a `models/competicio.py`.
+  - Afegit `ProgramUnitSlot` a `models/competicio.py`.
+  - `ProgramUnit` viu sota `CompeticioAparellFase`.
+  - `ProgramUnitSlot` viu sota `ProgramUnit`.
+  - Les unitats programables no depenen de `GrupCompeticio`.
+  - Els slots poden existir sense participant.
+  - Els slots poden apuntar genericament a subjectes amb:
+    - `subject_kind`
+    - `subject_id`
+  - Els slots poden conservar traçabilitat d'origen amb:
+    - `source_classificacio`
+    - `source_particio_key`
+    - `source_position`
+    - `source_score`
+    - `source_row`
+  - Afegits estats de `ProgramUnit`:
+    - `planned`
+    - `generated`
+    - `confirmed`
+    - `published`
+  - Afegits estats de `ProgramUnitSlot`:
+    - `empty`
+    - `filled`
+    - `reserve`
+    - `pending_decision`
+    - `withdrawn`
+    - `manual`
+  - Afegit admin basic per `ProgramUnit` i `ProgramUnitSlot`.
+- Migracio:
+  - `0061_program_units.py`.
+  - Crea taules per unitats programables i slots.
+  - No fa backfill massiu automatic de grups legacy.
+- Serveis afegits:
+  - `services/fases/program_units.py`
+  - `create_program_unit_with_empty_slots`
+  - `create_program_unit_from_subjects`
+  - `fill_program_unit_slots`
+  - `create_units_one_per_partition`
+  - `create_units_split_by_capacity`
+  - `create_units_from_base_groups`
+  - `next_program_unit_order`
+- Guardrails respectats:
+  - No s'ha modificat `ScoreEntry`.
+  - No s'ha modificat `TeamScoreEntry`.
+  - No s'ha modificat el portal de jutges.
+  - No s'ha modificat el runtime de notes.
+  - No s'ha modificat el runtime de classificacions.
+  - No s'ha modificat el planner de rotacions.
+  - `GrupCompeticio` continua sent legacy/base; `ProgramUnit` es la nova capa programable per fases.
+- Tests afegits:
+  - creacio d'unitat amb slots buits
+  - validacio que slots `filled/reserve/manual` requereixen subjecte
+  - validacio que slots `empty` no poden tenir subjecte
+  - unicitat d'ordre d'unitat dins una fase
+  - mateixa inscripcio present en slots de fases diferents
+  - generacio `one_unit_per_partition`
+  - generacio `split_by_capacity`
+  - generacio `from_base_groups`
+  - guardrail que `ScoreEntry` i `TeamScoreEntry` encara no tenen `fase` ni `program_unit`
+- Verificacio executada:
+  - `python -m py_compile` dels fitxers Python tocats.
+  - `docker compose exec -T web python manage.py check`.
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases --verbosity 1 --keepdb`.
+- Notes per fases seguents:
+  - La Fase 4 pot construir un planner UI sobre `CompeticioAparellFase`, `ProgramUnit` i `ProgramUnitSlot`.
+  - La Fase 5 pot fer que `ClassificacioConfig` calculi sobre fases, pero encara no ho fa.
+  - La Fase 6 pot omplir slots a partir d'una classificacio font amb regles de pas reals.
+  - La Fase 7 haura de decidir com programar `ProgramUnit` en rotacions.
+  - La Fase 8 continuara sent la que separi notes per fase; aquesta fase nomes crea la capa programable.
 
 ## Fase 4. Planner De Fases I Plantilles Reutilitzables
 
@@ -656,6 +805,65 @@
   - final
 - Es pot guardar i aplicar una plantilla.
 - Els overrides de quota per particio persisteixen.
+
+### Tancament Implementat
+- Estat: completada com a planner basic.
+- Implementacio feta:
+  - Afegida vista `CompeticioAparellFasesPlanner`.
+  - Afegida ruta:
+    - `trampoli_aparell_fases`
+    - `competicio/<pk>/notes/trampoli/aparells/<app_id>/fases/`
+  - Afegit template:
+    - `templates/competicio/fases_planner.html`
+  - Afegit enllaç `Fases` a la llista d'aparells locals.
+  - Afegits formularis:
+    - `CompeticioAparellFaseForm`
+    - `ProgramUnitManualForm`
+    - `ProgramUnitPartitionForm`
+  - Afegit servei d'orquestracio:
+    - `services/fases/planner.py`
+  - El planner permet:
+    - veure fases d'un `CompeticioAparell`
+    - assegurar i mostrar la fase default
+    - crear fases filles o fases paral.leles
+    - crear unitats buides amb N slots
+    - crear una unitat per particio manual
+    - generar unitats des de `GrupCompeticio` base
+    - veure slots i subjectes assignats quan ja existeixen
+- Guardrails respectats:
+  - No s'ha barrejat amb el builder de classificacions.
+  - No s'ha modificat `ClassificacioConfig`.
+  - No s'ha modificat el runtime de classificacions.
+  - No s'ha modificat el runtime de notes.
+  - No s'ha modificat el portal de jutges.
+  - No s'ha modificat rotacions.
+  - El planner treballa sobre `CompeticioAparellFase`, `ProgramUnit` i `ProgramUnitSlot`.
+- Abast ajornat:
+  - Plantilles reutilitzables de fases.
+  - Configuracio completa de quotes i overrides.
+  - Configuracio completa de reserves.
+  - Politica d'empats.
+  - Seleccio de classificacio font com a regla de pas real.
+  - Preview sofisticada o drag-and-drop.
+  - Publicacio real cap al portal de jutges.
+- Tests afegits:
+  - el planner mostra fase default i unitats sense exposar payloads de score
+  - la llista d'aparells enllaça al planner
+  - es pot crear una fase filla via POST
+  - es pot crear una unitat manual amb slots buits via POST
+  - es pot crear una unitat de particio via POST
+  - es poden generar unitats des de grups base via POST
+  - la generacio des del planner no toca `ScoreEntry` ni `TeamScoreEntry`
+- Verificacio executada:
+  - `python -m py_compile` dels fitxers Python tocats.
+  - `docker compose exec -T web python manage.py check`.
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases --verbosity 1 --keepdb`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.access.test_aparell_catalog_ownership --verbosity 1 --keepdb`.
+- Notes per fases seguents:
+  - La Fase 5 pot afegir `fase_id` o scope equivalent a classificacions.
+  - La Fase 6 pot usar les unitats i slots existents per omplir fases desti des de classificacions font.
+  - Les plantilles reutilitzables poden quedar com una Fase 4b o com a extensio abans de Fase 10.
 
 ## Fase 5. Classificacions Scoped Per Fase
 

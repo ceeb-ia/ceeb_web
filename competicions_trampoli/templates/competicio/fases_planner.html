@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Fases - {{ comp_aparell.display_nom }}{% endblock %}
+
+{% block content %}
+<style>
+  .phase-planner-shell {
+    max-width: 1560px;
+    margin: 0 auto;
+  }
+
+  .phase-planner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .phase-planner-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .phase-planner-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .phase-planner-stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  .phase-planner-panel {
+    border: 1px solid #e3e8ef;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 14px;
+  }
+
+  .phase-planner-panel h5 {
+    font-size: 0.98rem;
+    margin-bottom: 10px;
+  }
+
+  .phase-card {
+    border: 1px solid #dfe5ec;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .phase-card + .phase-card {
+    margin-top: 12px;
+  }
+
+  .phase-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #edf0f4;
+    background: #fbfcfe;
+  }
+
+  .phase-slot-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .phase-slot-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 8px;
+    border: 1px solid #dfe5ec;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #495057;
+    font-size: 0.82rem;
+  }
+
+  .phase-planner-table {
+    margin-bottom: 0;
+  }
+
+  .phase-planner-table thead th {
+    background: #f1f5f9;
+    border-bottom-color: #dfe5ec;
+    white-space: nowrap;
+  }
+
+  .phase-planner-table td,
+  .phase-planner-table th {
+    vertical-align: middle;
+  }
+
+  @media (max-width: 992px) {
+    .phase-planner-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="container-fluid mt-4">
+  <div class="card-surface phase-planner-shell">
+    <div class="phase-planner-header">
+      <div>
+        <h2 class="mb-1">Fases - {{ comp_aparell.display_nom }}</h2>
+        <div class="text-muted small">{{ competicio.nom }} - {{ comp_aparell.display_codi }}</div>
+      </div>
+      <div class="phase-planner-actions">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparells_list' competicio.id %}">Aparells</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuracio</a>
+        <a class="btn btn-sm btn-info" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="mb-3">
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }} mb-2">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="phase-planner-grid">
+      <div class="phase-planner-stack">
+        <section class="phase-planner-panel">
+          <h5>Crear fase</h5>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_phase">
+            <div class="mb-2">{{ phase_form.parent.label_tag }}{{ phase_form.parent }}{{ phase_form.parent.errors }}</div>
+            <div class="mb-2">{{ phase_form.nom.label_tag }}{{ phase_form.nom }}{{ phase_form.nom.errors }}</div>
+            <div class="mb-2">{{ phase_form.codi.label_tag }}{{ phase_form.codi }}{{ phase_form.codi.errors }}</div>
+            <div class="row">
+              <div class="col-5 mb-2">{{ phase_form.ordre.label_tag }}{{ phase_form.ordre }}{{ phase_form.ordre.errors }}</div>
+              <div class="col-7 mb-2">{{ phase_form.estat.label_tag }}{{ phase_form.estat }}{{ phase_form.estat.errors }}</div>
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">Crear fase</button>
+          </form>
+        </section>
+
+        <section class="phase-planner-panel">
+          <h5>Crear unitat buida</h5>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_manual_unit">
+            <div class="mb-2">
+              <label for="manual-fase">Fase</label>
+              <select id="manual-fase" name="fase_id" class="form-select" required>
+                {% for phase in phases %}
+                  <option value="{{ phase.id }}">{{ phase.nom }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">{{ manual_unit_form.nom.label_tag }}{{ manual_unit_form.nom }}{{ manual_unit_form.nom.errors }}</div>
+            <div class="row">
+              <div class="col-5 mb-2">{{ manual_unit_form.capacity.label_tag }}{{ manual_unit_form.capacity }}{{ manual_unit_form.capacity.errors }}</div>
+              <div class="col-7 mb-2">{{ manual_unit_form.tipus.label_tag }}{{ manual_unit_form.tipus }}{{ manual_unit_form.tipus.errors }}</div>
+            </div>
+            <div class="mb-2">{{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}</div>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Crear unitat</button>
+          </form>
+        </section>
+      </div>
+
+      <div class="phase-planner-stack">
+        <section>
+          <div class="d-flex justify-content-between align-items-center flex-wrap mb-2" style="gap: 8px;">
+            <h5 class="mb-0">Fases i unitats</h5>
+            <div class="text-muted small">{{ phase_count }} fases - {{ unit_count }} unitats</div>
+          </div>
+
+          {% for phase in phases %}
+            <div class="phase-card">
+              <div class="phase-card-header">
+                <div>
+                  <strong>{{ phase.nom }}</strong>
+                  <span class="badge badge-light border">{{ phase.codi }}</span>
+                  <span class="badge badge-secondary">{{ phase.estat }}</span>
+                  {% if phase.parent %}<div class="text-muted small">Pare: {{ phase.parent.nom }}</div>{% endif %}
+                </div>
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="generate_from_base_groups">
+                  <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">Generar des de grups</button>
+                </form>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-sm phase-planner-table">
+                  <thead>
+                    <tr>
+                      <th style="width:70px;">Ordre</th>
+                      <th>Unitat</th>
+                      <th style="width:120px;">Tipus</th>
+                      <th style="width:90px;">Slots</th>
+                      <th style="width:130px;">Estat</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for unit in phase.program_units.all %}
+                      <tr>
+                        <td>{{ unit.ordre }}</td>
+                        <td>
+                          <strong>{{ unit.nom }}</strong>
+                          {% if unit.partition_key %}<div class="text-muted small">{{ unit.partition_key }}</div>{% endif %}
+                        </td>
+                        <td>{{ unit.tipus }}</td>
+                        <td>{{ unit.slots_count|default:unit.slots.count }}</td>
+                        <td>{{ unit.status }}</td>
+                      </tr>
+                      {% if unit.slots.all %}
+                        <tr>
+                          <td></td>
+                          <td colspan="4">
+                            <div class="phase-slot-list">
+                              {% for slot in unit.slots.all %}
+                                <span class="phase-slot-chip">
+                                  #{{ slot.slot_index }} - {{ slot.status }}{% if slot.subject_kind %} - {{ slot.subject_kind }}:{{ slot.subject_id }}{% endif %}
+                                </span>
+                              {% endfor %}
+                            </div>
+                          </td>
+                        </tr>
+                      {% endif %}
+                    {% empty %}
+                      <tr><td colspan="5" class="text-muted">Encara no hi ha unitats en aquesta fase.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {% endfor %}
+        </section>
+
+        <section class="phase-planner-panel">
+          <h5>Crear unitat per particio</h5>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_partition_unit">
+            <div class="row">
+              <div class="col-md-3 mb-2">
+                <label for="partition-fase">Fase</label>
+                <select id="partition-fase" name="fase_id" class="form-select" required>
+                  {% for phase in phases %}
+                    <option value="{{ phase.id }}">{{ phase.nom }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3 mb-2">{{ partition_unit_form.label.label_tag }}{{ partition_unit_form.label }}{{ partition_unit_form.label.errors }}</div>
+              <div class="col-md-4 mb-2">{{ partition_unit_form.key.label_tag }}{{ partition_unit_form.key }}{{ partition_unit_form.key.errors }}</div>
+              <div class="col-md-2 mb-2">{{ partition_unit_form.capacity.label_tag }}{{ partition_unit_form.capacity }}{{ partition_unit_form.capacity.errors }}</div>
+            </div>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Crear particio</button>
+          </form>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
