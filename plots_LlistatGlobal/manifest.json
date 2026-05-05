@@ -1,0 +1,182 @@
+[
+  {
+    "id": "01_expected_vs_assigned_global",
+    "filename": "01_expected_vs_assigned_global.png",
+    "title": "Numeros demanats vs assignats",
+    "description": "Compara el volum global de numeros esperats i numeros finals assignats per al conjunt del run.",
+    "source_sections": [
+      "global_numbers"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "02_number_delta_global",
+    "filename": "02_number_delta_global.png",
+    "title": "Delta global per numero",
+    "description": "Mostra la diferencia Assignats - Demanats per numero, per detectar sobreassignacio o infraassignacio.",
+    "source_sections": [
+      "global_numbers"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "03_expected_vs_assigned_by_modalitat",
+    "filename": "03_expected_vs_assigned_by_modalitat.png",
+    "title": "Numeros per modalitat",
+    "description": "Compara peticions i assignacions finals per numero dins de cada modalitat.",
+    "source_sections": [
+      "by_modalitat"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "04_before_after_casa_fora_global",
+    "filename": "04_before_after_casa_fora_global.png",
+    "title": "Abans/despres CASA/FORA global",
+    "description": "Compara peticions explicites originals, numeros esperats finals i numeros assignats finals per veure l'efecte agregat de CASA/FORA.",
+    "source_sections": [
+      "analysis_rows"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "05_before_after_casa_fora_by_modalitat",
+    "filename": "05_before_after_casa_fora_by_modalitat.png",
+    "title": "Abans/despres CASA/FORA per modalitat",
+    "description": "Mostra per modalitat com canvia la distribucio de numeros en incorporar les peticions CASA/FORA.",
+    "source_sections": [
+      "analysis_rows"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "06_duples_balance",
+    "filename": "06_duples_balance.png",
+    "title": "Equilibri de duples CASA/FORA",
+    "description": "Situa cada dupla segons el numero CASA i FORA, amb mida segons equips afectats i color segons compliment.",
+    "source_sections": [
+      "duples"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "07_duples_entities_equips",
+    "filename": "07_duples_entities_equips.png",
+    "title": "Pes de cada dupla",
+    "description": "Resumeix quantes entitats i equips textuals recauen sobre cada dupla CASA/FORA.",
+    "source_sections": [
+      "duples"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "08_entity_magnitude",
+    "filename": "08_entity_magnitude.png",
+    "title": "Magnitud de les entitats",
+    "description": "Mostra les entitats amb mes equips i hi anota els equips amb peticio efectiva.",
+    "source_sections": [
+      "entitats"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "09_entity_damage_total",
+    "filename": "09_entity_damage_total.png",
+    "title": "Dany total per entitat",
+    "description": "Ordena les entitats pel dany total rebut i hi explicita volum d'equips i demanda.",
+    "source_sections": [
+      "entitats"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "10_entity_damage_normalized",
+    "filename": "10_entity_damage_normalized.png",
+    "title": "Dany normalitzat per entitat",
+    "description": "Compara el dany normalitzat per entitat, prioritzant dany per peticio efectiva i fent fallback a dany per equip.",
+    "source_sections": [
+      "entitats"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "11_entity_incidence_vs_magnitude",
+    "filename": "11_entity_incidence_vs_magnitude.png",
+    "title": "Incidencia vs magnitud",
+    "description": "Relaciona la mida de l'entitat amb la seva incidencia, usant el dany com a mida i el compliment CASA/FORA com a color.",
+    "source_sections": [
+      "entitats"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "12_entity_request_profile",
+    "filename": "12_entity_request_profile.png",
+    "title": "Perfil de demandes per entitat",
+    "description": "Desglossa per entitat el mix de peticions CASA, FORA, explicites i indiferents.",
+    "source_sections": [
+      "entitats"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "13_modalitat_incidence_damage",
+    "filename": "13_modalitat_incidence_damage.png",
+    "title": "Incidencia i dany per modalitat",
+    "description": "Mostra la incidencia percentual i el dany percentual de calendari per modalitat.",
+    "source_sections": [
+      "by_modalitat"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "14_modalitat_casa_fora_compliance",
+    "filename": "14_modalitat_casa_fora_compliance.png",
+    "title": "Compliment CASA/FORA per modalitat",
+    "description": "Compara el percentatge de compliment de CASA/FORA entre modalitats i hi anota la pressio de peticions.",
+    "source_sections": [
+      "by_modalitat"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "15_levels_by_modalitat",
+    "filename": "15_levels_by_modalitat.png",
+    "title": "Qualitat de nivells per modalitat",
+    "description": "Resumeix per modalitat el percentatge de grups AC, CE i mixtos trencats, i el rang mitja de nivells.",
+    "source_sections": [
+      "levels_modalitat"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "16_levels_by_categoria_top_breakage",
+    "filename": "16_levels_by_categoria_top_breakage.png",
+    "title": "Categories amb pitjor barreja de nivells",
+    "description": "Ordena les categories pel percentatge de grups mixtos trencats per detectar on l'agrupacio per nivells falla mes.",
+    "source_sections": [
+      "levels_categoria"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "17_fairness_entities_total",
+    "filename": "17_fairness_entities_total.png",
+    "title": "Fairness total per entitat",
+    "description": "Ordena les entitats pel cost total de fairness acumulat.",
+    "source_sections": [
+      "fairness_entities"
+    ],
+    "status": "generated"
+  },
+  {
+    "id": "18_fairness_entities_normalized",
+    "filename": "18_fairness_entities_normalized.png",
+    "title": "Fairness normalitzat per entitat",
+    "description": "Ordena les entitats pel cost de fairness per equip.",
+    "source_sections": [
+      "fairness_entities"
+    ],
+    "status": "generated"
+  }
+]

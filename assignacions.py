@@ -1024,6 +1024,7 @@ def assignar_grups_hungares(df_categoria,
     if 'Entitat' not in df_cat.columns:
         df_cat['Entitat'] = df_cat['Nom'].apply(obtenir_entitat)
 
+    num_equips_reals = len(df_cat)
     repartiment = crear_grups_equilibrats(len(df_cat), max_grup=max_grup, min_grup=min_grup)
     impossible = check_feasibility_entity(df_cat, repartiment)
 
@@ -1032,7 +1033,8 @@ def assignar_grups_hungares(df_categoria,
         print(f"No és possible separar entitats: {impossible}")
 
     # Afegim dummys si cal
-    df_cat, _ = add_dummies(df_cat, repartiment, segona_fase_bool=segona_fase_bool)
+    df_cat, num_dummies = add_dummies(df_cat, repartiment, segona_fase_bool=segona_fase_bool)
+    num_slots = 8 * len(repartiment)
 
     if weights is None:
         weights = dict(w_seed_group=5, w_seed_pos=1)
@@ -1071,6 +1073,7 @@ def assignar_grups_hungares(df_categoria,
     # Es creen els grups i es comproven conflictes
     g_assigned = build_groups_from_assignment(df_cat, slots, col_ind)
     conflicts = entity_conflicts(df_cat, g_assigned)
+    num_conflictes_inicials = sum(len(v) for v in conflicts.values())
     #print("Conflictes inicials d'entitat:", conflicts)
     
     max_repair_iters = 10
@@ -1251,7 +1254,39 @@ def assignar_grups_hungares(df_categoria,
         g: {e: c for e, c in Counter([e for e in v if e and e != 'Descans']).items() if c > 1}
         for g, v in groups_final.items()
     }
-    conflicts_final = {g: d for g, d in conflicts_final.items() if d}    
+    conflicts_final = {g: d for g, d in conflicts_final.items() if d}
+
+    def _level_to_idx(val):
+        text = str(val).strip()
+        if not text or text == "Descans":
+            return None
+        direct = {
+            "Nivell A": 1,
+            "Nivell B": 2,
+            "Nivell C": 3,
+            "Nivell D": 4,
+            "Nivell E": 5,
+        }
+        if text in direct:
+            return direct[text]
+        last = text[-1:].upper()
+        if last in {"A", "B", "C", "D", "E"}:
+            return {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5}[last]
+        return None
+
+    nivell_rangs = []
+    for pos_dict in groups.values():
+        idxs = []
+        for i in pos_dict.values():
+            idx = _level_to_idx(df_cat.iloc[i]['Nivell'])
+            if idx is not None:
+                idxs.append(idx)
+        if idxs:
+            nivell_rangs.append(max(idxs) - min(idxs))
+
+    nivell_rang_mitja = float(sum(nivell_rangs) / len(nivell_rangs)) if nivell_rangs else 0.0
+    nivell_rang_max = int(max(nivell_rangs)) if nivell_rangs else 0
+    num_conflictes_finals = sum(len(v) for v in conflicts_final.values())
     
         
     # Retorna el DataFrame amb l'assignació, els costos globals i informació addicional
@@ -1260,4 +1295,13 @@ def assignar_grups_hungares(df_categoria,
         'repartiment': repartiment,
         'conflictes_entitat': conflicts_final,
         'categoria': df_cat.iloc[0]['Nom Lliga'],
+        'num_equips_reals': num_equips_reals,
+        'num_slots': num_slots,
+        'num_dummies': num_dummies,
+        'dummy_ratio': (num_dummies / num_slots) if num_slots else 0.0,
+        'num_conflictes_inicials': num_conflictes_inicials,
+        'num_conflictes_finals': num_conflictes_finals,
+        'repair_iters_executades': repair_iter,
+        'nivell_rang_mitja_grups': nivell_rang_mitja,
+        'nivell_rang_max_grups': nivell_rang_max,
     }

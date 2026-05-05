@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 pandas
+matplotlib
+seaborn
 openpyxl
 numpy
 scipy
