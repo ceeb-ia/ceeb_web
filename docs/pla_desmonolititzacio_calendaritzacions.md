@@ -1892,3 +1892,186 @@ La seguent iteracio hauria de centrar-se en:
 - afegir els primers artefactes d'auditoria (`run_manifest`,
   `input_validation`, `solver_trace`) sense canviar l'Excel;
 - deixar `legacy_pipeline.py` com a orquestrador encara mes prim.
+
+## 33. Estat despres d'orquestrar context de run, auditoria i boundaries
+
+### 33.1. Ja fet
+
+S'ha completat una iteracio orquestrada amb write-sets separats per reduir mes
+el pipeline legacy i tancar acoblaments pendents.
+
+Nous moduls:
+
+- `calendaritzacions/application/run_context.py`
+- `calendaritzacions/analysis/validation_tables.py`
+- `calendaritzacions/analysis/run_audit.py`
+
+Responsabilitats mogudes o afegides:
+
+- `LegacyRunContext` concentra metadades del run legacy:
+  - fitxer d'entrada;
+  - fase;
+  - motor;
+  - timestamps;
+  - files d'input i assignades;
+  - traces CASA/FORA;
+  - resum per categoria;
+  - paths d'artefactes.
+- La preparacio de taules de validacio ja no viu dins `legacy_pipeline.py`;
+  ara es construeix a `calendaritzacions/analysis/validation_tables.py`.
+- El pipeline genera tres artefactes JSON inicials, sense canviar l'Excel:
+  - `run_manifest_<fitxer>.json`;
+  - `input_validation_<fitxer>.json`;
+  - `solver_trace_<fitxer>.json`.
+- `calendaritzacions/reporting/json_writer.py` exposa `write_json_payload(...)`
+  per escriure qualsevol payload JSON estructurat.
+- `calendaritzacions/application/progress.py` centralitza l'adaptador de progres
+  legacy cap a Redis.
+- `calendaritzacions/application/legacy_pipeline.py` ja no importa `logs.py`
+  directament; usa `progress_for_task(...)`.
+- `calendaritzacions/second_phase/classifications.py` ja no importa `logs.py`
+  directament; accepta un `ProgressReporter` i conserva `task_id` per
+  compatibilitat.
+- `calendaritzacions/second_phase/ceeb_client.py` ja no conte credencials
+  hardcoded; les resol via arguments o variables d'entorn:
+  - `CEEB_AUTH_USER`;
+  - `CEEB_AUTH_PASS`.
+
+### 33.2. Verificacio executada
+
+S'ha validat amb:
+
+```powershell
+docker compose run --rm app python -m unittest discover -s tests
+```
+
+Resultat:
+
+```text
+Ran 60 tests
+OK
+```
+
+Els tests nous cobreixen:
+
+- construccio d'artefactes d'auditoria JSON-ready;
+- extraccio de taules de validacio;
+- progres de segona fase amb reporter fake;
+- absencia d'import directe de `logs.py` a `classifications.py` i
+  `legacy_pipeline.py`;
+- credencials CEEB via entorn o arguments, sense xarxa.
+
+### 33.3. Que queda dins `legacy_pipeline.py`
+
+Encara hi queda l'orquestracio legacy real:
+
+- seleccio de fase;
+- resolucio CASA/FORA via `home_away`;
+- crida a enriquiment de segona fase;
+- bucle per categories i crida al motor legacy;
+- construccio del payload de KPIs via `build_kpis_payload(...)`;
+- escriptura d'Excel, KPIs i artefactes d'auditoria;
+- `process_excel(...)` i CLI legacy.
+
+Ara el fitxer es menys monolitic, pero encara es el coordinador central del run.
+
+### 33.4. Proxima iteracio recomanada
+
+Els seguents passos logics son:
+
+- fer que `process_calendarization(...)` sigui l'orquestrador real i que
+  `legacy_pipeline.py` quedi com a wrapper intern;
+- separar un servei de categories que encapsuli el bucle per categories i la
+  crida a `assignar_grups_hungares(...)`;
+- ampliar l'auditoria amb `home_away_resolution.json`, `constraints_report.json`
+  i `performance.json`;
+- substituir els `sys.exit(...)` pendents per excepcions de domini traduibles a
+  la capa d'aplicacio;
+- mantenir `main.py`, `assignacions.py` i `application/compatibility.py` com a
+  facanes legacy fins que Django ja no depengui d'aquests imports.
+
+## 34. Tancament de la desmonolititzacio V1
+
+### 34.1. Estat final
+
+La desmonolititzacio arquitectonica de la V1 es considera completada.
+
+La V1 queda encapsulada com a motor legacy i el repo ja te fronteres estables
+per introduir motors nous sense tocar ingesta, FastAPI, CEEB, reporting Excel o
+KPIs.
+
+Canvis finals aplicats:
+
+- `process_calendarization(...)` ja es l'entrada d'aplicacio real:
+  - llegeix l'Excel;
+  - reporta progres;
+  - executa el pipeline legacy de DataFrame;
+  - finalitza el resultat a storage.
+- `calendaritzacions/application/legacy_pipeline.py` conserva compatibilitat,
+  pero `process_excel(...)` queda com a wrapper legacy.
+- El bucle per categories i la crida a `assignar_grups_hungares(...)` viuen a
+  `calendaritzacions/application/category_runner.py`.
+- El contracte de motor queda formalitzat:
+  - `calendaritzacions/engine/base.py`;
+  - `calendaritzacions/engine/config.py`;
+  - `calendaritzacions/engine/registry.py`.
+- El registre exposa `legacy` com un motor mes i conserva compatibilitat callable
+  per imports antics.
+- S'han creat errors de domini a `calendaritzacions/domain/errors.py`.
+- Els `sys.exit(...)` pendents dins el codi paquetitzat s'han substituit per
+  excepcions de domini.
+- L'auditoria del run genera els artefactes:
+  - `run_manifest_<fitxer>.json`;
+  - `input_validation_<fitxer>.json`;
+  - `solver_trace_<fitxer>.json`;
+  - `home_away_resolution_<fitxer>.json`;
+  - `constraints_report_<fitxer>.json`;
+  - `performance_<fitxer>.json`.
+
+### 34.2. Verificacio executada
+
+S'ha validat amb compilacio focalitzada:
+
+```powershell
+docker compose run --rm app python -m py_compile calendaritzacions/application/legacy_pipeline.py calendaritzacions/application/use_cases.py calendaritzacions/application/category_runner.py
+```
+
+I amb la suite completa:
+
+```powershell
+docker compose run --rm app python -m unittest discover -s tests
+```
+
+Resultat:
+
+```text
+Ran 71 tests
+OK
+```
+
+### 34.3. Definicio de fet assolida
+
+Es dona per assolida la definicio de fet de la desmonolititzacio:
+
+- `main.py` es una facana compatible.
+- `assignacions.py` es una facana compatible del motor legacy.
+- `app.py` entra per `calendaritzacions.application.process_calendarization`.
+- `logs.py` ja no es font conceptual de fases ni dependencia directa del motor.
+- El motor legacy es paquetitzat i desacoblat de FastAPI, Redis i Excel.
+- Reporting i auditoria viuen fora del motor.
+- CEEB viu darrere `calendaritzacions/second_phase/`.
+- Existeix registre de motors i `legacy` es un motor registrat.
+- Django pot cridar `process_calendarization(...)` sense importar `main.py`.
+
+### 34.4. Millores futures fora de la desmonolititzacio
+
+El que queda ja no es desmonolititzacio pendent, sino evolucio del producte:
+
+- dissenyar motors nous dins `calendaritzacions/engine/variants/`;
+- millorar heuristiques, pesos i fairness amb comparatives contra `legacy`;
+- afegir golden runs reals o nightly;
+- enriquir auditoria amb explicacions mes fines per equip i per restriccio;
+- afegir cache, retries i timeouts configurables al client CEEB;
+- optimitzar rendiment de runs llargs;
+- millorar missatges d'error d'usuari;
+- eliminar facanes legacy quan cap consumidor extern les necessiti.

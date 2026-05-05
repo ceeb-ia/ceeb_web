@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+from calendaritzacions.engine.config import EngineConfig
 
 
 @dataclass(frozen=True)
@@ -11,16 +13,18 @@ class EngineResult:
     """Normalized result shape for future engines."""
 
     output_path: str
+    kpis_path: str | None = None
+    audit_paths: dict[str, str] = field(default_factory=dict)
+    logs: list[str] = field(default_factory=list)
 
 
 class CalendarizationEngine(Protocol):
     """Protocol implemented by calendarization engines."""
 
-    def process(
+    def run(
         self,
         input_path: str,
-        return_logs: bool = False,
-        task_id: str | None = None,
-        segona_fase_bool: bool = False,
-    ) -> str | tuple[str, list[str]]:
-        """Process an input file and return the generated output path."""
+        config: EngineConfig,
+        progress: Any | None = None,
+    ) -> EngineResult:
+        """Process an input file and return normalized engine outputs."""

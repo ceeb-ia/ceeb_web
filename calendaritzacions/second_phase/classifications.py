@@ -5,22 +5,29 @@ from __future__ import annotations
 import asyncio
 
 import pandas as pd
-from asgiref.sync import async_to_sync
 
-from logs import push_log
+from calendaritzacions.application.progress import ProgressReporter, progress_for_task
 from calendaritzacions.second_phase.ceeb_client import fetch_ceeb_async, parse_ceeb_xml, xml_to_dataframe
 from calendaritzacions.second_phase.matching import _get_team_position, _normalize_team_key
+
+
+def _resolve_progress_reporter(task_id=None, progress: ProgressReporter | None = None) -> ProgressReporter:
+    if progress is not None:
+        return progress
+    return progress_for_task(task_id)
 
 
 def enrich_second_phase_classifications(
     df: pd.DataFrame,
     map_modalitat_nom: pd.DataFrame,
     task_id=None,
+    progress: ProgressReporter | None = None,
 ) -> tuple[pd.DataFrame, list[dict], list[dict]]:
     """Apply legacy second-phase classification lookups to ``df``."""
+    progress = _resolve_progress_reporter(task_id=task_id, progress=progress)
+
     print("Segona fase: processant classificacions prèvies...")
-    if task_id:
-        async_to_sync(push_log)(task_id, "Consultant classificacions per equips... (això pot portar uns minuts)", 60)
+    progress.report("Consultant classificacions per equips... (això pot portar uns minuts)", 60)
 
     missing_classifications = []
     unused_classification_teams = []
@@ -56,7 +63,7 @@ def enrich_second_phase_classifications(
             ctx = f"{modalitat}||{categoria}||{subcategoria}"
 
             for idx2, df_grup in enumerate(classificacions_list):
-                posicio, category_teams_raw = _get_team_position(equip_nom, df_grup, task_id)
+                posicio, category_teams_raw = _get_team_position(equip_nom, df_grup, None)
                 grup_id = f"G{idx2}"
                 group_team_tags = {
                     f"{_normalize_team_key(t)}||{ctx}||{grup_id}"

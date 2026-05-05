@@ -19,24 +19,30 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
 
         self.assertTrue(callable(get_engine("legacy")))
 
-    def test_process_calendarization_delegates_to_legacy_pipeline(self):
+    def test_process_calendarization_orchestrates_legacy_pipeline(self):
         from calendaritzacions.application.use_cases import process_calendarization
 
-        with patch("calendaritzacions.application.legacy_pipeline.process_excel", return_value="output.xlsx") as process_excel:
+        with (
+            patch("calendaritzacions.application.use_cases.read_excel", return_value="df") as read_excel,
+            patch("calendaritzacions.application.legacy_pipeline.processar_dades_2", return_value="output.xlsx") as processar,
+            patch("calendaritzacions.application.use_cases.finalize_result_path", return_value="final.xlsx") as finalize,
+        ):
             result = process_calendarization(
                 "input.xlsx",
                 return_logs=True,
-                task_id="task-1",
+                task_id=None,
                 segona_fase_bool=True,
             )
 
-        self.assertEqual(result, "output.xlsx")
-        process_excel.assert_called_once_with(
-            input_path="input.xlsx",
-            return_logs=True,
-            task_id="task-1",
+        self.assertEqual(result, ("final.xlsx", []))
+        read_excel.assert_called_once_with("input.xlsx")
+        processar.assert_called_once_with(
+            "df",
+            nom_fitxer="input.xlsx",
+            task_id=None,
             segona_fase_bool=True,
         )
+        finalize.assert_called_once()
 
     def test_fastapi_app_uses_application_use_case(self):
         import app

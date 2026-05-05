@@ -3,11 +3,7 @@ import sys
 import pandas as pd
 import os
 from convert import xlsx_to_csv
-import numpy as np
-from assignacions import assignar_grups_hungares
 import shutil
-from asgiref.sync import async_to_sync
-from logs import push_log
 from pathlib import Path
 from calendaritzacions.domain.phases import (
     PRIMERA_FASE as primera_fase,
@@ -16,22 +12,34 @@ from calendaritzacions.domain.phases import (
 
 from calendaritzacions.analysis.indicators import (
     _build_indicator_tables,
-    _with_metric_descriptions,
 )
 from calendaritzacions.analysis.kpi_payload import build_kpis_payload
+from calendaritzacions.analysis.run_audit import (
+    build_constraints_report,
+    build_home_away_resolution_payload,
+    build_input_validation_payload,
+    build_performance_payload,
+    build_run_manifest,
+    build_solver_trace,
+)
+from calendaritzacions.analysis.validation_tables import empty_validation_tables, build_validation_tables
 from calendaritzacions.application.legacy_helpers import (
     crear_grups_equilibrats,
     llegir_csv,
 )
+from calendaritzacions.application.category_runner import run_legacy_categories
+from calendaritzacions.application.progress import progress_for_task
+from calendaritzacions.application.run_context import LegacyRunContext
 from calendaritzacions.application.storage import finalize_result_path
 from calendaritzacions.domain.normalization import normalize_seed_value, parse_int
+from calendaritzacions.domain.errors import InfeasibleCalendarizationError
 from calendaritzacions.engine.legacy.home_away import (
     HomeAwayResolutionError,
     resolve_home_away_requests,
 )
 from calendaritzacions.ingestion import InputValidationError, prepare_legacy_input, read_excel
 from calendaritzacions.reporting.legacy_excel_writer import write_legacy_workbook
-from calendaritzacions.reporting.json_writer import write_kpis_json
+from calendaritzacions.reporting.json_writer import write_json_payload, write_kpis_json
 from calendaritzacions.second_phase.classifications import enrich_second_phase_classifications
 
 
@@ -96,14 +104,14 @@ BASE_PATH = MEDIA_ROOT
 
 def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool=False):
     print(df.head())
+    progress = progress_for_task(task_id)
     entity_costs = {}
     try:
         df, map_modalitat_nom = prepare_legacy_input(df)
     except InputValidationError as exc:
         msg = str(exc)
         print(msg)
-        if task_id:
-            async_to_sync(push_log)(task_id, f"ERROR: {msg}", 100)
+        progress.report(f"ERROR: {msg}", 100)
         raise
 
     # Llista per recollir equips que no s'ha pogut detectar a la classificació
@@ -112,10 +120,15 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
         fase = segona_fase
     else:
         fase = primera_fase
+    run_context = LegacyRunContext(
+        input_file=os.path.basename(nom_fitxer),
+        phase_name="segona_fase" if segona_fase_bool else "primera_fase",
+        phase_rounds=len(fase),
+    )
+    run_context.input_rows = len(df)
 
     print("Columnes del DataFrame:", df.columns)
-    if task_id:
-        async_to_sync(push_log)(task_id, "Assignant Ids als equips...", 20)
+    progress.report("Assignant Ids als equips...", 20)
 
     # Calculem el nombre total de jornades que juga la entitat
     total_jornades = len(fase)
@@ -123,23 +136,21 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
     # -------------------------------------------------------
     # Assignem a cada entitat casa/fora un numero de sorteig.
     # -------------------------------------------------------
-    if task_id:
-        async_to_sync(push_log)(task_id, "Analitzant números de sorteig per assignacions casa/fora...", 30)
+    progress.report("Analitzant números de sorteig per assignacions casa/fora...", 30)
     try:
         home_away_resolution = resolve_home_away_requests(df)
     except HomeAwayResolutionError as exc:
         msg = str(exc)
         print(msg)
-        if task_id:
-            async_to_sync(push_log)(task_id, msg, 100)
-        sys.exit(msg)
+        progress.report(msg, 100)
+        raise InfeasibleCalendarizationError(msg) from exc
 
-    if task_id:
-        async_to_sync(push_log)(task_id, "Assignant números de sorteig als equips segons preferències...", 50)
+    progress.report("Assignant números de sorteig als equips segons preferències...", 50)
 
     equip_to_num_sorteig = home_away_resolution.equip_to_num_sorteig
     entitats_assigned = home_away_resolution.entitats_assigned
     duples_casa_fora = home_away_resolution.duples_casa_fora
+    run_context.home_away_traces = list(home_away_resolution.traces)
 
     # Resum i comptatge de duples assignades
     counts = Counter(entitats_assigned.values())
@@ -164,53 +175,24 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
             df,
             map_modalitat_nom,
             task_id=task_id,
+            progress=progress,
         )
+        run_context.missing_classifications = list(missing_classifications)
+        run_context.unused_classification_teams = list(unused_classification_teams)
 
 
-    categories = sorted(df['Nom Lliga'].dropna().unique())
+    resultats_totals, info_totals, entity_costs = run_legacy_categories(
+        df,
+        fase=fase,
+        equip_to_num_sorteig=equip_to_num_sorteig,
+        segona_fase_bool=segona_fase_bool,
+        progress=progress,
+    )
+    for info in info_totals:
+        run_context.add_category_result(info.get("categoria", ""), info)
 
-    resultats_totals = []
-    info_totals = []
-
-    for num_cat, categoria in enumerate(categories):
-
-        df_cat = df[df['Nom Lliga'] == categoria].copy()
-        print(f"Processant categoria '{categoria}' amb {len(df_cat)} equips...")
-
-        if task_id:
-            # Normalitzem entre 50 i 100 la progressió
-            prog = (50 + (num_cat + 1)*40 // len(categories))
-            async_to_sync(push_log)(task_id, f"Processant categoria '{categoria}' amb {len(df_cat)} equips...", prog)
-        if df_cat.empty:
-            continue
-
-        try:
-            # Pots ajustar max_grup/min_grup i pesos segons necessitats
-            res_df, entity_costs, info = assignar_grups_hungares(
-                df_cat,
-                max_grup=8,
-                min_grup=6,
-                entity_costs=entity_costs,
-                equips_to_num_sorteig=equip_to_num_sorteig.copy(),
-                fase=fase,
-                weights={'w_dif_sorteig': np.log2(27)},
-                segona_fase_bool=segona_fase_bool,
-            )
-        except ValueError as e:
-            # p.ex. una entitat té més equips que grups (no factible separar)
-            print(f"[{categoria}] ERROR d'assignació: {e}")
-            continue
-
-
-
-        '''# Desa CSV per categoria
-        safe = "".join(c for c in categoria if c.isalnum() or c in "._- ").strip().replace(" ", "_")
-        out_path = os.path.join(BASE_PATH, f"csv_generats/assignacio_{safe}.csv")
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        res_df.to_csv(out_path, index=False, encoding="utf-8-sig")
-
+    '''
         print(f"[OK] {categoria} → {out_path}")
-        print("Info:", info)'''
 
         # Si estem a la segona fase, afegim la columna 'Posició Classificació'
         # a l'output per categoria, fent mapping des del `df` original via `Id`.
@@ -224,20 +206,23 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
 
         resultats_totals.append(res_df.assign(_Categoria=categoria))
         info_totals.append({'categoria': categoria, **info})
+        run_context.add_category_result(categoria, info)
+    '''
 
 
     
     # --- PREPARA VALIDACIONS PER ESCRIURE A L'EXCEL (si hi ha resultats) ---
-    if task_id:
-        async_to_sync(push_log)(task_id, "Preparant excel final", 92)
-    df_val_count_summary = pd.DataFrame()
-    df_val_count_by_cat = pd.DataFrame()
-    df_val_entity_conflicts = pd.DataFrame(columns=["Categoria", "Grup", "Entitat", "Count"])
-    df_val_level_spread = pd.DataFrame(columns=["Categoria", "Grup", "Nivells", "Min", "Max", "Dif"])
+    progress.report("Preparant excel final", 92)
+    validation_tables = empty_validation_tables()
     metrics_pack = {}
 
     if resultats_totals:
         all_results = pd.concat(resultats_totals, ignore_index=True)
+        if "Entitat" in all_results.columns:
+            entity_text = all_results["Entitat"].fillna("").astype(str).str.strip()
+            run_context.assigned_rows = int(((entity_text != "") & (entity_text != "Descans")).sum())
+        else:
+            run_context.assigned_rows = len(all_results)
         metrics_pack = _build_indicator_tables(
             df,
             all_results,
@@ -248,56 +233,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
             info_totals,
             len(fase),
         )
-
-        input_total = len(df)
-        assigned_total = len(metrics_pack["analysis"])
-        status = "OK" if input_total == assigned_total else "KO"
-        df_val_count_summary = pd.DataFrame([
-            {"Metrica": "Equips esperats (input)", "Valor": input_total},
-            {"Metrica": "Equips assignats (sense dummies)", "Valor": assigned_total},
-            {"Metrica": "Estat", "Valor": status},
-        ])
-        df_val_count_summary = _with_metric_descriptions(df_val_count_summary)
-
-        per_cat_in = df.groupby("Nom Lliga").size().rename("Esperats").to_frame()
-        per_cat_assigned = metrics_pack["analysis"].groupby("Categoria").size().rename("Assignats").to_frame()
-        df_val_count_by_cat = (
-            per_cat_in.join(per_cat_assigned, how="outer")
-            .fillna(0)
-            .reset_index()
-            .rename(columns={"Nom Lliga": "Categoria"})
-        )
-        df_val_count_by_cat["Esperats"] = df_val_count_by_cat["Esperats"].astype(int)
-        df_val_count_by_cat["Assignats"] = df_val_count_by_cat["Assignats"].astype(int)
-        df_val_count_by_cat["OK"] = df_val_count_by_cat["Esperats"] == df_val_count_by_cat["Assignats"]
-
-        rows_conf = []
-        for cat, df_cat_res in metrics_pack["analysis"].groupby("Categoria"):
-            for grup, df_grup in df_cat_res.groupby("Grup"):
-                ents = [e for e in df_grup["Entitat"].tolist() if e and e != "Descans"]
-                if not ents:
-                    continue
-                cnt = pd.Series(ents).value_counts()
-                for entitat, c in cnt.items():
-                    if c > 1:
-                        rows_conf.append({"Categoria": cat, "Grup": grup, "Entitat": entitat, "Count": int(c)})
-        if rows_conf:
-            df_val_entity_conflicts = pd.DataFrame(rows_conf)
-
-        if not metrics_pack["levels_group"].empty:
-            spread_rows = []
-            for _, row in metrics_pack["levels_group"].iterrows():
-                if int(row["Rang nivell"]) >= 3:
-                    spread_rows.append({
-                        "Categoria": row["Categoria"],
-                        "Grup": row["Grup"],
-                        "Nivells": row["Nivells presents"],
-                        "Min": row["Min nivell"],
-                        "Max": row["Max nivell"],
-                        "Dif": int(row["Rang nivell"]),
-                    })
-            if spread_rows:
-                df_val_level_spread = pd.DataFrame(spread_rows)
+        validation_tables = build_validation_tables(df, metrics_pack)
 
 
     # --- DESPRÉS DEL BUCLE PER CATEGORIES ---
@@ -306,6 +242,22 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
     nom_fitxer = os.path.splitext(os.path.basename(nom_fitxer))[0]
     excel_path = os.path.join(BASE_PATH, f"assignacions_{nom_fitxer}.xlsx")
     kpis_path = os.path.join(BASE_PATH, f"kpis_{nom_fitxer}.json")
+    run_manifest_path = os.path.join(BASE_PATH, f"run_manifest_{nom_fitxer}.json")
+    input_validation_path = os.path.join(BASE_PATH, f"input_validation_{nom_fitxer}.json")
+    solver_trace_path = os.path.join(BASE_PATH, f"solver_trace_{nom_fitxer}.json")
+    home_away_resolution_path = os.path.join(BASE_PATH, f"home_away_resolution_{nom_fitxer}.json")
+    constraints_report_path = os.path.join(BASE_PATH, f"constraints_report_{nom_fitxer}.json")
+    performance_path = os.path.join(BASE_PATH, f"performance_{nom_fitxer}.json")
+    run_context.excel_path = excel_path
+    run_context.kpis_path = kpis_path
+    run_context.audit_paths = {
+        "run_manifest": run_manifest_path,
+        "input_validation": input_validation_path,
+        "solver_trace": solver_trace_path,
+        "home_away_resolution": home_away_resolution_path,
+        "constraints_report": constraints_report_path,
+        "performance": performance_path,
+    }
     os.makedirs(os.path.dirname(excel_path), exist_ok=True)
     df_info = pd.DataFrame(info_totals).drop(columns=["fairness"], errors="ignore") if info_totals else pd.DataFrame()
     df_incidents = write_legacy_workbook(
@@ -313,9 +265,9 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
         resultats_totals=resultats_totals,
         info_totals=info_totals,
         metrics_pack=metrics_pack,
-        df_val_count_summary=df_val_count_summary,
-        df_val_entity_conflicts=df_val_entity_conflicts,
-        df_val_level_spread=df_val_level_spread,
+        df_val_count_summary=validation_tables.count_summary,
+        df_val_entity_conflicts=validation_tables.entity_conflicts,
+        df_val_level_spread=validation_tables.level_spread,
         segona_fase_bool=segona_fase_bool,
         missing_classifications=missing_classifications,
         unused_classification_teams=unused_classification_teams,
@@ -329,14 +281,82 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
         excel_path=excel_path,
         metrics_pack=metrics_pack,
         df_info=df_info,
-        df_val_count_summary=df_val_count_summary,
-        df_val_count_by_cat=df_val_count_by_cat,
-        df_val_entity_conflicts=df_val_entity_conflicts,
-        df_val_level_spread=df_val_level_spread,
+        df_val_count_summary=validation_tables.count_summary,
+        df_val_count_by_cat=validation_tables.count_by_category,
+        df_val_entity_conflicts=validation_tables.entity_conflicts,
+        df_val_level_spread=validation_tables.level_spread,
         df_incidents=df_incidents,
     )
 
     write_kpis_json(kpis_path, kpis_payload)
+    run_context.finish()
+    write_json_payload(
+        run_manifest_path,
+        build_run_manifest(
+            input_file=run_context.input_file,
+            phase=run_context.phase_name,
+            phase_rounds=run_context.phase_rounds,
+            engine=run_context.engine_name,
+            started_at=run_context.started_at,
+            finished_at=run_context.finished_at,
+            input_rows=run_context.input_rows,
+            assigned_rows=run_context.assigned_rows,
+            excel_path=excel_path,
+            kpis_path=kpis_path,
+            audit_paths=run_context.audit_paths,
+            warnings=run_context.warnings,
+        ),
+    )
+    write_json_payload(
+        input_validation_path,
+        build_input_validation_payload(
+            input_rows=run_context.input_rows,
+            columns=list(df.columns),
+            count_summary=validation_tables.count_summary,
+            count_by_category=validation_tables.count_by_category,
+            entity_conflicts=validation_tables.entity_conflicts,
+            level_spread=validation_tables.level_spread,
+            missing_classifications=missing_classifications,
+            unused_classification_teams=unused_classification_teams,
+        ),
+    )
+    write_json_payload(
+        solver_trace_path,
+        build_solver_trace(
+            phase=run_context.phase_name,
+            categories=run_context.categories,
+            home_away_traces=run_context.home_away_traces,
+            info_totals=info_totals,
+        ),
+    )
+    write_json_payload(
+        home_away_resolution_path,
+        build_home_away_resolution_payload(
+            equip_to_num_sorteig=equip_to_num_sorteig,
+            entitats_assigned=entitats_assigned,
+            duples_casa_fora=duples_casa_fora,
+            traces=run_context.home_away_traces,
+        ),
+    )
+    write_json_payload(
+        constraints_report_path,
+        build_constraints_report(
+            entity_conflicts=validation_tables.entity_conflicts,
+            level_spread=validation_tables.level_spread,
+            missing_classifications=missing_classifications,
+            unused_classification_teams=unused_classification_teams,
+        ),
+    )
+    write_json_payload(
+        performance_path,
+        build_performance_payload(
+            started_at=run_context.started_at,
+            finished_at=run_context.finished_at,
+            categories=len(info_totals),
+            input_rows=run_context.input_rows,
+            assigned_rows=run_context.assigned_rows,
+        ),
+    )
 
     print(f"[OK] KPIs generats → {kpis_path}")
 
@@ -351,17 +371,27 @@ def process_excel(input_path: str, return_logs: bool = False, task_id: str = Non
     Llegeix l'Excel d'entrada, executa la pipeline i retorna el path
     a un ZIP amb els resultats generats (p.ex. 'csv_generats', informes, etc.).
     """
-    # 1) Llegeix l’Excel d’entrada
+    from calendaritzacions.application.use_cases import process_calendarization
+
+    return process_calendarization(
+        input_path=input_path,
+        return_logs=return_logs,
+        task_id=task_id,
+        segona_fase_bool=segona_fase_bool,
+    )
+
+    # Legacy implementation kept below as unreachable compatibility context.
     logs = []
-    async_to_sync(push_log)(task_id, f"Llegint fitxer Excel... {Path(input_path).name}", 10)
+    progress = progress_for_task(task_id)
+    progress.report(f"Llegint fitxer Excel... {Path(input_path).name}", 10)
     df = read_excel(input_path)
 
 
-    async_to_sync(push_log)(task_id, f"S’han carregat {len(df)} inscripcions.", 15)
+    progress.report(f"S’han carregat {len(df)} inscripcions.", 15)
     #    Aquesta funció ja escriu sortides a BASE_PATH/csv_generats
     excel_path = processar_dades_2(df, nom_fitxer=Path(input_path).name, task_id=task_id, segona_fase_bool=segona_fase_bool)  # <- la teva funció existent
 
-    async_to_sync(push_log)(task_id, f"Resultat generat: {Path(excel_path).name}", 90)
+    progress.report(f"Resultat generat: {Path(excel_path).name}", 90)
 
     excel_path = finalize_result_path(excel_path, logs)
 

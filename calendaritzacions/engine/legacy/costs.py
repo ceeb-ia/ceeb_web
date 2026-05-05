@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-import sys
 
 import numpy as np
 import pandas as pd
 
+from calendaritzacions.domain.errors import InvalidSeedMappingError
 from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.utils import normalize_seed_value, parse_int
 
@@ -32,20 +32,20 @@ def cost_calc(equip, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_di
         mapped = equips_to_num_sorteig.get(equip, None)
         if mapped is None:
             print ("Atenció 1: ", equip, seed)
-            sys.exit("No hi ha mapping vàlid per a l'equip")
+            raise InvalidSeedMappingError("No hi ha mapping vàlid per a l'equip")
         # Verifiquem que seed_norm està dins dels valors valids per casa o fora
         if seed_norm == "casa" and mapped not in [8,7,6,1]:
             print ("Atenció 2: ", equip, seed)
-            sys.exit("No hi ha número vàlid per a l'equip")
+            raise InvalidSeedMappingError("No hi ha número vàlid per a l'equip")
         elif seed_norm == "fora" and mapped not in [5,4,3,2]:
             print ("Atenció 3: ", equip, seed)
-            sys.exit("No hi ha número vàlid per a l'equip")
+            raise InvalidSeedMappingError("No hi ha número vàlid per a l'equip")
 
         seed_norm = int(mapped)
 
         if seed_norm is None:
             print ("Atenció: ", equip, seed)
-            sys.exit("No hi ha número vàlid per a l'equip")
+            raise InvalidSeedMappingError("No hi ha número vàlid per a l'equip")
             
         cost += -5.0  # Petita bonificació per demanar casa/fora
     else:

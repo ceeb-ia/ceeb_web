@@ -21,6 +21,13 @@ class ImportBoundaryTests(unittest.TestCase):
 
         self.assertIn("calendaritzacions.second_phase.ceeb_client", text)
         self.assertNotIn("consulta_resultats", text)
+        self.assertNotIn("from logs import", text)
+
+    def test_legacy_pipeline_uses_progress_boundary(self):
+        text = (ROOT / "calendaritzacions" / "application" / "legacy_pipeline.py").read_text(encoding="utf-8")
+
+        self.assertIn("calendaritzacions.application.progress", text)
+        self.assertNotIn("from logs import", text)
 
 
 if __name__ == "__main__":

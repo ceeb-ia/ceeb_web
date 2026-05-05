@@ -2,21 +2,42 @@
 
 from __future__ import annotations
 
+import os
 import xml.etree.ElementTree as ET
 
 import httpx
 import pandas as pd
 
 
-CEEB_AUTH_USER = "competi"
-CEEB_AUTH_PASS = "a252c08e6ca437ee4e6d9eabe79d49b3"
+CEEB_AUTH_USER_ENV = "CEEB_AUTH_USER"
+CEEB_AUTH_PASS_ENV = "CEEB_AUTH_PASS"
 
 
-async def fetch_ceeb_async(p2: str, p5: str, timeout: float = 15.0, verify: bool = False):
+def _resolve_ceeb_auth(user: str | None = None, password: str | None = None):
+    resolved_user = user if user is not None else os.getenv(CEEB_AUTH_USER_ENV)
+    resolved_password = password if password is not None else os.getenv(CEEB_AUTH_PASS_ENV)
+    if not resolved_user or not resolved_password:
+        return None
+    return (resolved_user, resolved_password)
+
+
+async def fetch_ceeb_async(
+    p2: str,
+    p5: str,
+    timeout: float = 15.0,
+    verify: bool = False,
+    user: str | None = None,
+    password: str | None = None,
+):
     """Fetch CEEB XML classification data."""
+    auth = _resolve_ceeb_auth(user=user, password=password)
+    if auth is None:
+        print(f"Falten credencials CEEB: configura {CEEB_AUTH_USER_ENV} i {CEEB_AUTH_PASS_ENV}")
+        return None
+
     url = f"https://ceeb.playoffinformatica.com/serveisLliga.php?p1=lliga&type=xml&p2={p2}&p3=24&p4=FS1&p5={p5}"
 
-    async with httpx.AsyncClient(timeout=timeout, verify=verify, auth=(CEEB_AUTH_USER, CEEB_AUTH_PASS)) as client:
+    async with httpx.AsyncClient(timeout=timeout, verify=verify, auth=auth) as client:
         try:
             resp = await client.get(url)
         except Exception as exc:
