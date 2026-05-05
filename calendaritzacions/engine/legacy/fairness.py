@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from logs import primera_fase
+from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.costs import build_disposicions, cost_calc
 
 def actualitzar_costos_entitat(disposicions, equips_to_num_sorteig, df_cat, C, row_ind, col_ind, fase=primera_fase):

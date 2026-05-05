@@ -19,10 +19,10 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
 
         self.assertTrue(callable(get_engine("legacy")))
 
-    def test_process_calendarization_delegates_to_imported_wrapper(self):
+    def test_process_calendarization_delegates_to_legacy_pipeline(self):
         from calendaritzacions.application.use_cases import process_calendarization
 
-        with patch("calendaritzacions.application.use_cases.process_excel", return_value="output.xlsx") as process_excel:
+        with patch("calendaritzacions.application.legacy_pipeline.process_excel", return_value="output.xlsx") as process_excel:
             result = process_calendarization(
                 "input.xlsx",
                 return_logs=True,
@@ -37,6 +37,12 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
             task_id="task-1",
             segona_fase_bool=True,
         )
+
+    def test_fastapi_app_uses_application_use_case(self):
+        import app
+        from calendaritzacions.application import process_calendarization
+
+        self.assertIs(app.process_calendarization, process_calendarization)
 
     def test_noop_progress_reporter_report_does_not_fail(self):
         from calendaritzacions.application.progress import NoopProgressReporter

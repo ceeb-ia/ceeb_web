@@ -7,8 +7,8 @@ import asyncio
 import pandas as pd
 from asgiref.sync import async_to_sync
 
-from consulta_resultats import fetch_ceeb_async, parse_ceeb_xml, xml_to_dataframe
 from logs import push_log
+from calendaritzacions.second_phase.ceeb_client import fetch_ceeb_async, parse_ceeb_xml, xml_to_dataframe
 from calendaritzacions.second_phase.matching import _get_team_position, _normalize_team_key
 
 

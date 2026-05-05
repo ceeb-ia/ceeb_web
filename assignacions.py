@@ -13,9 +13,9 @@ import unicodedata
 
 import numpy as np
 import pandas as pd
-from logs import primera_fase
 from scipy.optimize import linear_sum_assignment
 
+from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.costs import (
     build_disposicions,
     cost_calc,

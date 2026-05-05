@@ -6,7 +6,7 @@ from collections import Counter
 
 import numpy as np
 
-from logs import primera_fase
+from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.costs import build_disposicions, cost_calc
 from calendaritzacions.engine.legacy.fairness import rebuild_entitat_factor
 from calendaritzacions.engine.legacy.slots import build_slots

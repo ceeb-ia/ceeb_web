@@ -1,8 +1,4 @@
-"""CASA/FORA textual request resolution copied from the legacy V1 flow.
-
-This module is intentionally not wired into the current legacy execution path.
-It exists so the behavior can be characterized and evolved independently.
-"""
+"""CASA/FORA textual request resolution copied from the legacy V1 flow."""
 
 from __future__ import annotations
 

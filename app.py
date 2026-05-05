@@ -3,7 +3,7 @@ from fastapi import FastAPI, BackgroundTasks, Header, Body
 from fastapi.responses import FileResponse, JSONResponse
 import tempfile, os, uuid
 import io
-from main import process_excel  # la funció que acabem de crear
+from calendaritzacions.application import process_calendarization
 from redis import asyncio as redis
 from anyio import to_thread
 import asyncio
@@ -44,7 +44,7 @@ async def _run_job(job_id: str, file_path: str, client_task_id: str | None = Non
         await _write_job(job_id, job)
         await push_log(ch, "Començant procés", 0)
 
-        out_path, partial_logs = await to_thread.run_sync(process_excel, file_path, True, ch, False)
+        out_path, partial_logs = await to_thread.run_sync(process_calendarization, file_path, True, ch, False)
         # Debug: report what process_excel returned so we can diagnose missing results
         try:
             await push_log(ch, "Excel generat", 95)
@@ -128,7 +128,7 @@ async def _run_job_segona_fase(job_id: str, file_path: str, client_task_id: str 
         await _write_job(job_id, job)
         await push_log(ch, "Començant procés", 0)
 
-        out_path, partial_logs = await to_thread.run_sync(process_excel, file_path, True, ch, True)
+        out_path, partial_logs = await to_thread.run_sync(process_calendarization, file_path, True, ch, True)
         # Debug: report what process_excel returned so we can diagnose missing results
         try:
             await push_log(ch, "Excel generat", 95)

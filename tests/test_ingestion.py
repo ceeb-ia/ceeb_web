@@ -9,6 +9,7 @@ from calendaritzacions.ingestion import (
     InputValidationError,
     ensure_team_ids,
     load_modalitat_map,
+    prepare_legacy_input,
     validate_no_mixed_home_away_requests,
     validate_required_columns,
 )
@@ -87,6 +88,28 @@ class IngestionTests(unittest.TestCase):
             result = load_modalitat_map(csv_path)
 
         self.assertEqual(result.to_dict("records"), [{"Modalitat": "FUTBOL 5", "Nom": "ALEVÍ"}])
+
+    def test_prepare_legacy_input_copies_loads_map_and_regenerates_existing_id(self):
+        df = _minimal_df(Id=["EXISTING"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = Path(tmpdir) / "map_modalitat_nom.csv"
+            csv_path.write_text("Modalitat;Nom\nFUTBOL 5;INFANTIL\n", encoding="utf-8")
+
+            prepared, modalitat_map = prepare_legacy_input(df, csv_path)
+
+        expected = ensure_team_ids(df.drop(columns=["Id"]))["Id"].iloc[0]
+        self.assertIsNot(prepared, df)
+        self.assertEqual(df["Id"].tolist(), ["EXISTING"])
+        self.assertEqual(prepared["Id"].tolist(), [expected])
+        self.assertEqual(modalitat_map.to_dict("records"), [{"Modalitat": "FUTBOL 5", "Nom": "INFANTIL"}])
+
+    def test_prepare_legacy_input_fails_when_entitat_missing(self):
+        df = _minimal_df().drop(columns=["Entitat"])
+
+        with self.assertRaises(InputValidationError) as cm:
+            prepare_legacy_input(df, "unused.csv")
+
+        self.assertEqual(cm.exception.details, {"missing_columns": ["Entitat"]})
 
 
 if __name__ == "__main__":

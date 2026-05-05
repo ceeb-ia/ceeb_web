@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-from logs import primera_fase
+from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.utils import normalize_seed_value, parse_int
 
 def cost_calc(equip, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_dif_sorteig=3):

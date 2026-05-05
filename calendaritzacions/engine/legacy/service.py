@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
 
-from logs import primera_fase
+from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.costs import recalcular_costos_base_sense_factors
 from calendaritzacions.engine.legacy.group_sizing import crear_grups_equilibrats
 from calendaritzacions.engine.legacy.local_search import (
@@ -41,10 +41,7 @@ def assignar_grups_hungares(df_categoria,
       - 'Nom', 'Nom Lliga', 'Núm. sorteig'
       - i opcionalment 'Entitat' (si no, es deriva de 'Nom')
     """
-    if fase is not None:
-        primera_fase = fase
-    else:
-        primera_fase = primera_fase  # Variable global per defecte
+    selected_phase = fase if fase is not None else primera_fase
 
 
     entity_global_costs = entity_costs.copy() if entity_costs else {}
@@ -73,7 +70,7 @@ def assignar_grups_hungares(df_categoria,
         equips_to_num_sorteig=equips_to_num_sorteig,
         repartiment=repartiment,
         w_dif_sorteig=weights.get('w_dif_sorteig', np.log2(27)),
-        fase=fase
+        fase=selected_phase
     )
     
     
@@ -88,7 +85,7 @@ def assignar_grups_hungares(df_categoria,
     groups = build_groups_from_assignment(df_cat, slots, col_ind)
     
     # Utilitzem la nova funció per obtenir costos base nets
-    costos_base_nets = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig, fase=fase)
+    costos_base_nets = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig, fase=selected_phase)
     # son costos base de la categoria, sense factors entitat
 
     entity_costs_cat = {entitat: 0.0 for entitat in df_cat['Entitat'].unique()}
@@ -120,7 +117,7 @@ def assignar_grups_hungares(df_categoria,
     
 
     # Obtenim costos base nets de la categoria segons la disposició de grups
-    costos_base_nets = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig, fase=fase)
+    costos_base_nets = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig, fase=selected_phase)
     entity_costs_cat = {entitat: 0.0 for entitat in df_cat['Entitat'].unique()}
     
     # Actualitzem costos d'entitat amb els costos base de la categoria
@@ -143,7 +140,7 @@ def assignar_grups_hungares(df_categoria,
     groups = homogeneitzar_nivell(df_cat, groups, segona_fase_bool=segona_fase_bool)
     groups, entity_costs_cat = homogeneitzar_costs(
         df_cat, groups, C, entity_costs_cat, entity_global_costs, entitats_casa_fora, slots,
-        fase=fase, equips_to_num_sorteig=equips_to_num_sorteig, segona_fase_bool=segona_fase_bool,
+        fase=selected_phase, equips_to_num_sorteig=equips_to_num_sorteig, segona_fase_bool=segona_fase_bool,
         w_dif_sorteig=5, lambda_entropia=1.0, max_iters=5
     )
 
@@ -198,7 +195,7 @@ def assignar_grups_hungares(df_categoria,
             dif_jornades = []
             assigned_num = pos + 1
             if seed_num is not None:
-                for j_idx, jornada in enumerate(primera_fase, start=1):
+                for j_idx, jornada in enumerate(selected_phase, start=1):
                     # Estat desitjat per al seed_num en aquesta jornada
                     desired = None
                     for a, b in jornada:

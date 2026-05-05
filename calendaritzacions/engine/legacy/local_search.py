@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from logs import primera_fase
+from calendaritzacions.domain.phases import PRIMERA_FASE as primera_fase
 from calendaritzacions.engine.legacy.costs import (
     build_disposicions,
     cost_calc,

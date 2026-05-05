@@ -1668,3 +1668,227 @@ Separar el reporting gros:
 - moure la construccio de `kpis_payload` a `calendaritzacions/analysis/kpi_payload.py`;
 - fer que `processar_dades_2` retorni o construeixi un objecte intermedi de run
   en lloc de tenir Excel i JSON incrustats.
+
+## 30. Estat despres d'extreure reporting, KPIs i CASA/FORA
+
+### 30.1. Ja fet
+
+S'han tancat els tres punts que quedaven marcats com a proxima iteracio
+immediata:
+
+- el bloc gros d'Excel ja no viu dins `legacy_pipeline.py`; ara esta encapsulat
+  a `calendaritzacions/reporting/legacy_excel_writer.py`;
+- la construccio de `kpis_payload` ja no viu dins `legacy_pipeline.py`; ara esta
+  encapsulada a `calendaritzacions/analysis/kpi_payload.py`;
+- la resolucio `CASA/FORA` ja esta connectada al flux real mitjancant
+  `calendaritzacions/engine/legacy/home_away.py`.
+
+`calendaritzacions/application/legacy_pipeline.py` continua sent el pipeline
+legacy d'aplicacio, pero ara delega aquests blocs:
+
+- `resolve_home_away_requests(...)` per construir `equip_to_num_sorteig`,
+  `entitats_assigned` i `duples_casa_fora`;
+- `write_legacy_workbook(...)` per generar l'Excel legacy i retornar
+  `df_incidents`;
+- `build_kpis_payload(...)` per construir el JSON de KPIs abans d'escriure'l.
+
+### 30.2. Verificacio executada
+
+S'ha validat amb:
+
+```powershell
+docker compose run --rm app python -m unittest discover -s tests
+```
+
+Resultat:
+
+```text
+Ran 38 tests
+OK
+```
+
+Tambe s'ha compilat explicitament:
+
+```powershell
+docker compose run --rm app python -m py_compile calendaritzacions/application/legacy_pipeline.py calendaritzacions/reporting/legacy_excel_writer.py calendaritzacions/analysis/kpi_payload.py calendaritzacions/engine/legacy/home_away.py
+```
+
+### 30.3. Que queda dins `legacy_pipeline.py`
+
+Encara hi queda:
+
+- preparacio inicial del DataFrame dins `processar_dades_2`;
+- lectura directa de `map_modalitat_nom.csv`;
+- seleccio de fase amb `primera_fase`/`segona_fase` provinents de `logs.py`;
+- bucle per categories i crida al motor legacy;
+- escriptura fisica del JSON de KPIs;
+- `process_excel(...)` i el CLI legacy.
+
+### 30.4. Proxima iteracio recomanada
+
+Els seguents passos logics son:
+
+- fer que el motor legacy deixi d'importar calendaris des de `logs.py` i passi a
+  dependre de `calendaritzacions/domain/phases.py`;
+- moure la preparacio inicial, validacions i generacio d'IDs cap a
+  `calendaritzacions/ingestion/`;
+- separar l'escriptura del JSON a `calendaritzacions/reporting/json_writer.py`;
+- convertir `process_calendarization(...)` en l'orquestrador real i fer que
+  `app.py` l'importi directament, sense passar per `main.py`.
+
+## 31. Estat despres de desacoblar fases, CEEB i FastAPI
+
+### 31.1. Ja fet
+
+S'han tancat tres acoblaments addicionals:
+
+- el motor legacy ja no importa calendaris des de `logs.py`; els moduls
+  `calendaritzacions/engine/legacy/*.py` usen `calendaritzacions/domain/phases.py`;
+- `calendaritzacions/application/legacy_pipeline.py` tambe selecciona
+  `PRIMERA_FASE` i `SEGONA_FASE` des de `domain/phases.py`;
+- `calendaritzacions/second_phase/classifications.py` ja no importa
+  `consulta_resultats.py` directament; ara passa pel boundary
+  `calendaritzacions/second_phase/ceeb_client.py`;
+- `app.py` ja no importa `process_excel` des de `main.py`; ara usa
+  `calendaritzacions.application.process_calendarization`;
+- `process_calendarization(...)` ja entra directament al pipeline d'aplicacio
+  legacy i no passa per `application/compatibility.py`.
+
+S'han afegit tests de frontera d'imports per evitar regressions:
+
+- cap modul de `calendaritzacions/engine/legacy/` pot importar `logs.py`;
+- `classifications.py` ha de dependre de `second_phase.ceeb_client`, no de
+  `consulta_resultats.py`.
+
+### 31.2. Verificacio executada
+
+S'ha validat amb:
+
+```powershell
+docker compose run --rm app python -m unittest discover -s tests
+```
+
+Resultat:
+
+```text
+Ran 41 tests
+OK
+```
+
+Tambe s'ha executat un smoke d'import:
+
+```powershell
+docker compose run --rm app python -c "import app; from calendaritzacions.application import process_calendarization; from calendaritzacions.second_phase.classifications import enrich_second_phase_classifications; from calendaritzacions.engine.legacy.service import assignar_grups_hungares; print('ok')"
+```
+
+Resultat:
+
+```text
+ok
+```
+
+### 31.3. Que queda pendent
+
+Encara queda:
+
+- `logs.py` continua contenint calendaris com a compatibilitat legacy, encara que
+  el motor i el pipeline ja no en depenguin;
+- `second_phase/ceeb_client.py` encapsula la frontera, pero de moment delega a
+  `consulta_resultats.py`; una fase posterior pot moure-hi la implementacio real
+  i deixar `consulta_resultats.py` com a CLI/client legacy;
+- `legacy_pipeline.py` encara fa preparacio inicial del DataFrame, lectura de
+  `map_modalitat_nom.csv`, bucle per categories i escriptura fisica del JSON;
+- `application/compatibility.py` i `main.py` continuen existint com a facanes
+  historiques per imports antics.
+
+### 31.4. Proxima iteracio recomanada
+
+Els seguents passos logics son:
+
+- moure preparacio inicial, validacions i generacio d'IDs a
+  `calendaritzacions/ingestion/`;
+- separar l'escriptura fisica del JSON a `calendaritzacions/reporting/json_writer.py`;
+- convertir `ceeb_client.py` en client real i deixar `consulta_resultats.py` com
+  a wrapper/CLI;
+- comencar a definir un resultat intermedi de run per reduir encara mes
+  `legacy_pipeline.py`.
+
+## 32. Estat despres d'extreure ingesta, JSON i CEEB real
+
+### 32.1. Ja fet
+
+S'ha completat la iteracio acotada de reduccio de `legacy_pipeline.py`:
+
+- la preparacio inicial de l'input viu a
+  `calendaritzacions/ingestion/legacy_input.py`;
+- `processar_dades_2(...)` delega validacio de columnes, copia del DataFrame,
+  regeneracio d'`Id` i lectura de `map_modalitat_nom.csv` a
+  `prepare_legacy_input(...)`;
+- la lectura d'Excel passa pel boundary `calendaritzacions/ingestion/excel_reader.py`;
+- l'escriptura fisica del JSON de KPIs viu a
+  `calendaritzacions/reporting/json_writer.py`;
+- `calendaritzacions/second_phase/ceeb_client.py` ja conte la implementacio real
+  de fetch/parsing/conversio CEEB i ja no delega a `consulta_resultats.py`;
+- `consulta_resultats.py` queda com a script/client legacy independent.
+
+S'han afegit tests focalitzats per:
+
+- preparacio legacy de l'input i regeneracio d'IDs;
+- serialitzacio JSON de KPIs amb valors pandas/numpy;
+- parsing i conversio CEEB sense xarxa;
+- fronteres d'import entre legacy engine, second phase i clients legacy.
+
+### 32.2. Verificacio executada
+
+S'ha validat amb:
+
+```powershell
+docker compose run --rm app python -m py_compile calendaritzacions/application/legacy_pipeline.py calendaritzacions/ingestion/legacy_input.py calendaritzacions/reporting/json_writer.py calendaritzacions/second_phase/ceeb_client.py
+```
+
+I amb:
+
+```powershell
+docker compose run --rm app python -m unittest discover -s tests
+```
+
+Resultat:
+
+```text
+Ran 50 tests
+OK
+```
+
+Smoke d'import final:
+
+```powershell
+docker compose run --rm app python -c "import app; from main import crear_grups_equilibrats, normalize_seed_value; from calendaritzacions.ingestion import prepare_legacy_input; from calendaritzacions.reporting.json_writer import write_kpis_json; from calendaritzacions.second_phase.ceeb_client import parse_ceeb_xml; print('ok')"
+```
+
+Resultat:
+
+```text
+ok
+```
+
+### 32.3. Que queda dins `legacy_pipeline.py`
+
+Encara hi queda:
+
+- seleccio de fase;
+- resolucio CASA/FORA via `home_away`;
+- crida a enriquiment de segona fase;
+- bucle per categories i crida al motor legacy;
+- preparacio de validacions/taules intermedies per reporting;
+- construccio del payload de KPIs via `build_kpis_payload(...)`;
+- `process_excel(...)` i CLI legacy.
+
+### 32.4. Proxima iteracio recomanada
+
+La seguent iteracio hauria de centrar-se en:
+
+- crear un objecte intermedi de run per no passar tants DataFrames i dicts solts;
+- moure la preparacio de validacions/taules intermedies a `analysis/`;
+- afegir els primers artefactes d'auditoria (`run_manifest`,
+  `input_validation`, `solver_trace`) sense canviar l'Excel;
+- deixar `legacy_pipeline.py` com a orquestrador encara mes prim.

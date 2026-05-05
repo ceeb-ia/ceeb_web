@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from calendaritzacions.application.compatibility import LegacyProcessResult, process_excel
+from calendaritzacions.application.compatibility import LegacyProcessResult
 
 
 def process_calendarization(
@@ -13,7 +13,9 @@ def process_calendarization(
     task_id: Optional[str] = None,
     segona_fase_bool: bool = False,
 ) -> LegacyProcessResult:
-    """Process a calendarization request through the current compatible engine."""
+    """Process a calendarization request through the current application pipeline."""
+    from calendaritzacions.application.legacy_pipeline import process_excel
+
     return process_excel(
         input_path=input_path,
         return_logs=return_logs,
