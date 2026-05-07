@@ -49,6 +49,12 @@
   form.addEventListener('submit', function (e) {
     e.preventDefault();
 
+    form.style.display = 'none';
+    progressSection.style.display = 'block';
+    statusMessage.textContent = 'Pujant fitxers...';
+    logsList.innerHTML = '';
+    downloadDiv.innerHTML = '';
+
     const formData = new FormData(this);
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
     const targetUrl = this.action || window.location.href;
@@ -64,9 +70,6 @@
         showError(data.message || 'Error en processar els certificats.');
         return;
       }
-
-      form.style.display = 'none';
-      progressSection.style.display = 'block';
 
       if (data.task_id) {
         statusMessage.textContent = 'S\'ha iniciat el processament.';
@@ -148,6 +151,7 @@
   }
 
   function showError(text) {
+    form.style.display = 'block';
     progressSection.style.display = 'block';
     statusMessage.textContent = text;
   }

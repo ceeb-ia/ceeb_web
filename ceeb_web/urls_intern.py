@@ -10,6 +10,8 @@ from .views import (
     CalendarEventsJsonView,
     HomeCalendarView,
     InternalHomeView,
+    sse_logs,
+    task_status_view,
 )
 
 
@@ -22,6 +24,8 @@ urlpatterns = [
     path("calendar/events/create/", app_authenticated_view(CalendarEventCreateView.as_view(), "calendar"), name="calendar_event_create"),
     path("calendar/events/<int:event_id>/update/", app_authenticated_view(CalendarEventUpdateView.as_view(), "calendar"), name="calendar_event_update"),
     path("calendar/events/<int:event_id>/delete/", app_authenticated_view(CalendarEventDeleteView.as_view(), "calendar"), name="calendar_event_delete"),
+    path("task-status/<str:task_id>/", task_status_view, name="task_status"),
+    path("logs/<str:task_id>/stream", sse_logs, name="sse_logs"),
 ]
 
 if "competicions_trampoli" in settings.INSTALLED_APPS:
