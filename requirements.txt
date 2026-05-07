@@ -29,3 +29,5 @@ setuptools
 playwright
 chromium
 ortools>=9.10,<10
+PyPDF2
+pdfminer.six

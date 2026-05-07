@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Certificats{% endblock %}
+
+{% block content %}
+<section class="upload_section layout_padding">
+  <div class="container">
+    <h2>Processar certificats</h2>
+
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    <form id="certificats-form" action="" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.files.label_tag }}
+      <small class="form-text text-muted mb-2 d-block">
+        Pots triar diversos fitxers PDF o un ZIP.
+      </small>
+      <div class="mb-3">
+        {{ form.files }}
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">Pujar i processar</button>
+      </div>
+    </form>
+
+    <div id="progress-section" style="display: none;">
+      <h3>Estat del procés</h3>
+      <p id="progress-status">Iniciant...</p>
+      <ul id="progress-logs"></ul>
+      <div id="download" class="mt-3"></div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const form = document.getElementById('certificats-form');
+  const progressSection = document.getElementById('progress-section');
+  const statusMessage = document.getElementById('progress-status');
+  const logsList = document.getElementById('progress-logs');
+  const downloadDiv = document.getElementById('download');
+
+  let es = null;
+  let lastProgress = 0;
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const targetUrl = this.action || window.location.href;
+
+    fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: formData,
+    })
+    .then(r => r.json().then(data => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showError(data.message || 'Error en processar els certificats.');
+        return;
+      }
+
+      form.style.display = 'none';
+      progressSection.style.display = 'block';
+
+      if (data.task_id) {
+        statusMessage.textContent = 'S\'ha iniciat el processament.';
+        startLogStream(data.task_id);
+        checkTaskStatus(data.task_id);
+        return;
+      }
+
+      if (data.zip_url) {
+        statusMessage.textContent = 'Procés completat!';
+        showDownload(data.zip_url);
+        return;
+      }
+
+      showError('Resposta inesperada del servidor.');
+    })
+    .catch(error => showError(`Error en processar els certificats: ${error}`));
+  });
+
+  function startLogStream(taskId) {
+    if (es) es.close();
+
+    es = new EventSource(`/logs/${taskId}/stream`);
+
+    es.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload.message) appendLog(payload.message);
+        if (typeof payload.progress === 'number') {
+          lastProgress = payload.progress;
+          statusMessage.textContent = `Progrés: ${payload.progress}%`;
+        }
+      } catch (err) {
+        appendLog(e.data);
+      }
+    };
+  }
+
+  function checkTaskStatus(taskId) {
+    fetch(`/task-status/${taskId}/`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'SUCCESS') {
+          statusMessage.textContent = 'Procés completat!';
+          if (es) es.close();
+          showDownload(data.result_url || data.result);
+        } else if (data.status === 'FAILURE') {
+          statusMessage.textContent = `Error: ${data.error || 'Error desconegut'}`;
+          if (es) es.close();
+        } else {
+          statusMessage.textContent = lastProgress ? `Progrés: ${lastProgress}%` : `Estat: ${data.status}`;
+          setTimeout(() => checkTaskStatus(taskId), 2000);
+        }
+      })
+      .catch(error => {
+        appendLog(`Error consultant l'estat: ${error}`);
+        setTimeout(() => checkTaskStatus(taskId), 4000);
+      });
+  }
+
+  function showDownload(href) {
+    if (!href) {
+      showError('No s\'ha rebut cap enllaç de descàrrega.');
+      return;
+    }
+
+    downloadDiv.innerHTML = '';
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = 'Descarregar resultat';
+    a.className = 'btn btn-success';
+    downloadDiv.appendChild(a);
+  }
+
+  function appendLog(text) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    logsList.appendChild(li);
+  }
+
+  function showError(text) {
+    progressSection.style.display = 'block';
+    statusMessage.textContent = text;
+  }
+</script>
+{% endblock %}

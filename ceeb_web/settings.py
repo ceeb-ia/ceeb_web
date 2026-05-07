@@ -57,9 +57,9 @@ DEFAULT_PROJECT_APPS = (
     "ceeb_web,competicions_trampoli"
     if APP_ENV == "prod"
     else (
-        "ceeb_web,competicions_trampoli,marbella_informes,designacions"
+        "ceeb_web,certificats,competicions_trampoli,marbella_informes,designacions"
         if APP_ENV == "intern"
-        else "ceeb_web,alumnat,competicions_trampoli,marbella_informes,designacions"
+        else "ceeb_web,alumnat,certificats,competicions_trampoli,marbella_informes,designacions"
     )
 )
 PROJECT_APPS = _env_csv("PROJECT_APPS", DEFAULT_PROJECT_APPS)

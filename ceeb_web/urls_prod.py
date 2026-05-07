@@ -5,11 +5,14 @@ from django.shortcuts import render
 from django.conf import settings
 from django.conf.urls.static import static
 from ceeb_web import views
+from certificats.views import CertificatsUploadView as CertificatsAppUploadView
 
 urlpatterns = [
     path("accounts/", include("django.contrib.auth.urls")),
     path('admin/', admin.site.urls),
     path('esports_individuals/', views.esports_individuals_view, name='esports_individuals'),
+    path('formacio/certificats/', CertificatsAppUploadView.as_view(), name="certificats"),
+    path('formacio/certificats/', include("certificats.urls")),
     path('task-status/<str:task_id>/', views.task_status_view, name='task_status'),
     path("logs/<str:task_id>/stream", views.sse_logs, name="sse_logs"),
     path("", views.HomeCalendarView.as_view(), name="home"),

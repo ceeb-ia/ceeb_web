@@ -5,6 +5,7 @@ from django.shortcuts import render
 from django.conf import settings
 from django.conf.urls.static import static
 from ceeb_web import views
+from certificats.views import CertificatsUploadView as CertificatsAppUploadView
 
 urlpatterns = [
     path("accounts/", include("django.contrib.auth.urls")),
@@ -19,7 +20,8 @@ urlpatterns = [
     path('esports_equip/calendaritzacions_fase_dos/', views.calendaritzacions_fase_dos_view, name='calendaritzacions_fase_dos'),
     path('esports_equip/designacions/', views.designacions_view, name='designacions'),
     path('formacio/', views.formacio_view, name='formacio'),
-    path('formacio/certificats/', views.CertificatsUploadView.as_view(), name="certificats"),
+    path('formacio/certificats/', CertificatsAppUploadView.as_view(), name="certificats"),
+    path('formacio/certificats/', include("certificats.urls")),
     path('task-status/<str:task_id>/', views.task_status_view, name='task_status'),
     path("logs/<str:task_id>/stream", views.sse_logs, name="sse_logs"),
     path("chatbot/", views.chatbot_view, name="chatbot"),

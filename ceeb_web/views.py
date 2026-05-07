@@ -446,6 +446,14 @@ def task_status_view(request, task_id):
         # 'SUCCESS' when remote status == 'done'. Otherwise return
         # 'PENDING' so the frontend keeps polling.
         response_data['result'] = task.result
+        if isinstance(task.result, str) and (
+            task.result.startswith(settings.MEDIA_URL)
+            or task.result.startswith("/media/")
+            or task.result.startswith("http://")
+            or task.result.startswith("https://")
+        ):
+            response_data['result_url'] = task.result
+            return JsonResponse(response_data)
         try:
             if isinstance(task.result, str):
                 remote_id = task.result

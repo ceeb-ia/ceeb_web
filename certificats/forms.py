@@ -15,7 +15,7 @@ class MultipleFileField(forms.FileField):
 
 class CertificatsUploadForm(forms.Form):
     files = MultipleFileField(
-        widget=MultipleFileInput(attrs={"multiple": True}),
+        widget=MultipleFileInput(attrs={"multiple": True, "accept": ".pdf,.zip,application/pdf,application/zip"}),
         label="Selecciona arxius PDF o ZIP",
         required=True,
     )

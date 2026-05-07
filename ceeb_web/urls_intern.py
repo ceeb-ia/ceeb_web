@@ -32,3 +32,13 @@ if "designacions" in settings.INSTALLED_APPS:
 
 if "marbella_informes" in settings.INSTALLED_APPS:
     urlpatterns.append(path("", include("marbella_informes.urls")))
+
+if "certificats" in settings.INSTALLED_APPS:
+    from certificats.views import CertificatsUploadView as CertificatsAppUploadView
+
+    urlpatterns.extend(
+        [
+            path("formacio/certificats/", CertificatsAppUploadView.as_view(), name="certificats"),
+            path("formacio/certificats/", include("certificats.urls")),
+        ]
+    )
