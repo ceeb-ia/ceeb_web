@@ -41,6 +41,22 @@ INTERNAL_APPS = {
         "image": "images/designacions.jpg",
         "description": "Realitza les designacions arbitrals.",
     },
+    "calendaritzacions": {
+        "label": "Calendaritzacions",
+        "url_name": "calendaritzacions:run_list",
+        "active_url_names": (
+            "run_list",
+            "run_create",
+            "run_detail",
+            "run_download",
+            "audit_detail",
+            "run_status",
+        ),
+        "app_label": "calendaritzacions.django",
+        "groups": ("calendaritzacions_manager",),
+        "image": "images/calendaritzacions.jpg",
+        "description": "Processa Excels de calendaritzacio i consulta resultats.",
+    },
     "certificats": {
         "label": "Certificats",
         "url_name": "certificats",

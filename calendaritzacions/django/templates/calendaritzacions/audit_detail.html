@@ -1,0 +1,258 @@
+{% extends "calendaritzacions/base.html" %}
+{% load calendaritzacions_json %}
+
+{% block calendaritzacions_title %}Auditoria {{ audit.artifact }}{% endblock %}
+
+{% block calendaritzacions_content %}
+<style>
+  .audit-explainer{
+    border:1px solid #d8dee6;
+    border-radius:8px;
+    background:#fbfcfe;
+    padding:1rem;
+    margin-bottom:1rem;
+  }
+  .audit-explainer-kicker{
+    color:#5f6b76;
+    font-size:.78rem;
+    font-weight:700;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+    margin-bottom:.25rem;
+  }
+  .audit-explainer-title{
+    color:#1f2937;
+    font-size:1.35rem;
+    font-weight:700;
+    line-height:1.15;
+    margin:0 0 .25rem;
+  }
+  .audit-explainer-note{
+    color:#6b7280;
+    font-size:.9rem;
+    margin:0;
+  }
+  .analytics-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:.75rem;
+    margin-bottom:1rem;
+  }
+  .metric-box{
+    border:1px solid #d8dee6;
+    border-top:4px solid #2f6f9f;
+    border-radius:8px;
+    background:#fbfcfe;
+    padding:.8rem .9rem;
+    min-height:104px;
+  }
+  .metric-box.audit-metric-success{
+    border-color:#abefc6;
+    border-top-color:#027a48;
+    background:#f6fef9;
+  }
+  .metric-box.audit-metric-warning{
+    border-color:#fedf89;
+    border-top-color:#b54708;
+    background:#fffcf5;
+  }
+  .metric-box.audit-metric-danger{
+    border-color:#fecdca;
+    border-top-color:#b42318;
+    background:#fffbfa;
+  }
+  .metric-label{
+    font-size:.78rem;
+    font-weight:700;
+    color:#5f6b76;
+    text-transform:uppercase;
+    letter-spacing:.02em;
+    margin-bottom:.25rem;
+  }
+  .metric-value{
+    font-size:1.45rem;
+    font-weight:700;
+    color:#1f2937;
+    line-height:1.1;
+    overflow-wrap:anywhere;
+  }
+  .metric-sub{
+    font-size:.82rem;
+    color:#6b7280;
+    margin-top:.3rem;
+  }
+  .audit-panel{
+    border:1px solid #d8dee6;
+    border-radius:8px;
+    background:#fff;
+    padding:1rem;
+    height:100%;
+  }
+  .audit-bar-row{
+    display:grid;
+    grid-template-columns:minmax(96px, 180px) 1fr minmax(56px, auto);
+    gap:.75rem;
+    align-items:center;
+    padding:.38rem 0;
+    border-bottom:1px solid #f1f3f5;
+  }
+  .audit-bar-row:last-child{ border-bottom:0; }
+  .audit-bar-label{
+    font-size:.86rem;
+    color:#374151;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .audit-bar-track{
+    background:#eef1f4;
+    border-radius:999px;
+    height:12px;
+    overflow:hidden;
+  }
+  .audit-bar-fill{
+    background:#2f6f9f;
+    height:100%;
+  }
+  .audit-bar-fill-danger{ background:#b42318; }
+  .audit-bar-value{
+    color:#6b7280;
+    font-size:.82rem;
+    text-align:right;
+  }
+  .audit-table td{
+    max-width:360px;
+    overflow-wrap:anywhere;
+  }
+  @media (max-width:575.98px){
+    .audit-bar-row{ grid-template-columns:1fr; }
+    .audit-bar-value{ text-align:left; }
+  }
+</style>
+<div class="card-surface p-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">{{ audit.artifact }}</h2>
+      <div class="text-muted small">Auditoria del run #{{ run.id }}</div>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_detail' run.pk %}">Tornar al run</a>
+  </div>
+
+  {% include "calendaritzacions/partials/artifact_summary.html" with audit=audit %}
+
+  {% with presentation=audit.presentation %}
+  <div class="audit-explainer">
+    <div class="audit-explainer-kicker">Vista explicativa</div>
+    <h3 class="audit-explainer-title">{{ presentation.title }}</h3>
+    <p class="audit-explainer-note">{{ presentation.description }}</p>
+  </div>
+
+  {% if presentation.cards %}
+  <div class="analytics-grid audit-summary-grid">
+    {% for card in presentation.cards %}
+    <div class="metric-box audit-metric-{{ card.tone }}">
+      <div class="metric-label">{{ card.label }}</div>
+      <div class="metric-value">{{ card.value }}</div>
+      {% if card.help %}<div class="metric-sub">{{ card.help }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if presentation.charts %}
+  <div class="row mb-3">
+    {% for chart in presentation.charts %}
+    <div class="col-12 col-xl-6 mb-3">
+      <div class="audit-panel h-100">
+        <div class="font-weight-bold mb-1">{{ chart.title }}</div>
+        {% if chart.description %}<div class="text-muted small mb-3">{{ chart.description }}</div>{% endif %}
+        {% for bar in chart.bars %}
+        <div class="audit-bar-row">
+          <div class="audit-bar-label" title="{{ bar.label }}">{{ bar.label }}</div>
+          <div class="audit-bar-track">
+            <div class="audit-bar-fill{% if bar.kind == 'danger' %} audit-bar-fill-danger{% endif %}" style="width: {{ bar.percent }}%;"></div>
+          </div>
+          <div class="audit-bar-value">{{ bar.value_text }}</div>
+        </div>
+        {% empty %}
+        <div class="text-muted small">No hi ha dades per representar.</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if presentation.tables %}
+  {% for table in presentation.tables %}
+  <div class="audit-panel mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="font-weight-bold">{{ table.title }}</div>
+      {% if table.total > table.limit %}
+      <div class="text-muted small">Mostrant {{ table.limit }} de {{ table.total }}</div>
+      {% endif %}
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped mb-0 audit-table">
+        <thead>
+          <tr>
+            {% for column in table.columns %}
+            <th>{{ column.label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table.rows %}
+          <tr>
+            {% for column in table.columns %}
+            <td>{{ row|dict_get:column.key|audit_cell }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if presentation.definitions %}
+  <div class="audit-panel mb-3">
+    <div class="font-weight-bold mb-2">Diccionari de variables</div>
+    <dl class="row small mb-0">
+      {% for item in presentation.definitions %}
+      <dt class="col-sm-3">{{ item.name }}</dt>
+      <dd class="col-sm-9">{{ item.description }}</dd>
+      {% endfor %}
+    </dl>
+  </div>
+  {% endif %}
+
+  {% if presentation.notes %}
+  <div class="alert alert-light border small">
+    <div class="font-weight-bold mb-1">Notes</div>
+    <ul class="mb-0 pl-3">
+      {% for note in presentation.notes %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <div class="accordion" id="auditAcc">
+    <div class="card">
+      <div class="card-header" id="auditJsonHead">
+        <button class="btn btn-link p-0" type="button" data-toggle="collapse" data-target="#auditJsonBody" aria-expanded="false" aria-controls="auditJsonBody">
+          JSON tecnic
+        </button>
+      </div>
+      <div id="auditJsonBody" class="collapse" aria-labelledby="auditJsonHead" data-parent="#auditAcc">
+        <div class="card-body">
+          <pre class="calendaritzacions-pre mb-0">{{ audit.payload|json_pretty }}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

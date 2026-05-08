@@ -1,0 +1,136 @@
+import unittest
+
+from calendaritzacions.domain.phases import PRIMERA_FASE
+from calendaritzacions.engine.variants.resource_solver.config import ResourceSolverConfig
+from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
+    candidate_resource_by_round,
+)
+from calendaritzacions.engine.variants.resource_solver.model import solve_context
+from calendaritzacions.engine.variants.resource_solver.types import (
+    BaseResource,
+    Candidate,
+    CapacityEstimate,
+    GroupSpec,
+    SolverContext,
+    TeamRecord,
+)
+
+
+def _team(team_id, entity=None):
+    return TeamRecord(
+        team_id=team_id,
+        name=team_id,
+        entity=entity or team_id,
+        league_name="L",
+        venue="P",
+        day="D",
+        time="18:00",
+    )
+
+
+def _candidate(team_id, group_id, number, resource="R"):
+    return Candidate(
+        candidate_id=f"{team_id}_{group_id}_{number}",
+        team_id=team_id,
+        group_id=group_id,
+        number=number,
+        seed_request_original="",
+        potential_home_rounds=(1,),
+        opponent_number_by_round={1: 2 if number == 1 else 1},
+        potential_resources=(resource,),
+    )
+
+
+def _context(teams, groups, candidates, config=None, capacity=10):
+    return SolverContext(
+        teams=tuple(teams),
+        phase=PRIMERA_FASE,
+        phase_name="primera_fase",
+        base_resources={"R": BaseResource("R", "P", "D", "18:00")},
+        capacities={"R": CapacityEstimate("R", capacity, "fixture", len(teams))},
+        pressure=(),
+        groups=tuple(groups),
+        candidates=tuple(candidates),
+        config=config or ResourceSolverConfig(),
+    )
+
+
+class ResourceSolverConstraintTests(unittest.TestCase):
+    def test_candidate_resource_by_round_allows_single_base_resource(self):
+        candidate = _candidate("T1", "G1", 1)
+
+        self.assertEqual(candidate_resource_by_round(candidate), {1: "R"})
+
+    def test_one_assignment_per_team_and_unique_group_number(self):
+        teams = [_team("T1"), _team("T2")]
+        group = GroupSpec("G1", 2, 2, 2, "primera_fase")
+        candidates = [
+            _candidate("T1", "G1", 1),
+            _candidate("T1", "G1", 2),
+            _candidate("T2", "G1", 1),
+            _candidate("T2", "G1", 2),
+        ]
+
+        result = solve_context(_context(teams, [group], candidates), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        self.assertEqual(len(result.assignments), 2)
+        self.assertEqual({a.number for a in result.assignments}, {1, 2})
+
+    def test_entity_separation_is_hard_when_feasible(self):
+        teams = [_team("A1", "ClubA"), _team("A2", "ClubA"), _team("B1", "ClubB"), _team("B2", "ClubB")]
+        groups = [
+            GroupSpec("G1", 2, 2, 2, "primera_fase"),
+            GroupSpec("G2", 2, 2, 2, "primera_fase"),
+        ]
+        candidates = [
+            _candidate(team.team_id, group.group_id, number)
+            for team in teams
+            for group in groups
+            for number in (1, 2)
+        ]
+
+        result = solve_context(_context(teams, groups, candidates), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        by_group = {}
+        for assignment in result.assignments:
+            by_group.setdefault(assignment.group_id, []).append(
+                next(team.entity for team in teams if team.team_id == assignment.team_id)
+            )
+        self.assertTrue(all(len(entities) == len(set(entities)) for entities in by_group.values()))
+
+    def test_entity_separation_relaxes_only_inevitable_entity(self):
+        teams = [_team("A1", "ClubA"), _team("A2", "ClubA"), _team("A3", "ClubA"), _team("B1", "ClubB")]
+        groups = [
+            GroupSpec("G1", 2, 2, 2, "primera_fase"),
+            GroupSpec("G2", 2, 2, 2, "primera_fase"),
+        ]
+        candidates = [
+            _candidate(team.team_id, group.group_id, number)
+            for team in teams
+            for group in groups
+            for number in (1, 2)
+        ]
+
+        result = solve_context(_context(teams, groups, candidates), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        self.assertEqual(sum(result.entity_excess.values()), 1)
+        self.assertTrue(all(key[0] == "ClubA" for key in result.entity_excess))
+
+    def test_capacity_ignores_rest_against_empty_number(self):
+        teams = [_team("T1")]
+        group = GroupSpec("G1", 1, 1, 1, "primera_fase")
+        candidate = _candidate("T1", "G1", 1)
+        config = ResourceSolverConfig(capacity_mode="hard")
+
+        result = solve_context(_context(teams, [group], [candidate], config=config, capacity=0), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        self.assertEqual(result.resource_excess, {})
+
+
+if __name__ == "__main__":
+    unittest.main()
+

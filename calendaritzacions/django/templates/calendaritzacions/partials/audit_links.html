@@ -1,0 +1,12 @@
+{% if run.available_audits %}
+<div class="border rounded p-3 mb-3">
+  <div class="font-weight-bold mb-2">Auditories</div>
+  <div>
+    {% for artifact in run.available_audits %}
+    <a class="btn btn-sm btn-outline-secondary mb-1" href="{% url 'calendaritzacions:audit_detail' run.pk artifact %}">
+      {{ artifact }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

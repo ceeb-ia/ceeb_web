@@ -42,7 +42,7 @@ def get_internal_nav_apps(user, request=None):
     current_url_name = getattr(getattr(request, "resolver_match", None), "url_name", "")
     items = []
 
-    for app_key in ("calendar", "competicions", "designacions", "certificats", "informes"):
+    for app_key in ("calendar", "competicions", "designacions", "calendaritzacions", "certificats", "informes"):
         if not user_has_app_access(user, app_key):
             continue
 

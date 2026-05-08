@@ -12,6 +12,7 @@ aiofiles==23.1.0
 python-dotenv==1.0.0
 pandas
 openpyxl
+XlsxWriter
 asgiref==3.7.2
 geopy
 beautifulsoup4>=4.12.2

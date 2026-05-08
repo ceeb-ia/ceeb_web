@@ -1,0 +1,48 @@
+{% extends "calendaritzacions/base.html" %}
+
+{% block calendaritzacions_title %}Nova calendaritzacio{% endblock %}
+
+{% block calendaritzacions_content %}
+<div class="card-surface p-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">Nova calendaritzacio</h2>
+      <div class="text-muted small">Puja l'Excel, escull motor i fase, i el tractament quedara registrat com un run consultable.</div>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_list' %}">
+      Historic de runs
+    </a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <div class="form-row row">
+      <div class="form-group col-12">
+        <label for="{{ form.input_file.id_for_label }}">Fitxer Excel</label>
+        {{ form.input_file }}
+        {% if form.input_file.errors %}<div class="text-danger small">{{ form.input_file.errors }}</div>{% endif %}
+        <small class="form-text text-muted">Formats acceptats: .xlsx, .xls i .csv.</small>
+      </div>
+
+      <div class="form-group col-12 col-lg-4">
+        <label for="{{ form.engine_name.id_for_label }}">Motor</label>
+        {{ form.engine_name }}
+        {% if form.engine_name.errors %}<div class="text-danger small">{{ form.engine_name.errors }}</div>{% endif %}
+      </div>
+
+      <div class="form-group col-12 col-lg-4">
+        <label for="{{ form.phase.id_for_label }}">Fase</label>
+        {{ form.phase }}
+        {% if form.phase.errors %}<div class="text-danger small">{{ form.phase.errors }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center">
+      <button type="submit" class="btn btn-sm btn-primary mr-2">Pujar i processar</button>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_list' %}">Cancel.lar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

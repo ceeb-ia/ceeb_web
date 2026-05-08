@@ -10,19 +10,9 @@
         <div class="card">
             <img src="{% static 'images/calendaritzacions.jpg' %}" class="card-img-top" alt="Calendaritzacions">
             <div class="card-body">
-                <h3 class="card-title">Calendaritzacions Primera Fase</h3>
+                <h3 class="card-title">Calendaritzacions</h3>
                 <p class="card-text">Realitza les calendaritzacions dels esports d'equip.</p>
-                <a href="{% url 'calendaritzacions' %}" class="btn btn-primary">Accedeix</a>
-            </div>
-        </div>
-
-        <!-- Card 2 -->
-        <div class="card">
-            <img src="{% static 'images/calendaritzacions_fase_dos.jpg' %}" class="card-img-top" alt="Calendaritzacions Fase Dos">
-            <div class="card-body">
-                <h3 class="card-title">Calendaritzacions Segona Fase</h3>
-                <p class="card-text">Realitza les calendaritzacions dels esports d'equip.</p>
-                <a href="{% url 'calendaritzacions_fase_dos' %}" class="btn btn-primary">Accedeix</a>
+                <a href="{% url 'calendaritzacions:run_list' %}" class="btn btn-primary">Accedeix</a>
             </div>
         </div>
 

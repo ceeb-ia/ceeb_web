@@ -1,6 +1,9 @@
+import re
+
 from django.contrib import admin
 from django.conf import settings
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 
 from .access import app_authenticated_view
 from .views import (
@@ -34,6 +37,9 @@ if "competicions_trampoli" in settings.INSTALLED_APPS:
 if "designacions" in settings.INSTALLED_APPS:
     urlpatterns.append(path("", include("designacions.urls")))
 
+if "calendaritzacions.django" in settings.INSTALLED_APPS:
+    urlpatterns.append(path("calendaritzacions/", include("calendaritzacions.django.urls", namespace="calendaritzacions")))
+
 if "marbella_informes" in settings.INSTALLED_APPS:
     urlpatterns.append(path("", include("marbella_informes.urls")))
 
@@ -45,4 +51,14 @@ if "certificats" in settings.INSTALLED_APPS:
             path("formacio/certificats/", app_authenticated_view(CertificatsAppUploadView.as_view(), "certificats"), name="certificats"),
             path("formacio/certificats/processar/", app_authenticated_view(processar_pdfs, "certificats"), name="processar_pdfs"),
         ]
+    )
+
+if settings.MEDIA_URL.startswith("/"):
+    media_prefix = settings.MEDIA_URL.lstrip("/")
+    urlpatterns.append(
+        re_path(
+            rf"^{re.escape(media_prefix)}(?P<path>.*)$",
+            serve,
+            {"document_root": settings.MEDIA_ROOT},
+        )
     )

@@ -57,9 +57,9 @@ DEFAULT_PROJECT_APPS = (
     "ceeb_web,competicions_trampoli"
     if APP_ENV == "prod"
     else (
-        "ceeb_web,certificats,competicions_trampoli,marbella_informes,designacions"
+        "ceeb_web,certificats,competicions_trampoli,marbella_informes,designacions,calendaritzacions.django"
         if APP_ENV == "intern"
-        else "ceeb_web,alumnat,certificats,competicions_trampoli,marbella_informes,designacions"
+        else "ceeb_web,alumnat,certificats,competicions_trampoli,marbella_informes,designacions,calendaritzacions.django"
     )
 )
 PROJECT_APPS = _env_csv("PROJECT_APPS", DEFAULT_PROJECT_APPS)
@@ -202,8 +202,11 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "django-db")
 
 CELERY_TASK_ROUTES = {
     'ceeb_web.tasks.process_certificats_task': {'queue': 'heavy_queue'},  # pesades
+    'calendaritzacions.django.tasks.execute_calendarization_run_task': {'queue': 'heavy_queue'},
     # altres tasques -> 'default'
 }
+
+CALENDARITZACIONS_ASYNC_BACKEND = os.getenv("CALENDARITZACIONS_ASYNC_BACKEND", "celery")
 
 # Evita acaparament de tasques llargues
 worker_prefetch_multiplier = 1

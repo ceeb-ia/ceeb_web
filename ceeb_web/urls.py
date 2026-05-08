@@ -34,5 +34,6 @@ urlpatterns = [
     path("", include("competicions_trampoli.urls")),
     path('', include('marbella_informes.urls')),
     path("", include("designacions.urls")),
+    path("calendaritzacions/", include("calendaritzacions.django.urls", namespace="calendaritzacions")),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

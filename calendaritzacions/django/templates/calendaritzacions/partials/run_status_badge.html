@@ -1,0 +1,9 @@
+{% if status == "success" %}
+  <span class="badge badge-success" data-status-badge>{{ status }}</span>
+{% elif status == "error" %}
+  <span class="badge badge-danger" data-status-badge>{{ status }}</span>
+{% elif status == "running" %}
+  <span class="badge badge-warning" data-status-badge>{{ status }}</span>
+{% else %}
+  <span class="badge badge-secondary" data-status-badge>{{ status }}</span>
+{% endif %}
