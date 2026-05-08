@@ -128,6 +128,9 @@ from ...base import _BaseTrampoliDataMixin
 class JudgePackageSmokeTests(TestCase):
     ROUTE_EXPORTS = [
         "judge_portal",
+        "judge_manifest",
+        "judge_service_worker",
+        "judge_pwa_icon",
         "judge_qr_png",
         "judge_save_partial",
         "judge_updates",
@@ -167,6 +170,9 @@ class JudgePackageSmokeTests(TestCase):
         package = import_module("competicions_trampoli.views.judge")
         route_cases = [
             ("judge_portal", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_portal),
+            ("judge_manifest", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_manifest),
+            ("judge_service_worker", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_service_worker),
+            ("judge_pwa_icon", {"filename": "icon-192.png"}, package.judge_pwa_icon),
             ("judge_qr_png", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_qr_png),
             ("judge_save_partial", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_save_partial),
             ("judge_updates", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_updates),

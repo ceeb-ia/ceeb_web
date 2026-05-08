@@ -1,5 +1,10 @@
 {% load competicio_extras %}
 
+  <style>
+    .scoring-panel-dropdown { position: relative; }
+    .scoring-panel-dropdown .dropdown-menu.show { display: block; }
+  </style>
+
   <div class="card-surface">
     <!-- CAPÇALERA -->
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -10,14 +15,95 @@
       </div>
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
-        <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
-        <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_loop_live' competicio.id %}?public=1">Classificacions loop</a>
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_home' competicio.id %}">Jurat / QRs</a>
+        <div class="btn-group scoring-panel-dropdown">
+          <button type="button"
+                  class="btn btn-sm btn-outline-success dropdown-toggle scoring-panel-dropdown-toggle"
+                  aria-haspopup="true"
+                  aria-expanded="false">
+            Classificacions
+          </button>
+
+          <div class="dropdown-menu">
+            <a class="dropdown-item"
+              href="{% url 'classificacions_live' competicio.id %}">
+              Classificacions en viu
+            </a>
+
+            <a class="dropdown-item"
+              href="{% url 'classificacions_loop_live' competicio.id %}?public=1">
+              Classificacions loop
+            </a>
+          </div>
+        </div>
+        <div class="btn-group scoring-panel-dropdown">
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary dropdown-toggle scoring-panel-dropdown-toggle"
+                  aria-haspopup="true"
+                  aria-expanded="false">
+            QRs
+          </button>
+
+          <div class="dropdown-menu">
+            <a class="dropdown-item"
+              href="{% url 'judges_qr_home' competicio.id %}">
+              Jurat / QRs
+            </a>
+
+            <a class="dropdown-item"
+              href="{% url 'public_live_qr_home' competicio.id %}">
+              QR públic
+            </a>
+          </div>
+        </div>
         <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
-        <a class="btn btn-sm btn-outline-info" href="{% url 'public_live_qr_home' competicio.id %}">QR públic</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       </div>
     </div>
+
+    <script>
+      (function(){
+        if (window.__scoringPanelDropdownsBound) return;
+        window.__scoringPanelDropdownsBound = true;
+
+        function closeDropdown(dropdown){
+          if (!dropdown) return;
+          dropdown.classList.remove("show");
+          var menu = dropdown.querySelector(".dropdown-menu");
+          var toggle = dropdown.querySelector(".scoring-panel-dropdown-toggle");
+          if (menu) menu.classList.remove("show");
+          if (toggle) toggle.setAttribute("aria-expanded", "false");
+        }
+
+        function closeOtherDropdowns(activeToggle){
+          document.querySelectorAll(".scoring-panel-dropdown.show").forEach(function(dropdown){
+            if (!activeToggle || !dropdown.contains(activeToggle)) {
+              closeDropdown(dropdown);
+            }
+          });
+        }
+
+        document.addEventListener("click", function(event){
+          var toggle = event.target.closest(".scoring-panel-dropdown-toggle");
+          closeOtherDropdowns(toggle);
+
+          if (!toggle) return;
+          var dropdown = toggle.closest(".scoring-panel-dropdown");
+          var menu = dropdown ? dropdown.querySelector(".dropdown-menu") : null;
+          if (!dropdown || !menu) return;
+
+          event.preventDefault();
+          var shouldOpen = !dropdown.classList.contains("show");
+          dropdown.classList.toggle("show", shouldOpen);
+          menu.classList.toggle("show", shouldOpen);
+          toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+        });
+
+        document.addEventListener("keydown", function(event){
+          if (event.key !== "Escape") return;
+          document.querySelectorAll(".scoring-panel-dropdown.show").forEach(closeDropdown);
+        });
+      })();
+    </script>
 
     {% if out_of_program_groups_render %}
       <details class="alert alert-warning mt-3 py-2" role="alert">

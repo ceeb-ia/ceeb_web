@@ -1,5 +1,10 @@
-from django.http import HttpResponse
+from pathlib import Path
+from urllib.parse import urlencode
+
+from django.conf import settings
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.template.loader import render_to_string
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -58,8 +63,25 @@ from .permissions import (
 )
 
 
+JUDGE_PWA_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "pwa" / "judge"
+JUDGE_PWA_ICON_FILENAMES = {"apple-touch-icon.png", "icon-192.png", "icon-512.png"}
+
+
 def _is_competitive_franja(franja):
     return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
+
+def _absolute_icon_url(request, filename):
+    return request.build_absolute_uri(reverse("judge_pwa_icon", kwargs={"filename": filename}))
+
+
+def _judge_portal_query_string(request):
+    params = {}
+    for key in ("ex", "franja", "view_mode"):
+        value = request.GET.get(key)
+        if value not in (None, ""):
+            params[key] = value
+    return urlencode(params)
 
 
 @require_http_methods(["GET"])
@@ -445,6 +467,8 @@ def judge_portal(request, token):
         except NoReverseMatch:
             updates_url = save_url.replace("/api/save/", "/api/updates/")
 
+    query_string = _judge_portal_query_string(request)
+
     ctx = {
         "token_obj": tok,
         "token": str(tok.id),
@@ -494,8 +518,90 @@ def judge_portal(request, token):
         ],
         "team_subject_mode": team_subject_mode,
         "franges": competition_franges,
+        "judge_pwa_enabled": True,
+        "judge_manifest_url": (
+            reverse("judge_manifest", kwargs={"token": str(tok.id)})
+            + (f"?{query_string}" if query_string else "")
+        ),
+        "judge_service_worker_url": reverse("judge_service_worker", kwargs={"token": str(tok.id)}),
+        "judge_service_worker_scope": reverse("judge_portal", kwargs={"token": str(tok.id)}),
+        "judge_pwa_icon_apple_url": reverse("judge_pwa_icon", kwargs={"filename": "apple-touch-icon.png"}),
     }
     return render(request, "judge/portal.html", ctx)
+
+
+@require_http_methods(["GET"])
+def judge_manifest(request, token):
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        return JsonResponse({"error": "invalid token"}, status=403)
+
+    portal_url = reverse("judge_portal", kwargs={"token": str(tok.id)})
+    query_string = _judge_portal_query_string(request)
+    if query_string:
+        portal_url = f"{portal_url}?{query_string}"
+
+    name = f"Jurat - {tok.competicio.nom}"
+    payload = {
+        "name": name,
+        "short_name": "Jurat CEEB",
+        "description": "Portal de puntuacio per a jutges CEEB.",
+        "id": reverse("judge_portal", kwargs={"token": str(tok.id)}),
+        "start_url": portal_url,
+        "scope": reverse("judge_portal", kwargs={"token": str(tok.id)}),
+        "display": "standalone",
+        "background_color": "#f8fafc",
+        "theme_color": "#0f766e",
+        "icons": [
+            {
+                "src": _absolute_icon_url(request, "icon-192.png"),
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+            {
+                "src": _absolute_icon_url(request, "icon-512.png"),
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+        ],
+    }
+    response = JsonResponse(payload, content_type="application/manifest+json")
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_http_methods(["GET"])
+def judge_service_worker(request, token):
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        return HttpResponse("/* invalid token */", status=403, content_type="application/javascript; charset=utf-8")
+
+    scope = reverse("judge_portal", kwargs={"token": str(tok.id)})
+    body = render_to_string(
+        "judge/pwa/service-worker.js",
+        {
+            "static_url": settings.STATIC_URL,
+            "static_version": getattr(settings, "STATIC_VERSION", "dev"),
+        },
+    )
+    response = HttpResponse(body, content_type="application/javascript; charset=utf-8")
+    response["Cache-Control"] = "no-store"
+    response["Service-Worker-Allowed"] = scope
+    return response
+
+
+@require_http_methods(["GET"])
+def judge_pwa_icon(request, filename):
+    if filename not in JUDGE_PWA_ICON_FILENAMES:
+        raise Http404("Icona PWA no trobada")
+    path = JUDGE_PWA_ASSET_DIR / filename
+    if not path.exists():
+        raise Http404("Icona PWA no trobada")
+    response = FileResponse(path.open("rb"), content_type="image/png")
+    response["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 
 def judge_qr_png(request, token):
