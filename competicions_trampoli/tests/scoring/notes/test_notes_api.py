@@ -118,6 +118,64 @@ class NotesUnitsApiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(payload["scores"][score_key]["total"], float(score.total))
         self.assertEqual(payload["rotation_rank"][f"{self.comp_app.id}|{self.ins_3.id}"], 3)
 
+    def test_search_returns_navigable_context_for_individual_subject(self):
+        response = self.client.get(
+            reverse("scoring_notes_search", kwargs={"pk": self.comp.id}),
+            {"q": "B1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        result = next(row for row in payload["results"] if row["subject_id"] == self.ins_3.id)
+        self.assertEqual(result["kind"], "subject")
+        self.assertEqual(result["subject_kind"], "inscripcio")
+        self.assertEqual(result["name"], "Participant B1")
+        self.assertEqual(len(result["contexts"]), 1)
+        context = result["contexts"][0]
+        self.assertEqual(context["franja_id"], self.franja.id)
+        self.assertEqual(context["comp_aparell_id"], self.comp_app.id)
+        self.assertEqual(context["unit_key"], f"unit:{self.group_a.id}+{self.group_b.id}")
+        self.assertIn("Doble minitramp", context["label"])
+
+    def test_search_returns_unit_context_for_apparatus_or_group_query(self):
+        response = self.client.get(
+            reverse("scoring_notes_search", kwargs={"pk": self.comp.id}),
+            {"q": "Doble"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        unit_result = next(row for row in payload["results"] if row["kind"] == "unit")
+        self.assertEqual(unit_result["name"], "Grup 1 + Grup 2")
+        context = unit_result["contexts"][0]
+        self.assertEqual(context["unit_key"], f"unit:{self.group_a.id}+{self.group_b.id}")
+        self.assertEqual(context["exercicis"], [1])
+
+    def test_search_returns_empty_for_too_short_query(self):
+        response = self.client.get(
+            reverse("scoring_notes_search", kwargs={"pk": self.comp.id}),
+            {"q": "B"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["count"], 0)
+
+    def test_notes_home_exposes_summary_panel_and_search_endpoint(self):
+        response = self.client.get(reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-notes-results-panel="1"')
+        self.assertContains(response, reverse("scoring_notes_search", kwargs={"pk": self.comp.id}))
+        self.assertContains(response, 'data-notes-franja-select="1"')
+        self.assertContains(response, 'data-notes-app-select="1"')
+        self.assertContains(response, 'data-notes-group-select="1"')
+        self.assertContains(response, "Expandir resultats")
+
     def test_lazy_table_returns_score_warnings_for_out_of_range_values(self):
         ScoringSchema.objects.update_or_create(
             aparell=self.app,

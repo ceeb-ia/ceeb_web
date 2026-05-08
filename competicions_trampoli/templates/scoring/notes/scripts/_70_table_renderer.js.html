@@ -543,7 +543,16 @@
 
   function isTableVisible(table){
     if(!table) return false;
-    if(table.dataset.notesMainTable === "1") return true;
+    if(table.dataset.notesMainTable === "1"){
+      const shell = table.closest('[data-notes-main-shell="1"]');
+      const wrap = table.closest('[data-scroll-wrap="1"]');
+      return !shell?.classList.contains("d-none") && !wrap?.classList.contains("d-none");
+    }
+    const expanded = table.closest('[data-notes-expanded-context="1"]');
+    if(expanded){
+      const panel = expanded.closest('[data-notes-results-panel="1"]');
+      return !expanded.classList.contains("d-none") && !panel?.classList.contains("d-none");
+    }
     const pane = table.closest(".tab-pane");
     if(!pane || !pane.classList.contains("show") || !pane.classList.contains("active")) return false;
     const appPane = table.closest('.tab-pane[data-comp-aparell-id]');
@@ -554,8 +563,15 @@
   }
 
   function activeScoringTable(){
+    const focusedTable = activeScoreTable();
+    if(focusedTable) return focusedTable;
     const mainTable = document.querySelector('table[data-notes-main-table="1"]');
-    if(mainTable && !mainTable.closest('[data-notes-main-shell="1"]')?.classList.contains("d-none")) return mainTable;
+    const mainWrap = mainTable ? mainTable.closest('[data-scroll-wrap="1"]') : null;
+    if(
+      mainTable
+      && !mainTable.closest('[data-notes-main-shell="1"]')?.classList.contains("d-none")
+      && !mainWrap?.classList.contains("d-none")
+    ) return mainTable;
     const appPane = document.querySelector('.tab-pane.show.active[data-comp-aparell-id]');
     if(!appPane) return null;
     const exPane = appPane.querySelector('.tab-pane.show.active[id*="-ex-"]');

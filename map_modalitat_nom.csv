@@ -1,0 +1,1124 @@
+﻿Id Categoria;Modalitat;Nom;Descripció;Nom Abreviat;Ordre;CodiExtern
+6;FUTBOL 5;PREBENJAMÍ;;;;
+7;FUTBOL 5;BENJAMÍ;;;;
+8;FUTBOL 5;PREALEVÍ;;;;
+9;FUTBOL 5;ALEVÍ;;;;
+10;FUTBOL 5;PREINFANTIL;;;;
+11;FUTBOL 5;INFANTIL;;;;
+12;FUTBOL 5;CADET;;;;
+13;FUTBOL 5;JUVENIL;;;;
+14;FUTBOL 5;JÚNIOR;;;;
+18;BÀSQUET;PREBENJAMÍ;;;;
+19;BÀSQUET;BENJAMÍ;;;;
+20;BÀSQUET;PREALEVÍ;;;;
+21;BÀSQUET;ALEVÍ;;;;
+22;BÀSQUET;PREINFANTIL;;;;
+23;BÀSQUET;INFANTIL;;;;
+24;BÀSQUET;CADET;;;;
+25;BÀSQUET;JUVENIL;;;;
+26;BÀSQUET;JÚNIOR;;;;
+36;BÀSQUET;SÈNIOR;;;;
+51;FUTBOL 11;CADET;;;;
+53;FUTBOL 11;JUVENIL;;;;
+69;HANDBOL;PREBENJAMÍ;;;;
+70;HANDBOL;BENJAMÍ;;;;
+71;HANDBOL;PREALEVÍ;;;;
+72;HANDBOL;ALEVÍ;;;;
+73;HANDBOL;PREINFANTIL;;;;
+74;HANDBOL;INFANTIL;;;;
+75;HANDBOL;CADET;;;;
+81;BÀSQUET;TÈCNIC/TÈCNICA;;;;TEC
+82;FUTBOL 5;SÈNIOR;;;;
+83;FUTBOL 11;INFANTIL;;;;
+84;FUTBOL 11;PREINFANTIL;;;;
+85;BÀSQUET;DELEGAT;;;;
+86;FUTBOL 5;TÈCNIC/TÈCNICA;Persona màxima responsable de l’equip o grup d’esportistes que participa a les competicions del Ceeb. Per poder fer la llicència heu d'estar inscrits al: ROPEC com Entrenador/monitor modalitat (competència federativa) ROPEC com a Monitor Esportiu + Càpsula modalitat (Ceeb o Federació) COPLEC Validació Titulacions LCAFE;;;TEC
+87;FUTBOL 5;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+88;FUTBOL 11;TÈCNIC/TÈCNICA;;;;TEC
+89;HANDBOL;DELEGAT;;;;
+90;HANDBOL;TÈCNIC/TÈCNICA;;;;TEC
+91;FUTBOL 11;DELEGAT;;;;
+92;VOLEIBOL;PREBENJAMÍ;;;;
+93;VOLEIBOL;BENJAMÍ;;;;
+94;VOLEIBOL;PREALEVÍ;;;;
+95;VOLEIBOL;ALEVÍ;;;;
+96;VOLEIBOL;PREINFANTIL;;;;
+97;VOLEIBOL;INFANTIL;;;;
+98;VOLEIBOL;CADET;;;;
+99;VOLEIBOL;JUVENIL;;;;
+100;VOLEIBOL;JÚNIOR;;;;
+101;VOLEIBOL;SÈNIOR;;;;
+102;VOLEIBOL;TÈCNIC/TÈCNICA;;;;TEC
+103;VOLEI PLATJA;DELEGAT;;;;
+104;VOLEIBOL;TUTOR/TUTORA DE JOC;;;;
+105;HANDBOL;TUTOR/TUTORA DE JOC;;;;
+106;FUTBOL 5;TUTOR/TUTORA DE JOC;;;;
+107;BÀSQUET;TUTOR/TUTORA DE JOC;;;;
+108;FUTBOL 7;PREBENJAMÍ;;;;
+109;FUTBOL 7;BENJAMÍ;;;;
+110;FUTBOL 7;PREALEVÍ;;;;
+111;FUTBOL 7;ALEVÍ;;;;
+112;FUTBOL 7;PREINFANTIL;;;;
+113;FUTBOL 7;INFANTIL;;;;
+114;FUTBOL 7;CADET;;;;
+115;FUTBOL 7;JUVENIL;;;;
+118;FUTBOL 7;TÈCNIC/TÈCNICA;;;;TEC
+119;FUTBOL 7;DELEGAT;;;;
+121;HOQUEI PATINS;PREBENJAMÍ;;;;
+122;HOQUEI PATINS;BENJAMÍ;;;;
+123;HOQUEI PATINS;PREALEVÍ;;;;
+124;HOQUEI PATINS;ALEVÍ;;;;
+125;HOQUEI PATINS;PREINFANTIL;;;;
+126;HOQUEI PATINS;INFANTIL;;;;
+127;HOQUEI PATINS;CADET;;;;
+128;HOQUEI PATINS;JUVENIL;;;;
+131;HOQUEI PATINS;TÈCNIC/TÈCNICA;;;;TEC
+132;HOQUEI PATINS;DELEGAT;;;;
+133;HOQUEI PATINS;TUTOR/TUTORA DE JOC;;;;
+135;STREET HOQUEI;ALEVI;;;;
+136;STREET HOQUEI;INFANTIL;;;;
+137;STREET HOQUEI;TÈCNIC;;;;TEC
+138;STREET HOQUEI;DELEGAT;;;;
+140;VOLEI PLATJA;BENJAMÍ;;;;
+141;VOLEI PLATJA;ALEVÍ;;;;
+142;VOLEI PLATJA;INFANTIL;;;;
+143;VOLEI PLATJA;CADET;;;;
+144;VOLEI PLATJA;JUVENIL;;;;
+145;VOLEI PLATJA;JÚNIOR;;;;
+146;VOLEI PLATJA;LLIGA JOVE;;;;
+147;VOLEI PLATJA;TÈCNIC;;;;TEC
+149;FUTBOL PLATJA;BENJAMÍ;;;;
+150;FUTBOL PLATJA;ALEVÍ;;;;
+151;FUTBOL PLATJA;INFANTIL;;;;
+152;FUTBOL PLATJA;CADET;;;;
+153;FUTBOL PLATJA;JUVENIL;;;;
+154;FUTBOL PLATJA;JÚNIOR;;;;
+155;FUTBOL PLATJA;LLIGA JOVE;;;;
+156;FUTBOL PLATJA;TÈCNIC;;;;TEC
+157;FUTBOL PLATJA;DELEGAT;;;;
+158;FUTBOL FLAG;BENJAMI;;;;
+159;FUTBOL FLAG;ALEVI;;;;
+160;FUTBOL FLAG;INFANTIL;;;;
+161;FUTBOL FLAG;CADET;;;;
+162;FUTBOL FLAG;JUVENIL;;;;
+163;FUTBOL FLAG;TÈCNIC;;;;TEC
+164;FUTBOL FLAG;DELEGAT;;;;
+166;SHOOT BALL;PREBENJAMI;;;;
+167;SHOOT BALL;BENJAMI;;;;
+168;SHOOT BALL;ALEVI;;;;
+169;SHOOT BALL;INFANTIL;;;;
+170;SHOOT BALL;CADET;;;;
+171;SHOOT BALL;JUVENIL;;;;
+172;SHOOT BALL;TÈCNIC;;;;TEC
+173;SHOOT BALL;DELEGAT;;;;
+175;GOAL BALL;ALEVI;;;;
+176;GOAL BALL;INFANTIL;;;;
+177;GOAL BALL;CADET;;;;
+178;GOAL BALL;JUVENIL;;;;
+179;GOAL BALL;TÈCNIC;;;;TEC
+180;GOAL BALL;DELEGAT;;;;
+181;KORFBAL;PREBENJAMI;;;;
+182;KORFBAL;BENJAMI;;;;
+183;KORFBAL;ALEVI;;;;
+184;KORFBAL;INFANTIL;;;;
+185;KORFBAL;CADET;;;;
+186;KORFBAL;JUVENIL;;;;
+187;KORFBAL;TÈCNIC;;;;TEC
+188;KORFBAL;DELEGAT;;;;
+189;LLIGUES D'INICIACIÓ DE BÀSQUET;INFANTIL;;;;
+190;LLIGUES D'INICIACIÓ DE BÀSQUET;CADET;;;;
+191;LLIGUES D'INICIACIÓ DE BÀSQUET;JUVENIL;;;;
+192;LLIGUES D'INICIACIÓ DE BÀSQUET;MENUT;;;;
+193;LLIGUES D'INICIACIÓ DE BÀSQUET;MENUDET;;;;
+194;LLIGUES D'INICIACIÓ DE BÀSQUET;TÈCNIC;;;;TEC
+195;LLIGUES D'INICIACIÓ DE BÀSQUET;DELEGAT;;;;
+199;LLIGUES D'INICIACIÓ DE FUTBOL 5;MENUT;;;;
+200;LLIGUES D'INICIACIÓ DE FUTBOL 5;MENUDET;;;;
+201;LLIGUES D'INICIACIÓ DE FUTBOL 5;TÈCNIC;;;;TEC
+202;LLIGUES D'INICIACIÓ DE FUTBOL 5;DELEGAT;;;;
+203;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;MENUT;;;;
+204;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;MENUDET;;;;
+205;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;TÈCNIC;;;;TEC
+206;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;DELEGAT;;;;
+216;TROBADES DE FUTBOL 5;MENUT;;;;
+217;TROBADES DE FUTBOL 5;MENUDET;;;;
+218;TROBADES DE FUTBOL 5;TÈCNIC;;;7;TEC
+219;TROBADES DE FUTBOL 5;DELEGAT;;;;
+220;CROS;PREBENJAMÍ;;;;
+221;BITLLES CATALANES;BENJAMI;;;;
+222;CROS;ALEVÍ;;;;
+223;CROS;INFANTIL;;;;
+224;CROS;CADET;;;;
+225;BITLLES CATALANES;JUVENIL;;;;
+228;TENNIS TAULA;PREBENJAMÍ;;;;
+229;TENNIS TAULA;BENJAMÍ;;;;
+230;TENNIS TAULA;ALEVÍ;;;;
+231;TENNIS TAULA;INFANTIL;;;;
+232;TENNIS TAULA;CADET;;;;
+233;TENNIS TAULA;JUVENIL;;;;
+234;TENNIS TAULA;TÈCNIC/A;;;;TEC
+235;TENNIS TAULA;DELEGAT/DA;;;;
+236;BÀDMINTON;PREBENJAMÍ;;;;
+237;BÀDMINTON;BENJAMÍ;;;;
+238;BÀDMINTON;ALEVÍ;;;;
+239;BÀDMINTON;INFANTIL;;;;
+240;BÀDMINTON;CADET;;;;
+241;BÀDMINTON;JUVENIL;;;;
+242;BÀDMINTON;TÈCNIC/A;;;;TEC
+243;BÀDMINTON;DELEGAT/DA;;;;
+244;CURSES D'ORIENTACIÓ;PREBENJAMÍ;;;;
+245;CURSES D'ORIENTACIÓ;BENJAMÍ;;;;
+246;CURSES D'ORIENTACIÓ;ALEVÍ;;;;
+247;CURSES D'ORIENTACIÓ;INFANTIL;;;;
+248;CURSES D'ORIENTACIÓ;CADET;;;;
+249;CURSES D'ORIENTACIÓ;JUVENIL;;;;
+250;CURSES D'ORIENTACIÓ;TÈCNIC/A;;;;TEC
+251;CURSES D'ORIENTACIÓ;DELEGAT/DA;;;;
+252;TRAMPOLÍ;PREBENJAMÍ;;;;
+253;TRAMPOLÍ;BENJAMÍ;;;;
+254;TRAMPOLÍ;ALEVÍ;;;;
+255;TRAMPOLÍ;INFANTIL;;;;
+256;TRAMPOLÍ;CADET;;;;
+257;TRAMPOLÍ;JUVENIL;;;;
+258;TRAMPOLÍ;TÈCNIC/A;;;;TEC
+259;TRAMPOLÍ;DELEGAT/DA;;;;
+260;AERÒBIC;PREBENJAMÍ;;;;
+261;AERÒBIC;BENJAMÍ;;;;
+262;AERÒBIC;ALEVÍ;;;;
+263;AERÒBIC;INFANTIL;;;;
+264;AERÒBIC;CADET;;;;
+265;AERÒBIC;JUVENIL;;;;
+266;AERÒBIC;TÈCNIC;;;;TEC
+267;AERÒBIC;DELEGAT;;;;
+268;PROVES COMBINADES D' ATLETISME;PREBENJAMI;;;;
+269;PROVES COMBINADES D' ATLETISME;BENJAMI;;;;
+270;PROVES COMBINADES D' ATLETISME;ALEVI;;;;
+276;GIMNÀSTICA RÍTMICA;PREBENJAMÍ;;;;
+277;GIMNÀSTICA RÍTMICA;BENJAMÍ;;;;
+278;GIMNÀSTICA RÍTMICA;ALEVÍ;;;;
+279;GIMNÀSTICA RÍTMICA;INFANTIL;;;;
+280;GIMNÀSTICA RÍTMICA;CADET;;;;
+281;GIMNÀSTICA RÍTMICA;JUVENIL;;;;
+282;GIMNÀSTICA RÍTMICA;SÈNIOR;;;;
+283;GIMNÀSTICA RÍTMICA;TÈCNIC/A;;;;TEC
+284;GIMNÀSTICA RÍTMICA;DELEGAT/DA;;;;
+285;GIMNÀSTICA ARTÍSTICA;PREBENJAMÍ;;;;
+286;GIMNÀSTICA ARTÍSTICA;BENJAMÍ;;;;
+287;GIMNÀSTICA ARTÍSTICA;ALEVÍ;;;;
+288;GIMNÀSTICA ARTÍSTICA;INFANTIL;;;;
+289;GIMNÀSTICA ARTÍSTICA;CADET;;;;
+290;GIMNÀSTICA ARTÍSTICA;JUVENIL;;;;
+291;GIMNÀSTICA ARTÍSTICA;JÚNIOR;;;;
+292;GIMNÀSTICA ARTÍSTICA;TÈCNIC/A;;;;TEC
+294;NATACIÓ;PREBENJAMÍ;;;;
+295;NATACIÓ;BENJAMÍ;;;;
+296;NATACIÓ;ALEVÍ;;;;
+297;NATACIÓ;INFANTIL;;;;
+298;NATACIÓ;CADET;;;;
+299;NATACIÓ;JUVENIL;;;;
+300;NATACIÓ;TÈCNIC/A;;;;TEC
+301;NATACIÓ;DELEGAT/DA;;;;
+302;NATACIÓ ARTÍSTICA;PREBENJAMÍ;;;;
+303;NATACIÓ ARTÍSTICA;BENJAMÍ;;;;
+304;NATACIÓ ARTÍSTICA;ALEVÍ;;;;
+305;NATACIÓ ARTÍSTICA;INFANTIL;;;;
+306;NATACIÓ ARTÍSTICA;CADET;;;;
+307;NATACIÓ ARTÍSTICA;JUVENIL;;;;
+308;NATACIÓ ARTÍSTICA;TÈCNIC/A;;;;TEC
+309;NATACIÓ ARTÍSTICA;DELEGAT/DA;;;;
+310;ESCACS;PREBENJAMÍ;;;;
+311;ESCACS;BENJAMÍ;;;;
+312;ESCACS;ALEVÍ;;;;
+313;ESCACS;INFANTIL;;;;
+314;ESCACS;CADET;;;;
+315;ESCACS;JUVENIL;;;;
+316;ESCACS;TÈCNIC/A;;;;TEC
+317;ESCACS;DELEGAT/DA;;;;
+318;JUDO;PREBENJAMÍ;;;;
+319;JUDO;BENJAMÍ;;;;
+320;JUDO;ALEVÍ;;;;
+321;JUDO;INFANTIL;;;;
+322;JUDO;CADET;;;;
+323;JUDO;JUVENIL;;;;
+324;JUDO;TÈCNIC/A;;;;TEC
+325;JUDO;DELEGAT/DA;;;;
+326;TAEKWONDO;BENJAMÍ;;;;
+327;TAEKWONDO;ALEVÍ;;;;
+328;TAEKWONDO;PREBENJAMÍ;;;;
+329;TAEKWONDO;INFANTIL;;;;
+330;TAEKWONDO;CADET;;;;
+331;PATINATGE ARTÍSTIC;PREBENJAMÍ;;;;
+332;PATINATGE ARTÍSTIC;BENJAMÍ;;;;
+333;PATINATGE ARTÍSTIC;ALEVÍ;;;;
+334;PATINATGE ARTÍSTIC;INFANTIL;;;;
+335;PATINATGE ARTÍSTIC;CADET;;;;
+336;PATINATGE ARTÍSTIC;JUVENIL;;;;
+337;PATINATGE ARTÍSTIC;JÚNIOR;;;;
+338;PATINATGE ARTÍSTIC;TÈCNIC/A;;;;TEC
+339;PATINATGE ARTÍSTIC;DELEGAT/DA;;;;
+340;ESQUÍ;PREBENJAMI;;;;
+341;ESQUÍ;BENJAMI;;;;
+342;ESQUÍ;ALEVI;;;;
+343;ESQUÍ;INFANTIL;;;;
+344;ESQUÍ;CADET;;;;
+345;ESQUÍ;JUVENIL;;;;
+346;TROBADA DANSA, JAZZ, HIP HOP;PREBENJAMI;;;;
+347;TROBADA DANSA, JAZZ, HIP HOP;BENJAMI;;;;
+348;TROBADA DANSA, JAZZ, HIP HOP;ALEVI;;;;
+349;TROBADA DANSA, JAZZ, HIP HOP;INFANTIL;;;;
+350;TROBADA DANSA, JAZZ, HIP HOP;CADET;;;;
+351;TROBADA DANSA, JAZZ, HIP HOP;JUVENIL;;;;
+352;TROBADA DANSA, JAZZ, HIP HOP;TÈCNIC;;;;TEC
+353;TROBADA DANSA, JAZZ, HIP HOP;DELEGAT/DA;;;;
+354;VELA;PREBENJAMI;;;;
+355;VELA;BENJAMI;;;;
+356;VELA;ALEVI;;;;
+357;VELA;INFANTIL;;;;
+358;VELA;CADET;;;;
+359;VELA;JUVENIL;;;;
+360;VELA;TÈCNIC;;;;TEC
+361;VELA;DELEGAT;;;;
+362;TENNIS;PREBENJAMÍ;;;;
+363;TENNIS;BENJAMÍ;;;;
+364;TENNIS;ALEVÍ;;;;
+365;TENNIS;INFANTIL;;;;
+366;TENNIS;CADET;;;;
+367;TENNIS;JUVENIL;;;;
+368;TENNIS;TÈCNIC;;;;TEC
+369;TENNIS;DELEGAT;;;;
+378;ESPORTS SENSE BARRERES (Futbol 5);DELEGAT;;;;
+380;PLA CATALÀ ESPORT ESCOLA;PREBENJAMI;;;;
+381;PLA CATALÀ ESPORT ESCOLA;BENJAMI;;;;
+382;PLA CATALÀ ESPORT ESCOLA;ALEVI;;;;
+383;PLA CATALÀ ESPORT ESCOLA;INFANTIL;;;;
+384;PLA CATALÀ ESPORT ESCOLA;CADET;;;;
+385;PLA CATALÀ ESPORT ESCOLA;JUVENIL;;;;
+386;PLA CATALÀ ESPORT ESCOLA;TÈCNIC;;;;TEC
+387;PLA CATALÀ ESPORT ESCOLA;DELEGAT;;;;
+388;ESPECIAL;PREBENJAMÍ;;;;
+389;ESPECIAL;BENJAMÍ;;;;
+390;ESPECIAL;ALEVÍ;;;;
+391;ESPECIAL;INFANTIL;;;;
+392;ESPECIAL;CADET;;;;
+393;ESPECIAL;JUVENIL;;;;
+394;ESPECIAL;JÚNIOR;;;;
+396;ESPECIAL;TÈCNIC;;;;TEC
+397;ESPECIAL;DELEGAT;;;;
+398;TROBADA DE GIMNÀSTICA RÍTMICA;PREBENJAMI;;;;
+399;TROBADA DE GIMNÀSTICA RÍTMICA;BENJAMI;;;;
+400;TROBADA DE GIMNÀSTICA RÍTMICA;ALEVI;;;;
+401;TROBADA DE GIMNÀSTICA RÍTMICA;INFANTIL;;;;
+402;TROBADA DE GIMNÀSTICA RÍTMICA;CADET;;;;
+403;TROBADA DE GIMNÀSTICA RÍTMICA;JUVENIL;;;;
+404;TROBADA DE GIMNÀSTICA RÍTMICA;TÈCNIC/A;;;;TEC
+405;TROBADA DE GIMNÀSTICA RÍTMICA;DELEGAT/DA;;;;
+406;VOLEIBOL;DELEGAT;;;;
+407;FUTBOL 7;TUTOR/TUTORA DE JOC;;;;
+409;CROS;BENJAMÍ;;;;
+410;CROS;JUVENIL;;;;
+442;ESPECIAL;EDUCACIO INFANTIL;;;;
+451;TENNIS;EDUCACIO INFANTIL;;;;
+452;GIMNÀSTICA RÍTMICA;EDUCACIÓ INFANTIL;;;;
+454;CURSES D'ORIENTACIÓ;EDUCACIÓ INFANTIL;;;;
+456;TAEKWONDO;EDUCACIÓ INFANTIL;;;;
+457;TROBADA DANSA, JAZZ, HIP HOP;EDUCACIÓ INFANTIL;;;;
+458;PLA CATALÀ ESPORT ESCOLA;EDUCACIO INFANTIL;;;;
+459;LLIGUES D'INICIACIÓ DE FUTBOL 7;MENUT;;;;
+460;LLIGUES D'INICIACIÓ DE FUTBOL 7;MENUDET;;;;
+461;LLIGUES D'INICIACIÓ DE FUTBOL 7;TÈCNIC;;;;TEC
+462;LLIGUES D'INICIACIÓ DE FUTBOL 7;DELEGAT;;;;
+463;JUDO;EDUCACIÓ INFANTIL;;;;
+464;ESCACS;EDUCACIÓ INFANTIL;;;;
+466;TROBADES DE BÀSQUET;MENUDET;;;;
+467;TROBADES DE BÀSQUET;MENUT;;;;
+472;TROBADES DE BÀSQUET;TÈCNIC;;;;TEC
+473;TROBADES DE BÀSQUET;DELEGAT;;;;
+482;ESPORTS SENSE BARRERES (Futbol 5);LLIGA JOVE;;;;
+485;TROBADA DE PATINATGE ARTÍSTIC;PREBENJAMI;;;;
+486;TROBADA DE PATINATGE ARTÍSTIC;BENJAMI;;;;
+487;TROBADA DE PATINATGE ARTÍSTIC;ALEVI;;;;
+488;TROBADA DE PATINATGE ARTÍSTIC;INFANTIL;;;;
+489;TROBADA DE PATINATGE ARTÍSTIC;CADET;;;;
+493;TROBADA DE TENNIS TAULA;JUVENIL;;;;
+494;TROBADA DE TENNIS TAULA;CADET;;;;
+495;TROBADA DE TENNIS TAULA;INFANTIL;;;;
+496;TROBADA DE GIMNÀSTICA ARTÍSTICA;PREBENJAMI;;;;
+497;TROBADA DE GIMNÀSTICA ARTÍSTICA;BENJAMI;;;;
+498;TROBADA DE GIMNÀSTICA ARTÍSTICA;ALEVI;;;;
+499;TROBADA DE GIMNÀSTICA ARTÍSTICA;INFANTIL;;;;
+500;TROBADA DE GIMNÀSTICA ARTÍSTICA;CADET;;;;
+501;TROBADA DE GIMNÀSTICA ARTÍSTICA;JUVENIL;;;;
+502;TROBADA DE GIMNÀSTICA ARTÍSTICA;TÈCNIC;;;;TEC
+503;TROBADA DE GIMNÀSTICA ARTÍSTICA;DELEGAT/DA;;;;
+504;BÀSQUET;TUTOR/TUTORA DE JOC. TAULA;;;;
+510;TROBADES D'HANDBOL;PREBENJAMÍ;;;;
+511;TROBADES D'HANDBOL;BENJAMÍ;;;;
+512;TROBADES D'HANDBOL;PREALEVÍ;;;;
+513;TROBADES D'HANDBOL;ALEVÍ;;;;
+514;TROBADES D'HANDBOL;PREINFANTIL;;;;
+519;PLA CATALÀ ESPORT ESCOLA;JUNIOR;;;;
+525;PLA CATALÀ ESPORT ESCOLA;PREINFANTIL;;;;
+526;PLA CATALÀ ESPORT ESCOLA;PREALEVI;;;;
+541;TROBADA DE PATINATGE ARTÍSTIC;JUVENIL;;;;
+542;TROBADA DE PATINATGE ARTÍSTIC;JUNIOR;;;;
+543;ESQUÍ;PRE-ALEVÍ;;;;
+544;GIMNÀSTICA ESTÈTICA DE GRUP;INFANTIL;;;;
+545;GIMNÀSTICA ESTÈTICA DE GRUP;JUNIOR;;;;
+546;WATERPOLO;PREBENJAMI;;;;
+547;WATERPOLO;BENJAMI;;;;
+548;WATERPOLO;PREALEVI;;;;
+549;WATERPOLO;ALEVI;;;;
+550;WATERPOLO;PREINFANTIL;;;;
+551;WATERPOLO;INFANTIL;;;;
+552;WATERPOLO;CADET;;;;
+553;WATERPOLO;JUVENIL;;;;
+554;GIMNÀSTICA ESTÈTICA DE GRUP;TÈCNIC;;;;TEC
+555;STREET HOQUEI;BENJAMÍ;;;;
+556;GIMNÀSTICA ESTÈTICA DE GRUP;BENJAMÍ;;;;
+557;GIMNÀSTICA ESTÈTICA DE GRUP;ALEVÍ;;;;
+558;GIMNÀSTICA ESTÈTICA DE GRUP;CADET;;;;
+559;GIMNÀSTICA ESTÈTICA DE GRUP;JUVENIL;;;;
+560;VOLEI PLATJA;TUTOR/TUTORA DE JOC;;;;
+561;FUTBOL PLATJA;TUTOR/TUTORA DE JOC;;;;
+570;TROBADES DE FUTBOL 7;PREBENJAMÍ;;;;
+571;TROBADES DE FUTBOL 7;BENJAMÍ;;;;
+572;TROBADES DE FUTBOL 7;PREALEVÍ;;;;
+573;TROBADES DE FUTBOL 7;ALEVÍ;;;;
+574;TROBADES DE FUTBOL 7;TÈCNIC;;;;TEC
+576;RUGBI;PREBENJAMI;;;;
+577;RUGBI;BENJAMI;;;;
+578;RUGBI;PREALEVI;;;;
+579;RUGBI;ALEVI;;;;
+580;RUGBI;CADET;;;;
+581;RUGBI;JUVENIL;;;;
+582;RUGBI;JUNIOR;;;;
+583;RUGBI;LLIGA JOVE;;;;
+584;RUGBI;TÈCNIC;;;;TEC
+585;RUGBI;DELEGAT;;;;
+586;RUGBI;PREINFANTIL;;;;
+587;RUGBI;INFANTIL;;;;
+588;FUTBOL 11;JÚNIOR;;;;
+589;ESPECIAL;SENIOR;;;;
+592;TROBADES DE VOLEIBOL;PREBENJAMÍ;;;;
+593;TROBADES DE VOLEIBOL;BENJAMÍ;;;;
+594;TROBADES DE VOLEIBOL;PREALEVÍ;;;;
+595;TROBADES DE VOLEIBOL;ALEVÍ;;;;
+596;ESGRIMA;PREBENJAMÍ;;;;
+597;ESGRIMA;BENJAMÍ;;;;
+598;ESGRIMA;ALEVÍ;;;;
+599;ESGRIMA;INFANTIL;;;;
+600;ESGRIMA;CADET;;;;
+601;ESGRIMA;JUVENIL;;;;
+602;ESGRIMA;JUNIOR;;;;
+603;ESGRIMA;DELEGAT;;;;
+604;ESGRIMA;TÈCNIC;;;;TEC
+605;PASSI ATLETISME CEM MAR BELLA;SENIOR;;;;
+606;PASSI ATLETISME CEM MAR BELLA;VETERA;;;;
+607;PASSI ATLETISME CEM MAR BELLA;MENOR;;;;
+608;ULTIMATE FRISBEE;PREBENJAMI;;;;
+609;ULTIMATE FRISBEE;BENJAMI;;;;
+610;ULTIMATE FRISBEE;PREALEVI;;;;
+611;ULTIMATE FRISBEE;ALEVI;;;;
+612;ULTIMATE FRISBEE;PREINFANTIL;;;;
+613;ULTIMATE FRISBEE;INFANTIL;;;;
+614;ULTIMATE FRISBEE;JUVENIL;;;;
+615;ULTIMATE FRISBEE;CADET;;;;
+617;BÀSQUET;COMITÈ;;;;
+618;FUTBOL 7;COMITÈ;;;;
+619;FUTBOL 5;COMITÈ;;;;
+620;VOLEIBOL;COMITÈ;;;;
+621;HANDBOL;COMITÈ;;;;
+622;HOQUEI PATINS;COMITÈ;;;;
+623;SHOOT BALL;COMITÈ;;;;
+624;GIMNÀSTICA ESTÈTICA DE GRUP;PREBENJAMÍ;;;;
+625;PATINATGE ARTÍSTIC;EDUCACIÓ INFANTIL;;;;
+629;SKATE;JÚNIOR;;;;
+630;SKATE;CADET;;;;
+631;SKATE;BENJAMÍ;;;;
+632;TRAMPOLÍ;JÚNIOR;;;;
+633;FUTBOL 11;TUTOR/TUTORA DE JOC;;;;
+634;TORNEIG INTERCENTRES;INFANTIL;;;1;
+637;TROBADES DE SHOOT-BALL;INFANTIL;;;;
+639;TROBADA DE TENNIS TAULA;ALEVI;;;;
+640;TROBADA DE TENNIS TAULA;BENJAMI;;;;
+641;TROBADA DE TENNIS TAULA;PREBENJAMI;;;;
+642;TROBADA DE MINITENNIS;PREBENJAMI;;;;
+643;TROBADA DE MINITENNIS;BENJAMI;;;;
+644;TROBADA DE MINITENNIS;ALEVI;;;;
+645;TROBADA DE MINITENNIS;INFANTIL;;;;
+646;TROBADA DE MINITENNIS;CADET;;;;
+647;TROBADA DE MINITENNIS;JUVENIL;;;;
+648;ESPORT PER NADAL;ESPORTISTA;;;;
+649;MULTIESPORT PUBLICA;2012-2013;;;;
+650;MULTIESPORT PUBLICA;2014-2015;;;;
+652;TROBADES DE SHOOT-BALL;CADET;;;;
+654;HOQUEI SALA;BENJAMÍ;;;;
+655;HOQUEI SALA;ALEVÍ;;;;
+656;HOQUEI SALA;DELEGAT;;;;
+657;TROBADA DE NATACIÓ ARTÍSTICA;PREBENJAMI;;;;
+658;TROBADA DE NATACIÓ ARTÍSTICA;BENJAMI;;;;
+659;TROBADA DE NATACIÓ ARTÍSTICA;ALEVI;;;;
+660;TROBADA DE NATACIÓ ARTÍSTICA;INFANTIL;;;;
+661;TROBADA DE NATACIÓ ARTÍSTICA;CADET;;;;
+662;TROBADA DE NATACIÓ ARTÍSTICA;JUVENIL;;;;
+663;TROBADA DE NATACIÓ ARTÍSTICA;JUNIOR;;;;
+664;TROBADA DE NATACIÓ ARTÍSTICA;SÈNIOR;;;;
+665;TROBADA SPIRIBOL;PREBENJAMI;;;;
+666;TROBADA SPIRIBOL;BENJAMI;;;;
+667;TROBADA SPIRIBOL;ALEVI;;;;
+668;TROBADA SPIRIBOL;INFANTIL;;;;
+669;TROBADA SPIRIBOL;CADET;;;;
+670;TROBADA SPIRIBOL;JUVENIL;;;;
+671;TROBADA SPIRIBOL;JUNIOR;;;;
+672;TROBADA SPIRIBOL;LLIGA JOVE;;;;
+674;CONVIVIM ESPORTIVAMENT (FEEB);PETITS;;;1;
+677;CONVIVIM ESPORTIVAMENT (FEEB);MITJANS;;;2;
+685;NATACIÓ ARTÍSTICA;SÈNIOR;;;;
+686;TAEKWONDO;TÈCNIC;;;;TEC
+687;TAEKWONDO;DELEGAT;;;;
+688;TAEKWONDO;JUVENIL;;;;
+689;GIMNÀSTICA ESTÈTICA DE GRUP;SÈNIOR;;;;
+690;GIMNÀSTICA ESTÈTICA DE GRUP;DELEGAT;;;;
+692;ESPECIAL;MENUTS;;;;
+693;ESPECIAL;MENUDETS;;;;
+697;ESPORTS SENSE BARRERES (Bàsquet);LLIGA JOVE;;;;
+699;NATACIÓ;JÚNIOR;;;;
+700;TROBADA DE TRAMPOLÍ;PREBENJAMI;;;1;
+702;TROBADA DE TRAMPOLÍ;BENJAMI;;;1;
+704;TROBADA DE TRAMPOLÍ;ALEVI;;;1;
+706;TROBADA DE TRAMPOLÍ;INFANTIL;;;1;
+708;TROBADA DE TRAMPOLÍ;CADET;;;1;
+710;CRIQUET SALA;CADET;;;;
+715;TROBADA DE NATACIÓ ARTÍSTICA;TÈCNIC;;;1;TEC
+717;LLIGUES EXTERNES;TUTOR/TUTORA DE JOC;;;90;
+723;ESPECIAL;DIRECTIU;;;50;
+724;TROBADA DE PATINATGE ARTÍSTIC;DELEGAT/DA;;;6;
+725;TROBADA DE PATINATGE ARTÍSTIC;TÈCNIC;;;7;TEC
+726;TROBADA DE TENNIS TAULA;TÈCNIC;;;7;TEC
+727;TROBADA DE TENNIS TAULA;DELEGAT;;;8;
+728;BÀDMINTON;SÈNIOR;;;50;
+729;ESPORT INDIVIDUAL - TUTOR/A DE JOC;Judo;;;150;
+733;HOQUEI SALA;INFANTIL;;;1;
+734;TROBADES DE VOLEIBOL;CADET;;;;
+735;TROBADES DE VOLEIBOL;INFANTIL;;;2001;
+736;TUTOR DE JOC LEXIA;TUTOR DE JOC LEXIA;;;1;
+737;HOQUEI SALA;TUTOR/TUTORA DE JOC;;;1;
+739;DANSA;PREBENJAMÍ;;;1;
+740;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Gimnàstica Rítmica;;;1;
+743;CONVIVIM ESPORTIVAMENT (FEEB);> 18;;;3;
+746;DANSA;BENJAMÍ;;;2;
+747;DANSA;ALEVÍ;;;3;
+748;DANSA;INFANTIL;;;4;
+749;DANSA;CADET;;;5;
+750;DANSA;JUVENIL;;;6;
+751;DANSA;JÚNIOR;;;7;
+752;DANSA;TÈCNIC/A;;;8;TEC
+753;DANSA;DELEGAT/DA;;;9;
+754;HANDBOL PLATJA;ALEVI;;;;
+755;HANDBOL PLATJA;INFANTIL;;;;
+756;HANDBOL PLATJA;CADET;;;;
+757;HANDBOL PLATJA;JUVENIL;;;;
+758;BÀDMINTON;JÚNIOR;;;49;
+760;TROBADA DE MINIJUDO;EDUCACIÓ INFANTIL;;;1;
+761;TROBADA DE MINIJUDO;BENJAMI;;;3;
+762;TROBADA DE MINIJUDO;ALEVI;;;4;
+763;TROBADA DE MINIJUDO;PREBENJAMI;;;2;
+771;TROBADES DE VOLEIBOL;PREINFANTIL;;;4;
+772;TAMBORÍ;SECUNDÀRIA MIXT;;;50;
+775;DANSA URBANA FEEB;INFANTIL MIXTE;;;53;
+778;INICIACIÓ DANSA FEEB;INFANTIL MIXTE;;;55;
+779;ARTS MARCIALS FEEB;INFANTIL MIXTE;;;56;
+780;MULTIESPORT FEEB;INFANTIL MIXTE;;;57;
+782;MULTIESPORT PUBLICA;2010-2011;;;;
+783;MULTIESPORT PUBLICA;2008-2009;;;;
+784;FORMACIÓ;PERSONAL AUXILIAR;Formació de l'equip Auxiliar dels Jocs Esportius Escolars del CEEB (JEEC). Persona que acompanya a l’equip o grup d’esportistes que participen als JEEC, donant suport al tècnic/a esportiu/va.;;2;
+785;FORMACIÓ;TUTOR/TUTORA DE JOC;;;3;
+790;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Natació Artística;;;2;
+791;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Patinatge Artístic;;;3;
+794;TROBADA DE GIMNÀSTICA RÍTMICA;EDUCACIÓ INFANTIL;;;1;
+795;ESQUÍ;PRE INFANTIL;;;;
+798;FUTBOL FEEB;1er a 3er;;;1;
+799;FEEB;FUTBOL FEEB;;;1;
+800;BASQUET FEEB;1er i 2n;;;1;
+801;BASQUET FEEB;1er a 3er;;;2;
+802;BADMINTON FEEB;ESO;;;1;
+803;BADMINTON FEEB;1er a 4t ESO;;;2;
+804;BASQUET FEEB;1er a 4t ESO;;;1;
+805;BASQUET FEEB;ESO MASC.;;;4;
+806;BASQUET FEEB;4rt a 6è;;;5;
+807;BASQUET FEEB;ESO FEM.;;;6;
+808;BASQUET FEEB;5è a 6è;;;7;
+809;BASQUET FEEB;3r a 4rt;;;8;
+810;CRIQUET FEEB;1er a 4rt;;;1;
+812;DANSA URBANA FEEB;1er a 6è;;;2;
+813;DANSA URBANA FEEB;1r a 3r;;;3;
+814;DANSA URBANA FEEB;ESO INC.;;;4;
+815;DANSA URBANA FEEB;ESO AVAN.;;;5;
+816;DANSA URBANA FEEB;4rt a 6è;;;6;
+817;DANSA URBANA FEEB;ESO;;;7;
+818;DANSA URBANA FEEB;AMPA;;;9;
+819;DANSA URBANA FEEB;P3-P5;;;10;
+820;FUTBOL FEEB;1er a 4rt ESO;;;1;
+821;FUTBOL FEEB;4rt a 6é;;;2;
+822;FUTBOL FEEB;JOVES;;;3;
+823;FUTBOL FEEB;JOVES-JUNIOR;;;4;
+824;FUTBOL FEEB;JOVES-JUVENIL;;;5;
+825;FUTBOL FEEB;1er a 6é;;;6;
+826;FUTBOL FEEB;ESO;;;7;
+827;FUTBOL FEEB;JOVES-CADET;;;8;
+828;FUTBOL FEEB;ESO;;;9;
+829;FUTBOL FEEB;ESO AVAN.;;;10;
+830;HOQUEI SALA FEEB;1r a 3r;;;1;
+831;HOQUEI SALA FEEB;4rt a 6è;;;2;
+832;INICIACIÓ ESPORTIVA FEEB;P3-P5;;;1;
+835;FUTBOL 5;LLIGA JOVE;;;1;
+836;FUTBOL FEEB;JOVES.FEM;;;;
+837;MULTIESPORT FEEB;1r a 3r;;;1;
+838;MULTIESPORT FEEB;4rt a 6è;;;2;
+839;MULTIESPORT FEEB;1r;;;3;
+840;MULTIESPORT FEEB;2n;;;4;
+841;MULTIESPORT FEEB;3r;;;5;
+842;MULTIESPORT FEEB;4t;;;7;
+843;MULTIESPORT FEEB;5è;;;8;
+844;MULTIESPORT FEEB;1r a 6è;;;9;
+845;PATINATGE FEEB;1r a 3r;;;1;
+846;PATINATGE FEEB;4rt a 6è;;;2;
+847;PATINATGE FEEB;1r a 6è;;;4;
+850;CRIQUET FEEB;CRIQUET FEMENI;;;2;
+853;BASQUET FEEB;1e a 6è;;;9;
+855;HOQUEI SALA FEEB;4t a 6è;;;2;
+856;HOQUEI SALA FEEB;ESO;;;3;
+857;HOQUEI SALA FEEB;1r a 6è;;;5;
+860;CONSERGE FEEB;CONSERGE;;;1;
+861;PATI OBERT FEEB;PATI OBERT FEEB;;;1;
+862;BASQUET FEEB;JOVES;;;9;
+863;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Gimnàstica Artística;;;4;
+864;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Gimnàstica Estètica de Grup;;;5;
+865;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Trampolí;;;6;
+867;ESPORT INDIVIDUAL - TUTOR/A DE JOC;Escacs;;;2;
+868;ESPORTS SENSE BARRERES (Bàsquet);TÈCNIC;;;1;TEC
+869;CRIQUET FEEB;ESO;;;3;
+872;ARTS MARCIALS FEEB;JOVES;;;2;
+875;TORNEIG INTERCENTRES;CADET;;;2;
+876;TORNEIG INTERCENTRES;JUVENIL;;;3;
+877;FORMACIÓ;COMITÈ VALORACIÓ;;;4;
+878;ESCACS (FEEB);1r-6é;;;1;
+879;FUTBOL 5 - Copa CEEB;ALEVÍ;;;1;
+880;FUTBOL 5 - Copa CEEB;INFANTIL;;;1;
+881;FUTBOL 5 - Copa CEEB;CADET;;;1;
+882;FUTBOL 5 - Copa CEEB;JUVENIL;;;1;
+883;FUTBOL 5 - Copa CEEB;TUTOR/TUTORA DE JOC;;;1;
+884;BÀSQUET - Copa CEEB;ALEVÍ;;;1;
+885;BÀSQUET - Copa CEEB;INFANTIL;;;1;
+886;BÀSQUET - Copa CEEB;CADET;;;1;
+887;BÀSQUET - Copa CEEB;JUVENIL;;;1;
+888;BÀSQUET - Copa CEEB;TUTOR/TUTORA DE JOC;;;1;
+889;VOLEIBOL - Copa CEEB;ALEVÍ;;;1;
+890;VOLEIBOL - Copa CEEB;INFANTIL;;;1;
+891;VOLEIBOL - Copa CEEB;CADET;;;1;
+892;VOLEIBOL - Copa CEEB;JUVENIL;;;1;
+894;VOLEIBOL - Copa CEEB;TUTOR/TUTORA DE JOC;;;1;
+895;FUTBOL 7 - Copa CEEB;ALEVÍ;;;1;
+896;HANDBOL - Copa CEEB;ALEVÍ;;;1;
+897;HANDBOL - Copa CEEB;INFANTIL;;;1;
+898;Lliga Escolar ACB;ALEVÍ;;;;
+901;SHOW PATINATGE ARTÍSTIC;Prebenjamí;;;1;
+902;SHOW PATINATGE ARTÍSTIC;Benjamí;;;2;
+903;SHOW PATINATGE ARTÍSTIC;Aleví;;;3;
+904;CAMPUS ZONA BÀSQUET;PREBENJAMI;;;1;
+905;TDJ FEEB;Sant Andreu;;;1;
+908;FUTBOL 5;AUXILIAR;Titulacions mínimes requerides: Certificat de CIATE o Diploma del Ceeb de TEE. Formació Federativa. Per formalitzar aquesta inscripció és imprescindible adjuntar l'autorització signada de la persona responsable de l'equip o grup d'esportistes (Tècnic /Tècnica).;;3;
+910;TAMBORÍ;PRIMÀRIA MIXT;;;50;
+911;FUTBOL 7;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+912;FUTBOL 11;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+913;HOQUEI PATINS;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+914;STREET HOQUEI;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+915;STREET HOQUEI;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+916;VOLEI PLATJA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+917;VOLEI PLATJA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+918;FUTBOL PLATJA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+919;FUTBOL PLATJA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+920;HANDBOL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+921;BÀSQUET;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+922;VOLEIBOL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+928;TENNIS TAULA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+930;BÀDMINTON;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+932;CURSES D'ORIENTACIÓ;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+934;TRAMPOLÍ;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+935;AERÒBIC;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+936;AERÒBIC;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+942;GIMNÀSTICA RÍTMICA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+944;GIMNÀSTICA ARTÍSTICA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+946;NATACIÓ;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+948;NATACIÓ ARTÍSTICA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+950;ESCACS;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+952;JUDO;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+953;TAEKWONDO;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+954;TAEKWONDO;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+956;PATINATGE ARTÍSTIC;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+957;PATINATGE VELOCITAT;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+958;PATINATGE VELOCITAT;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+959;PATINATGE VELOCITAT;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+960;PATINATGE VELOCITAT;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+961;ESQUÍ;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+962;ESQUÍ;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+963;ESQUÍ;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+964;ESQUÍ;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+966;TROBADA DANSA, JAZZ, HIP HOP;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+967;ESGRIMA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+968;ESGRIMA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+969;VELA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+970;VELA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+971;TENNIS;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+972;TENNIS;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+973;FUTBOL FLAG;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+974;FUTBOL FLAG;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+975;SHOOT BALL;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+976;SHOOT BALL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+977;GOAL BALL;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+978;GOAL BALL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+979;KORFBAL;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+980;KORFBAL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+981;ESPORTS SENSE BARRERES (Futbol 5);TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+983;ESPORTS SENSE BARRERES (Futbol 5);AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+985;LLIGUES D'INICIACIÓ DE BÀSQUET;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+987;LLIGUES D'INICIACIÓ DE FUTBOL 5;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+988;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+989;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+991;ESPECIAL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+993;TROBADA DE GIMNÀSTICA RÍTMICA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+994;TROBADES DE FUTBOL 5;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+995;TROBADES DE FUTBOL 5;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+996;BITLLES CATALANES;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+997;BITLLES CATALANES;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+998;BITLLES CATALANES;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+999;BITLLES CATALANES;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1001;PLA CATALÀ ESPORT ESCOLA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1003;LLIGUES D'INICIACIÓ DE FUTBOL 7;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1005;TROBADES DE BÀSQUET;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1009;TROBADA DE PATINATGE ARTÍSTIC;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1010;TROBADA DE TENNIS TAULA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1011;TROBADA DE TENNIS TAULA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1013;TROBADA DE GIMNÀSTICA ARTÍSTICA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1014;FORMACIÓ;PERSONAL TÈCNIC;Formació de l'equip Tècnic dels Jocs Esportius Escolars del CEEB (JEEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEEC en una modalitat esportiva.;;1;
+1020;SKATE;INFANTIL;;;;
+1021;SKATE;SÈNIOR;;;;
+1022;SKATE;JUVENIL;;;;
+1025;GIMNÀSTICA ESTÈTICA DE GRUP;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1026;WATERPOLO;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1027;WATERPOLO;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1028;WATERPOLO;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1029;WATERPOLO;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1032;RUGBI;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1033;RUGBI;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1034;TROBADES DE VOLEIBOL;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1038;PASSI ATLETISME CEM MAR BELLA;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1039;PASSI ATLETISME CEM MAR BELLA;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1040;PASSI ATLETISME CEM MAR BELLA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1041;PASSI ATLETISME CEM MAR BELLA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1042;ULTIMATE FRISBEE;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1043;ULTIMATE FRISBEE;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1045;ULTIMATE FRISBEE;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1050;TORNEIG INTERCENTRES;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1051;TORNEIG INTERCENTRES;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1052;TORNEIG INTERCENTRES;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1053;TORNEIG INTERCENTRES;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1058;SHOW PATINATGE ARTÍSTIC;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1059;SHOW PATINATGE ARTÍSTIC;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1060;SHOW PATINATGE ARTÍSTIC;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1061;SHOW PATINATGE ARTÍSTIC;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1062;TROBADA DE NATACIÓ ARTÍSTICA;DELEGAT/DA;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1064;TROBADA DE NATACIÓ ARTÍSTICA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1065;TROBADA DE MINITENNIS;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1066;TROBADA DE MINITENNIS;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1067;TROBADA DE MINITENNIS;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1068;TROBADA DE MINITENNIS;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1069;ESPORT PER NADAL;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1070;ESPORT PER NADAL;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1071;ESPORT PER NADAL;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1072;ESPORT PER NADAL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1077;HOQUEI SALA;TÈCNIC/TÈCNICA;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1079;HOQUEI SALA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1080;TROBADA SPIRIBOL;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1081;TROBADA SPIRIBOL;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1082;TROBADA SPIRIBOL;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1083;TROBADA SPIRIBOL;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1087;ESPORTS SENSE BARRERES (Bàsquet);DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1089;ESPORTS SENSE BARRERES (Bàsquet);AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1090;TROBADA DE TRAMPOLÍ;TÈCNIC/A;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1091;TROBADA DE TRAMPOLÍ;DELEGAT/DA;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1093;TROBADA DE TRAMPOLÍ;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1094;LLIGUES EXTERNES;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1095;LLIGUES EXTERNES;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1096;LLIGUES EXTERNES;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1097;LLIGUES EXTERNES;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1098;CRIQUET SALA;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1099;CRIQUET SALA;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1100;CRIQUET SALA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1101;CRIQUET SALA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1102;ALTRES;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1103;ALTRES;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1104;ALTRES;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1105;ALTRES;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1110;TUTOR DE JOC LEXIA;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1111;TUTOR DE JOC LEXIA;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1112;TUTOR DE JOC LEXIA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1113;TUTOR DE JOC LEXIA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1115;DANSA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1120;HANDBOL PLATJA;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1121;HANDBOL PLATJA;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1122;HANDBOL PLATJA;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1123;HANDBOL PLATJA;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1124;TROBADA DE MINIJUDO;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1125;TROBADA DE MINIJUDO;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1126;TROBADA DE MINIJUDO;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1127;TROBADA DE MINIJUDO;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1128;TAMBORÍ;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1129;TAMBORÍ;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1130;TAMBORÍ;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1131;TAMBORÍ;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1132;DANSA URBANA FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1133;DANSA URBANA FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1134;DANSA URBANA FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1135;DANSA URBANA FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1136;PATINATGE FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1137;PATINATGE FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1138;PATINATGE FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1139;PATINATGE FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1140;INICIACIÓ ESPORTIVA FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1141;INICIACIÓ ESPORTIVA FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1142;INICIACIÓ ESPORTIVA FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1143;INICIACIÓ ESPORTIVA FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1144;INICIACIÓ DANSA FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1145;INICIACIÓ DANSA FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1146;INICIACIÓ DANSA FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1147;INICIACIÓ DANSA FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1148;ARTS MARCIALS FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1149;ARTS MARCIALS FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1150;ARTS MARCIALS FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1151;ARTS MARCIALS FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1152;MULTIESPORT FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1153;MULTIESPORT FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1154;MULTIESPORT FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1155;MULTIESPORT FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1156;BADMINTON FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1157;BADMINTON FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1158;BADMINTON FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1159;BADMINTON FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1164;FUTBOL FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1165;FUTBOL FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1166;FUTBOL FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1167;FUTBOL FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1168;FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1169;FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1170;FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1171;FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1172;BASQUET FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1173;BASQUET FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1174;BASQUET FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1175;BASQUET FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1176;CRIQUET FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1177;CRIQUET FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1178;CRIQUET FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1179;CRIQUET FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1180;HOQUEI SALA FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1181;HOQUEI SALA FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1182;HOQUEI SALA FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1183;HOQUEI SALA FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1184;LLIGA LA CLOTA FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1185;LLIGA LA CLOTA FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1186;LLIGA LA CLOTA FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1187;LLIGA LA CLOTA FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1188;PATINATGE;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1189;PATINATGE;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1190;PATINATGE;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1191;PATINATGE;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1200;no;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1201;no;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1202;no;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1203;no;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1204;PATI OBERT FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1205;PATI OBERT FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1206;PATI OBERT FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1207;PATI OBERT FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1208;CONSERGE FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1209;CONSERGE FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1210;CONSERGE FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1211;CONSERGE FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1212;ESCACS (FEEB);TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1213;ESCACS (FEEB);DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1214;ESCACS (FEEB);DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1215;ESCACS (FEEB);AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1216;FUTBOL 5 - Copa CEEB;TÈCNIC / TÈCNICA;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1217;FUTBOL 5 - Copa CEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1218;FUTBOL 5 - Copa CEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1219;FUTBOL 5 - Copa CEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1220;BÀSQUET - Copa CEEB;TÈCNIC/TÈCNICA;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1221;BÀSQUET - Copa CEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1222;BÀSQUET - Copa CEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1223;BÀSQUET - Copa CEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1224;VOLEIBOL - Copa CEEB;TÈCNIC/TÈCNICA;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1225;VOLEIBOL - Copa CEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1226;VOLEIBOL - Copa CEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1227;VOLEIBOL - Copa CEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1228;FUTBOL 7 - Copa CEEB;TÈCNIC/TÈCNICA;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1229;FUTBOL 7 - Copa CEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1230;FUTBOL 7 - Copa CEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1231;FUTBOL 7 - Copa CEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1232;HANDBOL - Copa CEEB;TÈCNIC/TÈCNICA;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1233;HANDBOL - Copa CEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1234;HANDBOL - Copa CEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1235;HANDBOL - Copa CEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1236;Lliga Escolar ACB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1237;Lliga Escolar ACB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1238;Lliga Escolar ACB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1239;Lliga Escolar ACB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1240;CAMPUS ZONA BÀSQUET;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1241;CAMPUS ZONA BÀSQUET;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1242;CAMPUS ZONA BÀSQUET;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1243;CAMPUS ZONA BÀSQUET;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1244;TDJ FEEB;TÈCNIC;Tècnic dels Jocs Esportius del Ceeb (JEC). Persona de màxima responsabilitat de l’equip o grup d’esportistes que participen als JEC en una modalitat esportiva. Titulacions requerides: Estar inscrit a ROPEC com a monitor esportiu + Càpsula Esportiva Especifica (TEE). /o/ Estar inscrit a ROPEC com a Entrenador de la modalitat Esportiva.;;;TEC
+1245;TDJ FEEB;DELEGAT;Delegat d’equip/grup, persona responsable del bon comportament i del joc net dels esportistes i acompanyants. Titulacions requerides: Titulació vàlida del personal responsable de vetllar pels valors als JEC i realitzar les tasques administratives. Recomanable que aquest col·lectiu també tinguin formació reconeguda com a Tutor Esportiu.;;;
+1246;TDJ FEEB;DELEGAT DE CAMP;Delegat de camp o pista, persona responsable de vetllar pel bon funcionament de totes les fases del joc. Volem que esdevingui un nexe d’unió entre els dos equips, les famílies i l’entitat. Ha de ser una figura de referència per al CEEB, per les entitats i per l’equip al qual representa.;;1;
+1247;TDJ FEEB;AUXILIAR;Auxiliar de les activitats dels JEC. Persona que acompanya a l’equip o grup d’esportistes que participen als JEC, donant suport al tècnic esportiu. Titulacions requerides: Certificat de CIATE o Diploma del Ceeb de Tutor Esportiu Escolar d’una modalitat esportiva. Titulació vàlida del personal tècnic voluntari per a la realització d’activitats esportives en l’àmbit extraescolar.;;3;
+1253;SHOW PATINATGE ARTÍSTIC;Infantil;;;1;
+1255;TROBADA D'ESCACS;EDUCACIÓ INFANTIL;;;1;
+1256;TROBADA D'ESCACS;PREBENJAMÍ;;;2;
+1257;TROBADA D'ESCACS;BENJAMÍ;;;3;
+1258;TROBADA D'ESCACS;ALEVÍ;;;4;
+1259;TROBADA D'ESCACS;INFANTIL;;;5;
+1260;SHOW PATINATGE ARTÍSTIC;Cadet;;;10;
+1262;CROS - FINAL NACIONAL;Esportista;;;;
+1263;KARATE;PREBENJAMÍ;;;1;
+1264;KARATE;BENJAMÍ;;;2;
+1265;KARATE;ALEVÍ;;;3;
+1266;KARATE;INFANTIL;;;4;
+1267;KARATE;CADET;;;5;
+1268;KARATE;JUVENIL;;;6;
+1269;KARATE;SÈNIOR;;;7;
+1270;KARATE;TÈCNIC;;;8;TEC
+1271;KARATE;DELEGAT;;;9;
+1272;KARATE;EDUCACIÓ INFANTIL;;;10;
+1274;BÀSQUET 3X3;PREINFANTIL;;;1;
+1275;BÀSQUET 3X3;INFANTIL;;;2;
+1276;BÀSQUET 3X3;CADET;;;3;
+1277;ESPORT INDIVIDUAL - COL·LABORADOR/A;NATACIÓ ARTÍSTICA;;;2;
+1278;ESPORT INDIVIDUAL - COL·LABORADOR/A;JUDO;;;3;
+1279;ESPORT INDIVIDUAL - COL·LABORADOR/A;TENNIS TAULA;;;4;
+1280;ESPORT INDIVIDUAL - COL·LABORADOR/A;BÀDMINTON;;;5;
+1281;NATACIÓ;SÈNIOR;;;12;
+1283;AIGÜES OBERTES;Adults;;;1;
+1287;AMISTOSOS;TOTES;;;;
+1288;FUTBOL 5;TÈCNIC/TÈCNICA EN FORMACIÓ;;;;TECF
+1289;FUTBOL 5;AUXILIAR EN FORMACIÓ;;;;
+1290;FUTBOL 7;TÈCNIC/TÈCNICA en Formació;;;;TECF
+1291;Temps de Joc (FEEB);MENUDETS;;;1;
+1292;Temps de Joc (FEEB);MENUTS;;;2;
+1293;Temps de Joc (FEEB);PREBENJAMÍ;;;3;
+1294;Temps de Joc (FEEB);BENJAMÍ;;;4;
+1295;Temps de Joc (FEEB);ALEVÍ;;;6;
+1296;Temps de Joc (FEEB);PREALEVÍ;;;5;
+1297;Temps de Joc (FEEB);PREINFANTIL;;;7;
+1298;Temps de Joc (FEEB);INFANTIL;;;8;
+1299;Temps de Joc (FEEB);CADET;;;8;
+1300;Temps de Joc (FEEB);JUVENIL;;;9;
+1302;Temps de Joc (FEEB);JUNIOR;;;10;
+1303;Temps de Joc (FEEB);LLIGA JOVE;;;11;
+1304;Temps de Joc (FEEB);SENIOR;;;12;
+1308;FUTBOL 11;TÈCNIC/TÈCNICA en Formació;;;;TECF
+1309;HOQUEI SALA;TÈCNIC/TÈCNICA en Formació;;;;TECF
+1310;HOQUEI PATINS;TÈCNIC/TÈCNICA en Formació;;;;TECF
+1311;BÀSQUET;TÈCNIC/TÈCNICA en Formació;;;;TECF
+1312;VOLEIBOL;TÈCNIC/TÈCNICA en Formació;;;;TECF
+1313;HANDBOL;TÈCNIC/TÈCNICA EN FORMACIÓ;;;;TECF
+1314;BÀSQUET;AUXILIAR en Formació;;;;
+1315;FUTBOL 11;AUXILIAR en Formació;;;;
+1316;FUTBOL 7;AUXILIAR en Formació;;;;
+1317;HANDBOL;AUXILIAR EN FORMACIÓ;;;;
+1318;HOQUEI PATINS;AUXILIAR en Formació;;;;
+1319;HOQUEI SALA;AUXILIAR en Formació;;;;
+1320;VOLEIBOL;AUXILIAR en Formació;;;;
+1321;GIMNÀSTICA ARTÍSTICA;SÈNIOR;;;;
+1322;ESPORT INDIVIDUAL - COMITÈ DE VALORACIÓ;Dansa;;;;
+1323;ESPORT INDIVIDUAL - COL·LABORADOR/A;CURSES D'ORIENTACIÓ;;;1;
+1324;ESPORT INDIVIDUAL - COL·LABORADOR/A;DANSA;;;;
+1325;ESPORT INDIVIDUAL - COL·LABORADOR/A;ESCACS;;;;
+1326;ESPORT INDIVIDUAL - COL·LABORADOR/A;GIMNÀSTICA ARTÍSTICA;;;;
+1327;ESPORT INDIVIDUAL - COL·LABORADOR/A;GIMNÀSTICA ESTÈTICA DE GRUP;;;;
+1328;ESPORT INDIVIDUAL - COL·LABORADOR/A;GIMNÀSTICA RÍTMICA;;;;
+1329;ESPORT INDIVIDUAL - COL·LABORADOR/A;NATACIÓ;;;;
+1330;ESPORT INDIVIDUAL - COL·LABORADOR/A;PATINATGE ARTÍSTIC;;;;
+1331;ESPORT INDIVIDUAL - COL·LABORADOR/A;TRAMPOLÍ;;;;
+1332;LLIGUES D'INICIACIÓ D'HOQUEI PATINS;TÈCNIC/TÈCNICA en Formació;;;;
+1333;NATACIÓ PROMOCIÓ;BENJAMÍ;;;;
+1334;NATACIÓ PROMOCIÓ;ALEVÍ;;;;
+1335;NATACIÓ PROMOCIÓ;INFANTIL;;;;
+1337;CURSES D'ORIENTACIÓ;JÚNIOR;;;;
+1338;CURSES D'ORIENTACIÓ;SÈNIOR;;;;
+1339;CURSES D'ORIENTACIÓ;VETERÀ/NA;;;3;SEN
+1340;NATACIÓ PROMOCIÓ;CADET;;;;
+1341;NATACIÓ PROMOCIÓ;PREBENJAMÍ;;;;
+1342;NATACIÓ PROMOCIÓ;JUVENIL;;;;
+1343;BÀSQUET - Copa CEEB;BENJAMÍ;;;1;
+1344;FUTBOL 5 - Copa CEEB;BENJAMÍ;;;1;
+1345;VOLEIBOL - Copa CEEB;BENJAMÍ;;;1;
+1346;HANDBOL - Copa CEEB;BENJAMÍ;;;1;
+1347;PATINATGE ARTÍSTIC;SÈNIOR;;;;
+1348;BÀDMINTON - Independent;PRE-BENJAMÍ;;;;
+1349;BÀDMINTON - Independent;BENJAMÍ;;;;
+1350;BÀDMINTON - Independent;ALEVÍ;;;;
+1351;BÀDMINTON - Independent;INFANTIL;;;;
+1352;BÀDMINTON - Independent;CADET;;;;
+1353;BÀDMINTON - Independent;JUVENIL;;;;
+1354;BÀDMINTON - Independent;SÈNIOR;;;;
+1356;ESCACS;TÈCNIC/A EN FORMACIÓ;;;;
+1357;ESCACS;AUXILIAR EN FORMACIÓ;;;;
+1358;NATACIÓ;TÈCNIC/A EN FORMACIÓ;;;;
+1359;NATACIÓ;AUXILIAR EN FORMACIÓ;;;;
+1360;GIMNÀSTICA RÍTMICA;TÈCNIC/A EN FORMACIÓ;;;;
+1361;GIMNÀSTICA ARTÍSTICA;TÈCNIC/A EN FORMACIÓ;;;;
+1362;GIMNÀSTICA ARTÍSTICA;AUXILIAR EN FORMACIÓ;;;;
+1363;GIMNÀSTICA RÍTMICA;AUXILIAR EN FORMACIÓ;;;;
+1364;TRAMPOLÍ;TÈCNIC/A EN FORMACIÓ;;;;
+1365;TRAMPOLÍ;AUXILIAR EN FORMACIÓ;;;;
+1366;TENNIS TAULA;TÈCNIC/A EN FORMACIÓ;;;6;
+1367;TENNIS TAULA;AUXILIAR EN FORMACIÓ;;;;
+1368;FUTBOL 5 - Copa CEEB;TÈCNIC/TÈCNICA en Formació;;;;
+1369;FUTBOL 5 - Copa CEEB;AUXILIAR en Formació;;;;
+1370;BÀSQUET - Copa CEEB;TÈCNIC/TÈCNICA en Formació;;;;
+1371;BÀSQUET - Copa CEEB;AUXILIAR en Formació;;;;
+1372;VOLEIBOL - Copa CEEB;TÈCNIC/TÈCNICA en Formació;;;;
+1373;VOLEIBOL - Copa CEEB;AUXILIAR en Formació;;;;
+1374;HANDBOL - Copa CEEB;TÈCNIC/TÈCNICA en Formació;;;;
+1375;HANDBOL - Copa CEEB;AUXILIAR en Formació;;;;
+1376;PROMOCIÓ ESPORTIVA;COL·LABORADOR/A PROMOCIÓ;;;;
+1378;PROVES COMBINADES D' ATLETISME;INFANTIL;;;;
+1379;PROVES COMBINADES D' ATLETISME;CADET;;;;
+1380;PROVES COMBINADES D' ATLETISME;JUVENIL;;;;
+1381;PATINATGE ARTÍSTIC;TÈCNIC/A EN FORMACIÓ;;;;
+1382;PATINATGE ARTÍSTIC;AUXILIAR EN FORMACIÓ;;;;
+1383;GIMNÀSTICA ESTÈTICA DE GRUP;TÈCNIC/TÈCNICA en formació;;;;
+1384;NATACIÓ ARTÍSTICA;TÈCNIC/A EN FORMACIÓ;;;;
+1385;NATACIÓ ARTÍSTICA;AUXILIAR EN FORMACIÓ;;;;
+1386;BÀSQUET;TUTOR/TUTORA DE JOC EN FORMACIÓ;;;;
+1387;TROBADA DE PATINATGE ARTÍSTIC;Tècnic en formació;;;;
+1388;TROBADES DE FUTBOL 5;SUPER MENUDET;;;;
+1389;TROBADES DE BÀSQUET;SUPER MENUDET;;;;
+1390;TROBADA DANSA, JAZZ, HIP HOP;Tècnic en formació;;;;
+1392;CROS;EDUCACIÓ INFANTIL;;;;
+1397;CURSES D'ORIENTACIÓ (1 cursa familiar);JÚNIOR;;;;
+1398;CURSES D'ORIENTACIÓ (1 cursa familiar);SÈNIOR;;;;
+1399;CURSES D'ORIENTACIÓ (1 cursa familiar);VETERÀ/NA;;;;
+1402;LLIGUES D'INICIACIÓ DE FUTBOL 5;TUTOR/TUTORA DE JOC;;;;
+1403;FUTBOL 7 - Copa CEEB;BENJAMÍ;;;;
+1404;HANDBOL - Copa CEEB;TUTOR/TUTORA DE JOC;;;;
+1405;FUTBOL 7 - Copa CEEB;TUTOR/TUTORA DE JOC;;;;
+1406;JUDO;TÈCNIC/A EN FORMACIÓ;;;;
+1407;FUTBOL 5;MENUTS;;;;
+1408;FUTBOL 5;MENUDETS;;;;
+1409;HOQUEI PATINS;MENUTS;;;;
+1410;BÀSQUET;MENUTS;;;;
+1411;BÀSQUET;MENUDETS;;;;
+1412;FUTBOL 7;MENUTS;;;;
+1414;EN XARXA;ANYS 2013-2014 (Esports d'Equip);;;;
+1415;EN XARXA;ANYS 2003-2012 (Esports d'Equip);;;;
+1416;EN XARXA;EDUCACIÓ INFANTIL (2015 - 2017);;;;
+1417;EN XARXA;SÈNIOR;;;;
+1418;EN XARXA;JÚNIOR (2000 - 2002);;;;
+1419;EN XARXA;PREBENJAMÍ (2013 - 2014);;;;
+1420;EN XARXA;JUVENIL (2003 - 2004);;;;
+1421;EN XARXA;BENJAMÍ (2011 - 2012);;;;
+1422;EN XARXA;CADET (2005 - 2006);;;;
+1423;EN XARXA;INFANTIL (2007 - 2008);;;;
+1424;EN XARXA;ALEVÍ (2009 - 2010);;;;
+1426;MULTIESPORT;ESPORTS D'EQUIP;;;;
+1427;BÀSQUET;AMISTÓS;;;;
+1429;FUTBOL 5;AMISTÓS;;;;
+1430;VOLEIBOL;AMISTÓS;;;;
+1431;ADIDAS: Run For The Oceans;Cursa 3Km;;;;
+1432;MULTIESPORT;SENIOR;;;;
+1433;GIMNÀSTICA RÍTMICA;JÚNIOR;;;;
+1434;GIMNÀSTICA RÍTMICA;COL·LABORADOR/A;;;;
+1435;GIMNÀSTICA RÍTMICA;TUTOR/A DE JOC;;;;
+1436;GIMNÀSTICA ARTÍSTICA;COL·LABORADOR/A;;;;
+1437;TRAMPOLÍ;TUTOR/A DE JOC;;;;
+1438;TRAMPOLÍ;COL·LABORADOR/A;;;;
+1439;GIMNÀSTICA ARTÍSTICA;EDUCACIÓ INFANTIL;;;;
+1442;CROS;COL·LABORADOR/A;;;;
+1445;NATACIÓ ARTÍSTICA;TUTOR/A DE JOC;;;;PUBLIC
+1446;NATACIÓ ARTÍSTICA;COL·LABORADOR/A;;;;
+1447;MULTIESPORT;COL·LABORADOR/A;;;;
+1448;GIMNÀSTICA ESTÈTICA DE GRUP;TUTOR/A DE JOC;;;;
+1449;GIMNÀSTICA ESTÈTICA DE GRUP;COL·LABORADOR/A;;;;
+1450;PATINATGE ARTÍSTIC;TUTOR/A DE JOC;;;;
+1451;PATINATGE ARTÍSTIC;COL·LABORADOR/A;;;;
+1452;TENNIS TAULA;COL·LABORADOR/A;;;;
+1453;BÀDMINTON;COL·LABORADOR/A;;;;
+1454;TROBADA DANSA, JAZZ, HIP HOP;COL·LABORADOR/A;;;;
+1455;CURSES D'ORIENTACIÓ;COL·LABORADOR/A;;;;
+1456;ESCACS;TUTOR/A DE JOC;;;;
+1457;ESCACS;COL·LABORADOR/A;;;;
+1458;DANSA;TUTOR/A DE JOC;;;;
+1459;DANSA;COL·LABORADOR/A;;;;
+1460;NATACIÓ;TUTOR/A DE JOC;;;;PUBLIC
+1461;NATACIÓ;COL·LABORADOR/A;;;;
+1462;JUDO;COL·LABORADOR/A;;;;
+1463;JUDO;TUTOR/A DE JOC;;;;
+1464;SKATE;COL·LABORADOR/A;;;;
+1465;SKATE;ALEVÍ;;;;
+1466;ESPECIAL;DIRECTOR ESPORTIU;;;;
+1467;CURSES D'ORIENTACIÓ (1 cursa ADULT);JÚNIOR;;;;
+1468;CURSES D'ORIENTACIÓ (1 cursa ADULT);SÈNIOR;;;;
+1469;CURSES D'ORIENTACIÓ (1 cursa ADULT);VETERÀ/NA;;;;
+1470;MULTIESPORT;ALEVÍ;;;;
+1471;MULTIESPORT;CONVIVIM;;;;
+1472;MULTIESPORT;BENJAMÍ;;;;
+1473;MULTIESPORT;PREALEVÍ;;;;
+1474;MULTIESPORT;PREINFANTIL;;;;
+1475;MULTIESPORT;INFANTIL;;;;
+1476;MULTIESPORT;CADET;;;;
+1477;MULTIESPORT;JUVENIL;;;;
+1478;MULTIESPORT;JÚNIOR;;;;
+1480;MULTIESPORT;MENUTS;;;;
+1481;MULTIESPORT;MENUDETS;;;;
+1482;TENNIS TAULA;TUTOR/A DE JOC;;;;
+1483;GIMNÀSTICA ARTÍSTICA;DELEGAT/DA;;;;
+1484;BÀDMINTON;TUTOR/A DE JOC;;;;
+1486;TROBADA DANSA, JAZZ, HIP HOP;JÚNIOR;;;;
+1487;ESPORT A LA FEINA;SÈNIOR;;;;
+1488;TROBADA DE GIMNÀSTICA RÍTMICA;Tècnic/a en formació;;;;
+1489;SKATE;PREBENJAMÍ;;;;
+1490;DANSA;TÈCNIC/A EN FORMACIÓ;;;;
+1491;TROBADA DE GIMNÀSTICA ARTÍSTICA;Tècnic/a en formació;;;;
+1492;TROBADA DE NATACIÓ ARTÍSTICA;Tècnic/a en formació;;;;
+1493;GIMNÀSTICA ARTÍSTICA;TUTOR/A DE JOC;;;;
+1494;TROBADA DE TRAMPOLÍ;JUVENIL;;;;
+1495;TROBADA DE GIMNÀSTICA RÍTMICA;SÈNIOR;;;;
+1496;TROBADA DE PATINATGE ARTÍSTIC;Auxiliar en formació;;;;
+1497;TENNIS TAULA;SÈNIOR;;;;
+1498;TROBADA DANSA, JAZZ, HIP HOP;Auxiliar en formació;;;;
+1499;TROBADA DE GIMNÀSTICA RÍTMICA;Auxiliar en formació;;;;
+1500;TROBADA DE PATINATGE ARTÍSTIC;EDUCACIÓ INFANTIL;;;;
+1501;NATACIÓ;EDUCACIÓ INFANTIL;;;;
+1502;TROBADA DE GIMNÀSTICA ARTÍSTICA;Auxiliar en formació;;;;
+1503;TROBADA DE GIMNÀSTICA ARTÍSTICA;EDUCACIÓ INFANTIL;;;;
+1504;TROBADA DE NATACIÓ ARTÍSTICA;EDUCACIÓ INFANTIL;;;;
+1505;TROBADA DE NATACIÓ ARTÍSTICA;Auxiliar en formació;;;;
+1506;TROBADA DE TRAMPOLÍ;EDUCACIÓ INFANTIL;;;;
+1507;TROBADA DE TRAMPOLÍ;Auxiliar en formació;;;;
+1508;TROBADA DE TRAMPOLÍ;Tècnic en formació;;;;
+1509;DANSA;AUXILIAR EN FORMACIÓ;;;;
+1510;DANSA;EDUCACIÓ INFANTIL;;;;
+1511;HANDBOL;MENUTS;;;;
+1512;CURSES D'ORIENTACIÓ;FAMILIAR;;;;
+1513;NATACIÓ ARTÍSTICA;JÚNIOR;;;;
+1514;TENNIS TAULA;JÚNIOR;;;;
+1515;BÀDMINTON;TÈCNIC/A EN FORMACIÓ;;;;
+1516;BÀDMINTON;AUXILIAR EN FORMACIÓ;;;;
+1517;HOQUEI SALA;MENUTS;;;;
+1518;VOLEI PLATJA;COL·LABORADOR/A;;;;
+1520;JUDO;AUXILIAR EN FORMACIÓ;;;;
+1521;TRAMPOLÍ;SÈNIOR;;;;
+1522;CROS;SÈNIOR;;;;
+1523;ALTRES;MENUTSCONVIVIM;;;1;MENUTSCONVIVIM
+1524;HANDBOL;MENUDETS;;;;

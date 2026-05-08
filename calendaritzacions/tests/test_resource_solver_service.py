@@ -54,6 +54,8 @@ class ResourceSolverServiceTests(unittest.TestCase):
             self.assertIn("resource_solution", result.audit_paths)
             self.assertIn("solver_explanations", result.audit_paths)
             self.assertIn("resource_solver_result", result.audit_paths)
+            self.assertIn("input_demand", result.audit_paths)
+            self.assertIn("input_validation", result.audit_paths)
             self.assertTrue(Path(result.audit_paths["solver_explanations"]).exists())
             payload = json.loads(Path(result.audit_paths["resource_solver_result"]).read_text(encoding="utf-8"))
             self.assertIn(payload["status"], {"OPTIMAL", "FEASIBLE"})
@@ -111,7 +113,10 @@ class ResourceSolverServiceTests(unittest.TestCase):
             self.assertIn("resource_solution", audit_paths)
             self.assertIn("solver_explanations", audit_paths)
             self.assertIn("resource_solver_result", audit_paths)
+            self.assertIn("input_demand", audit_paths)
+            self.assertIn("input_validation", audit_paths)
             self.assertEqual(kpis_path, "")
+            self.assertTrue(any(log.startswith("input: teams=") for log in logs))
             self.assertTrue(any(log.startswith("resource_solver: status=") for log in logs))
 
 

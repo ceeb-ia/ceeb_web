@@ -5,12 +5,158 @@
   function setGlobalWarningsMode(active){
     const shell = document.querySelector('[data-notes-main-shell="1"]');
     const summary = document.querySelector('[data-notes-warning-summary="1"]');
+    const resultsPanel = typeof notesResultsPanel === "function" ? notesResultsPanel() : null;
     const table = notesMainTable();
     const scrollWrap = table ? table.closest('[data-scroll-wrap="1"]') : null;
     const topbar = shell ? shell.querySelector('[data-scrollbar-top="1"]') : null;
     if(summary) summary.classList.toggle("d-none", !active);
+    if(resultsPanel && active) resultsPanel.classList.add("d-none");
     if(scrollWrap) scrollWrap.classList.toggle("d-none", !!active);
     if(topbar) topbar.classList.toggle("d-none", !!active);
+  }
+
+  function warningDetails(warning){
+    return Array.isArray(warning?.details) && warning.details.length ? warning.details : [warning];
+  }
+
+  function warningDetailContext(detail){
+    const nav = detail?.navigation || {};
+    const unit = detail?.unit || {};
+    const app = detail?.app || {};
+    return {
+      franja_id: nav.franja_id || unit.franja_id || null,
+      comp_aparell_id: nav.comp_aparell_id || app.id || unit.comp_aparell_id || null,
+      unit_key: nav.unit_key || unit.key || "",
+      unit_identity: nav.unit_identity || unit.identity || "",
+      exercici: nav.exercici || 1,
+      label: [
+        unit.franja_label || (unit.is_out_of_program ? "Fora de programa" : ""),
+        app.label || unit.app_label || "",
+        unit.label || unit.key || "",
+      ].filter(Boolean).join(" - "),
+    };
+  }
+
+  function warningSubjectMatchesFocus(detail){
+    const focus = NOTES_STATE.focusedSubject || null;
+    if(!focus) return true;
+    const subject = detail?.subject || {};
+    const focusKind = String(focus.subject_kind || "inscripcio");
+    const detailKind = String(subject.subject_kind || detail?.subject_kind || "inscripcio");
+    const focusId = String(focus.subject_id || focus.id || "");
+    const detailId = String(subject.subject_id || detail?.subject_id || subject.id || "");
+    return focusKind === detailKind && focusId === detailId;
+  }
+
+  function applyWarningScopeParams(url){
+    const appId = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedAppId) : String(NOTES_STATE.selectedAppId || "all");
+    const franja = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedFranja) : String(NOTES_STATE.selectedFranja || "all");
+    const unitId = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedUnitId) : String(NOTES_STATE.selectedUnitId || "all");
+    const exercise = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedExercise) : String(NOTES_STATE.selectedExercise || "all");
+    if(appId !== "all") url.searchParams.set("comp_aparell_id", appId);
+    if(franja.startsWith("franja:")) url.searchParams.set("franja_id", franja.replace("franja:", ""));
+    if(unitId !== "all"){
+      const unit = typeof currentLazyUnit === "function" ? currentLazyUnit() : null;
+      if(unit) url.searchParams.set("unit_key", unit.key || "");
+    }
+    if(exercise !== "all") url.searchParams.set("exercici", exercise);
+  }
+
+  async function loadContextWarningsSummary(){
+    setGlobalWarningsMode(false);
+    setNotesTableVisible(false);
+    NOTES_STATE.view = "summary";
+    NOTES_STATE.activePayload = null;
+    NOTES_STATE.warningContextKeys = null;
+    const panel = notesResultsPanel();
+    if(!panel) return;
+    panel.classList.remove("d-none");
+    panel.innerHTML = "";
+    const title = document.querySelector('[data-notes-main-title="1"]');
+    const meta = document.querySelector('[data-notes-main-meta="1"]');
+    if(title) title.textContent = "Contextos amb avisos";
+    if(meta) meta.textContent = "Avisos filtrats pels selectors actuals.";
+    setNotesStatus("Carregant contextos amb avisos...");
+    const allowedKeys = new Set(
+      typeof expansionContextsForCurrentFilters === "function"
+        ? expansionContextsForCurrentFilters().map((context) => contextLoadKey(context))
+        : []
+    );
+    const url = new URL(NOTES_LAZY_ENDPOINTS.warnings, window.location.origin);
+    url.searchParams.set("limit", "500");
+    applyWarningScopeParams(url);
+    const loadKey = `context-warnings:${Date.now()}`;
+    NOTES_STATE.warningsLoadingKey = loadKey;
+    try{
+      const resp = await fetch(url.toString(), {headers:{"X-Requested-With":"XMLHttpRequest"}});
+      const payload = await resp.json();
+      if(!resp.ok || !payload.ok){
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+      }
+      if(NOTES_STATE.warningsLoadingKey !== loadKey) return;
+      const grouped = new Map();
+      (payload.warnings || []).forEach((warning) => {
+        warningDetails(warning).forEach((detail) => {
+          if(!warningSubjectMatchesFocus(detail)) return;
+          const context = warningDetailContext(detail);
+          const key = contextLoadKey(context);
+          if(allowedKeys.size && !allowedKeys.has(key)) return;
+          if(!grouped.has(key)){
+            grouped.set(key, {context, warningCount:0, subjects:new Set(), ackKeys:[]});
+          }
+          const bucket = grouped.get(key);
+          bucket.warningCount += 1;
+          const subject = detail.subject || {};
+          const subjectName = subject.name || subject.label || detail.subject_id || "";
+          if(subjectName) bucket.subjects.add(subjectName);
+          if(detail.ack_key) bucket.ackKeys.push(detail.ack_key);
+        });
+      });
+      NOTES_STATE.warningContextKeys = new Set(grouped.keys());
+      const contexts = Array.from(grouped.values());
+      if(!contexts.length){
+        panel.appendChild(el("div", {class:"notes-warning-empty", text:"No hi ha contextos amb avisos amb aquests filtres."}));
+        setNotesStatus("No hi ha contextos amb avisos amb aquests filtres.");
+        return;
+      }
+      const toolbar = el("div", {class:"d-flex flex-wrap align-items-center mb-3", style:"gap:8px;"});
+      const pageSize = Math.min(8, contexts.length);
+      const expandBtn = el("button", {
+        type:"button",
+        class:"btn btn-sm btn-primary",
+        text: contexts.length > pageSize ? `Expandir ${pageSize} primers` : "Expandir avisos",
+      });
+      expandBtn.addEventListener("click", () => expandFilteredContexts(pageSize));
+      toolbar.appendChild(expandBtn);
+      toolbar.appendChild(el("span", {class:"notes-status", text:`${contexts.length} contextos amb avisos.`}));
+      panel.appendChild(toolbar);
+      contexts.forEach((bucket) => {
+        const context = bucket.context;
+        const item = el("div", {class:"notes-warning-item"});
+        const textWrap = el("div");
+        textWrap.appendChild(el("div", {class:"notes-warning-item-title", text:context.label || "Context"}));
+        textWrap.appendChild(el("div", {
+          class:"notes-warning-item-meta",
+          text:[
+            `Exercici ${context.exercici || 1}`,
+            `${bucket.warningCount} avisos`,
+            bucket.subjects.size ? `${bucket.subjects.size} subjectes` : "",
+          ].filter(Boolean).join(" - "),
+        }));
+        const actions = el("div", {class:"d-flex flex-wrap justify-content-end", style:"gap:6px;"});
+        const openBtn = el("button", {type:"button", class:"btn btn-sm btn-outline-primary", text:"Obrir"});
+        openBtn.addEventListener("click", () => openNotesContext(context));
+        actions.appendChild(openBtn);
+        item.appendChild(textWrap);
+        item.appendChild(actions);
+        panel.appendChild(item);
+      });
+      setNotesStatus(`${contexts.length} contextos amb avisos.`);
+    }catch(err){
+      panel.innerHTML = "";
+      panel.appendChild(el("div", {class:"notes-warning-empty", text:"No s'han pogut carregar els contextos amb avisos."}));
+      setNotesStatus(`No s'han pogut carregar els contextos amb avisos (${err.message || err}).`, true);
+    }
   }
 
   function warningContextUnit(warning){
@@ -143,6 +289,8 @@
 
   async function loadGlobalWarnings(){
     setGlobalWarningsMode(true);
+    NOTES_STATE.view = "global-warnings";
+    NOTES_STATE.warningContextKeys = null;
     const title = document.querySelector('[data-notes-main-title="1"]');
     const meta = document.querySelector('[data-notes-main-meta="1"]');
     const schemaLink = document.querySelector('[data-notes-schema-link="1"]');

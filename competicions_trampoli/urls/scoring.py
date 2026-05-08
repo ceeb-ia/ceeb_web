@@ -15,7 +15,7 @@ from ..views.scoring.media import (
 )
 from ..views.scoring.legacy import TrampoliNotesHome, trampoli_guardar_nota
 from ..views.scoring.notes import ScoringNotesHome
-from ..views.scoring.notes_api import notes_manifest, notes_table, notes_warning_validate, notes_warnings
+from ..views.scoring.notes_api import notes_manifest, notes_search, notes_table, notes_warning_validate, notes_warnings
 from ..views.scoring.save import scoring_save, scoring_save_partial
 from ..views.scoring.schema import ScoringSchemaUpdate
 from ..views.scoring.updates import scoring_updates
@@ -66,6 +66,11 @@ urlpatterns = [
         "competicio/<int:pk>/scoring/notes/table/",
         competition_view(notes_table, "scoring.view"),
         name="scoring_notes_table",
+    ),
+    path(
+        "competicio/<int:pk>/scoring/notes/search/",
+        competition_view(notes_search, "scoring.view"),
+        name="scoring_notes_search",
     ),
     path(
         "competicio/<int:pk>/scoring/notes/warnings/",

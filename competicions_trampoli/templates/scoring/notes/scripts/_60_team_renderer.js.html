@@ -10,7 +10,7 @@
     return subject.members.map((m, idx) => `Membre ${idx + 1}: ${m && m.name ? m.name : ""}`);
   }
   function visibleRowsForAppGroup(group, appId, schema){
-    const active = NOTES_STATE.activePayload;
+    const active = NOTES_STATE.renderingPayload || NOTES_STATE.activePayload;
     if(active && active.unit && String(active.unit.key) === String(group) && String(active.context?.comp_aparell_id) === String(appId)){
       return Array.isArray(active.subjects) ? active.subjects.slice() : [];
     }

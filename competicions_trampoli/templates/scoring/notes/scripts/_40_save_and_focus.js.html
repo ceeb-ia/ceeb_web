@@ -74,6 +74,23 @@
     return true;
   }
 
+  async function flushPendingSavesForVisibleTables(){
+    const keys = new Set();
+    document.querySelectorAll('table[data-scoring-table="1"] tr[data-score-key]').forEach((row) => {
+      const table = row.closest('table[data-scoring-table="1"]');
+      const visible = typeof isTableVisible === "function"
+        ? isTableVisible(table)
+        : !!(table && (table.offsetParent || table.getClientRects().length));
+      if(!visible) return;
+      const scoreKey = String(row.getAttribute("data-score-key") || "");
+      if(scoreKey && timers.has(scoreKey)) keys.add(scoreKey);
+    });
+    for(const scoreKey of keys){
+      await flushPendingSaveForScoreKey(scoreKey);
+    }
+    return keys.size;
+  }
+
   function activeScoreKey(){
     const active = document.activeElement;
     if(!active || typeof active.closest !== "function") return "";
@@ -265,10 +282,16 @@
     const ex = table.getAttribute("data-exercici");
     const group = table.getAttribute("data-group");
     const schema = getSchema(appId);
-    buildHeader(table, schema);
-    buildBody(table, schema, ex, appId, group);
-    table.dataset.rendered = "1";
-    syncScrollbars();
+    const previousRenderingPayload = NOTES_STATE.renderingPayload || null;
+    NOTES_STATE.renderingPayload = table.__notesPayload || previousRenderingPayload || null;
+    try{
+      buildHeader(table, schema);
+      buildBody(table, schema, ex, appId, group);
+      table.dataset.rendered = "1";
+      syncScrollbars();
+    }finally{
+      NOTES_STATE.renderingPayload = previousRenderingPayload;
+    }
   }
 
   function rerenderTablesForScoreKey(scoreKey){
@@ -330,23 +353,25 @@
       updateTeamOutputs(scoreKey, resp);
       return;
     }
-    const mainRow = document.querySelector(
+    const rows = document.querySelectorAll(
       `tr[data-score-key="${CSS.escape(scoreKey)}"][data-judge="1"]`
     );
-    if(!mainRow) return;
+    if(!rows.length) return;
 
-    if(resp.outputs){
-      for(const [code, value] of Object.entries(resp.outputs)){
-        const cell = mainRow.querySelector(`[data-out="${code}"]`);
-        if(cell) cell.textContent = formatComputedValue(value);
+    rows.forEach((row) => {
+      if(resp.outputs){
+        for(const [code, value] of Object.entries(resp.outputs)){
+          const cell = row.querySelector(`[data-out="${code}"]`);
+          if(cell) cell.textContent = formatComputedValue(value);
+        }
       }
-    }
 
-    const totalCell = mainRow.querySelector(`[data-out="TOTAL"]`);
-    if(totalCell){
-      const v = (resp.outputs && resp.outputs.TOTAL !== undefined) ? resp.outputs.TOTAL : resp.total;
-      totalCell.textContent = formatComputedValue(v);
-    }
+      const totalCell = row.querySelector(`[data-out="TOTAL"]`);
+      if(totalCell){
+        const v = (resp.outputs && resp.outputs.TOTAL !== undefined) ? resp.outputs.TOTAL : resp.total;
+        totalCell.textContent = formatComputedValue(v);
+      }
+    });
   }
 
   function toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field, code, judgeIdx, blockedRow }){

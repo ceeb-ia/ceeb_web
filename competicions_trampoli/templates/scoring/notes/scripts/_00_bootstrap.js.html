@@ -15,9 +15,9 @@
   const NOTES_LAZY_ENDPOINTS = {
     manifest: "{% url 'scoring_notes_manifest' competicio.id %}",
     table: "{% url 'scoring_notes_table' competicio.id %}",
+    search: "{% url 'scoring_notes_search' competicio.id %}",
     warnings: "{% url 'scoring_notes_warnings' competicio.id %}",
     validateWarning: "{% url 'scoring_notes_warning_validate' competicio.id %}",
-    search: "",
   };
   const NOTES_SCHEMA_URL_TEMPLATE = "{% url 'scoring_schema_update' competicio.id 0 %}".replace("/0/", "/__APP_ID__/");
   const NOTES_JUDGES_URL = "{% url 'judges_qr_home' competicio.id %}";
@@ -31,4 +31,12 @@
     activePayload: null,
     loadingKey: "",
     warningsLoadingKey: "",
+    searchLoadingKey: "",
+    searchTimer: null,
+    focusedSubject: null,
+    view: "summary",
+    expandedLoadingKey: "",
+    expandedLimit: 0,
+    renderingPayload: null,
+    warningContextKeys: null,
   };
