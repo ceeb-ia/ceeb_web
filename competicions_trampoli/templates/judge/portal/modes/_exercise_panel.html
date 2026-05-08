@@ -1,6 +1,6 @@
 <section class="judge-exercise-panel{% if not competition_order_panel and ex != exercici %} d-none{% endif %}" data-exercise-panel="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}"{% if competition_order_panel %} data-competition-order-panel="1"{% endif %}>
   <div class="judge-exercise-panel-head">
-    <div>
+    <div class="judge-exercise-panel-main">
       <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
       <div class="judge-exercise-panel-subtitle">{{ exercise_subtitle|default:"Puntuació i vídeo agrupats en aquest exercici." }}</div>
     </div>

@@ -18,8 +18,8 @@ Expected include context:
     ins, ex, and video_capture_enabled so it can preserve the existing ids/data-*.
 {% endcomment %}
 <div id="{% if off_program_mode %}off-program-card-{% else %}card-{% endif %}{{ ins.id }}-{{ ex }}" class="judge-card judge-competition-entry mb-2" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{% if off_program_mode %}{{ ins.nom_i_cognoms|default:'Inscripció' }}{% else %}{{ ins.name|default:'Inscripció' }}{% endif %}">
-  <div class="d-flex justify-content-between align-items-center">
-    <div>
+  <div class="judge-card-head d-flex justify-content-between align-items-center">
+    <div class="judge-card-main">
       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
       <div class="judge-meta">
         {% if off_program_mode %}Fora de programa · {% endif %}{{ bloc.label }} · Exercici {{ ex }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
