@@ -80,3 +80,16 @@
   const DRAFTS = {};
   const DIRTY_BY_ENTRY = {};
 
+  window.refreshJudgePortal = function refreshJudgePortal(){
+    const hasPendingChanges = Object.values(DIRTY_BY_ENTRY || {}).some((dirtySet) => {
+      return dirtySet && typeof dirtySet.size === "number" && dirtySet.size > 0;
+    });
+    if(
+      hasPendingChanges
+      && !window.confirm("Hi ha canvis pendents sense desar. Vols actualitzar igualment?")
+    ){
+      return;
+    }
+    window.location.reload();
+  };
+

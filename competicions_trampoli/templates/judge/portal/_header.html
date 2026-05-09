@@ -46,6 +46,15 @@
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
         {% endif %}
         {% if permissions %}
+        {% if judge_pwa_enabled %}
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          onclick="if(window.refreshJudgePortal){ refreshJudgePortal(); } else { window.location.reload(); }"
+        >
+          Actualitzar
+        </button>
+        {% endif %}
         <button
           type="button"
           class="btn btn-sm btn-primary"
