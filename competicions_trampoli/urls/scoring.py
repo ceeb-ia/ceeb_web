@@ -7,7 +7,7 @@ from ..views.competition.aparatus import (
     CompeticioAparellUpdate,
     TrampoliAparellList,
 )
-from ..views.competition.phases import CompeticioAparellFasesPlanner
+from ..views.competition.phases import CompeticioAparellFasesPlanner, CompeticioFasesPlanner
 from ..views.competition.legacy import ConfiguracioCompeticio
 from ..views.scoring.media import (
     scoring_judge_video_file,
@@ -47,6 +47,11 @@ urlpatterns = [
         "competicio/<int:pk>/notes/trampoli/aparells/<int:app_id>/editar/",
         competition_view(CompeticioAparellUpdate.as_view(), "scoring.edit"),
         name="trampoli_aparell_edit",
+    ),
+    path(
+        "competicio/<int:pk>/notes/trampoli/fases/",
+        competition_view(CompeticioFasesPlanner.as_view(), "scoring.edit"),
+        name="trampoli_fases",
     ),
     path(
         "competicio/<int:pk>/notes/trampoli/aparells/<int:app_id>/fases/",

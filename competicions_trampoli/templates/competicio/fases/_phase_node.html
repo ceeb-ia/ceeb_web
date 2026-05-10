@@ -1,0 +1,48 @@
+<article class="phase-node">
+  <header class="phase-node-header">
+    <div>
+      <div class="phase-node-title">
+        <strong>{{ phase.nom }}</strong>
+        <span class="badge badge-light border">{{ phase.codi }}</span>
+        <span class="badge badge-secondary">{{ phase.estat }}</span>
+      </div>
+      {% if phase.parent %}
+        <div class="text-muted small">Pare: {{ phase.parent.nom }}</div>
+      {% else %}
+        <div class="text-muted small">Pare visual: Preliminar implicita</div>
+      {% endif %}
+    </div>
+    <div class="phase-node-controls">
+      <div class="phase-unit-statuses">
+        <span class="badge badge-light border">{{ phase.ui_unit_count }} blocs</span>
+        {% if phase.ui_pending_unit_count %}
+          <span class="badge badge-warning">{{ phase.ui_pending_unit_count }} pendents de rotacions</span>
+        {% else %}
+          <span class="badge badge-success">Programacio al dia</span>
+        {% endif %}
+      </div>
+      {% if phase.ui_can_delete %}
+        <form method="post" onsubmit="return confirm('Eliminar aquesta fase buida?');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_phase">
+          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+        </form>
+      {% else %}
+        <button class="btn btn-sm btn-outline-secondary" type="button" disabled title="Nomes es poden eliminar fases sense fills ni blocs.">Eliminar</button>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="phase-node-body">
+    {% if phase.ui_units %}
+      <div class="phase-unit-list">
+        {% for unit in phase.ui_units %}
+          {% include "competicio/fases/_program_unit_row.html" with unit=unit %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted small">Encara no hi ha blocs previstos en aquesta fase.</div>
+    {% endif %}
+  </div>
+</article>

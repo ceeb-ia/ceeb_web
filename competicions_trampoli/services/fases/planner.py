@@ -5,10 +5,8 @@ from dataclasses import dataclass
 from django.db.models import Count, Prefetch
 
 from ...models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
-from .defaults import ensure_default_phase_for_comp_aparell
 from .program_units import (
     create_program_unit_with_empty_slots,
-    create_units_from_base_groups,
     create_units_one_per_partition,
 )
 
@@ -20,7 +18,6 @@ class PlannerActionResult:
 
 
 def phase_planner_context(comp_aparell: CompeticioAparell) -> dict:
-    ensure_default_phase_for_comp_aparell(comp_aparell)
     phases = list(
         CompeticioAparellFase.objects
         .filter(comp_aparell=comp_aparell)
@@ -84,7 +81,3 @@ def create_partition_unit_for_phase(fase: CompeticioAparellFase, form) -> list[P
             }
         ],
     )
-
-
-def generate_base_group_units_for_phase(fase: CompeticioAparellFase) -> list[ProgramUnit]:
-    return create_units_from_base_groups(fase)

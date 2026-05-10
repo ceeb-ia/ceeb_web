@@ -72,6 +72,7 @@
       particions: parts,
       particions_v2: partEntries,
       particions_custom: particionsCustom,
+      scope: readPhaseScopeFromUI(),
       particions_config: particionsConfig,
       filtres: filtres,
       puntuacio: puntuacio,
@@ -168,6 +169,7 @@
         if (el) el.checked = selectedSet.has(String(a.id));
       });
       renderAppStaleWarningBanner(schema, selectedCompatibleIds);
+      renderPhaseScopeSelect(schema.scope);
 
       [
         els.sAggCamps,
@@ -567,6 +569,16 @@
   if (els.sExercicisMode) {
     els.sExercicisMode.addEventListener("change", refreshPuntuacioUI);
   }
+  if (els.fPhaseScope) {
+    els.fPhaseScope.addEventListener("change", syncAdvancedFromUI);
+  }
+  if (els.phaseScopeRows) {
+    els.phaseScopeRows.addEventListener("change", (e) => {
+      if (e.target && e.target.matches("select[data-phase-scope-app]")) {
+        syncAdvancedFromUI();
+      }
+    });
+  }
   [els.iExBestN, els.iExIndex, els.iExMaxPerParticipant, els.tExIds].forEach((node) => {
     if (!node) return;
     node.addEventListener("input", refreshPuntuacioUI);
@@ -633,6 +645,7 @@
   // quan es marca/desmarca un aparell
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id && e.target.id.startsWith("app_")) {
+      renderPhaseScopeSelect(readPhaseScopeFromUI());
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieBuilderState(true));
       renderVictoryTieUI(readVictoryTieUI(true));

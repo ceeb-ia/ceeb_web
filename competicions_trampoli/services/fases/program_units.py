@@ -5,9 +5,7 @@ from typing import Iterable, Optional, Sequence
 
 from django.db import transaction
 
-from ...models.inscripcions import GrupCompeticio, Inscripcio
 from ...models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
-from ...services.shared.competition_groups import group_label
 
 
 @dataclass(frozen=True)
@@ -154,8 +152,6 @@ def create_units_one_per_partition(
             )
         )
     return units
-
-
 def create_units_split_by_capacity(
     *,
     fase: CompeticioAparellFase,
@@ -202,50 +198,4 @@ def create_units_split_by_capacity(
                 partition_values=partition_values or {},
             )
         )
-    return units
-
-
-def create_units_from_base_groups(fase: CompeticioAparellFase) -> list[ProgramUnit]:
-    if fase is None or not getattr(fase, "id", None):
-        raise ValueError("Cal una fase desada.")
-    competicio = fase.competicio
-    groups = list(GrupCompeticio.objects.filter(competicio=competicio, actiu=True).order_by("display_num", "id"))
-    units = []
-    for group in groups:
-        inscripcions = list(
-            Inscripcio.objects
-            .filter(competicio=competicio, grup_competicio=group)
-            .order_by("ordre_competicio", "ordre_sortida", "id")
-        )
-        subjects = [
-            SlotSubject(
-                subject_kind="inscripcio",
-                subject_id=int(inscripcio.id),
-                source_position=index,
-                source_row={
-                    "grup_competicio_id": int(group.id),
-                    "group_display_num": int(group.display_num),
-                },
-            )
-            for index, inscripcio in enumerate(inscripcions, start=1)
-        ]
-        capacity = max(1, len(subjects))
-        unit = create_program_unit_with_empty_slots(
-            fase=fase,
-            nom=group_label(group),
-            capacity=capacity,
-            tipus=ProgramUnit.Tipus.GROUP,
-            partition_key=f"group:{group.display_num}",
-            partition_values={
-                "group_id": int(group.id),
-                "display_num": int(group.display_num),
-            },
-            metadata={
-                "source": "base_group",
-                "grup_competicio_id": int(group.id),
-            },
-            status=ProgramUnit.Status.GENERATED,
-        )
-        fill_program_unit_slots(unit, subjects)
-        units.append(unit)
     return units

@@ -199,6 +199,26 @@ def assignacio_series(assignacio) -> List[int]:
     return out
 
 
+def assignacio_program_units(assignacio) -> List[int]:
+    raw_links = getattr(assignacio, "program_unit_links", None)
+    if raw_links is None:
+        return []
+    if hasattr(raw_links, "all"):
+        raw_links = raw_links.all()
+    out = []
+    seen = set()
+    for link in raw_links:
+        try:
+            unit_id = int(getattr(link, "program_unit_id", None))
+        except Exception:
+            continue
+        if unit_id <= 0 or unit_id in seen:
+            continue
+        seen.add(unit_id)
+        out.append(unit_id)
+    return out
+
+
 def build_group_rotation_step_map(assignacions, franja_modes=None) -> Dict[Tuple[int, int], int]:
     """
     Returns a map keyed by (group_id, franja_id) -> 0-based rotation step for

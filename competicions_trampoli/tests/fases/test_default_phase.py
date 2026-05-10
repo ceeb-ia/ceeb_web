@@ -2,13 +2,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from ..base import _BaseTrampoliDataMixin
-from ...models.competicio import Aparell, CompeticioAparell, CompeticioAparellFase
-from ...services.fases import (
-    DEFAULT_PHASE_CODE,
-    DEFAULT_PHASE_NAME,
-    ensure_default_phase_for_comp_aparell,
-    get_default_phase_for_comp_aparell,
-)
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase
 
 
 class CompeticioAparellFaseTests(_BaseTrampoliDataMixin, TestCase):
@@ -25,41 +19,23 @@ class CompeticioAparellFaseTests(_BaseTrampoliDataMixin, TestCase):
             ordre=ordre,
         )
 
-    def test_ensure_default_phase_creates_legacy_published_phase(self):
+    def test_comp_aparell_does_not_create_phase_by_default(self):
         comp_aparell = self._create_comp_app()
 
-        phase = ensure_default_phase_for_comp_aparell(comp_aparell)
+        self.assertFalse(CompeticioAparellFase.objects.filter(comp_aparell=comp_aparell).exists())
 
-        self.assertEqual(phase.competicio_id, self.competicio.id)
-        self.assertEqual(phase.comp_aparell_id, comp_aparell.id)
-        self.assertEqual(phase.nom, DEFAULT_PHASE_NAME)
-        self.assertEqual(phase.codi, DEFAULT_PHASE_CODE)
-        self.assertEqual(phase.estat, CompeticioAparellFase.Estat.PUBLISHED)
-        self.assertEqual(phase.config.get("source_mode"), "legacy_default")
-        self.assertTrue(phase.config.get("implicit"))
-
-    def test_ensure_default_phase_is_idempotent(self):
+    def test_default_code_is_reserved_for_implicit_initial_phase(self):
         comp_aparell = self._create_comp_app()
+        phase = CompeticioAparellFase(
+            competicio=self.competicio,
+            comp_aparell=comp_aparell,
+            nom="Fase unica",
+            codi="DEFAULT",
+        )
 
-        first = ensure_default_phase_for_comp_aparell(comp_aparell)
-        second = ensure_default_phase_for_comp_aparell(comp_aparell)
-
-        self.assertEqual(first.id, second.id)
-        self.assertEqual(CompeticioAparellFase.objects.filter(comp_aparell=comp_aparell).count(), 1)
-        self.assertEqual(get_default_phase_for_comp_aparell(comp_aparell).id, first.id)
-
-    def test_local_apparatus_instances_have_independent_default_phases(self):
-        first_app = self._create_comp_app(nom_local="Trampoli masculi", codi_local="TRA-M", ordre=1)
-        second_app = self._create_comp_app(nom_local="Trampoli femeni", codi_local="TRA-F", ordre=2)
-
-        first_phase = ensure_default_phase_for_comp_aparell(first_app)
-        second_phase = ensure_default_phase_for_comp_aparell(second_app)
-
-        self.assertNotEqual(first_phase.id, second_phase.id)
-        self.assertEqual(first_phase.comp_aparell_id, first_app.id)
-        self.assertEqual(second_phase.comp_aparell_id, second_app.id)
-        self.assertEqual(first_phase.codi, DEFAULT_PHASE_CODE)
-        self.assertEqual(second_phase.codi, DEFAULT_PHASE_CODE)
+        with self.assertRaises(ValidationError) as ctx:
+            phase.full_clean()
+        self.assertIn("codi", ctx.exception.message_dict)
 
     def test_phase_rejects_comp_aparell_from_other_competition(self):
         other_comp = self._create_competicio("Comp aliena")
@@ -115,12 +91,3 @@ class CompeticioAparellFaseTests(_BaseTrampoliDataMixin, TestCase):
         with self.assertRaises(ValidationError) as ctx:
             phase.full_clean()
         self.assertIn("config", ctx.exception.message_dict)
-
-    def test_default_helper_requires_saved_comp_aparell(self):
-        unsaved = CompeticioAparell(
-            competicio=self.competicio,
-            aparell=Aparell(codi="DMT", nom="DMT", created_by=self._ensure_default_aparell_owner()),
-        )
-
-        with self.assertRaises(ValueError):
-            ensure_default_phase_for_comp_aparell(unsaved)

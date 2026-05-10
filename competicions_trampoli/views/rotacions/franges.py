@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from ...models import Competicio
+from ...models.competicio import ProgramUnit
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja, normalize_hex_color
 from ...models.scoring import SerieEquip
 from ...services.rotacions.rotacions_ordering import set_rotacio_order_mode
@@ -19,6 +20,7 @@ from ._shared import (
     _assignacio_program_keys,
     _split_program_keys,
     _sync_assignacio_groups,
+    _sync_assignacio_program_units,
     _sync_assignacio_series,
 )
 from ._timing import (
@@ -804,7 +806,7 @@ def rotacions_extrapolar(request, pk, franja_id):
         RotacioAssignacio.objects
         .filter(competicio=competicio, franja=fr_base)
         .select_related("estacio__comp_aparell__aparell")
-        .prefetch_related("grup_links__grup", "serie_links__serie")
+        .prefetch_related("grup_links__grup", "serie_links__serie", "program_unit_links__program_unit__fase")
     ):
         base_map[a.estacio_id] = _assignacio_program_keys(a)
 
@@ -812,6 +814,10 @@ def rotacions_extrapolar(request, pk, franja_id):
     series_by_id = {
         int(serie.id): serie
         for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
+    }
+    program_units_by_id = {
+        int(unit.id): unit
+        for unit in ProgramUnit.objects.filter(fase__competicio=competicio).select_related("fase", "fase__comp_aparell")
     }
     station_modes = {estacio.id: _rotation_station_mode(estacio) for estacio in estacions}
     individual_stations = [estacio for estacio in estacions if station_modes.get(estacio.id) == "individual"]
@@ -823,14 +829,21 @@ def rotacions_extrapolar(request, pk, franja_id):
     has_program = False
     for estacio in estacions:
         mode = station_modes.get(estacio.id, "other")
-        group_ids, serie_ids = _split_program_keys(base_map.get(estacio.id, []))
+        group_ids, serie_ids, program_unit_ids = _split_program_keys(base_map.get(estacio.id, []))
+        program_unit_ids = [
+            unit_id
+            for unit_id in program_unit_ids
+            if unit_id in program_units_by_id
+            and int(getattr(program_units_by_id[unit_id].fase, "comp_aparell_id", 0) or 0)
+            == int(getattr(estacio, "comp_aparell_id", 0) or 0)
+        ]
         if mode == "individual":
-            payload_entry = {"groups": group_ids, "series": []}
+            payload_entry = {"groups": group_ids, "series": [], "program_units": program_unit_ids}
         elif mode == "team":
-            payload_entry = {"groups": [], "series": serie_ids}
+            payload_entry = {"groups": [], "series": serie_ids, "program_units": program_unit_ids}
         else:
-            payload_entry = {"groups": [], "series": []}
-        if payload_entry["groups"] or payload_entry["series"]:
+            payload_entry = {"groups": [], "series": [], "program_units": []}
+        if payload_entry["groups"] or payload_entry["series"] or payload_entry["program_units"]:
             has_program = True
         base_payloads_by_station[estacio.id] = payload_entry
     if not has_program:
@@ -926,6 +939,13 @@ def rotacions_extrapolar(request, pk, franja_id):
                 else:
                     group_ids = []
                     serie_ids = []
+                program_unit_ids = [
+                    unit_id
+                    for unit_id in base_payloads_by_station.get(e.id, {}).get("program_units", [])
+                    if unit_id in program_units_by_id
+                    and int(getattr(program_units_by_id[unit_id].fase, "comp_aparell_id", 0) or 0)
+                    == int(getattr(e, "comp_aparell_id", 0) or 0)
+                ]
                 assignacio, _created = RotacioAssignacio.objects.update_or_create(
                     competicio=competicio,
                     franja=fr_t,
@@ -934,6 +954,7 @@ def rotacions_extrapolar(request, pk, franja_id):
                 )
                 _sync_assignacio_groups(assignacio, group_ids, groups_by_id)
                 _sync_assignacio_series(assignacio, serie_ids, series_by_id)
+                _sync_assignacio_program_units(assignacio, program_unit_ids, program_units_by_id)
                 filled_cells += 1
         _resequence_all_franges(competicio)
 

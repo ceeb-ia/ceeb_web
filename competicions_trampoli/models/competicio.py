@@ -207,6 +207,8 @@ class CompeticioAparellFase(models.Model):
             errors["nom"] = "Cal informar el nom de la fase."
         if not self.codi:
             errors["codi"] = "Cal informar el codi de la fase."
+        elif self.codi == "DEFAULT":
+            errors["codi"] = "La fase default/preliminar es implicita i es gestiona des d'inscripcions i rotacions."
         if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
             errors["comp_aparell"] = "L'aparell no pertany a la mateixa competicio."
         if self.parent_id:

@@ -2,30 +2,6 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 
-DEFAULT_PHASE_CODE = "DEFAULT"
-DEFAULT_PHASE_NAME = "Fase unica"
-
-
-def backfill_default_phases(apps, schema_editor):
-    CompeticioAparell = apps.get_model("competicions_trampoli", "CompeticioAparell")
-    CompeticioAparellFase = apps.get_model("competicions_trampoli", "CompeticioAparellFase")
-    for comp_aparell in CompeticioAparell.objects.order_by("competicio_id", "ordre", "id"):
-        CompeticioAparellFase.objects.get_or_create(
-            competicio_id=comp_aparell.competicio_id,
-            comp_aparell_id=comp_aparell.id,
-            codi=DEFAULT_PHASE_CODE,
-            defaults={
-                "nom": DEFAULT_PHASE_NAME,
-                "ordre": 1,
-                "estat": "published",
-                "config": {
-                    "source_mode": "legacy_default",
-                    "implicit": True,
-                },
-            },
-        )
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -105,5 +81,4 @@ class Migration(migrations.Migration):
             model_name="competicioaparellfase",
             index=models.Index(fields=["competicio", "estat"], name="compfase_comp_estat_idx"),
         ),
-        migrations.RunPython(backfill_default_phases, migrations.RunPython.noop),
     ]

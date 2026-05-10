@@ -2102,6 +2102,7 @@
       : fallback;
     const punt = schema.puntuacio && typeof schema.puntuacio === "object" && !Array.isArray(schema.puntuacio) ? schema.puntuacio : {};
     schema.puntuacio = punt;
+    schema.scope = normalizePhaseScope(schema.scope);
 
     const rawApps = punt.aparells && typeof punt.aparells === "object" && !Array.isArray(punt.aparells) ? punt.aparells : {};
     punt.aparells = {

@@ -6,6 +6,7 @@ from .models import Competicio, CompeticioMembership
 from .models.classificacions import ClassificacioTemplateGlobal
 from .models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
 from .models.judging import JudgeConversation, JudgeConversationMessage
+from .models.rotacions import RotacioAssignacioProgramUnit
 
 
 class CompeticioMembershipByCompeticioInline(admin.TabularInline):
@@ -70,6 +71,14 @@ class ProgramUnitSlotAdmin(admin.ModelAdmin):
     search_fields = ("unit__nom", "subject_kind", "subject_id", "source_particio_key")
     autocomplete_fields = ("unit",)
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(RotacioAssignacioProgramUnit)
+class RotacioAssignacioProgramUnitAdmin(admin.ModelAdmin):
+    list_display = ("assignacio", "program_unit", "ordre")
+    list_filter = ("program_unit__fase__competicio", "program_unit__fase")
+    search_fields = ("program_unit__nom", "program_unit__fase__nom", "assignacio__competicio__nom")
+    autocomplete_fields = ("program_unit",)
 
 
 @admin.register(ClassificacioTemplateGlobal)

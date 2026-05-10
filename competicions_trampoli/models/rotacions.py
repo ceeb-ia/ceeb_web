@@ -5,7 +5,7 @@ from django.db import models
 from django.db.models import Q
 
 from .base import Competicio
-from .competicio import CompeticioAparell
+from .competicio import CompeticioAparell, ProgramUnit
 from .inscripcions import GrupCompeticio
 
 
@@ -268,3 +268,51 @@ class RotacioAssignacioSerieEquip(models.Model):
 
     def __str__(self):
         return f"{self.assignacio} -> {self.serie}"
+
+
+class RotacioAssignacioProgramUnit(models.Model):
+    assignacio = models.ForeignKey(
+        RotacioAssignacio,
+        on_delete=models.CASCADE,
+        related_name="program_unit_links",
+    )
+    program_unit = models.ForeignKey(
+        ProgramUnit,
+        on_delete=models.CASCADE,
+        related_name="rotacio_links",
+    )
+    ordre = models.PositiveIntegerField(default=1, db_index=True)
+
+    class Meta:
+        ordering = ["ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assignacio", "program_unit"],
+                name="uniq_rot_assignacio_program_unit_link",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["program_unit", "ordre"], name="rot_assign_unit_ordre_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        assignacio = getattr(self, "assignacio", None)
+        program_unit = getattr(self, "program_unit", None)
+        fase = getattr(program_unit, "fase", None)
+        estacio = getattr(assignacio, "estacio", None)
+        if assignacio and program_unit and fase:
+            if assignacio.competicio_id != fase.competicio_id:
+                errors["program_unit"] = "La unitat programable no pertany a la mateixa competicio."
+            if (
+                getattr(estacio, "tipus", "") != "aparell"
+                or not getattr(estacio, "comp_aparell_id", None)
+                or estacio.comp_aparell_id != fase.comp_aparell_id
+            ):
+                errors["program_unit"] = "La unitat programable s'ha de col.locar a l'estacio del seu aparell."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.assignacio} -> {self.program_unit}"

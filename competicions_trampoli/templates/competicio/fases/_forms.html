@@ -1,0 +1,67 @@
+<section class="phase-panel">
+  <h5>Crear fase</h5>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_phase">
+    <div class="mb-2">{{ phase_form.parent.label_tag }}{{ phase_form.parent }}{{ phase_form.parent.errors }}</div>
+    <div class="phase-parent-hint mb-2">Si no tries cap fase pare, penjara visualment de la preliminar implicita.</div>
+    <div class="mb-2">{{ phase_form.nom.label_tag }}{{ phase_form.nom }}{{ phase_form.nom.errors }}</div>
+    <div class="mb-2">{{ phase_form.codi.label_tag }}{{ phase_form.codi }}{{ phase_form.codi.errors }}</div>
+    <div class="row">
+      <div class="col-5 mb-2">{{ phase_form.ordre.label_tag }}{{ phase_form.ordre }}{{ phase_form.ordre.errors }}</div>
+      <div class="col-7 mb-2">{{ phase_form.estat.label_tag }}{{ phase_form.estat }}{{ phase_form.estat.errors }}</div>
+    </div>
+    <button class="btn btn-sm btn-primary" type="submit">Crear fase</button>
+  </form>
+</section>
+
+<section class="phase-panel">
+  <h5>Crear bloc previst</h5>
+  {% if phases %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="create_manual_unit">
+      <div class="mb-2">
+        <label for="manual-fase">Fase avancada</label>
+        <select id="manual-fase" name="fase_id" class="form-select" required>
+          {% for phase in phases %}
+            <option value="{{ phase.id }}">{{ phase.nom }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-2">{{ manual_unit_form.nom.label_tag }}{{ manual_unit_form.nom }}{{ manual_unit_form.nom.errors }}</div>
+      <div class="row">
+        <div class="col-5 mb-2">{{ manual_unit_form.capacity.label_tag }}{{ manual_unit_form.capacity }}{{ manual_unit_form.capacity.errors }}</div>
+        <div class="col-7 mb-2">{{ manual_unit_form.tipus.label_tag }}{{ manual_unit_form.tipus }}{{ manual_unit_form.tipus.errors }}</div>
+      </div>
+      <div class="mb-2">{{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}</div>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Crear bloc</button>
+    </form>
+  {% else %}
+    <div class="text-muted small">Crea primer una fase avancada. La preliminar/default no es crea aqui.</div>
+  {% endif %}
+</section>
+
+<section class="phase-panel">
+  <h5>Crear bloc per particio</h5>
+  {% if phases %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="create_partition_unit">
+      <div class="mb-2">
+        <label for="partition-fase">Fase avancada</label>
+        <select id="partition-fase" name="fase_id" class="form-select" required>
+          {% for phase in phases %}
+            <option value="{{ phase.id }}">{{ phase.nom }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-2">{{ partition_unit_form.label.label_tag }}{{ partition_unit_form.label }}{{ partition_unit_form.label.errors }}</div>
+      <div class="mb-2">{{ partition_unit_form.key.label_tag }}{{ partition_unit_form.key }}{{ partition_unit_form.key.errors }}</div>
+      <div class="mb-2">{{ partition_unit_form.capacity.label_tag }}{{ partition_unit_form.capacity }}{{ partition_unit_form.capacity.errors }}</div>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Crear bloc</button>
+    </form>
+  {% else %}
+    <div class="text-muted small">Disponible quan hi hagi una fase avancada.</div>
+  {% endif %}
+</section>

@@ -368,9 +368,13 @@
   - casos operativament petits on una fase implicita es suficient
 
 ### Fase implicita
-- Per preservar compatibilitat, cada `CompeticioAparell` existent ha de poder tenir una fase implicita.
-- Durant migracions, es pot crear una fase `Fase unica` per cada `CompeticioAparell`.
-- Totes les notes existents es poden considerar assignades conceptualment a aquesta fase unica.
+- La fase inicial/preliminar es implicita i no es persisteix com a `CompeticioAparellFase`.
+- La fase inicial surt del flux existent:
+  - grups creats a inscripcions
+  - grups o series presents al planner de rotacions
+  - notes actuals scoped per `CompeticioAparell`
+- El codi `DEFAULT` queda reservat i no s'ha de crear des de la capa de fases.
+- Si un aparell no te fases avancades configurades, no cal cap registre de fase.
 
 ### Grups actuals
 - `GrupCompeticio` continua existint.
@@ -541,14 +545,14 @@
 
 ### Objectiu
 - Introduir `CompeticioAparellFase` com a estructura de dades.
-- Crear fase unica per defecte.
+- No crear cap fase unica/default persistent.
+- La fase inicial/preliminar continua sent implicita i gestionada per inscripcions + rotacions.
 - Encara no obligar el scoring runtime a usar fase.
 
 ### Write set principal
 - nou model a `models/competicio.py` o modul nou dedicat
 - migracio nova
 - admin basic
-- serveis de creacio/assegurament de fase default
 - tests de migracio/model
 
 ### Tasques
@@ -561,11 +565,8 @@
   - `ordre`
   - `estat`
   - `config`
-- Crear fase unica per cada `CompeticioAparell` existent.
-- Afegir helper:
-  - `ensure_default_phase_for_comp_aparell`
-- Afegir propietat o helper:
-  - `default_phase`
+- No fer backfill de fases per aparells existents.
+- Reservar el codi `DEFAULT` per evitar que la UI o serveis crein una fase inicial falsa.
 
 ### Guardrails
 - No tocar encara `ScoreEntry`.
@@ -573,12 +574,13 @@
 - No tocar encara `JudgeDeviceToken`.
 
 ### Tests
-- Cada `CompeticioAparell` nou crea o pot assegurar fase unica.
+- Un `CompeticioAparell` nou no crea cap fase automatica.
 - Una fase no pot pertanyer a un `CompeticioAparell` d'una altra competicio.
 - L'arbre no permet parent d'una altra instancia.
+- El codi `DEFAULT` queda rebutjat.
 
 ### Tancament Implementat
-- Estat: completada.
+- Estat: completada i reconduida.
 - Implementacio feta:
   - Afegit `CompeticioAparellFase` a `models/competicio.py`.
   - Camps implementats:
@@ -608,20 +610,13 @@
     - `config` ha de ser un objecte JSON
   - Afegit admin basic per `CompeticioAparellFase`.
   - Afegit paquet de servei `services/fases`.
-  - Afegits helpers:
-    - `ensure_default_phase_for_comp_aparell`
-    - `get_default_phase_for_comp_aparell`
-  - La fase unica per defecte usa:
-    - `nom`: `Fase unica`
-    - `codi`: `DEFAULT`
-    - `estat`: `published`
-    - `config.source_mode`: `legacy_default`
-    - `config.implicit`: `true`
-  - El helper de fase default es idempotent i usa `get_or_create`.
+  - Rebutjat el codi reservat `DEFAULT`.
+  - Eliminats els helpers de fase default persistent.
+  - La fase inicial/preliminar queda fora del model de fases i continua vivint al flux existent d'inscripcions + rotacions.
 - Migracio:
   - `0060_competicioaparellfase.py`.
   - Crea la taula de fases.
-  - Fa backfill d'una fase `DEFAULT / Fase unica` per cada `CompeticioAparell` existent.
+  - No fa backfill de cap fase default.
 - Guardrails respectats:
   - No s'ha afegit dimensio de fase a `ScoreEntry`.
   - No s'ha afegit dimensio de fase a `TeamScoreEntry`.
@@ -635,11 +630,10 @@
   - unicitat de codi dins un aparell local
   - validacio de parent d'un altre aparell local
   - validacio de `comp_aparell` d'una altra competicio
-  - helper de fase default
-  - idempotencia del helper
-  - fases default separades per instancia local
+  - no creacio automatica de fases
+  - codi `DEFAULT` reservat
   - guardrail que `ScoreEntry` i `TeamScoreEntry` encara no tenen camp de fase
-  - backfill de migracio `0060`
+  - migracio `0060` sense backfill
 - Verificacio executada:
   - `python -m py_compile` dels fitxers Python tocats.
   - `docker compose exec -T web python manage.py check`.
@@ -647,8 +641,8 @@
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases --verbosity 1 --keepdb`.
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.access.test_aparell_catalog_ownership --verbosity 1 --keepdb`.
 - Notes per fases seguents:
-  - La fase default ja existeix com a estructura persistent, pero encara no filtra ni separa notes.
-  - La Fase 3 pot construir `ProgramUnit` i `ProgramUnitSlot` sota `CompeticioAparellFase`.
+  - No hi ha fase default persistent.
+  - La Fase 3 pot construir `ProgramUnit` i `ProgramUnitSlot` nomes sota fases avancades.
   - La Fase 5 podra fer que `ClassificacioConfig` apunti a una fase, pero aquesta iteracio ho ha deixat expressament fora.
   - La Fase 8 haura d'afegir fase a `ScoreEntry` i `TeamScoreEntry`; aquesta iteracio nomes deixa el punt d'ancoratge.
 
@@ -731,7 +725,6 @@
   - `fill_program_unit_slots`
   - `create_units_one_per_partition`
   - `create_units_split_by_capacity`
-  - `create_units_from_base_groups`
   - `next_program_unit_order`
 - Guardrails respectats:
   - No s'ha modificat `ScoreEntry`.
@@ -749,7 +742,6 @@
   - mateixa inscripcio present en slots de fases diferents
   - generacio `one_unit_per_partition`
   - generacio `split_by_capacity`
-  - generacio `from_base_groups`
   - guardrail que `ScoreEntry` i `TeamScoreEntry` encara no tenen `fase` ni `program_unit`
 - Verificacio executada:
   - `python -m py_compile` dels fitxers Python tocats.
@@ -824,11 +816,10 @@
     - `services/fases/planner.py`
   - El planner permet:
     - veure fases d'un `CompeticioAparell`
-    - assegurar i mostrar la fase default
-    - crear fases filles o fases paral.leles
+    - no crear ni mostrar fase default persistent
+    - crear fases avancades filles o paral.leles
     - crear unitats buides amb N slots
     - crear una unitat per particio manual
-    - generar unitats des de `GrupCompeticio` base
     - veure slots i subjectes assignats quan ja existeixen
 - Guardrails respectats:
   - No s'ha barrejat amb el builder de classificacions.
@@ -847,13 +838,12 @@
   - Preview sofisticada o drag-and-drop.
   - Publicacio real cap al portal de jutges.
 - Tests afegits:
-  - el planner mostra fase default i unitats sense exposar payloads de score
+  - el planner no crea fase default en obrir-se
+  - el planner mostra fases avancades i unitats sense exposar payloads de score
   - la llista d'aparells enllaça al planner
-  - es pot crear una fase filla via POST
+  - es pot crear una fase avancada via POST
   - es pot crear una unitat manual amb slots buits via POST
   - es pot crear una unitat de particio via POST
-  - es poden generar unitats des de grups base via POST
-  - la generacio des del planner no toca `ScoreEntry` ni `TeamScoreEntry`
 - Verificacio executada:
   - `python -m py_compile` dels fitxers Python tocats.
   - `docker compose exec -T web python manage.py check`.
@@ -863,7 +853,133 @@
 - Notes per fases seguents:
   - La Fase 5 pot afegir `fase_id` o scope equivalent a classificacions.
   - La Fase 6 pot usar les unitats i slots existents per omplir fases desti des de classificacions font.
-  - Les plantilles reutilitzables poden quedar com una Fase 4b o com a extensio abans de Fase 10.
+  - Les plantilles reutilitzables poden quedar com una extensio abans de Fase 10.
+
+## Fase 4b. UI Comuna De Fases Per Competicio
+
+### Objectiu
+- Reconduir el planner basic de fases cap a una pantalla comuna de competicio.
+- Tenir una sola entrada `Fases` on es vegin tots els aparells locals.
+- Mantenir cada arbre de fases scoped per `CompeticioAparell`.
+- Fer evident que la fase preliminar/default es implicita i no editable des de fases.
+
+### Decisio UI
+- La pantalla ha de ser comuna per competicio, no una pantalla aillada per aparell.
+- Dins la pantalla comuna:
+  - selector o tabs d'aparells
+  - resum global d'estat per aparell
+  - arbre de fases de l'aparell seleccionat
+  - panell de blocs `ProgramUnit` de l'aparell seleccionat
+- La preliminar/base nomes es mostra com a resum informatiu:
+  - origen: grups creats a inscripcions
+  - programacio: planner de rotacions
+  - no te formularis d'edicio dins fases
+
+### Tasques
+- Crear o reconduir la ruta de fases cap a una vista comuna de competicio.
+- Mostrar tots els `CompeticioAparell` actius amb estat resumit:
+  - sense fases avancades
+  - amb fases configurades
+  - amb blocs generats
+  - amb blocs pendents de programar a rotacions
+- En seleccionar un aparell:
+  - mostrar arbre de fases avancades
+  - crear fase filla o paral.lela
+  - configurar criteris basics de pas i agrupacio
+  - generar o editar blocs `ProgramUnit`
+  - mostrar slots buits/omplerts quan existeixin
+- Afegir indicador de programacio a rotacions per cada `ProgramUnit`:
+  - `Pendent de programar`
+  - `Programat a rotacions`
+  - si es possible, mostrar franja/estacio on esta programat
+- Afegir enllac directe al planner de rotacions filtrable o amb context visual cap a l'aparell/bloc.
+
+### Guardrails
+- No crear fase default persistent.
+- No permetre editar la preliminar/base des de fases.
+- No duplicar la programacio de rotacions dins fases.
+- No fer puntuable una `ProgramUnit` nomes pel fet d'estar programada a rotacions.
+- No tocar `ScoreEntry`, `TeamScoreEntry` ni portal de jutges en aquesta fase.
+
+### Criteris De Tancament
+- Des de la pantalla comuna es pot entendre l'estat de fases de tots els aparells.
+- Es pot crear i mantenir l'arbre de fases avancades per aparell.
+- Es poden generar blocs `ProgramUnit` des de la UI comuna.
+- Cada bloc mostra clarament si ja esta programat a rotacions.
+- El flux mental queda clar:
+  - fases defineix arbre, criteris i blocs previstos
+  - rotacions agenda aquests blocs
+  - scoring/jutges vindran en una fase posterior
+
+### Tests
+- La vista comuna mostra tots els aparells actius de la competicio.
+- La vista no crea ni mostra cap fase default persistent.
+- Crear una fase avancada des de l'aparell seleccionat persisteix correctament.
+- Crear `ProgramUnit` des de l'aparell seleccionat persisteix sota la fase correcta.
+- Un bloc programat a rotacions apareix marcat com a programat.
+- Un bloc no programat apareix marcat com a pendent.
+
+### Tancament Implementat
+- Estat: completada.
+- Implementacio feta:
+  - S'ha reconduit la UI de fases cap a una pantalla comuna per competicio.
+  - Afegida ruta comuna:
+    - `trampoli_fases`
+    - `competicio/<pk>/notes/trampoli/fases/`
+  - La ruta antiga per aparell continua existint com a entrada compatible:
+    - `trampoli_aparell_fases`
+    - `competicio/<pk>/notes/trampoli/aparells/<app_id>/fases/`
+  - La UI s'ha modularitzat dins el paquet `fases`, separant el context de vista, accions i presentacio del planner.
+  - Afegit paquet de vistes:
+    - `views/competition/fases/planner.py`
+    - `views/competition/fases/actions.py`
+  - Afegit servei de context:
+    - `services/fases/dashboard.py`
+  - Afegits templates parcials:
+    - `templates/competicio/fases/planner.html`
+    - `templates/competicio/fases/_header.html`
+    - `templates/competicio/fases/_app_selector.html`
+    - `templates/competicio/fases/_forms.html`
+    - `templates/competicio/fases/_phase_flow.html`
+    - `templates/competicio/fases/_phase_node.html`
+    - `templates/competicio/fases/_program_unit_row.html`
+  - La pantalla comuna permet veure els aparells locals de la competicio i seleccionar l'aparell actiu.
+  - La pantalla queda continguda dins una superficie general amb fons propi per no confondre's amb la imatge/fons global de l'aplicacio.
+  - Cada aparell conserva el seu arbre de fases avancades scoped per `CompeticioAparell`.
+  - La preliminar implicita es mostra com a node arrel visual de l'arbre, encara que no existeixi com a registre persistent.
+  - Les fases sense `parent` indiquen explicitament que pengen visualment de la preliminar implicita.
+  - La gestio de `ProgramUnit` queda integrada en el flux de fases sense substituir el planner de rotacions.
+  - Cada `ProgramUnit` mostra si esta programat a rotacions o pendent de programar.
+  - Quan una unitat esta programada, la UI mostra una etiqueta de franja/estacio.
+  - Afegida accio segura d'eliminacio de fases:
+    - nomes es poden eliminar fases buides
+    - nomes es poden eliminar fases sense fases filles
+    - les fases amb blocs o branques mostren l'accio bloquejada
+  - La preliminar/base queda tractada com a estat implicit i informatiu, no com a fase editable.
+- Guardrails respectats:
+  - No s'ha creat cap fase default persistent.
+  - No s'ha fet editable la preliminar/base des de la UI de fases.
+  - No s'ha duplicat la programacio de rotacions dins fases.
+  - No s'ha convertit cap `ProgramUnit` en puntuable pel sol fet d'existir, estar prevista o estar programada a rotacions.
+  - No s'han canviat `ScoreEntry`, `TeamScoreEntry` ni el portal de jutges.
+- Tests afegits/ajustats:
+  - La vista comuna mostra tots els aparells locals actius i respecta l'aparell seleccionat.
+  - La vista no crea fase default en obrir-se.
+  - La llista d'aparells enllaca a la nova ruta comuna amb `?app=<id>`.
+  - La UI marca unitats programades i pendents de programar a rotacions.
+  - Una fase buida i sense fills es pot eliminar.
+  - Una fase amb blocs no es pot eliminar des de la UI.
+  - Els POSTs legacy de crear fase, bloc manual i bloc per particio continuen funcionant.
+- Verificacio executada:
+  - `docker compose exec -T web python manage.py check`.
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases --verbosity 1 --keepdb`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.rotacions.test_program_unit_assignments --verbosity 1 --keepdb`.
+- Notes per fases seguents:
+  - La Fase 5 pot afegir scope de classificacions per fase sense assumir cap fase default persistent.
+  - La Fase 6 pot omplir slots de `ProgramUnit` creats des de la UI comuna.
+  - La Fase 7 pot connectar el planner de rotacions amb les unitats de fases avancades mantenint fases com a definicio i rotacions com a agenda.
+  - La Fase 8 i la Fase 10 hauran de decidir quan una fase o unitat passa a ser puntuable i visible per jutges.
 
 ## Fase 5. Classificacions Scoped Per Fase
 
@@ -881,7 +997,7 @@
 ### Tasques
 - Afegir camp o schema per indicar `fase_id`.
 - Adaptar loaders per carregar `ScoreEntry`/`TeamScoreEntry` de la fase quan el runtime ja la suporti.
-- En fase transitoria, la fase default pot equivaler al comportament actual.
+- En fase transitoria, l'absencia de fase explicita equival al comportament inicial/preliminar actual.
 - Builder ha de mostrar:
   - aparell local
   - fase
@@ -893,8 +1009,49 @@
 
 ### Tests
 - Classificacio legacy continua funcionant.
-- Classificacio scoped a fase default dona el mateix resultat que abans.
+- Classificacio sense fase explicita dona el mateix resultat que abans.
 - Classificacio scoped a fase avancada nomes veu slots/participants/notes d'aquella fase.
+
+### Tancament implementat
+- Afegit scope de fase dins el schema de classificacions:
+  - `scope.mode = implicit|phase`
+  - `scope.fase_id`
+  - `scope.mode = per_app`
+  - `scope.apps[comp_aparell_id] = implicit|phase`
+- La preliminar implicita continua sent el default i no es crea cap fase persistent.
+- Afegit servei `services/classificacions/phase_scope.py` per normalitzar i validar l'abast de fase.
+- El motor de classificacions propaga el scope fins als loaders.
+- En mode transitori, una classificacio scoped a fase avancada filtra participants pels `ProgramUnitSlot` de la fase:
+  - `subject_kind=inscripcio`
+  - `subject_kind=team_unit`
+  - estats `filled` o `manual`
+- El schema legacy i el normalitzador de particions preserven el nou `scope`.
+- El builder de classificacions exposa les fases configurades de la competicio i permet seleccionar:
+  - `Preliminar implicita`
+  - una fase avancada compatible amb els aparells seleccionats.
+- En classificacions multiaparell, el builder mostra una fila per aparell seleccionat:
+  - cada aparell pot quedar a `Preliminar implicita`
+  - o apuntar a una fase avancada propia.
+- Validacions afegides:
+  - la fase ha d'existir dins la mateixa competicio
+  - si hi ha aparells seleccionats, la fase ha de pertanyer a un d'aquests aparells.
+  - en `per_app`, cada fase ha de pertanyer exactament a l'aparell de la seva fila.
+- No s'ha afegit cap camp de fase a `ScoreEntry` ni a `TeamScoreEntry`; aixo queda per la Fase 8.
+- No s'ha convertit `ClassificacioConfig` en propietari de cap fase.
+- Tests afegits:
+  - `competicions_trampoli.tests.classificacions.test_phase_scope`
+  - cobertura de filtre per slots de fase
+  - cobertura de filtre independent per aparell amb `scope.per_app`
+  - cobertura de validacio de fase vs aparell seleccionat
+  - cobertura de persistencia del scope.
+- Verificacio:
+  - `docker compose exec -T web python manage.py check`
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_phase_scope competicions_trampoli.tests.classificacions.test_builder_hydration competicions_trampoli.tests.fases --verbosity 1 --keepdb`
+
+### Notes per fases seguents
+- La Fase 6 pot consumir classificacions scoped com a font per omplir slots d'una fase desti.
+- La Fase 8 haura de decidir la separacio real de notes per fase/unitat i ajustar el portal de jutges.
 
 ## Fase 6. Regles De Pas I Ompliment De Slots
 
@@ -962,7 +1119,7 @@
 
 ### Opcio B
 - Crear taula nova:
-  - `RotacioProgramUnitAssignacio`
+  - `RotacioAssignacioProgramUnit`
 
 ### Recomanacio inicial
 - Preferir Opcio B si evita fer massa ambigu el model actual.
@@ -979,6 +1136,39 @@
 - Una unitat buida es pot programar.
 - Una unitat omplerta conserva franja/estacio.
 - Les rotacions legacy continuen funcionant.
+
+### Tancament Implementat
+- Estat: completada.
+- Implementacio feta:
+  - Afegit `RotacioAssignacioProgramUnit` com a taula d'enllac entre una cel.la del planner (`RotacioAssignacio`) i una `ProgramUnit`.
+  - `RotacioAssignacio` continua sent el contracte estable de la graella de rotacions.
+  - Les claus del planner passen a admetre:
+    - `g:<id>` per grups d'inscripcions
+    - `s:<id>` per series d'equip
+    - `pu:<id>` per blocs/unitats de fases avancades
+  - El backend valida que una `ProgramUnit` nomes es pugui programar a una estacio del seu mateix `CompeticioAparell`.
+  - El planner de rotacions mostra les `ProgramUnit` en una seccio propia de `Fases`, separada de `Grups` i `Equips`.
+  - El desat de rotacions persisteix els enllacos `pu:<id>` i els retorna en el `grid_json` en recarregar.
+  - L'extrapolador de franges conserva les unitats programables a la seva estacio d'aparell, sense fer-les rotar cap a altres aparells.
+  - L'export de rotacions carrega tambe els enllacos a `ProgramUnit` i pot resoldre labels de blocs de fase.
+- Migracio:
+  - `0062_rotacioassignacioprogramunit.py`.
+- Guardrails respectats:
+  - No s'ha fet que fases programin literalment la competicio.
+  - No s'ha canviat el runtime de notes ni de jutges.
+  - No s'han eliminat ni modificat els fluxos legacy de grups i series.
+  - No s'ha convertit la fase preliminar/default en cap registre persistent.
+- Tests afegits:
+  - `competicions_trampoli.tests.rotacions.test_program_unit_assignments`.
+  - Cobertura de sidebar `pu:<id>`, persistencia de l'enllac, recarrega de grid, i compatibilitat legacy de grups/series.
+- Verificacio executada:
+  - `python -m py_compile` dels fitxers Python tocats.
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
+  - `docker compose exec -T web python manage.py check`.
+  - `docker compose exec -T web python manage.py migrate`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.rotacions.test_program_unit_assignments --verbosity 1 --keepdb`.
+- Nota de verificacio:
+  - El paquet complet `competicions_trampoli.tests.rotacions` continua mostrant una fallada existent en `RotationOrderingDisplayTests.test_judge_portal_uses_first_app_franja_order_by_default_and_allows_override`, esperant `Base 3` al portal de jutges. La fallada es reprodueix aillada amb test DB neta i no toca el flux `ProgramUnit` implementat en aquesta fase.
 
 ## Fase 8. Scoring I Notes Scoped Per Fase
 
@@ -1003,16 +1193,16 @@
 - Actualitzar resolucio de subjectes:
   - subjectes puntuables provenen de slots publicats de la fase.
 - Actualitzar panell de notes per mostrar fases i unitats.
-- Preservar comportament legacy via fase default.
+- Preservar comportament legacy quan no hi ha fase explicita.
 
 ### Guardrails
-- Migracio de dades ha de mapar scores existents a fase default.
+- Migracio de dades ha de deixar scores existents sense fase explicita o mapejats a un valor nul/implicit compatible.
 - No perdre videos existents.
 - No trencar endpoints legacy sense fase explicita.
 
 ### Tests
 - Mateixa inscripcio pot tenir score a preliminar i final.
-- Score legacy continua accessible via fase default.
+- Score legacy continua accessible sense fase explicita.
 - Panell de notes nomes mostra slots publicats.
 - Slots pendents no son puntuables.
 
@@ -1046,7 +1236,7 @@
 ### Guardrails
 - No mostrar fases pendents com puntuables.
 - No deixar que un jutge entri a slots `empty` o `pending_decision`.
-- Els tokens antics han de continuar sent utilitzables en fase default.
+- Els tokens antics han de continuar sent utilitzables en el flux inicial/preliminar implicit.
 
 ### Tests
 - Portal home mostra preliminar oberta.
@@ -1094,7 +1284,7 @@
 ### Batch 1
 - S1: multiples instancies locals d'aparell
 - S2: model de fases
-- S3: proves de compatibilitat i migracio de fase default
+- S3: proves de compatibilitat sense fase default persistent
 
 ### Batch 2
 - S4: unitats programables i slots
@@ -1174,12 +1364,12 @@
 - Es poden confirmar particions concretes.
 - Les reserves son estat suportat.
 - El portal de jutges mostra nomes fases publicades i puntuables.
-- Les competicions legacy continuen funcionant amb fase default.
+- Les competicions legacy continuen funcionant sense fase explicita.
 
 ## Suite De Verificacio Recomanada
 - Tests de models i migracions:
   - aparells locals duplicats
-  - fase default
+  - no backfill de fase default
   - unitats i slots
 - Tests de classificacions:
   - legacy

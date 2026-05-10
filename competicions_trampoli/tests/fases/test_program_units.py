@@ -3,17 +3,14 @@ from django.db import IntegrityError
 from django.test import TestCase
 
 from ..base import _BaseTrampoliDataMixin
-from ...models.inscripcions import GrupCompeticio, Inscripcio
 from ...models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
 from ...models.scoring import ScoreEntry, TeamScoreEntry
 from ...services.fases import (
     SlotSubject,
     create_program_unit_from_subjects,
     create_program_unit_with_empty_slots,
-    create_units_from_base_groups,
     create_units_one_per_partition,
     create_units_split_by_capacity,
-    ensure_default_phase_for_comp_aparell,
 )
 
 
@@ -22,7 +19,13 @@ class ProgramUnitModelTests(_BaseTrampoliDataMixin, TestCase):
         self.competicio = self._create_competicio("Comp program units")
         self.aparell = self._create_aparell("TRA", "Trampoli")
         self.comp_aparell = self._create_comp_aparell(self.competicio, self.aparell)
-        self.fase = ensure_default_phase_for_comp_aparell(self.comp_aparell)
+        self.fase = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Semifinal",
+            codi="SEMI",
+            ordre=2,
+        )
 
     def test_can_create_program_unit_with_empty_slots(self):
         unit = create_program_unit_with_empty_slots(
@@ -73,19 +76,19 @@ class ProgramUnitModelTests(_BaseTrampoliDataMixin, TestCase):
 
     def test_same_subject_can_exist_in_slots_of_different_phases(self):
         inscripcio = self._create_inscripcio(self.competicio, "Participant A")
-        prelim = self.fase
+        semifinal = self.fase
         final = CompeticioAparellFase.objects.create(
             competicio=self.competicio,
             comp_aparell=self.comp_aparell,
-            parent=prelim,
+            parent=semifinal,
             nom="Final",
             codi="FINAL",
-            ordre=2,
+            ordre=3,
         )
 
-        prelim_unit = create_program_unit_from_subjects(
-            fase=prelim,
-            nom="Preliminar",
+        semifinal_unit = create_program_unit_from_subjects(
+            fase=semifinal,
+            nom="Semifinal",
             subjects=[SlotSubject("inscripcio", inscripcio.id)],
         )
         final_unit = create_program_unit_from_subjects(
@@ -94,8 +97,8 @@ class ProgramUnitModelTests(_BaseTrampoliDataMixin, TestCase):
             subjects=[SlotSubject("inscripcio", inscripcio.id)],
         )
 
-        self.assertNotEqual(prelim_unit.id, final_unit.id)
-        self.assertEqual(prelim_unit.slots.get().subject_id, inscripcio.id)
+        self.assertNotEqual(semifinal_unit.id, final_unit.id)
+        self.assertEqual(semifinal_unit.slots.get().subject_id, inscripcio.id)
         self.assertEqual(final_unit.slots.get().subject_id, inscripcio.id)
 
     def test_score_entry_contract_still_has_no_phase_or_program_unit(self):
@@ -113,7 +116,13 @@ class ProgramUnitGenerationTests(_BaseTrampoliDataMixin, TestCase):
         self.competicio = self._create_competicio("Comp generators")
         self.aparell = self._create_aparell("TRA", "Trampoli")
         self.comp_aparell = self._create_comp_aparell(self.competicio, self.aparell)
-        self.fase = ensure_default_phase_for_comp_aparell(self.comp_aparell)
+        self.fase = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Semifinal",
+            codi="SEMI",
+            ordre=2,
+        )
 
     def test_create_units_one_per_partition(self):
         units = create_units_one_per_partition(
@@ -148,40 +157,3 @@ class ProgramUnitGenerationTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(len(units), 2)
         self.assertEqual(units[0].slots.filter(status=ProgramUnitSlot.Status.FILLED).count(), 2)
         self.assertEqual(units[1].slots.filter(status=ProgramUnitSlot.Status.FILLED).count(), 1)
-
-    def test_create_units_from_base_groups_fills_inscripcio_slots(self):
-        group = GrupCompeticio.objects.create(
-            competicio=self.competicio,
-            display_num=1,
-            legacy_num=1,
-            nom="Grup A",
-        )
-        first = Inscripcio.objects.create(
-            competicio=self.competicio,
-            nom_i_cognoms="Participant A",
-            grup=1,
-            grup_competicio=group,
-            ordre_sortida=1,
-        )
-        second = Inscripcio.objects.create(
-            competicio=self.competicio,
-            nom_i_cognoms="Participant B",
-            grup=1,
-            grup_competicio=group,
-            ordre_sortida=2,
-        )
-
-        units = create_units_from_base_groups(self.fase)
-
-        self.assertEqual(len(units), 1)
-        unit = units[0]
-        self.assertEqual(unit.nom, "Grup A")
-        self.assertEqual(unit.tipus, ProgramUnit.Tipus.GROUP)
-        self.assertEqual(unit.capacity, 2)
-        self.assertEqual(
-            list(unit.slots.order_by("slot_index").values_list("subject_kind", "subject_id", "status")),
-            [
-                ("inscripcio", first.id, ProgramUnitSlot.Status.FILLED),
-                ("inscripcio", second.id, ProgramUnitSlot.Status.FILLED),
-            ],
-        )

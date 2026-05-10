@@ -10,6 +10,7 @@ from .classificacio_templates import (
     normalize_particions_schema,
     split_particio_custom_values,
 )
+from .phase_scope import normalize_schema_phase_scope, validate_phase_scope_for_competicio
 from .ties.pipeline_builder import ALLOWED_TIE_INPUT_SOURCE_MODES, normalize_tie_input_source
 from .ties.validation import materialize_desempat_for_validation, validate_team_pool_tie_contract
 from .pipeline_runtime import build_main_scoring_pipeline_from_schema
@@ -2422,6 +2423,7 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         persist=False,
     )
     schema_local = normalize_particions_schema(schema_local or {})
+    schema_local = normalize_schema_phase_scope(schema_local)
     errors = list(legacy_info.get("compatibility_errors") or [])
     details = []
     errors.extend(_validate_filtres_schema({**schema_local, "filtres": raw_filters_for_validation}))
@@ -2431,6 +2433,7 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     assignment_source = equips_cfg.get("assignment_source") or normalize_equip_assignment_source(raw_assignment_source)
     context_code = normalize_equip_context_code(assignment_source.get("context_code") or equips_cfg.get("context_code"))
     selected_app_ids = _selected_app_ids_from_schema(schema_local)
+    errors.extend(validate_phase_scope_for_competicio(competicio, schema_local, selected_app_ids=selected_app_ids))
     selected_apps = {
         ca.id: ca
         for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("aparell")

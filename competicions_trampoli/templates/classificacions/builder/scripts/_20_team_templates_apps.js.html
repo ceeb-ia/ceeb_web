@@ -754,6 +754,155 @@
     return getSingleCompatibleAppId(first?.id);
   }
 
+  function normalizeSinglePhaseScope(rawScope) {
+    const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope) ? rawScope : {};
+    const phaseId = Number(scope.fase_id || (scope.fase && (scope.fase.id || scope.fase.fase_id)) || 0);
+    return Number.isFinite(phaseId) && phaseId > 0
+      ? { mode: "phase", fase_id: phaseId }
+      : { mode: "implicit", fase_id: null };
+  }
+
+  function normalizePhaseScope(rawScope) {
+    const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope) ? rawScope : {};
+    const rawApps = scope.apps && typeof scope.apps === "object" && !Array.isArray(scope.apps) ? scope.apps : {};
+    if (String(scope.mode || "").trim().toLowerCase() === "per_app" || Object.keys(rawApps).length) {
+      const apps = {};
+      Object.entries(rawApps).forEach(([rawAppId, appScope]) => {
+        const appId = Number(rawAppId);
+        if (!Number.isFinite(appId) || appId <= 0) return;
+        apps[String(appId)] = normalizeSinglePhaseScope(appScope);
+      });
+      if (Object.keys(apps).length) {
+        return { mode: "per_app", fase_id: null, apps };
+      }
+    }
+    return normalizeSinglePhaseScope(scope);
+  }
+
+  function getPhaseById(rawPhaseId) {
+    const phaseId = Number(rawPhaseId);
+    if (!Number.isFinite(phaseId) || phaseId <= 0) return null;
+    return (FASES || []).find(phase => Number(phase.id) === phaseId) || null;
+  }
+
+  function phaseChoicesForApp(rawAppId) {
+    const selectedAppId = Number(rawAppId);
+    if (!Number.isFinite(selectedAppId) || selectedAppId <= 0) return [];
+    return (FASES || []).filter(phase => {
+      const appId = Number(phase.comp_aparell_id || 0);
+      return appId === selectedAppId;
+    });
+  }
+
+  function phaseScopeForApp(rawScope, rawAppId) {
+    const appId = Number(rawAppId);
+    const scope = normalizePhaseScope(rawScope);
+    if (!Number.isFinite(appId) || appId <= 0) return { mode: "implicit", fase_id: null };
+    if (scope.mode === "per_app") {
+      return normalizeSinglePhaseScope((scope.apps || {})[String(appId)] || {});
+    }
+    if (scope.mode === "phase" && scope.fase_id) {
+      const phase = getPhaseById(scope.fase_id);
+      if (phase && Number(phase.comp_aparell_id) === appId) return scope;
+    }
+    return { mode: "implicit", fase_id: null };
+  }
+
+  function renderPhaseScopeSelect(rawScope) {
+    if (!els.phaseScopeRows && !els.fPhaseScope) return;
+    const scope = normalizePhaseScope(rawScope);
+    const selectedApps = selectedAparellIdsFromUI();
+    if (els.phaseScopeRows) {
+      els.phaseScopeRows.innerHTML = "";
+      selectedApps.forEach(appId => {
+        const app = getAparellById(appId);
+        const appScope = phaseScopeForApp(scope, appId);
+        const row = document.createElement("div");
+        row.className = "row align-items-center mb-2";
+        const labelCol = document.createElement("div");
+        labelCol.className = "col-12 col-md-4 small font-weight-bold";
+        labelCol.textContent = app?.nom || `Aparell ${appId}`;
+        const selectCol = document.createElement("div");
+        selectCol.className = "col-12 col-md-8";
+        const select = document.createElement("select");
+        select.className = "form-control form-control-sm";
+        select.dataset.phaseScopeApp = String(appId);
+        select.innerHTML = '<option value="">Preliminar implicita</option>';
+        const seen = new Set();
+        phaseChoicesForApp(appId).forEach(phase => {
+          seen.add(String(phase.id));
+          const opt = document.createElement("option");
+          opt.value = String(phase.id);
+          opt.textContent = phase.nom || `Fase ${phase.id}`;
+          select.appendChild(opt);
+        });
+        const selectedPhase = appScope.fase_id ? getPhaseById(appScope.fase_id) : null;
+        if (selectedPhase && !seen.has(String(selectedPhase.id))) {
+          const opt = document.createElement("option");
+          opt.value = String(selectedPhase.id);
+          opt.textContent = `${selectedPhase.nom || "Fase"} (fora de l'aparell)`;
+          select.appendChild(opt);
+        }
+        select.value = appScope.fase_id ? String(appScope.fase_id) : "";
+        selectCol.appendChild(select);
+        row.appendChild(labelCol);
+        row.appendChild(selectCol);
+        els.phaseScopeRows.appendChild(row);
+      });
+      if (!selectedApps.length) {
+        els.phaseScopeRows.innerHTML = "<div class=\"small text-muted\">Selecciona un aparell per definir l'abast.</div>";
+      }
+      if (els.phaseScopeHint) {
+        els.phaseScopeHint.textContent = selectedApps.length > 1
+          ? "Cada aparell pot usar la seva preliminar implicita o una fase avancada propia."
+          : "Usa la preliminar implicita o una fase avancada de l'aparell.";
+      }
+      return;
+    }
+
+    if (els.fPhaseScope) {
+      const selectedPhase = scope.fase_id ? getPhaseById(scope.fase_id) : null;
+      const choices = selectedApps.flatMap(appId => phaseChoicesForApp(appId));
+      els.fPhaseScope.innerHTML = '<option value="">Preliminar implicita</option>';
+      const seen = new Set();
+      choices.forEach(phase => {
+        seen.add(String(phase.id));
+        const opt = document.createElement("option");
+        opt.value = String(phase.id);
+        opt.textContent = `${phase.comp_aparell_nom || "Aparell"} / ${phase.nom}`;
+        els.fPhaseScope.appendChild(opt);
+      });
+      if (selectedPhase && !seen.has(String(selectedPhase.id))) {
+        const opt = document.createElement("option");
+        opt.value = String(selectedPhase.id);
+        opt.textContent = `${selectedPhase.comp_aparell_nom || "Aparell"} / ${selectedPhase.nom} (fora dels aparells seleccionats)`;
+        els.fPhaseScope.appendChild(opt);
+      }
+      els.fPhaseScope.value = scope.fase_id ? String(scope.fase_id) : "";
+    }
+  }
+
+  function readPhaseScopeFromUI() {
+    if (els.phaseScopeRows) {
+      const selectedApps = selectedAparellIdsFromUI();
+      const selects = Array.from(els.phaseScopeRows.querySelectorAll("select[data-phase-scope-app]"));
+      if (selectedApps.length <= 1) {
+        return normalizeSinglePhaseScope({ fase_id: selects[0]?.value || "" });
+      }
+      const apps = {};
+      selects.forEach(select => {
+        const appId = Number(select.dataset.phaseScopeApp || 0);
+        if (!Number.isFinite(appId) || appId <= 0) return;
+        apps[String(appId)] = normalizeSinglePhaseScope({ fase_id: select.value });
+      });
+      return Object.keys(apps).length
+        ? { mode: "per_app", fase_id: null, apps }
+        : { mode: "implicit", fase_id: null };
+    }
+    if (!els.fPhaseScope) return { mode: "implicit", fase_id: null };
+    return normalizeSinglePhaseScope({ fase_id: els.fPhaseScope.value });
+  }
+
   function filterPerAppMapByCompatibleIds(rawMap, allowedIds) {
     const out = {};
     if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return out;

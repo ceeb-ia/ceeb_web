@@ -1,0 +1,285 @@
+<style>
+  .phase-dashboard-shell {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 18px;
+    border: 1px solid #d7e0ea;
+    border-radius: 8px;
+    background: #f8fafc;
+    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.12);
+  }
+
+  .phase-dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .phase-dashboard-title h2 {
+    margin: 0;
+    font-size: 1.55rem;
+  }
+
+  .phase-dashboard-actions,
+  .phase-dashboard-stats,
+  .phase-app-tabs,
+  .phase-action-row,
+  .phase-unit-meta,
+  .phase-unit-statuses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .phase-dashboard-stats {
+    margin-top: 10px;
+  }
+
+  .phase-stat {
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #fff;
+    padding: 7px 10px;
+    min-width: 116px;
+  }
+
+  .phase-stat-value {
+    display: block;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .phase-stat-label {
+    display: block;
+    color: #607086;
+    font-size: 0.78rem;
+  }
+
+  .phase-app-tabs {
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+    margin-bottom: 16px;
+  }
+
+  .phase-app-tab {
+    display: grid;
+    gap: 2px;
+    min-width: 180px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #23364d;
+    background: transparent;
+    padding: 8px 10px;
+    text-decoration: none;
+  }
+
+  .phase-app-tab:hover {
+    background: #fff;
+    text-decoration: none;
+  }
+
+  .phase-app-tab.is-active {
+    background: #fff;
+    border-color: #9cc4e4;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+
+  .phase-app-tab-title {
+    font-weight: 700;
+  }
+
+  .phase-app-tab-detail {
+    color: #607086;
+    font-size: 0.78rem;
+  }
+
+  .phase-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .phase-dashboard-sidebar,
+  .phase-flow-stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  .phase-tree {
+    position: relative;
+    display: grid;
+    gap: 14px;
+    padding-left: 22px;
+  }
+
+  .phase-tree::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    border-left: 2px solid #c8d5e2;
+  }
+
+  .phase-tree-item {
+    position: relative;
+  }
+
+  .phase-tree-item::before {
+    content: "";
+    position: absolute;
+    left: -14px;
+    top: 22px;
+    width: 14px;
+    border-top: 2px solid #c8d5e2;
+  }
+
+  .phase-panel,
+  .phase-node,
+  .phase-unit-row,
+  .phase-empty {
+    border: 1px solid #dce4ee;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .phase-panel {
+    padding: 14px;
+  }
+
+  .phase-panel h5 {
+    font-size: 0.96rem;
+    margin-bottom: 10px;
+  }
+
+  .phase-flow-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .phase-flow-head h4 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+
+  .phase-node {
+    overflow: hidden;
+  }
+
+  .phase-node.is-base {
+    border-color: #b8cce0;
+  }
+
+  .phase-node-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 12px 14px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e9eef5;
+  }
+
+  .phase-node-header.is-base {
+    background: #f4f8fb;
+  }
+
+  .phase-parent-hint {
+    margin-top: 6px;
+    color: #607086;
+    font-size: 0.8rem;
+  }
+
+  .phase-node-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .phase-node-title strong {
+    font-size: 1rem;
+  }
+
+  .phase-node-body {
+    padding: 12px 14px 14px;
+  }
+
+  .phase-node-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .phase-unit-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .phase-unit-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+  }
+
+  .phase-unit-name {
+    font-weight: 700;
+  }
+
+  .phase-slot-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+  }
+
+  .phase-slot-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 8px;
+    border: 1px solid #dfe5ec;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #495057;
+    font-size: 0.8rem;
+  }
+
+  .phase-slot-chip.is-filled {
+    background: #ecfdf3;
+    border-color: #b7e4c7;
+    color: #1f6b3a;
+  }
+
+  .phase-empty {
+    padding: 16px;
+    background: #f8fafc;
+    color: #607086;
+  }
+
+  @media (max-width: 992px) {
+    .phase-dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-unit-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

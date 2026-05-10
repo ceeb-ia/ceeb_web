@@ -12,6 +12,7 @@ from ...shared.birth_year_ranges import (
     normalize_birth_year_range_partition_config,
 )
 from ..filters import normalize_classificacio_equips_cfg, normalize_classificacio_filters
+from ..phase_scope import normalize_phase_scope_payload
 from ..partitions import (
     normalize_particions_config,
     normalize_particions_v2_entries,
@@ -24,6 +25,10 @@ DEFAULT_SCHEMA = {
     "particions": [],
     "particions_v2": [],
     "particions_custom": {},
+    "scope": {
+        "mode": "implicit",
+        "fase_id": None,
+    },
     "particions_config": {
         BIRTH_YEAR_RANGE_PARTITION_CODE: {
             **DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
@@ -158,6 +163,7 @@ def merge_schema(schema):
     )
     out["particions_v2"] = part_entries
     out["particions"] = particio_codes_from_entries(part_entries)
+    out["scope"] = normalize_phase_scope_payload(raw.get("scope") or {})
     raw_custom = raw.get("particions_custom") or {}
     out["particions_custom"] = raw_custom if isinstance(raw_custom, dict) else {}
     out["particions_config"] = normalize_particions_config(raw.get("particions_config") or {})

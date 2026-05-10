@@ -68,7 +68,7 @@
               </td>
               <td class="text-right">
                 <a class="btn btn-sm btn-outline-primary"
-                   href="{% url 'trampoli_aparell_fases' pk=competicio.id app_id=ca.id %}">Fases</a>
+                   href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ ca.id }}">Fases</a>
                 <a class="btn btn-sm btn-outline-secondary"
                    href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                 

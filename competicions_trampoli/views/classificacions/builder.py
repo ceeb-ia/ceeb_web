@@ -13,7 +13,7 @@ from ...access import user_has_competicio_capability
 from ...live_cache import mark_live_dirty
 from ...models import Competicio, Equip, Inscripcio
 from ...models.classificacions import ClassificacioConfig
-from ...models.competicio import CompeticioAparell
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase
 from ...services.scoring.schema_resolution import schema_by_comp_aparell_id
 from ...services.classificacions.builder import (
     build_cfg_status,
@@ -242,6 +242,24 @@ class ClassificacionsHome(TemplateView):
                 }
             )
 
+        fase_payload = []
+        for fase in (
+            CompeticioAparellFase.objects
+            .filter(competicio=competicio, comp_aparell__in=aparells_cfg)
+            .select_related("comp_aparell")
+            .order_by("comp_aparell__ordre", "comp_aparell_id", "ordre", "id")
+        ):
+            fase_payload.append(
+                {
+                    "id": fase.id,
+                    "nom": fase.nom,
+                    "codi": fase.codi,
+                    "estat": fase.estat,
+                    "comp_aparell_id": fase.comp_aparell_id,
+                    "comp_aparell_nom": fase.comp_aparell.display_nom,
+                }
+            )
+
         equips_qs = (
             Equip.objects
             .filter(competicio=competicio)
@@ -270,6 +288,7 @@ class ClassificacionsHome(TemplateView):
                 "cfg_status": cfg_status_payload,
                 "cfg_statuses": cfg_status_payload,
                 "aparells": aparell_payload,
+                "fases": fase_payload,
                 "aparell_field_options": aparell_field_options,
                 "equips": equips_payload,
                 "equip_contexts": equip_contexts,

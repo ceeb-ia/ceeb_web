@@ -7,7 +7,7 @@ PREVIOUS = ("competicions_trampoli", "0059_competicioaparell_local_identity")
 TARGET = ("competicions_trampoli", "0060_competicioaparellfase")
 
 
-class Migration0060DefaultPhaseBackfillTests(TransactionTestCase):
+class Migration0060PhaseModelTests(TransactionTestCase):
     def setUp(self):
         super().setUp()
         self.executor = MigrationExecutor(connection)
@@ -17,7 +17,7 @@ class Migration0060DefaultPhaseBackfillTests(TransactionTestCase):
         self.executor.migrate(self.executor.loader.graph.leaf_nodes())
         super().tearDown()
 
-    def test_migration_backfills_default_phase_for_existing_competicio_aparell(self):
+    def test_migration_creates_phase_model_without_default_backfill(self):
         self.executor.migrate([PREVIOUS])
         previous_apps = self.executor.loader.project_state([PREVIOUS]).apps
         User = previous_apps.get_model("auth", "User")
@@ -41,9 +41,4 @@ class Migration0060DefaultPhaseBackfillTests(TransactionTestCase):
         target_apps = self.executor.loader.project_state([TARGET]).apps
         CompeticioAparellFase = target_apps.get_model("competicions_trampoli", "CompeticioAparellFase")
 
-        phase = CompeticioAparellFase.objects.get(comp_aparell_id=comp_aparell.id)
-        self.assertEqual(phase.competicio_id, competicio.id)
-        self.assertEqual(phase.nom, "Fase unica")
-        self.assertEqual(phase.codi, "DEFAULT")
-        self.assertEqual(phase.estat, "published")
-        self.assertEqual(phase.config.get("source_mode"), "legacy_default")
+        self.assertEqual(CompeticioAparellFase.objects.filter(comp_aparell_id=comp_aparell.id).count(), 0)
