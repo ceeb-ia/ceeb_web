@@ -2,7 +2,7 @@
   <div class="phase-flow-head">
     <div>
       <h4>{{ comp_aparell.display_nom }}</h4>
-      <div class="text-muted small">{{ comp_aparell.display_codi }} - {{ phase_count }} fases - {{ unit_count }} blocs</div>
+      <div class="text-muted small">{{ comp_aparell.display_codi }} - {{ phase_count }} fases - {{ unit_count }} unitats competitives</div>
     </div>
     <div class="phase-action-row">
       <a class="btn btn-sm btn-outline-secondary" href="{% url 'rotacions_planner' competicio.id %}">Obrir rotacions</a>
@@ -16,7 +16,7 @@
           <strong>Preliminar implicita</strong>
           <span class="badge badge-light border">DEFAULT reservat</span>
         </div>
-        <div class="text-muted small">Arrel visual de l'arbre. No es desa com a fase; representa el flux inicial existent.</div>
+        <div class="text-muted small">Arrel visual de l'arbre. No es desa com a fase; representa el flux inicial existent, les rotacions normals i les notes sense fase_id.</div>
       </div>
       <span class="badge badge-secondary">No editable aqui</span>
     </header>
@@ -33,6 +33,7 @@
   {% else %}
     <div class="phase-empty">
       Encara no hi ha fases avancades. La preliminar/default no es crea aqui: surt dels grups d'inscripcions i del planner de rotacions.
+      Crea una fase per preparar semifinals, finals o rondes posteriors d'aquest aparell.
     </div>
   {% endif %}
 </section>

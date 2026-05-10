@@ -1,6 +1,6 @@
   function applyUpdate(u){
     const subjectId = (u.subject_kind === "inscripcio") ? (u.inscripcio_id || u.subject_id) : u.subject_id;
-    const scoreKey = keyForSubject(u.subject_kind || "inscripcio", subjectId, u.exercici, u.comp_aparell_id);
+    const scoreKey = keyForSubject(u.subject_kind || "inscripcio", subjectId, u.exercici, u.comp_aparell_id, u.fase_id);
 
     // scoring_updates és un feed incremental: sincronitzem el store local
     // i deixem que el re-render del bloc complet governi la UI visible.
@@ -18,8 +18,11 @@
     rerenderTablesForScoreKey(scoreKey);
   }
   // --- Save ---
-  async function saveEntry(insId, ex, appId, inputsPatch){
+  async function saveEntry(insId, ex, appId, inputsPatch, faseId){
     const subject = SUBJECTS_BY_ID[String(insId)] || {};
+    const resolvedPhaseId = normalizeScorePhaseId(
+      faseId === undefined ? phaseIdFromScoreKey(executingSaveScoreKey) || undefined : faseId
+    );
     const res = await fetch(SAVE_URL,{
       method:"POST",
       headers:{
@@ -32,6 +35,7 @@
         subject_id: subject.subject_id || insId,
         exercici: ex,
         comp_aparell_id: appId,
+        fase_id: resolvedPhaseId || undefined,
         inputs_patch: inputsPatch,
       })
     });
@@ -49,7 +53,12 @@
   const timers=new Map();
   const pendingSaveFns = new Map();
   const pendingRemoteScoreKeys = new Set();
+  let executingSaveScoreKey = "";
   let pendingFocusRestoreDescriptor = null;
+  function phaseIdFromScoreKey(scoreKey){
+    const parts = String(scoreKey || "").split("|");
+    return parts.length >= 4 ? parts[3] : "";
+  }
   function scheduleSave(scoreKey, fn){
     const resolved = String(scoreKey || "");
     if(!resolved) return;
@@ -59,7 +68,14 @@
       timers.delete(resolved);
       const pendingFn = pendingSaveFns.get(resolved);
       pendingSaveFns.delete(resolved);
-      if(pendingFn) await pendingFn();
+      if(pendingFn){
+        executingSaveScoreKey = resolved;
+        try{
+          await pendingFn();
+        }finally{
+          executingSaveScoreKey = "";
+        }
+      }
     }, 250));
   }
 
@@ -70,7 +86,14 @@
     timers.delete(resolved);
     const pendingFn = pendingSaveFns.get(resolved);
     pendingSaveFns.delete(resolved);
-    if(pendingFn) await pendingFn();
+    if(pendingFn){
+      executingSaveScoreKey = resolved;
+      try{
+        await pendingFn();
+      }finally{
+        executingSaveScoreKey = "";
+      }
+    }
     return true;
   }
 
@@ -162,6 +185,7 @@
       appId: String(table.getAttribute("data-comp-aparell-id") || ""),
       exercici: String(table.getAttribute("data-exercici") || ""),
       group: String(table.getAttribute("data-group") || ""),
+      faseId: String(table.dataset.faseId || ""),
     };
   }
 
@@ -180,7 +204,9 @@
       `[data-exercici="${CSS.escape(String(descriptor.exercici || ""))}"]`,
       `[data-group="${CSS.escape(String(descriptor.group || ""))}"]`,
     ].join("");
-    return document.querySelector(sel);
+    return Array.from(document.querySelectorAll(sel)).find((table) => {
+      return String(table.dataset.faseId || "") === String(descriptor.faseId || "");
+    }) || null;
   }
 
   function isScoreInputFocusable(input){

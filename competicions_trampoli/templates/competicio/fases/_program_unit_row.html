@@ -2,9 +2,10 @@
   <div>
     <div class="phase-unit-name">{{ unit.nom }}</div>
     <div class="phase-unit-meta text-muted small">
-      <span>{{ unit.tipus }}</span>
-      <span>{{ unit.slots_count|default:unit.slots.count }} slots</span>
-      {% if unit.partition_key %}<span>{{ unit.partition_key }}</span>{% endif %}
+      <span>{{ unit.get_tipus_display }}</span>
+      <span>{{ unit.ui_slot_count|default:unit.slots_count }} places</span>
+      <span>{{ unit.ui_competitive_slots_count }} assignades</span>
+      {% if unit.partition_key %}<span>Criteri: {{ unit.partition_key }}</span>{% endif %}
     </div>
     {% if unit.ui_programmed_labels %}
       <div class="text-muted small mt-1">
@@ -14,10 +15,16 @@
       </div>
     {% endif %}
     {% if unit.slots.all %}
+      <div class="phase-slot-summary">
+        <span class="badge badge-light border">{{ unit.ui_competitive_slots_count }}/{{ unit.ui_slot_count }} places amb participant/equip</span>
+        {% if unit.ui_empty_slots_count %}
+          <span class="badge badge-light border">{{ unit.ui_empty_slots_count }} buides</span>
+        {% endif %}
+      </div>
       <div class="phase-slot-list">
         {% for slot in unit.slots.all %}
-          <span class="phase-slot-chip {% if slot.status != 'empty' %}is-filled{% endif %}">
-            #{{ slot.slot_index }} - {{ slot.status }}{% if slot.subject_kind %} - {{ slot.subject_kind }}:{{ slot.subject_id }}{% endif %}
+          <span class="phase-slot-chip {% if slot.status != 'empty' %}is-filled{% else %}is-empty{% endif %}">
+            Plaça {{ slot.slot_index }} · {{ slot.get_status_display }}{% if slot.subject_kind %} · {{ slot.subject_kind }}:{{ slot.subject_id }}{% endif %}
           </span>
         {% endfor %}
       </div>

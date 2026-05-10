@@ -69,14 +69,15 @@ class ClassificacioPhaseScopeTests(_BaseTrampoliDataMixin, TestCase):
             inscripcio=self.ins_a,
             exercici=1,
             comp_aparell=self.comp_app_a,
+            fase=self.fase_a,
             total=8.4,
         )
         ScoreEntry.objects.create(
             competicio=self.competicio,
-            inscripcio=self.ins_b,
+            inscripcio=self.ins_a,
             exercici=1,
             comp_aparell=self.comp_app_a,
-            total=9.1,
+            total=2.0,
         )
 
         cfg = ClassificacioConfig.objects.create(
@@ -119,17 +120,18 @@ class ClassificacioPhaseScopeTests(_BaseTrampoliDataMixin, TestCase):
             nom="Final DMT",
             subjects=[SlotSubject("inscripcio", self.ins_b.id)],
         )
-        for inscripcio, app, total in (
-            (self.ins_a, self.comp_app_a, 8.0),
-            (self.ins_a, self.comp_app_b, 80.0),
-            (self.ins_b, self.comp_app_a, 90.0),
-            (self.ins_b, self.comp_app_b, 9.0),
+        for inscripcio, app, phase, total in (
+            (self.ins_a, self.comp_app_a, self.fase_a, 8.0),
+            (self.ins_a, self.comp_app_b, None, 80.0),
+            (self.ins_b, self.comp_app_a, None, 90.0),
+            (self.ins_b, self.comp_app_b, self.fase_b, 9.0),
         ):
             ScoreEntry.objects.create(
                 competicio=self.competicio,
                 inscripcio=inscripcio,
                 exercici=1,
                 comp_aparell=app,
+                fase=phase,
                 total=total,
             )
         schema = self._schema_for_apps(

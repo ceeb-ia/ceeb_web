@@ -108,6 +108,7 @@ def _collect_team_scoring_updates(competicio, cursor: FeedCursor, *, comp_aparel
         .filter(
             competicio=competicio,
             comp_aparell_id__in=team_app_ids,
+            fase__isnull=True,
         )
         .select_related("team_subject")
         .order_by("updated_at", "id")
@@ -163,7 +164,7 @@ def scoring_updates(request, pk):
 
     rows = []
     allowed_inputs_by_app = {}
-    qs = ScoreEntry.objects.filter(competicio=competicio)
+    qs = ScoreEntry.objects.filter(competicio=competicio, fase__isnull=True)
     qs = qs.annotate(
         _excluded=Exists(
             InscripcioAparellExclusio.objects.filter(

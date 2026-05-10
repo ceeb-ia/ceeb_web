@@ -11,6 +11,7 @@ from ...models.competicio import CompeticioAparell
 from ...scoring_engine import ScoringEngine, ScoringError
 from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
+    resolve_scoring_phase,
     resolve_scoring_subject,
     serialize_subject_payload,
 )
@@ -65,6 +66,9 @@ def scoring_save(request, pk):
         return JsonResponse({"ok": False, "error": "Falta comp_aparell_id"}, status=400)
 
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    fase, phase_error_response = resolve_scoring_phase(competicio, comp_aparell, payload.get("fase_id"))
+    if phase_error_response is not None:
+        return phase_error_response
     subject, error_response = resolve_scoring_subject(
         competicio,
         comp_aparell,
@@ -114,6 +118,7 @@ def scoring_save(request, pk):
         comp_aparell=comp_aparell,
         exercici=exercici,
         subject=subject,
+        fase=fase,
     )
     entry.inputs = (
         runtime_inputs_to_logical_team_inputs(
@@ -132,6 +137,7 @@ def scoring_save(request, pk):
         "ok": True,
         "exercici": entry.exercici,
         "comp_aparell_id": comp_aparell.id,
+        "fase_id": entry.fase_id,
         "outputs": entry.outputs,
         "total": float(entry.total),
         "inputs": entry.inputs,
@@ -166,6 +172,9 @@ def scoring_save_partial(request, pk):
         return JsonResponse({"ok": False, "error": "inputs_patch ha de ser objecte JSON"}, status=400)
 
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    fase, phase_error_response = resolve_scoring_phase(competicio, comp_aparell, payload.get("fase_id"))
+    if phase_error_response is not None:
+        return phase_error_response
     subject, error_response = resolve_scoring_subject(
         competicio,
         comp_aparell,
@@ -200,6 +209,7 @@ def scoring_save_partial(request, pk):
         comp_aparell=comp_aparell,
         exercici=exercici,
         subject=subject,
+        fase=fase,
         defaults={"inputs": {}, "outputs": {}, "total": 0},
     )
     current_inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
@@ -247,6 +257,7 @@ def scoring_save_partial(request, pk):
         "ok": True,
         "exercici": entry.exercici,
         "comp_aparell_id": comp_aparell.id,
+        "fase_id": entry.fase_id,
         "inputs": (
             runtime_inputs_to_logical_team_inputs(
                 persist_inputs_after_compute(canonical_inputs, result.inputs, schema),

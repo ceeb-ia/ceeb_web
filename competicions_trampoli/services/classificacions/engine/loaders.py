@@ -92,16 +92,29 @@ def load_inscripcions(
     return all_ins_list, all_ins_by_id, ins_list, ins_by_id
 
 
-def load_score_entries(competicio, *, inscripcions=None, aparells=None) -> list[ScoreEntry]:
-    return list(
+def load_score_entries(
+    competicio,
+    *,
+    inscripcions=None,
+    aparells=None,
+    phase_id=None,
+    include_all_phases: bool = False,
+) -> list[ScoreEntry]:
+    qs = (
         ScoreEntry.objects
         .filter(
             competicio=competicio,
             inscripcio__in=list(inscripcions or []),
             comp_aparell__in=list(aparells or []),
         )
-        .select_related("inscripcio", "comp_aparell")
+        .select_related("inscripcio", "comp_aparell", "fase")
     )
+    if not include_all_phases:
+        if phase_id:
+            qs = qs.filter(fase_id=phase_id)
+        else:
+            qs = qs.filter(fase__isnull=True)
+    return list(qs)
 
 
 def load_team_score_entries(
@@ -110,17 +123,24 @@ def load_team_score_entries(
     aparells=None,
     tipus="",
     team_mode="",
+    phase_id=None,
+    include_all_phases: bool = False,
 ) -> tuple[list[CompeticioAparell], list[TeamScoreEntry]]:
     team_apps = [comp_aparell for comp_aparell in (aparells or []) if is_team_context_app(comp_aparell)]
     if tipus != "equips" or team_mode != "native_team" or not team_apps:
         return team_apps, []
 
-    notes = list(
+    qs = (
         TeamScoreEntry.objects
         .filter(competicio=competicio, comp_aparell__in=team_apps)
-        .select_related("team_subject__equip", "team_subject__context", "comp_aparell")
+        .select_related("team_subject__equip", "team_subject__context", "comp_aparell", "fase")
     )
-    return team_apps, notes
+    if not include_all_phases:
+        if phase_id:
+            qs = qs.filter(fase_id=phase_id)
+        else:
+            qs = qs.filter(fase__isnull=True)
+    return team_apps, list(qs)
 
 
 def phase_slot_subject_ids(competicio, phase_scope=None) -> tuple[set[int] | None, set[int] | None]:
@@ -269,6 +289,18 @@ def load_engine_orm_data(
 
     if aparells:
         normalized_phase_scope = normalize_phase_scope_payload(phase_scope or {})
+        phase_id = (
+            normalize_positive_int(normalized_phase_scope.get("fase_id"))
+            if normalized_phase_scope.get("mode") != PHASE_SCOPE_PER_APP
+            else None
+        )
+        phase_ids_by_app = {}
+        if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
+            for raw_app_id, app_scope in (normalized_phase_scope.get("apps") or {}).items():
+                app_id = normalize_positive_int(raw_app_id)
+                app_phase_id = normalize_positive_int((app_scope or {}).get("fase_id"))
+                if app_id is not None and app_phase_id is not None:
+                    phase_ids_by_app[app_id] = app_phase_id
         phase_inscripcio_ids, phase_team_subject_ids = (
             (None, None)
             if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP
@@ -294,7 +326,25 @@ def load_engine_orm_data(
                 scoped_ins_ids.update(ids)
             ins_list = [ins for ins in ins_list if int(ins.id) in scoped_ins_ids]
             ins_by_id = {int(ins.id): ins for ins in ins_list}
-        notes = load_score_entries(competicio, inscripcions=ins_list, aparells=aparells)
+        notes = load_score_entries(
+            competicio,
+            inscripcions=ins_list,
+            aparells=aparells,
+            phase_id=phase_id,
+            include_all_phases=normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP,
+        )
+        if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
+            notes = [
+                note for note in notes
+                if (
+                    int(note.comp_aparell_id) in phase_ids_by_app
+                    and int(note.fase_id or 0) == phase_ids_by_app[int(note.comp_aparell_id)]
+                )
+                or (
+                    int(note.comp_aparell_id) not in phase_ids_by_app
+                    and note.fase_id is None
+                )
+            ]
         if phase_ins_filters_by_app:
             notes = [
                 note for note in notes
@@ -307,7 +357,21 @@ def load_engine_orm_data(
             aparells=aparells,
             tipus=tipus,
             team_mode=team_mode,
+            phase_id=phase_id,
+            include_all_phases=normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP,
         )
+        if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
+            team_notes = [
+                note for note in team_notes
+                if (
+                    int(note.comp_aparell_id) in phase_ids_by_app
+                    and int(note.fase_id or 0) == phase_ids_by_app[int(note.comp_aparell_id)]
+                )
+                or (
+                    int(note.comp_aparell_id) not in phase_ids_by_app
+                    and note.fase_id is None
+                )
+            ]
         if phase_team_subject_ids is not None:
             team_notes = [
                 note for note in team_notes

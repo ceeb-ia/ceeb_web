@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
+from .models.classificacions import ClassificacioConfig
 from .models.competicio import Aparell, CompeticioAparell, CompeticioAparellFase, ProgramUnit
 from .models.scoring import ScoringSchema
 from .services.shared.competition_groups import get_competicio_groups, group_label
@@ -726,26 +727,93 @@ class CompeticioAparellFaseForm(forms.ModelForm):
         }
 
 
+class PhaseSourceCutForm(forms.Form):
+    CUT_MODE_TOP_N = "top_n"
+    PARTITION_GLOBAL = "global"
+    PARTITION_SOURCE = "source_partitions"
+
+    classificacio = forms.ModelChoiceField(
+        label="Classificacio origen",
+        queryset=ClassificacioConfig.objects.none(),
+        widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="Classificacio calculada de la qual sortiran els participants d'aquesta fase.",
+    )
+    cut_mode = forms.ChoiceField(
+        label="Regla de tall",
+        choices=[(CUT_MODE_TOP_N, "Top N per ordre de la classificacio")],
+        initial=CUT_MODE_TOP_N,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    qualifiers_count = forms.IntegerField(
+        label="Classificats",
+        min_value=1,
+        max_value=500,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 500}),
+    )
+    reserve_count = forms.IntegerField(
+        label="Reserves",
+        min_value=0,
+        max_value=200,
+        initial=0,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 0, "max": 200}),
+    )
+    partition_mode = forms.ChoiceField(
+        label="Com aplicar el tall",
+        choices=[
+            (PARTITION_GLOBAL, "Global: una llista unica"),
+            (PARTITION_SOURCE, "Per particio de la classificacio"),
+        ],
+        initial=PARTITION_GLOBAL,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    unit_capacity = forms.IntegerField(
+        label="Places per unitat",
+        min_value=1,
+        max_value=200,
+        initial=8,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+        help_text="Serveix per partir els classificats en una o mes unitats quan es generin.",
+    )
+    unit_name_template = forms.CharField(
+        label="Plantilla de nom",
+        max_length=180,
+        required=False,
+        initial="{fase} - {particio}",
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "{fase} - {particio}"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.competicio = kwargs.pop("competicio", None)
+        super().__init__(*args, **kwargs)
+        qs = ClassificacioConfig.objects.none()
+        if self.competicio is not None and getattr(self.competicio, "id", None):
+            qs = ClassificacioConfig.objects.filter(competicio=self.competicio, activa=True).order_by("ordre", "id")
+        self.fields["classificacio"].queryset = qs
+
+    def clean_unit_name_template(self):
+        value = str(self.cleaned_data.get("unit_name_template") or "").strip()
+        return value or "{fase} - {particio}"
+
 class ProgramUnitManualForm(forms.Form):
     nom = forms.CharField(
-        label="Nom",
+        label="Nom de la unitat",
         max_length=180,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Final Infantil F"}),
     )
     capacity = forms.IntegerField(
-        label="Slots",
+        label="Places",
         min_value=1,
         max_value=200,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
     )
     tipus = forms.ChoiceField(
-        label="Tipus",
+        label="Tipus d'unitat",
         choices=ProgramUnit.Tipus.choices,
         initial=ProgramUnit.Tipus.CUSTOM,
         widget=forms.Select(attrs={"class": "form-select"}),
     )
     partition_key = forms.CharField(
-        label="Particio",
+        label="Particio / criteri manual",
         max_length=255,
         required=False,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
@@ -754,17 +822,17 @@ class ProgramUnitManualForm(forms.Form):
 
 class ProgramUnitPartitionForm(forms.Form):
     label = forms.CharField(
-        label="Etiqueta",
+        label="Nom de la unitat",
         max_length=180,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Infantil F"}),
     )
     key = forms.CharField(
-        label="Clau",
+        label="Particio / criteri manual",
         max_length=255,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
     )
     capacity = forms.IntegerField(
-        label="Slots",
+        label="Places",
         min_value=1,
         max_value=200,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),

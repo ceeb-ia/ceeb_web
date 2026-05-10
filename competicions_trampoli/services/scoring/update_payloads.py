@@ -26,12 +26,14 @@ def build_score_update_payload(
     outputs: dict,
     total,
     updated_at,
+    fase_id=None,
     subject_meta: dict | None = None,
 ) -> dict:
     payload = {
         **serialize_subject_payload(subject_kind, subject_id),
         "exercici": exercici,
         "comp_aparell_id": comp_aparell_id,
+        "fase_id": fase_id,
         "inputs": copy.deepcopy(inputs or {}),
         "outputs": copy.deepcopy(outputs or {}),
         "total": float(total or 0),

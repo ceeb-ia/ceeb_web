@@ -6,6 +6,8 @@ from django.urls import reverse
 from ....models import CompeticioMembership
 from ....models.rotacions import RotacioAssignacio, RotacioAssignacioGrup, RotacioEstacio, RotacioFranja
 from ....models.scoring import ScoreEntry, ScoreWarningAcknowledgement, ScoringSchema
+from ....models.competicio import CompeticioAparellFase
+from ....services.fases import SlotSubject, create_program_unit_from_subjects
 from ....services.scoring.notes_units import build_notes_units_context
 from ...base import _BaseTrampoliDataMixin
 
@@ -117,6 +119,57 @@ class NotesUnitsApiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn(score_key, payload["scores"])
         self.assertEqual(payload["scores"][score_key]["total"], float(score.total))
         self.assertEqual(payload["rotation_rank"][f"{self.comp_app.id}|{self.ins_3.id}"], 3)
+
+    def test_lazy_table_can_load_phase_program_unit_scores(self):
+        phase = CompeticioAparellFase.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            nom="Final",
+            codi="FINAL",
+            ordre=2,
+        )
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Final",
+            subjects=[SlotSubject("inscripcio", self.ins_2.id)],
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_2,
+            comp_aparell=self.comp_app,
+            fase=phase,
+            exercici=1,
+            inputs={"E": 9.1},
+            outputs={"total": 9.1},
+            total=9.1,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_2,
+            comp_aparell=self.comp_app,
+            exercici=1,
+            inputs={"E": 1.0},
+            outputs={"total": 1.0},
+            total=1.0,
+        )
+
+        response = self.client.get(
+            reverse("scoring_notes_table", kwargs={"pk": self.comp.id}),
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "fase_id": phase.id,
+                "exercici": 1,
+                "unit_key": f"phase:{phase.id}:unit:{unit.id}",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["context"]["fase_id"], phase.id)
+        self.assertEqual([row["subject_id"] for row in payload["subjects"]], [self.ins_2.id])
+        score_key = f"inscripcio:{self.ins_2.id}|1|{self.comp_app.id}|{phase.id}"
+        self.assertEqual(payload["scores"][score_key]["total"], 9.1)
 
     def test_search_returns_navigable_context_for_individual_subject(self):
         response = self.client.get(

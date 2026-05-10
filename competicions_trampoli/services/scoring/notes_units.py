@@ -1,9 +1,10 @@
 from collections import defaultdict
 
 from django.db.models import Count
+from django.db.models import Prefetch
 
 from ...models import Inscripcio, InscripcioMedia
-from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase, InscripcioAparellExclusio, ProgramUnit, ProgramUnitSlot
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
 from ...models.scoring import SerieEquipItem
 from ...services.rotacions.rotacions_ordering import (
@@ -93,8 +94,20 @@ def _excluded_by_inscripcio(competicio, app_ids):
     return excluded
 
 
+def serialize_phase(phase):
+    return {
+        "id": phase.id,
+        "label": str(phase.nom or ""),
+        "code": str(phase.codi or ""),
+        "ordre": phase.ordre,
+        "estat": phase.estat,
+        "comp_aparell_id": phase.comp_aparell_id,
+    }
+
+
 def _team_subjects_by_bucket(competicio, comp_aparells):
     subjects_by_bucket = defaultdict(list)
+    subjects_by_app_id = defaultdict(dict)
     issues_by_app = {}
     for comp_aparell in comp_aparells:
         if not is_team_context_app(comp_aparell):
@@ -108,7 +121,8 @@ def _team_subjects_by_bucket(competicio, comp_aparells):
             subject["group"] = bucket_key
             subject["group_label"] = team_subject_bucket_label(subject, app_name)
             subjects_by_bucket[str(bucket_key)].append(subject)
-    return subjects_by_bucket, issues_by_app
+            subjects_by_app_id[int(comp_aparell.id)][str(subject.get("subject_id"))] = subject
+    return subjects_by_bucket, subjects_by_app_id, issues_by_app
 
 
 def _series_labels_and_counts(series_ids):
@@ -170,7 +184,7 @@ def build_notes_units_context(competicio):
     groups_by_id = group_maps["by_id"]
     grouped = _inscripcions_by_group(competicio)
     excluded_by_ins = _excluded_by_inscripcio(competicio, app_ids)
-    team_subjects_by_bucket, team_issues_by_app = _team_subjects_by_bucket(competicio, comp_aparells)
+    team_subjects_by_bucket, team_subjects_by_app_id, team_issues_by_app = _team_subjects_by_bucket(competicio, comp_aparells)
 
     all_assigns = list(
         RotacioAssignacio.objects
@@ -299,7 +313,72 @@ def build_notes_units_context(competicio):
             out_of_program_units.append(unit)
             unit_by_lookup[(app_id, normalize_unit_lookup_key(group_id), None)] = unit
 
+    phases = list(
+        CompeticioAparellFase.objects
+        .filter(competicio=competicio, comp_aparell_id__in=app_ids)
+        .select_related("comp_aparell", "comp_aparell__aparell")
+        .prefetch_related(
+            Prefetch(
+                "program_units",
+                queryset=(
+                    ProgramUnit.objects
+                    .prefetch_related(
+                        Prefetch(
+                            "slots",
+                            queryset=ProgramUnitSlot.objects.order_by("ordre", "slot_index", "id"),
+                        )
+                    )
+                    .order_by("ordre", "id")
+                ),
+            )
+        )
+        .order_by("comp_aparell_id", "ordre", "id")
+    )
+    phases_by_app = defaultdict(list)
+    phase_units = []
+    filled_statuses = {ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL}
+    for phase in phases:
+        app_id = int(phase.comp_aparell_id)
+        comp_aparell = apps_by_id.get(app_id)
+        if comp_aparell is None:
+            continue
+        phases_by_app[app_id].append(phase)
+        subject_kind = "team_unit" if app_id in team_app_ids else "inscripcio"
+        for program_unit in phase.program_units.all():
+            slots = [
+                slot
+                for slot in program_unit.slots.all()
+                if slot.status in filled_statuses and slot.subject_id and str(slot.subject_kind or "").strip().lower() == subject_kind
+            ]
+            subject_refs = [f"{subject_kind}:{int(slot.subject_id)}" for slot in slots]
+            unit_key = f"phase:{phase.id}:unit:{program_unit.id}"
+            unit = {
+                "key": unit_key,
+                "kind": "program_unit",
+                "label": program_unit.nom or f"Unitat {program_unit.ordre}",
+                "franja_id": None,
+                "franja_label": "",
+                "phase_id": phase.id,
+                "phase_label": phase.nom,
+                "phase_code": phase.codi,
+                "program_unit_id": program_unit.id,
+                "comp_aparell_id": app_id,
+                "app_label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+                "member_keys": [],
+                "subject_refs": subject_refs,
+                "subject_kind": subject_kind,
+                "count": len(subject_refs),
+                "order_mode": ORDER_MODE_MAINTAIN,
+                "rotate_steps": 0,
+                "is_out_of_program": False,
+                "is_phase_program": True,
+            }
+            phase_units.append(unit)
+            unit_by_lookup[(app_id, normalize_unit_lookup_key(unit_key), None)] = unit
+            unit_by_lookup[(app_id, normalize_unit_lookup_key(unit_key), f"phase:{phase.id}")] = unit
+
     return {
+        "competicio": competicio,
         "apps": comp_aparells,
         "apps_by_id": apps_by_id,
         "team_app_ids": team_app_ids,
@@ -309,16 +388,19 @@ def build_notes_units_context(competicio):
         "grouped_inscripcions": grouped,
         "excluded_by_inscripcio": excluded_by_ins,
         "team_subjects_by_bucket": team_subjects_by_bucket,
+        "team_subjects_by_app_id": team_subjects_by_app_id,
         "team_issues_by_app": team_issues_by_app,
+        "phases": phases,
+        "phases_by_app": phases_by_app,
         "assignacions": all_assigns,
         "unit_step_map": unit_step_map,
-        "units": units,
+        "units": units + phase_units,
         "out_of_program_units": out_of_program_units,
         "unit_by_lookup": unit_by_lookup,
     }
 
 
-def resolve_notes_unit(context, comp_aparell_id, *, unit_key=None, group=None, franja_id=None):
+def resolve_notes_unit(context, comp_aparell_id, *, unit_key=None, group=None, franja_id=None, phase_id=None):
     app_id = int(comp_aparell_id)
     lookup_values = []
     if unit_key not in (None, ""):
@@ -327,6 +409,10 @@ def resolve_notes_unit(context, comp_aparell_id, *, unit_key=None, group=None, f
         lookup_values.append(group)
     for raw_value in lookup_values:
         key = normalize_unit_lookup_key(raw_value)
+        if phase_id:
+            unit = context["unit_by_lookup"].get((app_id, key, f"phase:{int(phase_id)}"))
+            if unit is not None:
+                return unit
         if franja_id:
             unit = context["unit_by_lookup"].get((app_id, key, int(franja_id)))
             if unit is not None:
@@ -339,6 +425,48 @@ def resolve_notes_unit(context, comp_aparell_id, *, unit_key=None, group=None, f
 
 def subjects_for_unit(context, unit, comp_aparell):
     app_id = int(comp_aparell.id)
+    if unit.get("phase_id") and unit.get("program_unit_id"):
+        slots = list(
+            ProgramUnitSlot.objects
+            .filter(
+                unit_id=unit.get("program_unit_id"),
+                status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
+                subject_id__isnull=False,
+            )
+            .order_by("ordre", "slot_index", "id")
+        )
+        if app_id in context["team_app_ids"]:
+            by_id = context["team_subjects_by_app_id"].get(app_id, {})
+            return [
+                by_id[str(slot.subject_id)]
+                for slot in slots
+                if str(slot.subject_kind or "").strip().lower() == "team_unit" and str(slot.subject_id) in by_id
+            ]
+
+        subject_ids = [
+            int(slot.subject_id)
+            for slot in slots
+            if str(slot.subject_kind or "").strip().lower() == "inscripcio"
+        ]
+        if not subject_ids:
+            return []
+        excluded_by_ins = context["excluded_by_inscripcio"]
+        rows_by_id = {
+            int(row.id): row
+            for row in (
+                Inscripcio.objects
+                .filter(competicio=context["competicio"], id__in=subject_ids)
+                .select_related("grup_competicio")
+            )
+        }
+        rows = []
+        for subject_id in subject_ids:
+            row = rows_by_id.get(subject_id)
+            if row is None or app_id in excluded_by_ins.get(subject_id, set()):
+                continue
+            rows.append(row)
+        return rows
+
     member_keys = [str(item) for item in unit.get("member_keys") or []]
     if app_id in context["team_app_ids"]:
         rows = []

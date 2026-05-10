@@ -77,19 +77,93 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             child_counts[int(phase.parent_id)] += 1
     for phase in phases:
         units = list(phase.program_units.all())
+        phase_config = phase.config if isinstance(phase.config, dict) else {}
+        source_config = phase_config.get("source") if isinstance(phase_config.get("source"), dict) else {}
+        cut_config = phase_config.get("cut") if isinstance(phase_config.get("cut"), dict) else {}
+        source_name = (
+            source_config.get("classificacio_nom")
+            or source_config.get("nom")
+            or phase_config.get("source_classificacio_nom")
+            or ""
+        )
+        qualifiers = cut_config.get("qualifiers_count") or cut_config.get("limit") or phase_config.get("qualifiers_count")
+        reserves = cut_config.get("reserve_count") or phase_config.get("reserve_count") or 0
+        unit_capacity = cut_config.get("unit_capacity") or phase_config.get("unit_capacity")
+        partition_mode = cut_config.get("partition_mode") or phase_config.get("partition_mode") or "global"
+        phase.ui_source_configured = bool(
+            phase_config.get("source_classificacio_id")
+            or phase_config.get("classificacio_id")
+            or source_config.get("classificacio_id")
+            or source_config.get("id")
+        )
+        phase.ui_cut_configured = bool(cut_config or phase_config.get("cut_rule") or phase_config.get("qualifiers"))
+        phase.ui_source_label = source_name or ("Configurada" if phase.ui_source_configured else "No configurada")
+        phase.ui_cut_label = (
+            f"Top {qualifiers} + {reserves} reserves"
+            if qualifiers
+            else "No configurat"
+        )
+        phase.ui_partition_label = "Per particio" if partition_mode == "source_partitions" else "Global"
+        phase.ui_unit_capacity_label = f"{unit_capacity} places/unitat" if unit_capacity else "Sense mida d'unitat"
         for unit in units:
             slots = list(unit.slots.all())
             programmed_labels = programming_by_unit.get(int(unit.id), [])
             unit.ui_programmed_labels = programmed_labels
             unit.ui_is_programmed = bool(programmed_labels)
             unit.ui_filled_slots_count = sum(1 for slot in slots if slot.status != ProgramUnitSlot.Status.EMPTY)
+            unit.ui_competitive_slots_count = sum(
+                1
+                for slot in slots
+                if slot.status in {ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL}
+            )
             unit.ui_empty_slots_count = sum(1 for slot in slots if slot.status == ProgramUnitSlot.Status.EMPTY)
+            unit.ui_slot_count = len(slots)
+            unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
         phase.ui_units = units
         phase.ui_unit_count = len(units)
         phase.ui_programmed_unit_count = sum(1 for unit in units if unit.ui_is_programmed)
         phase.ui_pending_unit_count = max(0, phase.ui_unit_count - phase.ui_programmed_unit_count)
+        phase.ui_filled_slot_count = sum(unit.ui_filled_slots_count for unit in units)
+        phase.ui_competitive_slot_count = sum(unit.ui_competitive_slots_count for unit in units)
+        phase.ui_slot_count = sum(unit.ui_slot_count for unit in units)
+        phase.ui_has_generated_slots = any(unit.ui_has_generated_slots for unit in units)
+        phase.ui_generation_mode = "classification" if phase.ui_has_generated_slots else ("manual" if units else "none")
         phase.ui_child_count = child_counts.get(int(phase.id), 0)
         phase.ui_can_delete = phase.ui_unit_count == 0 and phase.ui_child_count == 0
+        phase.ui_setup_steps = [
+            {
+                "label": "Fase creada",
+                "state": "done",
+                "detail": "Contenidor de la ronda definit per aquest aparell.",
+            },
+            {
+                "label": "Origen i tall",
+                "state": "done" if phase.ui_source_configured and phase.ui_cut_configured else "todo",
+                "detail": (
+                    "Encara no hi ha classificacio origen ni regla de tall desades."
+                    if not (phase.ui_source_configured and phase.ui_cut_configured)
+                    else f"{phase.ui_source_label} · {phase.ui_cut_label} · {phase.ui_partition_label}"
+                ),
+            },
+            {
+                "label": "Unitats i places",
+                "state": "done" if phase.ui_unit_count and phase.ui_competitive_slot_count else ("partial" if phase.ui_unit_count else "todo"),
+                "detail": (
+                    f"{phase.ui_competitive_slot_count}/{phase.ui_slot_count} places amb participant o equip."
+                    if phase.ui_unit_count
+                    else "Cap unitat competitiva creada encara."
+                ),
+            },
+            {
+                "label": "Rotacions",
+                "state": "done" if phase.ui_unit_count and phase.ui_pending_unit_count == 0 else ("partial" if phase.ui_programmed_unit_count else "todo"),
+                "detail": (
+                    f"{phase.ui_programmed_unit_count}/{phase.ui_unit_count} unitats programades."
+                    if phase.ui_unit_count
+                    else "Primer cal crear unitats."
+                ),
+            },
+        ]
 
 
 def _app_summary(comp_aparell: CompeticioAparell, phases: list[CompeticioAparellFase]) -> dict:
@@ -103,7 +177,7 @@ def _app_summary(comp_aparell: CompeticioAparell, phases: list[CompeticioAparell
         state_label = "Mode simple"
     elif unit_count == 0:
         state = "configured"
-        state_label = "Fases sense blocs"
+        state_label = "Fases sense unitats"
     elif pending_unit_count:
         state = "pending_rotacions"
         state_label = "Blocs pendents"

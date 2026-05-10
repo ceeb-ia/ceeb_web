@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 
-from ....forms import CompeticioAparellFaseForm, ProgramUnitManualForm, ProgramUnitPartitionForm
+from ....forms import CompeticioAparellFaseForm, PhaseSourceCutForm, ProgramUnitManualForm, ProgramUnitPartitionForm
 from ....models import Competicio
 from ....models.competicio import CompeticioAparell
 from ....services.fases.dashboard import phase_dashboard_context
@@ -45,7 +45,7 @@ class CompeticioFasesPlanner(View):
             url = f"{url}?app={app.id}"
         return redirect(url)
 
-    def get_context(self, *, phase_form=None, manual_unit_form=None, partition_unit_form=None):
+    def get_context(self, *, phase_form=None, source_cut_form=None, manual_unit_form=None, partition_unit_form=None):
         dashboard = phase_dashboard_context(
             self.competicio,
             selected_app_id=getattr(self.comp_aparell, "id", None),
@@ -54,6 +54,7 @@ class CompeticioFasesPlanner(View):
         return {
             **dashboard,
             "phase_form": phase_form or CompeticioAparellFaseForm(comp_aparell=selected_app),
+            "source_cut_form": source_cut_form or PhaseSourceCutForm(competicio=self.competicio),
             "manual_unit_form": manual_unit_form or ProgramUnitManualForm(),
             "partition_unit_form": partition_unit_form or ProgramUnitPartitionForm(),
         }

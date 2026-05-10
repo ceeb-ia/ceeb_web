@@ -161,6 +161,7 @@ def judge_save_partial(request, token):
         ),
         "outputs": entry.outputs or {},
         "total": float(entry.total),
+        "fase_id": entry.fase_id,
         "updated_at": entry.updated_at.isoformat(),
     })
 

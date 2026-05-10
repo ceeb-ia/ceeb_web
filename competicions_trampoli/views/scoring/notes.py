@@ -196,6 +196,7 @@ class ScoringNotesHome(TemplateView):
             inscripcio__in=ins,
             exercici__in=exercicis,
             comp_aparell__in=[ca for ca in aparells_cfg if not is_team_context_app(ca)],
+            fase__isnull=True,
         )
         scores_qs = scores_qs.annotate(
             _excluded=Exists(
@@ -280,6 +281,7 @@ class ScoringNotesHome(TemplateView):
                 comp_aparell_id__in=team_score_app_ids,
                 team_subject_id__in=team_subject_ids,
                 exercici__in=exercicis,
+                fase__isnull=True,
             ).select_related("team_subject")
             for s in team_scores_qs:
                 allowed_inputs = _logical_team_input_codes(logical_schemas.get(str(s.comp_aparell_id), {}))
@@ -358,6 +360,7 @@ class ScoringNotesHome(TemplateView):
                     score_entry__inscripcio_id__in=inscripcio_ids,
                     score_entry__comp_aparell_id__in=active_app_ids,
                     score_entry__exercici__in=exercicis,
+                    score_entry__fase__isnull=True,
                 )
                 .exclude(video_file="")
                 .values_list(
@@ -376,6 +379,7 @@ class ScoringNotesHome(TemplateView):
                     team_score_entry__team_subject_id__in=team_subject_ids,
                     team_score_entry__comp_aparell_id__in=team_score_app_ids,
                     team_score_entry__exercici__in=exercicis,
+                    team_score_entry__fase__isnull=True,
                 )
                 .exclude(video_file="")
                 .values_list(

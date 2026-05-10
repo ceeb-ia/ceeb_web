@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 
 from django.db.models import Count, Prefetch
@@ -81,3 +82,25 @@ def create_partition_unit_for_phase(fase: CompeticioAparellFase, form) -> list[P
             }
         ],
     )
+
+
+def configure_phase_source_cut(fase: CompeticioAparellFase, form) -> CompeticioAparellFase:
+    classificacio = form.cleaned_data["classificacio"]
+    config = deepcopy(fase.config if isinstance(fase.config, dict) else {})
+    config["source"] = {
+        "classificacio_id": int(classificacio.id),
+        "classificacio_nom": classificacio.nom,
+        "tipus": classificacio.tipus,
+    }
+    config["cut"] = {
+        "mode": form.cleaned_data["cut_mode"],
+        "qualifiers_count": int(form.cleaned_data["qualifiers_count"]),
+        "reserve_count": int(form.cleaned_data.get("reserve_count") or 0),
+        "partition_mode": form.cleaned_data["partition_mode"],
+        "unit_capacity": int(form.cleaned_data["unit_capacity"]),
+        "unit_name_template": form.cleaned_data["unit_name_template"],
+    }
+    fase.config = config
+    fase.full_clean()
+    fase.save(update_fields=["config", "updated_at"])
+    return fase

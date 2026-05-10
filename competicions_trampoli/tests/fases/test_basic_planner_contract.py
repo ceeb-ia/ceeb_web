@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from ...models import CompeticioMembership
+from ...models.classificacions import ClassificacioConfig
 from ...models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioProgramUnit, RotacioEstacio, RotacioFranja
 from ...models.scoring import ScoreEntry
@@ -171,6 +172,43 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         phase = CompeticioAparellFase.objects.get(comp_aparell=self.comp_aparell, codi="SEMI")
         self.assertIsNone(phase.parent_id)
         self.assertEqual(phase.nom, "Semifinal")
+
+    def test_post_configure_source_cut_stores_phase_config(self):
+        phase = self._create_phase()
+        classificacio = ClassificacioConfig.objects.create(
+            competicio=self.competicio,
+            nom="Preliminar TRA",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema={},
+        )
+
+        response = self.client.post(
+            self._planner_url(),
+            data={
+                "action": "configure_source_cut",
+                "fase_id": phase.id,
+                "classificacio": classificacio.id,
+                "cut_mode": "top_n",
+                "qualifiers_count": 8,
+                "reserve_count": 2,
+                "partition_mode": "source_partitions",
+                "unit_capacity": 4,
+                "unit_name_template": "{fase} - {particio}",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        phase.refresh_from_db()
+        self.assertEqual(phase.config["source"]["classificacio_id"], classificacio.id)
+        self.assertEqual(phase.config["cut"]["qualifiers_count"], 8)
+        self.assertEqual(phase.config["cut"]["reserve_count"], 2)
+        self.assertEqual(phase.config["cut"]["partition_mode"], "source_partitions")
+
+        page = self.client.get(self._common_planner_url(self.comp_aparell))
+        self.assertContains(page, "Preliminar TRA")
+        self.assertContains(page, "Top 8 + 2 reserves")
 
     def test_post_delete_phase_only_removes_empty_leaf_phase(self):
         phase = self._create_phase()

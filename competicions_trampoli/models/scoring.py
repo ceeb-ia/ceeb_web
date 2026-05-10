@@ -1,11 +1,12 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from ..services.scoring.scoring_schema_validation import validate_schema
 from .base import Competicio
-from .competicio import Aparell, CompeticioAparell
+from .competicio import Aparell, CompeticioAparell, CompeticioAparellFase
 from .inscripcions import Equip, EquipContext, Inscripcio
 
 
@@ -77,6 +78,13 @@ class ScoreEntry(models.Model):
     inscripcio = models.ForeignKey(Inscripcio, on_delete=models.CASCADE, related_name="scores")
     exercici = models.PositiveSmallIntegerField(default=1)
     comp_aparell = models.ForeignKey(CompeticioAparell, on_delete=models.CASCADE, related_name="scores")
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="scores",
+    )
 
     inputs = models.JSONField(default=dict, blank=True)
     outputs = models.JSONField(default=dict, blank=True)
@@ -87,12 +95,36 @@ class ScoreEntry(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["competicio", "inscripcio", "exercici", "comp_aparell"],
-                name="uniq_scoreentry_per_exercici_aparell",
+                condition=Q(fase__isnull=True),
+                name="uniq_scoreentry_legacy_exercici_app",
+            ),
+            models.UniqueConstraint(
+                fields=["competicio", "inscripcio", "exercici", "comp_aparell", "fase"],
+                condition=Q(fase__isnull=False),
+                name="uniq_scoreentry_fase_exercici_app",
             )
         ]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell", "fase", "exercici"], name="scoreentry_phase_lookup_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.inscripcio_id and self.inscripcio.competicio_id != self.competicio_id:
+            errors["inscripcio"] = _("La inscripcio no pertany a la mateixa competicio.")
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
+        if self.fase_id:
+            if self.fase.competicio_id != self.competicio_id:
+                errors["fase"] = _("La fase no pertany a la mateixa competicio.")
+            elif self.fase.comp_aparell_id != self.comp_aparell_id:
+                errors["fase"] = _("La fase no pertany a aquest aparell.")
+        if errors:
+            raise ValidationError(errors)
 
     def __str__(self):
-        return f"ScoreEntry ins={self.inscripcio_id} ex={self.exercici} app={self.comp_aparell_id}"
+        return f"ScoreEntry ins={self.inscripcio_id} ex={self.exercici} app={self.comp_aparell_id} fase={self.fase_id or '-'}"
 
 
 class TeamCompetitiveSubject(models.Model):
@@ -263,6 +295,13 @@ class TeamScoreEntry(models.Model):
     )
     exercici = models.PositiveSmallIntegerField(default=1)
     comp_aparell = models.ForeignKey(CompeticioAparell, on_delete=models.CASCADE, related_name="team_scores")
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="team_scores",
+    )
 
     inputs = models.JSONField(default=dict, blank=True)
     outputs = models.JSONField(default=dict, blank=True)
@@ -273,12 +312,19 @@ class TeamScoreEntry(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["competicio", "team_subject", "exercici", "comp_aparell"],
-                name="uniq_teamscoreentry_per_subject_exercici_aparell",
+                condition=Q(fase__isnull=True),
+                name="uniq_teamscoreentry_legacy_ex_app",
+            ),
+            models.UniqueConstraint(
+                fields=["competicio", "team_subject", "exercici", "comp_aparell", "fase"],
+                condition=Q(fase__isnull=False),
+                name="uniq_teamscoreentry_fase_ex_app",
             )
         ]
         indexes = [
             models.Index(fields=["competicio", "comp_aparell", "exercici"]),
             models.Index(fields=["competicio", "team_subject"]),
+            models.Index(fields=["competicio", "comp_aparell", "fase", "exercici"], name="teamscore_phase_lookup_idx"),
         ]
 
     def clean(self):
@@ -293,6 +339,11 @@ class TeamScoreEntry(models.Model):
             errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
         if self.comp_aparell_id and not self.comp_aparell.is_team_competition_unit:
             errors["comp_aparell"] = _("Aquest aparell no es un aparell global d'equip.")
+        if self.fase_id:
+            if self.fase.competicio_id != self.competicio_id:
+                errors["fase"] = _("La fase no pertany a la mateixa competicio.")
+            elif self.fase.comp_aparell_id != self.comp_aparell_id:
+                errors["fase"] = _("La fase no pertany a aquest aparell.")
         if errors:
             raise ValidationError(errors)
 
@@ -301,7 +352,7 @@ class TeamScoreEntry(models.Model):
         return getattr(self.team_subject, "equip_id", None)
 
     def __str__(self):
-        return f"TeamScoreEntry subject={self.team_subject_id} ex={self.exercici} app={self.comp_aparell_id}"
+        return f"TeamScoreEntry subject={self.team_subject_id} ex={self.exercici} app={self.comp_aparell_id} fase={self.fase_id or '-'}"
 
 
 class ScoreWarningAcknowledgement(models.Model):

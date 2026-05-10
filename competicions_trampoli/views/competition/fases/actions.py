@@ -4,12 +4,13 @@ from django.contrib import messages
 from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 
-from ....forms import CompeticioAparellFaseForm, ProgramUnitManualForm, ProgramUnitPartitionForm
+from ....forms import CompeticioAparellFaseForm, PhaseSourceCutForm, ProgramUnitManualForm, ProgramUnitPartitionForm
 from ....models.competicio import CompeticioAparellFase
 from ....services.fases.planner import (
     create_manual_unit_for_phase,
     create_partition_unit_for_phase,
     create_phase_for_comp_aparell,
+    configure_phase_source_cut,
 )
 
 
@@ -58,11 +59,19 @@ def handle_phase_post(view, request):
             messages.success(request, f"Fase '{phase_name}' eliminada.")
             return view.redirect_to_selected_app(view.comp_aparell), {}
 
+        if action == "configure_source_cut":
+            form = PhaseSourceCutForm(request.POST, competicio=view.competicio)
+            if form.is_valid():
+                configure_phase_source_cut(phase, form)
+                messages.success(request, f"Origen i tall de '{phase.nom}' configurats.")
+                return view.redirect_to_selected_app(phase.comp_aparell), {}
+            return None, {"source_cut_form": form}
+
         if action == "create_manual_unit":
             form = ProgramUnitManualForm(request.POST)
             if form.is_valid():
                 unit = create_manual_unit_for_phase(phase, form)
-                messages.success(request, f"Bloc '{unit.nom}' creat amb {unit.capacity} slots.")
+                messages.success(request, f"Unitat '{unit.nom}' creada amb {unit.capacity} places.")
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             return None, {"manual_unit_form": form}
 

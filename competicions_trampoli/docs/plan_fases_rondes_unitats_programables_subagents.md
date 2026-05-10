@@ -24,11 +24,12 @@
   - aquesta restriccio impedeix tenir dues instancies locals del mateix aparell base dins una competicio.
 - `ScoreEntry`
   - representa la nota individual.
-  - clau unica actual: `competicio + inscripcio + exercici + comp_aparell`.
-  - no te dimensio de fase.
+  - clau unica legacy: `competicio + inscripcio + exercici + comp_aparell` quan `fase is null`.
+  - clau unica scoped: `competicio + inscripcio + exercici + comp_aparell + fase` quan hi ha fase explicita.
+  - `fase = null` representa la preliminar/flux legacy implicit.
 - `TeamScoreEntry`
   - equivalent per unitats competitives d'equip.
-  - no te dimensio de fase.
+  - tambe pot quedar scoped per fase amb la mateixa semantica de `fase = null` per legacy.
 - `GrupCompeticio`
   - representa grups globals de competicio.
   - avui s'usen per la primera organitzacio de participants.
@@ -38,17 +39,45 @@
 - `ClassificacioConfig`
   - calcula resultats amb schema declaratiu.
   - avui selecciona aparells per `comp_aparell_id`.
-  - no coneix fases.
+  - pot declarar abast de fase dins `schema.scope`:
+    - implicit/preliminar
+    - fase unica
+    - per aparell en classificacions multiaparell.
 - `JudgeDeviceToken`
   - avui esta lligat a un `CompeticioAparell`.
   - no coneix fases ni una home de portal.
 
+### Estat funcional implementat a data d'aquesta actualitzacio
+- Les fases avancades existeixen com a `CompeticioAparellFase`.
+- Les unitats de fase existeixen com a `ProgramUnit` amb `ProgramUnitSlot`.
+- La preliminar/default continua sent implicita i no es persisteix com a fase.
+- El planner de fases permet:
+  - crear fases avancades per aparell local
+  - configurar origen i tall dins `phase.config`
+  - crear unitats/places manuals
+  - veure si una unitat esta programada a rotacions.
+- El formulari d'origen i tall desa:
+  - classificacio origen
+  - regla `top_n`
+  - nombre de classificats
+  - reserves
+  - mode global o per particio de classificacio
+  - places per unitat
+  - plantilla de nom per generar unitats.
+- Encara no hi ha generacio automatica d'unitats/slots des d'aquest origen i tall.
+- Notes pot seleccionar fase al panell central:
+  - `Preliminar` continua usant `fase = null`
+  - una fase avancada envia `fase_id`
+  - les unitats de fase provenen de `ProgramUnitSlot`.
+- El portal de jutges continua puntuant preliminar/legacy si no rep `fase_id`; la home de fases per jutges queda pendent.
+
 ### Limitacions actuals
-- Una competicio no pot tenir dues instancies locals del mateix `Aparell`.
-- Una mateixa inscripcio no pot competir dues vegades al mateix `CompeticioAparell` en fases diferents sense col.lisionar conceptualment.
+- Ja es poden tenir dues instancies locals del mateix `Aparell` dins una competicio.
+- Ja es poden separar notes de la mateixa inscripcio pel mateix `CompeticioAparell` en fases diferents.
+- Encara falta portar aquesta separacio al portal de jutges amb una home de fases.
 - Els grups actuals no serveixen com a grups de semifinal/final, perque son globals i no estan scoped per fase.
 - Les rotacions actuals poden programar un grup mes d'una vegada en franges diferents, pero aixo no crea una segona participacio competitiva.
-- Les classificacions calculen resultats, pero no materialitzen participants d'una fase posterior.
+- Les classificacions calculen resultats i poden servir de font configurada per una fase, pero encara no materialitzen participants d'una fase posterior de manera automatica.
 
 ## Decisions Tancades
 
@@ -951,6 +980,29 @@
   - La gestio de `ProgramUnit` queda integrada en el flux de fases sense substituir el planner de rotacions.
   - Cada `ProgramUnit` mostra si esta programat a rotacions o pendent de programar.
   - Quan una unitat esta programada, la UI mostra una etiqueta de franja/estacio.
+  - El planner s'ha fet mes explicit i menys ambigu:
+    - mostra un flux de treball `crear fase -> origen i tall -> unitats i places -> rotacions/notes`
+    - deixa clar que crear una fase nomes crea el contenidor
+    - substitueix progressivament "bloc/slot" per "unitat competitiva/plaça" a la UI.
+  - Afegit formulari real d'origen i tall:
+    - `PhaseSourceCutForm`
+    - accio POST `configure_source_cut`
+    - persistencia dins `CompeticioAparellFase.config`
+  - El `phase.config` desa actualment:
+    - `source.classificacio_id`
+    - `source.classificacio_nom`
+    - `source.tipus`
+    - `cut.mode`
+    - `cut.qualifiers_count`
+    - `cut.reserve_count`
+    - `cut.partition_mode`
+    - `cut.unit_capacity`
+    - `cut.unit_name_template`
+  - Cada fase mostra ara un resum d'estat:
+    - fase creada
+    - origen i tall configurats o pendents
+    - places assignades
+    - unitats programades a rotacions.
   - Afegida accio segura d'eliminacio de fases:
     - nomes es poden eliminar fases buides
     - nomes es poden eliminar fases sense fases filles
@@ -962,6 +1014,8 @@
   - No s'ha duplicat la programacio de rotacions dins fases.
   - No s'ha convertit cap `ProgramUnit` en puntuable pel sol fet d'existir, estar prevista o estar programada a rotacions.
   - No s'han canviat `ScoreEntry`, `TeamScoreEntry` ni el portal de jutges.
+  - Configurar origen i tall no genera unitats automaticament ni sobreescriu slots.
+  - La classificacio continua sent font; no es converteix en propietaria de la fase.
 - Tests afegits/ajustats:
   - La vista comuna mostra tots els aparells locals actius i respecta l'aparell seleccionat.
   - La vista no crea fase default en obrir-se.
@@ -970,6 +1024,7 @@
   - Una fase buida i sense fills es pot eliminar.
   - Una fase amb blocs no es pot eliminar des de la UI.
   - Els POSTs legacy de crear fase, bloc manual i bloc per particio continuen funcionant.
+  - El POST `configure_source_cut` desa `phase.config` i la UI mostra el resum resultant.
 - Verificacio executada:
   - `docker compose exec -T web python manage.py check`.
   - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
@@ -977,7 +1032,8 @@
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.rotacions.test_program_unit_assignments --verbosity 1 --keepdb`.
 - Notes per fases seguents:
   - La Fase 5 pot afegir scope de classificacions per fase sense assumir cap fase default persistent.
-  - La Fase 6 pot omplir slots de `ProgramUnit` creats des de la UI comuna.
+  - La Fase 6 pot consumir `phase.config.source` i `phase.config.cut` per previsualitzar i omplir slots de `ProgramUnit`.
+  - Encara falta una accio explicita de `previsualitzar/generar unitats` des del tall configurat.
   - La Fase 7 pot connectar el planner de rotacions amb les unitats de fases avancades mantenint fases com a definicio i rotacions com a agenda.
   - La Fase 8 i la Fase 10 hauran de decidir quan una fase o unitat passa a ser puntuable i visible per jutges.
 
@@ -1057,6 +1113,7 @@
 
 ### Objectiu
 - Implementar el servei que agafa una classificacio font i omple slots d'una fase desti.
+- Consumir la configuracio d'origen i tall ja desada a `CompeticioAparellFase.config`.
 
 ### Write set principal
 - serveis nous:
@@ -1068,8 +1125,16 @@
 - tests de qualificacio
 
 ### Tasques
+- Llegir `phase.config.source` i `phase.config.cut` com a contracte inicial.
+- Carregar la classificacio font seleccionada (`ClassificacioConfig`).
+- Calcular/previsualitzar files candidates abans de modificar slots.
 - Calcular proposta de qualificats per particio.
 - Aplicar:
+  - `cut.qualifiers_count`
+  - `cut.reserve_count`
+  - `cut.partition_mode`
+  - `cut.unit_capacity`
+  - `cut.unit_name_template`
   - quota default
   - quota overrides
   - reserves
@@ -1100,6 +1165,34 @@
 - Confirmacio parcial.
 - Recalcul amb font canviada marca `stale`.
 - Classificacio individual que classifica equip complet per defecte.
+
+### Prerequisit implementat
+- El planner de fases ja permet desar una configuracio basica d'origen i tall.
+- Contracte actual dins `phase.config`:
+```json
+{
+  "source": {
+    "classificacio_id": 123,
+    "classificacio_nom": "Preliminar TRA",
+    "tipus": "individual"
+  },
+  "cut": {
+    "mode": "top_n",
+    "qualifiers_count": 8,
+    "reserve_count": 2,
+    "partition_mode": "source_partitions",
+    "unit_capacity": 4,
+    "unit_name_template": "{fase} - {particio}"
+  }
+}
+```
+- Aquest prerequisit nomes desa configuracio.
+- Encara falta:
+  - preview de classificats/reserves
+  - generacio automatica de `ProgramUnit`
+  - ompliment de `ProgramUnitSlot`
+  - confirmacio parcial
+  - deteccio de stale/snapshot.
 
 ## Fase 7. Rotacions Sobre Unitats Programables
 
@@ -1205,6 +1298,51 @@
 - Score legacy continua accessible sense fase explicita.
 - Panell de notes nomes mostra slots publicats.
 - Slots pendents no son puntuables.
+
+### Tancament Parcial Implementat
+- Estat: base de model, runtime legacy i panell central de Notes completats per fase.
+- Implementacio feta:
+  - `ScoreEntry` te camp opcional `fase`.
+  - `TeamScoreEntry` te camp opcional `fase`.
+  - `fase = null` representa la preliminar/flux legacy implicit.
+  - Les claus uniques s'han separat en:
+    - unicitat legacy quan `fase is null`
+    - unicitat scoped per fase quan `fase is not null`
+  - S'ha afegit validacio que la fase pertanyi a la mateixa competicio i al mateix `CompeticioAparell`.
+  - Els helpers de scoring poden crear o recuperar notes amb `fase_id`.
+  - Els loaders de classificacions ara carreguen notes de la fase seleccionada quan el scope es de fase.
+  - Els fluxos legacy de notes i jutges filtren `fase is null` per no barrejar notes de fases avancades.
+  - El panell central de Notes mostra un filtre de `Fase`:
+    - `Preliminar` equival a `fase = null`
+    - una fase avancada envia `fase_id`.
+  - El manifest lazy de Notes exposa fases per aparell i unitats de fase.
+  - Les unitats de fase en Notes provenen de `ProgramUnit` i `ProgramUnitSlot`.
+  - Les taules lazy de Notes carreguen participants de slots `filled` o `manual`.
+  - Les claus locals de Notes i el guardat inclouen `fase_id` quan toca.
+  - Els avisos de Notes respecten la fase seleccionada.
+- Migracio:
+  - `0063_score_entries_phase_scope.py`.
+- Guardrails respectats:
+  - No s'ha creat cap fase default persistent.
+  - Les notes existents queden com a legacy amb `fase = null`.
+  - No s'ha canviat encara el portal de jutges cap a home de fases.
+  - No s'ha fet que una `ProgramUnit` sigui puntuable nomes per estar publicada o programada.
+- Abast pendent dins Fase 8:
+  - Deep links i estat visual mes fi per fase al panell de Notes.
+  - Regla estricta de publicacio:
+    - ara Notes usa slots `filled` o `manual`
+    - encara no bloqueja per estat `published` de fase/unitat.
+  - Deep links i tokens de jutge scoped per fase.
+  - Separacio/gestio de video per fase mes enlla de la FK del score.
+- Nota important:
+  - El portal de jutges continua puntuant preliminar/legacy si no rep `fase_id`.
+  - La home de fases per jutges queda dins Fase 9.
+- Verificacio executada:
+  - `python -m py_compile` dels fitxers Python tocats.
+  - `docker compose exec -T web python manage.py makemigrations --check --dry-run`.
+  - `docker compose exec -T web python manage.py check`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases competicions_trampoli.tests.classificacions.test_phase_scope --verbosity 1 --keepdb`.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1 --keepdb`.
 
 ## Fase 9. Portal De Jutges Amb Home De Fases
 

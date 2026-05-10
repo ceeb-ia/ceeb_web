@@ -28,7 +28,9 @@
   .phase-app-tabs,
   .phase-action-row,
   .phase-unit-meta,
-  .phase-unit-statuses {
+  .phase-unit-statuses,
+  .phase-step-list,
+  .phase-slot-summary {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -160,6 +162,56 @@
     margin-bottom: 10px;
   }
 
+  .phase-panel.is-muted {
+    background: #f8fafc;
+  }
+
+  .phase-panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .phase-panel-title h5 {
+    margin: 0;
+  }
+
+  .phase-panel-note,
+  .phase-step-detail {
+    color: #607086;
+    font-size: 0.82rem;
+  }
+
+  .phase-workflow-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .phase-workflow-list li {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+  }
+
+  .phase-workflow-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #e8f1fa;
+    color: #234565;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
   .phase-flow-head {
     display: flex;
     justify-content: space-between;
@@ -218,6 +270,39 @@
     padding: 12px 14px 14px;
   }
 
+  .phase-setup-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .phase-step-card {
+    border: 1px solid #dce4ee;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+  }
+
+  .phase-step-card.is-done {
+    border-color: #b7e4c7;
+    background: #f1fdf6;
+  }
+
+  .phase-step-card.is-partial {
+    border-color: #ffe1a8;
+    background: #fff9ec;
+  }
+
+  .phase-step-card.is-todo {
+    background: #f8fafc;
+  }
+
+  .phase-step-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
   .phase-node-controls {
     display: flex;
     flex-wrap: wrap;
@@ -267,6 +352,15 @@
     color: #1f6b3a;
   }
 
+  .phase-slot-chip.is-empty {
+    background: #f8fafc;
+    color: #607086;
+  }
+
+  .phase-slot-summary {
+    margin-top: 8px;
+  }
+
   .phase-empty {
     padding: 16px;
     background: #f8fafc;
@@ -279,6 +373,10 @@
     }
 
     .phase-unit-row {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-setup-grid {
       grid-template-columns: 1fr;
     }
   }

@@ -101,14 +101,36 @@ class ProgramUnitModelTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(semifinal_unit.slots.get().subject_id, inscripcio.id)
         self.assertEqual(final_unit.slots.get().subject_id, inscripcio.id)
 
-    def test_score_entry_contract_still_has_no_phase_or_program_unit(self):
+    def test_score_entry_contract_has_phase_but_no_program_unit(self):
         score_fields = {field.name for field in ScoreEntry._meta.get_fields()}
         team_score_fields = {field.name for field in TeamScoreEntry._meta.get_fields()}
 
-        self.assertNotIn("fase", score_fields)
+        self.assertIn("fase", score_fields)
         self.assertNotIn("program_unit", score_fields)
-        self.assertNotIn("fase", team_score_fields)
+        self.assertIn("fase", team_score_fields)
         self.assertNotIn("program_unit", team_score_fields)
+
+    def test_same_inscripcio_can_have_legacy_and_phase_scores_for_same_exercise(self):
+        inscripcio = self._create_inscripcio(self.competicio, "Participant A")
+
+        legacy = ScoreEntry.objects.create(
+            competicio=self.competicio,
+            inscripcio=inscripcio,
+            exercici=1,
+            comp_aparell=self.comp_aparell,
+            total=7.5,
+        )
+        phase_score = ScoreEntry.objects.create(
+            competicio=self.competicio,
+            inscripcio=inscripcio,
+            exercici=1,
+            comp_aparell=self.comp_aparell,
+            fase=self.fase,
+            total=8.5,
+        )
+
+        self.assertIsNone(legacy.fase_id)
+        self.assertEqual(phase_score.fase_id, self.fase.id)
 
 
 class ProgramUnitGenerationTests(_BaseTrampoliDataMixin, TestCase):

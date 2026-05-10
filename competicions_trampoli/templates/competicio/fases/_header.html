@@ -1,7 +1,7 @@
 <header class="phase-dashboard-header">
   <div class="phase-dashboard-title">
-    <h2>Fases de la competicio</h2>
-    <div class="text-muted small">{{ competicio.nom }}</div>
+    <h2>Planner de fases i rondes</h2>
+    <div class="text-muted small">{{ competicio.nom }} · defineix rondes per aparell, unitats competitives i el pas cap a rotacions.</div>
     <div class="phase-dashboard-stats" aria-label="Resum de fases">
       <span class="phase-stat">
         <span class="phase-stat-value">{{ comp_aparells|length }}</span>
@@ -13,11 +13,11 @@
       </span>
       <span class="phase-stat">
         <span class="phase-stat-value">{{ total_unit_count }}</span>
-        <span class="phase-stat-label">Blocs</span>
+        <span class="phase-stat-label">Unitats</span>
       </span>
       <span class="phase-stat">
         <span class="phase-stat-value">{{ total_pending_unit_count }}</span>
-        <span class="phase-stat-label">Pendents</span>
+        <span class="phase-stat-label">Sense rotacio</span>
       </span>
     </div>
   </div>

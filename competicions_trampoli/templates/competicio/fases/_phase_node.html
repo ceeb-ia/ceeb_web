@@ -5,16 +5,31 @@
         <strong>{{ phase.nom }}</strong>
         <span class="badge badge-light border">{{ phase.codi }}</span>
         <span class="badge badge-secondary">{{ phase.estat }}</span>
+        {% if phase.ui_generation_mode == "classification" %}
+          <span class="badge badge-success">Generada des de classificacio</span>
+        {% elif phase.ui_generation_mode == "manual" %}
+          <span class="badge badge-warning">Manual</span>
+        {% else %}
+          <span class="badge badge-light border">Sense unitats</span>
+        {% endif %}
       </div>
       {% if phase.parent %}
         <div class="text-muted small">Pare: {{ phase.parent.nom }}</div>
       {% else %}
         <div class="text-muted small">Pare visual: Preliminar implicita</div>
       {% endif %}
+      {% if phase.ui_source_configured or phase.ui_cut_configured %}
+        <div class="text-muted small">
+          Origen: {{ phase.ui_source_label }} · Tall: {{ phase.ui_cut_label }} · {{ phase.ui_partition_label }} · {{ phase.ui_unit_capacity_label }}
+        </div>
+      {% else %}
+        <div class="text-muted small">Origen i tall encara no configurats.</div>
+      {% endif %}
     </div>
     <div class="phase-node-controls">
       <div class="phase-unit-statuses">
-        <span class="badge badge-light border">{{ phase.ui_unit_count }} blocs</span>
+        <span class="badge badge-light border">{{ phase.ui_unit_count }} unitats</span>
+        <span class="badge badge-light border">{{ phase.ui_competitive_slot_count }}/{{ phase.ui_slot_count }} places assignades</span>
         {% if phase.ui_pending_unit_count %}
           <span class="badge badge-warning">{{ phase.ui_pending_unit_count }} pendents de rotacions</span>
         {% else %}
@@ -35,6 +50,14 @@
   </header>
 
   <div class="phase-node-body">
+    <div class="phase-setup-grid">
+      {% for step in phase.ui_setup_steps %}
+        <div class="phase-step-card is-{{ step.state }}">
+          <div class="phase-step-label">{{ step.label }}</div>
+          <div class="phase-step-detail">{{ step.detail }}</div>
+        </div>
+      {% endfor %}
+    </div>
     {% if phase.ui_units %}
       <div class="phase-unit-list">
         {% for unit in phase.ui_units %}
@@ -42,7 +65,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="text-muted small">Encara no hi ha blocs previstos en aquesta fase.</div>
+      <div class="text-muted small">Encara no hi ha unitats competitives en aquesta fase. Crear la fase no assigna participants ni defineix cap tall.</div>
     {% endif %}
   </div>
 </article>

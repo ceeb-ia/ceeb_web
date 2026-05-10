@@ -79,6 +79,7 @@ def scoring_media_context(request, pk):
                     team_subject=team_subject_obj,
                     comp_aparell=comp_aparell,
                     exercici=exercici,
+                    fase__isnull=True,
                 )
                 .first()
             )
@@ -135,6 +136,7 @@ def scoring_media_context(request, pk):
                 inscripcio=inscripcio,
                 comp_aparell_id=comp_aparell_id,
                 exercici=exercici,
+                fase__isnull=True,
             )
             .first()
         )

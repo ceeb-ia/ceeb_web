@@ -75,6 +75,7 @@ def judge_updates(request, token):
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
                 team_subject_id__in=allowed_team_ids,
+                fase__isnull=True,
             )
             .select_related("team_subject")
             .order_by("updated_at", "id")
@@ -92,6 +93,7 @@ def judge_updates(request, token):
                 competicio=competicio,
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
+                fase__isnull=True,
             )
             .exclude(inscripcio_id__in=excluded_ins_ids)
             .order_by("updated_at", "id")
@@ -123,6 +125,7 @@ def judge_updates(request, token):
                 subject_id=subject_id,
                 exercici=s.exercici,
                 comp_aparell_id=s.comp_aparell_id,
+                fase_id=s.fase_id,
                 inputs=_filter_inputs_for_allowed_codes(runtime_inputs, allowed_input_codes),
                 outputs=s.outputs or {},
                 total=s.total,

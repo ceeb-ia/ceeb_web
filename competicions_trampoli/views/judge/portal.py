@@ -413,6 +413,7 @@ def judge_portal(request, token):
     entry_filters = {
         "competicio": competicio,
         "comp_aparell": comp_aparell,
+        "fase__isnull": True,
     }
     if team_subject_mode:
         entry_filters["team_subject_id__in"] = subject_ids
