@@ -19,6 +19,8 @@ INTERNAL_APPS = {
         "active_url_names": ("home", "calendar_home", "calendar_events_json", "calendar_event_create", "calendar_event_update", "calendar_event_delete"),
         "app_label": "ceeb_web",
         "groups": ("calendar_manager",),
+        "image": "images/calendaritzacions.jpg",
+        "description": "Gestiona el calendari intern.",
     },
     "competicions": {
         "label": "Competicions",
@@ -27,6 +29,8 @@ INTERNAL_APPS = {
         "app_label": "competicions_trampoli",
         "groups": ("competicions_manager",),
         "extra_check": _has_active_competicio_membership,
+        "image": "images/competicio_trampoli_ia.webp",
+        "description": "Gestiona competicions, inscripcions i resultats.",
     },
     "designacions": {
         "label": "Designacions",
@@ -34,6 +38,33 @@ INTERNAL_APPS = {
         "active_url_names": ("designacions_upload", "designacions_run_detail", "designacions_assignments", "designacions_geocoding_pending", "designacions_runs_list"),
         "app_label": "designacions",
         "groups": ("designacions_manager",),
+        "image": "images/designacions.jpg",
+        "description": "Realitza les designacions arbitrals.",
+    },
+    "calendaritzacions": {
+        "label": "Calendaritzacions",
+        "url_name": "calendaritzacions:run_list",
+        "active_url_names": (
+            "run_list",
+            "run_create",
+            "run_detail",
+            "run_download",
+            "audit_detail",
+            "run_status",
+        ),
+        "app_label": "calendaritzacions.django",
+        "groups": ("calendaritzacions_manager",),
+        "image": "images/calendaritzacions.jpg",
+        "description": "Processa Excels de calendaritzacio i consulta resultats.",
+    },
+    "certificats": {
+        "label": "Certificats",
+        "url_name": "certificats",
+        "active_url_names": ("certificats", "processar_pdfs"),
+        "app_label": "certificats",
+        "groups": ("certificats_manager",),
+        "image": "images/certificats.jpg",
+        "description": "Reanomena certificats de formacio.",
     },
     "informes": {
         "label": "Informes",
@@ -41,6 +72,8 @@ INTERNAL_APPS = {
         "active_url_names": ("annual_report_list", "annual_report_create", "annual_report_update", "annual_report_detail"),
         "app_label": "marbella_informes",
         "groups": ("informes_manager",),
+        "image": "images/bar-chart.png",
+        "description": "Consulta i prepara informes interns.",
     },
 }
 

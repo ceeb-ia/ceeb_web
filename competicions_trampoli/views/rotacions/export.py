@@ -27,11 +27,11 @@ from ...services.shared.competition_groups import (
 )
 from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
-    build_group_rotation_step_map,
-    build_series_rotation_step_map,
+    build_rotation_unit_step_map,
     effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
+    rotation_unit_key,
     unique_ordered,
 )
 from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
@@ -200,8 +200,11 @@ def franges_export_excel(request, pk):
         .prefetch_related("grup_links__grup", "serie_links__serie")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
-    rotation_step_map = build_group_rotation_step_map(assigns, franja_modes)
-    rotation_series_step_map = build_series_rotation_step_map(assigns, franja_modes)
+    rotation_unit_step_map = build_rotation_unit_step_map(
+        assigns,
+        lambda assignacio: rotation_unit_key(_assignacio_program_keys(assignacio)),
+        franja_modes,
+    )
     cell_groups = {}
     for a in assigns:
         cell_groups[(a.franja_id, a.estacio_id)] = _assignacio_program_keys(a)
@@ -332,44 +335,48 @@ def franges_export_excel(request, pk):
             return json.dumps(value, ensure_ascii=False)
         return str(value)
 
-    def _ordered_inscripcions_for_cell(franja, estacio, groups):
-        if not groups:
+    def _ordered_inscripcions_for_cell(franja, estacio, items):
+        if not items:
             return []
 
         mode_for_franja = franja_modes.get(str(franja.id), ORDER_MODE_MAINTAIN)
         comp_aparell_id = estacio_comp_aparell.get(estacio.id)
 
-        ordered_inscripcions = []
+        base_pairs = []
         seen_ins = set()
-        for g in groups:
-            base_pairs = []
-            for ins in ins_by_grup.get(g, []):
+        for key in items:
+            if not str(key).startswith("g:"):
+                continue
+            try:
+                group_id = int(str(key).split(":", 1)[1])
+            except Exception:
+                continue
+            for ins in ins_by_grup.get(group_id, []):
                 ins_id = ins.id
                 if comp_aparell_id and (ins_id, comp_aparell_id) in excluded_pairs:
                     continue
-                base_pairs.append((ins_id, ins))
-
-            ordered_pairs = order_pairs_for_mode(
-                base_pairs,
-                mode_for_franja,
-                rotate_steps=effective_rotate_steps(
-                    mode_for_franja,
-                    rotation_step_map.get((g, franja.id), 0),
-                ),
-                seed_prefix=f"rot-export|{competicio.id}|{franja.id}|{estacio.id}|{g}",
-            )
-            for ins_id, ins in ordered_pairs:
                 if ins_id in seen_ins:
                     continue
                 seen_ins.add(ins_id)
-                ordered_inscripcions.append(ins)
-        return ordered_inscripcions
+                base_pairs.append((ins_id, ins))
+
+        unit_key = rotation_unit_key(items)
+        ordered_pairs = order_pairs_for_mode(
+            base_pairs,
+            mode_for_franja,
+            rotate_steps=effective_rotate_steps(
+                mode_for_franja,
+                rotation_unit_step_map.get((unit_key, franja.id), 0),
+            ),
+            seed_prefix=f"rot-export|{competicio.id}|{franja.id}|{estacio.id}|{unit_key}",
+        )
+        return [ins for _ins_id, ins in ordered_pairs]
 
     def _ordered_team_subjects_for_cell(franja, estacio, items):
         if not items:
             return []
         mode_for_franja = franja_modes.get(str(franja.id), ORDER_MODE_MAINTAIN)
-        ordered_subjects = []
+        base_pairs = []
         seen_subject_ids = set()
         for key in items:
             if not str(key).startswith("s:"):
@@ -379,22 +386,26 @@ def franges_export_excel(request, pk):
             except Exception:
                 continue
             rows = list(team_subjects_by_serie.get(serie_id, []))
-            base_pairs = [(int(row.get("subject_id") or 0), row) for row in rows if int(row.get("subject_id") or 0) > 0]
-            ordered_pairs = order_pairs_for_mode(
-                base_pairs,
-                mode_for_franja,
-                rotate_steps=effective_rotate_steps(
-                    mode_for_franja,
-                    rotation_series_step_map.get((serie_id, franja.id), 0),
-                ),
-                seed_prefix=f"rot-export|team|{competicio.id}|{franja.id}|{estacio.id}|{serie_id}",
-            )
-            for subject_id, subject in ordered_pairs:
+            for subject in rows:
+                subject_id = int(subject.get("subject_id") or 0)
+                if subject_id <= 0:
+                    continue
                 if subject_id in seen_subject_ids:
                     continue
                 seen_subject_ids.add(subject_id)
-                ordered_subjects.append(subject)
-        return ordered_subjects
+                base_pairs.append((subject_id, subject))
+
+        unit_key = rotation_unit_key(items)
+        ordered_pairs = order_pairs_for_mode(
+            base_pairs,
+            mode_for_franja,
+            rotate_steps=effective_rotate_steps(
+                mode_for_franja,
+                rotation_unit_step_map.get((unit_key, franja.id), 0),
+            ),
+            seed_prefix=f"rot-export|team|{competicio.id}|{franja.id}|{estacio.id}|{unit_key}",
+        )
+        return [subject for _subject_id, subject in ordered_pairs]
 
     titol_competicio = str(export_meta.get("title", "") or "").strip() or getattr(
         competicio, "nom", f"Competicio {competicio.id}"
@@ -557,11 +568,7 @@ def franges_export_excel(request, pk):
                 if estacio_is_team.get(e.id):
                     ordered = _ordered_team_subjects_for_cell(f, e, gs)
                 else:
-                    ordered = _ordered_inscripcions_for_cell(f, e, [
-                        int(str(key).split(":", 1)[1])
-                        for key in gs
-                        if str(key).startswith("g:")
-                    ])
+                    ordered = _ordered_inscripcions_for_cell(f, e, gs)
                 cell_participants[e.id] = ordered
                 if len(ordered) > max_participants:
                     max_participants = len(ordered)

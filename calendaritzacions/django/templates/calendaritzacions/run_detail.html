@@ -1,0 +1,73 @@
+{% extends "calendaritzacions/base.html" %}
+{% load calendaritzacions_json %}
+
+{% block calendaritzacions_title %}Run {{ run.id }}{% endblock %}
+
+{% block calendaritzacions_content %}
+<div class="card-surface p-3">
+  <div
+    class="d-flex justify-content-between align-items-center mb-3"
+    data-calendaritzacions-live="{% if not run.is_finished %}1{% else %}0{% endif %}"
+    data-status-url="{% url 'calendaritzacions:run_status' run.pk %}"
+  >
+    <div>
+      <h2 class="mb-0">Execucio #{{ run.id }}</h2>
+      <div class="text-muted small">{{ run.input_name }} &middot; Task: {{ run.task_id|default:"-" }}</div>
+    </div>
+    <div>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_list' %}">Historic</a>
+      <a class="btn btn-sm btn-primary" href="{% url 'calendaritzacions:run_create' %}">Nova execucio</a>
+    </div>
+  </div>
+
+  <div class="d-flex align-items-center mb-2">
+    {% include "calendaritzacions/partials/run_status_badge.html" with status=run.status %}
+    <span class="text-muted small ml-2" data-progress-text></span>
+  </div>
+
+  <div class="progress mb-3" style="height: 10px;">
+    <div class="progress-bar" data-progress-bar role="progressbar" style="width:0%"></div>
+  </div>
+
+  <div class="row mb-3">
+    <div class="col-12 col-lg-8 mb-3 mb-lg-0">
+      <div class="border rounded p-3 h-100">
+        <div class="font-weight-bold mb-2">Detall del run</div>
+        <dl class="row small mb-0">
+          <dt class="col-sm-3">Fitxer</dt><dd class="col-sm-9">{{ run.input_name }}</dd>
+          <dt class="col-sm-3">Motor</dt><dd class="col-sm-9">{{ run.engine_name }}</dd>
+          <dt class="col-sm-3">Fase</dt><dd class="col-sm-9">{{ run.phase }}</dd>
+          <dt class="col-sm-3">Creat</dt><dd class="col-sm-9">{% if run.created_at %}{{ run.created_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-3">Inici</dt><dd class="col-sm-9">{% if run.started_at %}{{ run.started_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-3">Final</dt><dd class="col-sm-9">{% if run.finished_at %}{{ run.finished_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-3">Sortida</dt><dd class="col-sm-9">{{ run.output_path|basename|default:"-" }}</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="col-12 col-lg-4">
+      <div class="border rounded p-3 h-100">
+        <div class="font-weight-bold mb-2">Accions</div>
+        <div>
+          {% if run.status == run.STATUS_SUCCESS and run.output_path %}
+          <a class="btn btn-sm btn-success" data-download-link href="{% url 'calendaritzacions:run_download' run.pk %}">Descarregar resultat</a>
+          {% elif run.status == run.STATUS_ERROR %}
+          <div class="alert alert-danger small mb-0">El run ha finalitzat amb error.</div>
+          {% else %}
+          <div class="alert alert-light small mb-0">El resultat estara disponible quan acabi el proces.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% include "calendaritzacions/partials/audit_links.html" with run=run %}
+  {% include "calendaritzacions/partials/logs_panel.html" with logs=run.logs %}
+
+  {% if run.error_message %}
+  <div class="alert alert-danger">
+    <div class="font-weight-bold mb-1">Error</div>
+    <pre class="mb-0 calendaritzacions-pre">{{ run.error_message }}</pre>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

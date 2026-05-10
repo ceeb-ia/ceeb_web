@@ -6,11 +6,13 @@ import uuid
 import httpx
 import aiofiles
 import asyncio
+import shutil
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from django.conf import settings
 import redis
 import json
 
-CERTIFICATS_API = os.getenv("CERTIFICATS_API", "http://certificats:8000/process-pdfs/")
 CALENDARITZACIONS_API = os.getenv("CALENDARITZACIONS_API", "http://calendaritzacions:8000/process_async")
 CALENDARITZACIONS_API_SEGONA_FASE = os.getenv("CALENDARITZACIONS_API_SEGONA_FASE", "http://calendaritzacions:8000/process_async_segona_fase/")
 LLISTATS_PROVISIONALS_API = os.getenv("LLISTATS_PROVISIONALS_API", "http://natacio:8000/provisionals/")
@@ -36,6 +38,87 @@ def _path_to_media_url(path: str) -> str | None:
         pass
     return None
 
+
+def _path_to_settings_media_url(path: str | Path) -> str | None:
+    try:
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        resolved_path = Path(path).resolve()
+        rel = resolved_path.relative_to(media_root).as_posix()
+        return settings.MEDIA_URL.rstrip('/') + '/' + rel
+    except Exception:
+        return None
+
+
+def _load_certificats_services():
+    try:
+        from certificats.services.archive import create_certificats_zip
+        from certificats.services.processor import processar_certificats
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("No s'ha pogut carregar l'app local de certificats.") from exc
+
+    return processar_certificats, create_certificats_zip
+
+
+def _normalise_file_paths(file_paths) -> list[Path]:
+    if isinstance(file_paths, (str, bytes, os.PathLike)):
+        raw_paths = [file_paths]
+    elif file_paths is None:
+        raw_paths = []
+    else:
+        raw_paths = list(file_paths)
+
+    paths = [Path(path) for path in raw_paths if path]
+    if not paths:
+        raise RuntimeError("No hi ha cap fitxer per processar a certificats.")
+
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"No s'ha trobat el fitxer temporal: {missing[0]}")
+
+    unsupported = [path.name for path in paths if path.suffix.lower() != ".pdf"]
+    if unsupported:
+        raise RuntimeError(f"Tipus de fitxer no suportat a certificats: {unsupported[0]}. Ha de ser .pdf")
+
+    return paths
+
+
+def _copy_certificats_inputs(file_paths, destination: Path) -> int:
+    destination.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for index, source in enumerate(_normalise_file_paths(file_paths), start=1):
+        target = destination / source.name
+        if target.exists():
+            target = destination / f"{source.stem}_{index}{source.suffix}"
+        shutil.copy2(source, target)
+        copied += 1
+    return copied
+
+
+def _store_certificats_result(task_id: str, result: str, zip_path: str | Path) -> None:
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+    try:
+        r = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+        result_url = _path_to_settings_media_url(zip_path) or result
+        job_meta = json.dumps(
+            {
+                'status': 'done',
+                'result': str(zip_path),
+                'result_url': result_url,
+                'logs': ['Proces complet.'],
+            }
+        )
+        for key in {task_id, result, result_url}:
+            if key:
+                r.set(f"job:{key}", job_meta)
+                r.expire(f"job:{key}", 60 * 60 * 24 * 7)
+        r.publish(
+            f"logs:{task_id}",
+            json.dumps({'message': 'Proces complet. Preparant enllac de descarrega...', 'progress': 100}),
+        )
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------------------------------
 # CERTIFICATS
 # ---------------------------------------------------------------------------------------------------
@@ -48,121 +131,59 @@ def process_certificats_task(self, file_paths):
     però que executa codi ASÍNCRON intern amb asyncio.run(...).
     """
     task_id = str(self.request.id)
-    # Estat inicial (meta 100% JSON-serialitzable)
-    self.update_state(state='STARTED', meta={'logs': ['Iniciant el procés...']})
+    push = _push(self)
+    self.update_state(state='STARTED', meta={'logs': ['Iniciant el proces...']})
 
     try:
-        remote_job_id, zip_path = asyncio.run(_process_certificats_async(task_id, file_paths, _push(self)))
+        processar_certificats, create_certificats_zip = _load_certificats_services()
+        with TemporaryDirectory(prefix=f"certificats_{task_id}_") as temp_dir:
+            work_dir = Path(temp_dir)
+            input_dir = work_dir / "input"
+            copied = _copy_certificats_inputs(file_paths, input_dir)
+            push(f"Preparats {copied} fitxers per processar localment.", 10)
 
-        # If the external service returned a remote job id, it may be
-        # processing asynchronously. We must publish the correct Redis
-        # key under the remote job id (not the Celery task id) so the
-        # frontend or other services can poll `job:{remote_job_id}`.
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        try:
-            r = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
-        except Exception:
-            r = None
+            result_dir = processar_certificats(input_dir, work_dir, on_progress=push)
+            if result_dir is None:
+                raise RuntimeError("No s'ha pogut processar cap certificat.")
 
-        # Case A: remote job id provided
-        if remote_job_id:
-            # If the remote service already produced a zip_path, mark as done
-            if zip_path:
-                # Persist remote job metadata under remote_job_id
-                try:
-                    if r:
-                        result_url = _path_to_media_url(zip_path) or zip_path
-                        job_meta = json.dumps({'status': 'done', 'result': zip_path, 'result_url': result_url, 'logs': []})
-                        r.set(f"job:{remote_job_id}", job_meta)
-                        r.expire(f"job:{remote_job_id}", 60 * 60 * 24 * 7)
-                        try:
-                            r.publish(f"logs:{remote_job_id}", json.dumps({'event': 'done', 'result': zip_path, 'result_url': zip_path}))
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+            push("Comprimint certificats generats...", 95)
+            zip_path = create_certificats_zip(
+                result_dir,
+                Path(settings.MEDIA_ROOT) / "certificats",
+            )
+        result_url = _path_to_settings_media_url(zip_path) or _path_to_media_url(str(zip_path)) or str(zip_path)
+        _store_certificats_result(task_id, result_url, zip_path)
 
-                try:
-                    # Expose a URL to the frontend instead of filesystem path when possible
-                    self.update_state(state='SUCCESS', meta={'logs': ['Procés complet (remot amb resultat).'], 'result': _path_to_media_url(zip_path) or zip_path})
-                except Exception:
-                    pass
-
-                return remote_job_id
-
-            # Otherwise the remote job is processing asynchronously: create a pending entry
-            try:
-                if r:
-                    job_meta = json.dumps({'status': 'PENDING', 'logs': []})
-                    r.set(f"job:{remote_job_id}", job_meta)
-                    r.expire(f"job:{remote_job_id}", 60 * 60 * 24 * 7)
-                    try:
-                        r.publish(f"logs:{remote_job_id}", json.dumps({'event': 'created', 'remote_id': remote_job_id}))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Update Celery meta to expose the remote id so the frontend can poll
-            try:
-                self.update_state(state='SUCCESS', meta={'logs': ['Tasca encolada al servei remot.'], 'result': remote_job_id})
-            except Exception:
-                pass
-
-            return remote_job_id
-
-        # Case B: no remote id -> perhaps the external service returned a direct zip_path
-        try:
-            if zip_path:
-                if r:
-                    try:
-                        result_url = _path_to_media_url(zip_path) or zip_path
-                        job_meta = json.dumps({'status': 'done', 'result': zip_path, 'result_url': result_url, 'logs': []})
-                        r.set(f"job:{task_id}", job_meta)
-                        r.expire(f"job:{task_id}", 60 * 60 * 24 * 7)
-                        try:
-                            r.publish(f"logs:{task_id}", json.dumps({'event': 'done', 'result': zip_path, 'result_url': result_url}))
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-
-                try:
-                    self.update_state(state='SUCCESS', meta={'logs': ['Procés complet.'], 'result': _path_to_media_url(zip_path) or zip_path})
-                except Exception:
-                    pass
-
-                return _path_to_media_url(zip_path) or zip_path
-        except Exception:
-            pass
-
-        # Fallback: nothing meaningful returned from external service
-        try:
-            self.update_state(state='SUCCESS', meta={'logs': ['Procés complet (sense resultat directe).'], 'result': None})
-        except Exception:
-            pass
-
-        return None  # <- str serialitzable (or None)
+        self.update_state(
+            state='SUCCESS',
+            meta={'logs': ['Proces complet.'], 'progress': 100, 'result': result_url, 'result_url': result_url},
+        )
+        push("Proces complet. Preparant enllac de descarrega...", 100)
+        return result_url
     except Exception as e:
-        # Marca PROGRESS/FAILURE amb meta serialitzable
         try:
             self.update_state(state='FAILURE', meta={'logs': [str(e)]})
         finally:
             raise
 
-
 def _push(self_task):
     """Callback per reportar logs a Celery meta, sempre serialitzable."""
-    def _inner(msg: str):
+    def _inner(msg: str, progress: int | None = None):
         try:
             print(f"Enviant log: {msg}")
-            self_task.update_state(state='PROGRESS', meta={'logs': [str(msg)]})
+            meta = {'logs': [str(msg)]}
+            if progress is not None:
+                meta['progress'] = progress
+            self_task.update_state(state='PROGRESS', meta=meta)
             # També publiquem el missatge al canal Redis perquè l'SSE pugui llegir-lo
             try:
                 task_id_local = str(self_task.request.id)
                 redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
                 r = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
-                payload = json.dumps({'message': str(msg)})
+                payload = {'message': str(msg)}
+                if progress is not None:
+                    payload['progress'] = progress
+                payload = json.dumps(payload)
                 r.publish(f"logs:{task_id_local}", payload)
             except Exception:
                 # No brownzeu la tasca per fallades en pub/sub
@@ -172,45 +193,6 @@ def _push(self_task):
             pass
     return _inner
 
-
-async def _process_certificats_async(task_id: str, file_paths: list[str], push):
-    """
-    Nucli ASÍNCRON: fa la crida HTTP al servei, escriu el ZIP i neteja temporals.
-    Manté tots els avantatges d'async (httpx, aiofiles).
-    """
-    # 1) Prepara el multipart amb BYTES (evitem deixar handlers oberts)
-    multipart = []
-    for path in file_paths:
-        filename = os.path.basename(path)
-        with open(path, 'rb') as f:
-            data = f.read()
-        # httpx accepta bytes en el camp del fitxer
-        multipart.append(('files', (filename, data, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')))
-
-    headers = {"X-Task-ID": task_id}
-
-    push('Enviant fitxers al servei extern...')
-    async with httpx.AsyncClient(timeout=None) as client:
-        resp = await client.post(CERTIFICATS_API, files=multipart, headers=headers)
-
-    if resp.status_code != 200:
-        raise RuntimeError(f"Error del servei de certificats ({resp.status_code}).")
-
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
-
-    remote_job_id = None
-    if isinstance(data, dict):
-        remote_job_id = data.get('job_id')
-        zip_path = data.get('zip_path')
-
-    push('Processant resposta del servei...')
-    
-    
-    push(f'Procés complet. Preparant enllaç de descàrrega...')
-    return remote_job_id, zip_path
 
 
 # ---------------------------------------------------------------------------------------------------

@@ -115,6 +115,208 @@ def _parse_positive_int(raw_value):
     return value if value > 0 else None
 
 
+def _normalize_search_text(value):
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _search_matches(query, *values):
+    query = _normalize_search_text(query)
+    if not query:
+        return False
+    return any(query in _normalize_search_text(value) for value in values)
+
+
+def _app_for_unit(context, unit):
+    return context["apps_by_id"].get(int(unit.get("comp_aparell_id") or 0))
+
+
+def _unit_identity(unit):
+    return "|".join(
+        [
+            f"franja:{unit.get('franja_id')}" if unit.get("franja_id") else "off",
+            str(unit.get("comp_aparell_id") or ""),
+            str(unit.get("key") or ""),
+        ]
+    )
+
+
+def _unit_context_payload(context, unit):
+    comp_aparell = _app_for_unit(context, unit)
+    exercicis = list(range(1, clamp_exercici(999, comp_aparell) + 1)) if comp_aparell else [1]
+    label_parts = [
+        unit.get("franja_label") or ("Fora de programa" if unit.get("is_out_of_program") else ""),
+        unit.get("app_label") or "",
+        unit.get("label") or unit.get("key") or "",
+    ]
+    return {
+        "franja_id": unit.get("franja_id"),
+        "franja_label": unit.get("franja_label") or "",
+        "comp_aparell_id": unit.get("comp_aparell_id"),
+        "app_label": unit.get("app_label") or "",
+        "unit_key": str(unit.get("key") or ""),
+        "unit_identity": _unit_identity(unit),
+        "unit_label": unit.get("label") or str(unit.get("key") or ""),
+        "is_out_of_program": bool(unit.get("is_out_of_program")),
+        "exercicis": exercicis,
+        "label": " - ".join(str(part) for part in label_parts if part),
+    }
+
+
+def _contexts_for_subject(context, subject, *, max_contexts=8):
+    subject_kind = str(subject.get("subject_kind") or "inscripcio")
+    subject_group = str(subject.get("group") if subject.get("group") is not None else "")
+    allowed_app_ids = [str(app_id) for app_id in (subject.get("allowed_app_ids") or [])]
+    contexts = []
+    for unit in list(context["units"]) + list(context["out_of_program_units"]):
+        if subject_kind == "team_unit" and unit.get("subject_kind") != "team_unit":
+            continue
+        if subject_kind != "team_unit" and unit.get("subject_kind") == "team_unit":
+            continue
+        if allowed_app_ids and str(unit.get("comp_aparell_id") or "") not in allowed_app_ids:
+            continue
+        members = [str(member) for member in (unit.get("member_keys") or [])]
+        if subject_group not in members:
+            continue
+        contexts.append(_unit_context_payload(context, unit))
+        if len(contexts) >= max_contexts:
+            break
+    return contexts
+
+
+def _search_subject_payload(subject, contexts):
+    subject_kind = str(subject.get("subject_kind") or "inscripcio")
+    subject_id = subject.get("subject_id") or subject.get("id")
+    return {
+        "id": f"{subject_kind}:{subject_id}",
+        "kind": "subject",
+        "subject_kind": subject_kind,
+        "subject_id": subject_id,
+        "name": subject.get("name") or subject.get("label") or "",
+        "meta": subject.get("meta") or subject.get("context_name") or "",
+        "subject": subject,
+        "contexts": contexts,
+    }
+
+
+def _unit_search_payload(context, unit):
+    return {
+        "id": f"unit:{_unit_identity(unit)}",
+        "kind": "unit",
+        "name": unit.get("label") or str(unit.get("key") or ""),
+        "meta": " - ".join(
+            str(part)
+            for part in [
+                unit.get("franja_label") or ("Fora de programa" if unit.get("is_out_of_program") else ""),
+                unit.get("app_label") or "",
+                f"{unit.get('count') or 0} subjectes",
+            ]
+            if part
+        ),
+        "subject": None,
+        "contexts": [_unit_context_payload(context, unit)],
+    }
+
+
+@require_GET
+def notes_search(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    query = str(request.GET.get("q") or "").strip()
+    limit = _parse_positive_int(request.GET.get("limit")) or 20
+    limit = max(1, min(50, limit))
+    if len(query) < 2:
+        return JsonResponse({"ok": True, "query": query, "results": [], "count": 0})
+
+    context = build_notes_units_context(competicio)
+    active_individual_app_ids = [
+        int(app.id)
+        for app in context["apps"]
+        if not is_team_context_app(app)
+    ]
+
+    results = []
+    seen = set()
+
+    def add_result(payload):
+        key = str(payload.get("id") or "")
+        if not key or key in seen or not payload.get("contexts"):
+            return
+        seen.add(key)
+        results.append(payload)
+
+    for rows in context["grouped_inscripcions"].values():
+        for inscripcio in rows:
+            group_label_text = ""
+            if getattr(inscripcio, "grup_competicio", None):
+                group_label_text = getattr(inscripcio.grup_competicio, "label", "") or getattr(
+                    inscripcio.grup_competicio,
+                    "nom",
+                    "",
+                )
+            subject = serialize_individual_subject(
+                inscripcio,
+                active_individual_app_ids,
+                context["excluded_by_inscripcio"],
+            )
+            if not _search_matches(
+                query,
+                subject.get("name"),
+                subject.get("meta"),
+                subject.get("group_display_num"),
+                subject.get("order"),
+                group_label_text,
+                f"grup {subject.get('group_display_num') or subject.get('group') or ''}",
+            ):
+                continue
+            add_result(_search_subject_payload(subject, _contexts_for_subject(context, subject)))
+            if len(results) >= limit:
+                break
+        if len(results) >= limit:
+            break
+
+    if len(results) < limit:
+        for subjects in context["team_subjects_by_bucket"].values():
+            for subject in subjects:
+                if not _search_matches(
+                    query,
+                    subject.get("name"),
+                    subject.get("label"),
+                    subject.get("meta"),
+                    subject.get("context_name"),
+                    subject.get("members_text"),
+                    subject.get("group_label"),
+                ):
+                    continue
+                add_result(_search_subject_payload(subject, _contexts_for_subject(context, subject)))
+                if len(results) >= limit:
+                    break
+            if len(results) >= limit:
+                break
+
+    if len(results) < limit:
+        for unit in list(context["units"]) + list(context["out_of_program_units"]):
+            if not _search_matches(
+                query,
+                unit.get("label"),
+                unit.get("app_label"),
+                unit.get("franja_label"),
+                unit.get("key"),
+                f"grup {unit.get('label') or ''}",
+            ):
+                continue
+            add_result(_unit_search_payload(context, unit))
+            if len(results) >= limit:
+                break
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "query": query,
+            "results": results,
+            "count": len(results),
+        }
+    )
+
+
 def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_schema):
     scores = {}
     if is_team_context_app(comp_aparell):

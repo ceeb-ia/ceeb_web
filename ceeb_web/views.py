@@ -1,6 +1,6 @@
 import logging
 import os, io, uuid, zipfile, requests, sys, json
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
@@ -29,6 +29,7 @@ from .models import CalendarEvent
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.views.generic import TemplateView
 from django.contrib import messages
 from django.views.generic.edit import FormView
@@ -62,58 +63,12 @@ def esports_individuals_view(request):
 # ---------------------------------------------------------------------------------------------------
 @csrf_exempt
 def calendaritzacions_view(request):
-    # Nova implementació: similar a `certificats` — guardem temporalment el fitxer, enfilem
-    # una tasca Celery `process_calendaritzacions_task` i retornem el `task_id` al frontend
-    # perquè aquest obri l'SSE i faci polling de l'estat.
-    if request.method == 'POST':
-        # Esperem un únic fitxer amb camp 'file'
-        up = request.FILES.get('file')
-        if not up:
-            return JsonResponse({'error': 'Cap fitxer rebut.'}, status=400)
-
-        # Desa temporalment al directori MEDIA_ROOT/temp
-        temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, up.name)
-        with open(temp_path, 'wb') as f:
-            for chunk in up.chunks():
-                f.write(chunk)
-
-        # Enfilem la tasca Celery passant la ruta temporal del fitxer perquè la tasca
-        # faci un POST multipart al servei de calendaritzacions (no codifiquem en base64).
-        task = process_calendaritzacions_task.delay(temp_path)
-        return JsonResponse({'task_id': task.id})
-
-    # GET normal: renderitza la plantilla (el JS de la plantilla s'encarregarà d'enviar la crida)
-    return render(request, 'calendaritzacions.html', {})
+    return HttpResponseRedirect(reverse("calendaritzacions:run_create"))
 
 
 @csrf_exempt
 def calendaritzacions_fase_dos_view(request):
-    # Nova implementació: similar a `certificats` — guardem temporalment el fitxer, enfilem
-    # una tasca Celery `process_calendaritzacions_task` i retornem el `task_id` al frontend
-    # perquè aquest obri l'SSE i faci polling de l'estat.
-    if request.method == 'POST':
-        # Esperem un únic fitxer amb camp 'file'
-        up = request.FILES.get('file')
-        if not up:
-            return JsonResponse({'error': 'Cap fitxer rebut.'}, status=400)
-
-        # Desa temporalment al directori MEDIA_ROOT/temp
-        temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, up.name)
-        with open(temp_path, 'wb') as f:
-            for chunk in up.chunks():
-                f.write(chunk)
-
-        # Enfilem la tasca Celery passant la ruta temporal del fitxer perquè la tasca
-        # faci un POST multipart al servei de calendaritzacions (no codifiquem en base64).
-        task = process_calendaritzacions_fase_dos_task.delay(temp_path)
-        return JsonResponse({'task_id': task.id})
-
-    # GET normal: renderitza la plantilla (el JS de la plantilla s'encarregarà d'enviar la crida)
-    return render(request, 'calendaritzacions_fase_dos.html', {})
+    return HttpResponseRedirect(f"{reverse('calendaritzacions:run_create')}?phase=segona_fase")
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -446,6 +401,14 @@ def task_status_view(request, task_id):
         # 'SUCCESS' when remote status == 'done'. Otherwise return
         # 'PENDING' so the frontend keeps polling.
         response_data['result'] = task.result
+        if isinstance(task.result, str) and (
+            task.result.startswith(settings.MEDIA_URL)
+            or task.result.startswith("/media/")
+            or task.result.startswith("http://")
+            or task.result.startswith("https://")
+        ):
+            response_data['result_url'] = task.result
+            return JsonResponse(response_data)
         try:
             if isinstance(task.result, str):
                 remote_id = task.result

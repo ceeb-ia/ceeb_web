@@ -1,0 +1,21 @@
+from django import forms
+
+
+class MultipleFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    def clean(self, data, initial=None):
+        if isinstance(data, (list, tuple)):
+            clean_file = super().clean
+            return [clean_file(item, initial) for item in data]
+        return super().clean(data, initial)
+
+
+class CertificatsUploadForm(forms.Form):
+    files = MultipleFileField(
+        widget=MultipleFileInput(attrs={"multiple": True, "accept": ".pdf,.zip,application/pdf,application/zip"}),
+        label="Selecciona arxius PDF o ZIP",
+        required=True,
+    )

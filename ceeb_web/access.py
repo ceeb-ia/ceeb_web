@@ -42,7 +42,7 @@ def get_internal_nav_apps(user, request=None):
     current_url_name = getattr(getattr(request, "resolver_match", None), "url_name", "")
     items = []
 
-    for app_key in ("calendar", "competicions", "designacions", "informes"):
+    for app_key in ("calendar", "competicions", "designacions", "calendaritzacions", "certificats", "informes"):
         if not user_has_app_access(user, app_key):
             continue
 
@@ -59,9 +59,12 @@ def get_internal_nav_apps(user, request=None):
         items.append(
             {
                 "key": app_key,
+                "app_key": app_key,
                 "label": config["label"],
                 "url": url,
                 "active": current_url_name in active_url_names,
+                "image": config.get("image", ""),
+                "description": config.get("description", ""),
             }
         )
 

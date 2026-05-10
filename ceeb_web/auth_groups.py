@@ -2,6 +2,8 @@ GLOBAL_AUTH_GROUPS = {
     "platform_admin": "Administracio global de la plataforma",
     "competicions_manager": "Gestio global del modul de competicions",
     "designacions_manager": "Gestio global del modul de designacions",
+    "calendaritzacions_manager": "Gestio global del modul de calendaritzacions",
+    "certificats_manager": "Gestio global del modul de certificats",
     "informes_manager": "Gestio global del modul d'informes",
     "calendar_manager": "Gestio global del calendari intern",
     "readonly_backoffice": "Acces de lectura al backoffice",

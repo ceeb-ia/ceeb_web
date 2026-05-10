@@ -1,12 +1,46 @@
   <style>
     .judge-card{ border:1px solid #e9ecef; border-radius:.6rem; padding:.75rem .9rem; background:#fff; }
+    .judge-card-head{ gap:.65rem; min-width:0; }
+    .judge-card-main{ min-width:0; flex:1 1 auto; }
+    .judge-card-main .fw-semibold,
+    .judge-card-main .judge-meta{ overflow-wrap:anywhere; }
     .judge-card.flash{ box-shadow: 0 0 0 2px rgba(13,110,253,.25); transition: box-shadow .2s ease; }
     .judge-meta{ color:#6c757d; font-size:.85rem; }
     .judge-pill{ font-size:.85rem; }
     .input-salt{ width:76px; padding:.15rem .25rem; text-align:center; }
+    .judge-portal-page{
+      max-width:100%;
+      overflow-x:hidden;
+    }
+    .judge-portal-page .card-surface{
+      max-width:100%;
+      overflow-x:hidden;
+    }
+    .judge-portal-page .input-salt{
+      width:min(100%, 14rem);
+      max-width:14rem;
+    }
+    .judge-portal-page [data-matrix-row="1"]{
+      max-width:100%;
+      min-width:0;
+    }
+    .judge-portal-page [data-matrix-row="1"] .input-salt{
+      width:auto;
+      max-width:none;
+      min-width:4.5rem;
+      flex:1 1 0;
+    }
     .status-ok{ color:#0a7; font-weight:600; }
     .status-err{ color:#c22; font-weight:600; }
     .sticky-top-lite{ position: sticky; top: 0; z-index: 5; background: #fff; padding-top: .5rem; }
+    .judge-portal-header{ gap:.75rem; min-width:0; }
+    .judge-portal-header-main{ min-width:0; flex:1 1 auto; }
+    .judge-portal-actions{
+      gap:.5rem;
+      flex:0 0 auto;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
     .judge-portal-title{
       display:flex;
       align-items:center;
@@ -40,6 +74,8 @@
       gap:.55rem;
       color:#64748b;
       font-size:.86rem;
+      min-width:0;
+      overflow-wrap:anywhere;
     }
     .judge-assignment-summary{
       display:flex;
@@ -67,6 +103,8 @@
       font-size:.88rem;
       font-weight:700;
       line-height:1.45;
+      min-width:0;
+      overflow-wrap:anywhere;
     }
     .judge-field-block{
       border:1px solid #dbe3ef;
@@ -85,6 +123,7 @@
       display:flex;
       align-items:flex-start;
       justify-content:space-between;
+      flex-wrap:wrap;
       gap:.7rem;
       padding:.55rem .65rem;
       background:#f8fbff;
@@ -95,6 +134,7 @@
       color:#0f172a;
       font-weight:800;
       line-height:1.25;
+      overflow-wrap:anywhere;
     }
     .judge-field-badges{
       display:flex;
@@ -102,6 +142,7 @@
       justify-content:flex-end;
       flex-wrap:wrap;
       gap:.3rem;
+      min-width:0;
     }
     .judge-field-badge{
       display:inline-flex;
@@ -436,13 +477,15 @@
     .judge-exercise-panel-head{
       display:flex;
       justify-content:space-between;
+      flex-wrap:wrap;
       gap:.75rem;
       align-items:flex-start;
       margin-bottom:.65rem;
     }
+    .judge-exercise-panel-main{ min-width:0; flex:1 1 auto; }
     .judge-exercise-panel-title{ font-weight:700; color:#0f172a; }
-    .judge-exercise-panel-subtitle{ color:#6c757d; font-size:.8rem; margin-top:.1rem; }
-    .judge-exercise-actions{ display:flex; justify-content:flex-end; gap:.5rem; margin-top:.75rem; }
+    .judge-exercise-panel-subtitle{ color:#6c757d; font-size:.8rem; margin-top:.1rem; overflow-wrap:anywhere; }
+    .judge-exercise-actions{ display:flex; justify-content:flex-end; flex-wrap:wrap; gap:.5rem; margin-top:.75rem; }
     .judge-video-disabled{ margin-top:.5rem; }
     .judge-view-mode{ display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; }
     .judge-view-mode-label{ font-size:.8rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.04em; }
@@ -466,6 +509,16 @@
       border-top:8px solid #2563eb;
       background:#f8fbff;
       box-shadow:0 18px 50px rgba(15,23,42,.24);
+    }
+    .competition-mode-modal{
+      max-width:100vw;
+      overflow-x:hidden;
+      overflow-y:auto;
+    }
+    .competition-mode-modal .modal-dialog{
+      max-width:min(1140px, calc(100vw - 1rem));
+      margin-left:auto;
+      margin-right:auto;
     }
     .competition-mode-modal .modal-header{
       background:#eff6ff;
@@ -548,5 +601,100 @@
       font-size:.95rem;
       font-weight:900;
       line-height:1.2;
+    }
+    @media (max-width: 576px){
+      .judge-portal-page{
+        padding-left:8px;
+        padding-right:8px;
+        margin-top:.75rem !important;
+      }
+      .judge-portal-page .card-surface{
+        padding-left:.75rem;
+        padding-right:.75rem;
+      }
+      .judge-portal-header{
+        flex-direction:column;
+        align-items:stretch !important;
+      }
+      .judge-portal-title{ font-size:1.35rem; }
+      .judge-portal-actions{
+        width:100%;
+        justify-content:stretch;
+      }
+      .judge-portal-actions > .btn{
+        flex:1 1 9rem;
+        white-space:normal;
+      }
+      .judge-view-mode{
+        align-items:stretch;
+        width:100%;
+      }
+      .judge-view-mode-label{ width:100%; }
+      .judge-view-mode-select{
+        width:100%;
+        min-width:0;
+      }
+      .judge-group-switcher{
+        grid-template-columns:38px minmax(0, 1fr) 38px;
+        gap:.4rem;
+      }
+      .judge-group-step{
+        width:38px;
+        min-height:38px;
+      }
+      .judge-card{
+        padding:.7rem;
+      }
+      .judge-card-head{
+        flex-direction:column;
+        align-items:stretch !important;
+      }
+      .judge-card-head > .judge-meta{
+        align-self:flex-start;
+      }
+      .judge-exercise-chip-row{ gap:.35rem; }
+      .judge-exercise-chip{
+        flex:1 1 3.5rem;
+        max-width:6rem;
+      }
+      .judge-exercise-panel{
+        padding:.65rem;
+      }
+      .judge-exercise-panel-head{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .judge-exercise-actions{
+        justify-content:stretch;
+      }
+      .judge-exercise-actions > .btn{
+        flex:1 1 8rem;
+        white-space:normal;
+      }
+      .judge-field-head{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .judge-field-badges{
+        justify-content:flex-start;
+      }
+      .judge-field-badge{
+        white-space:normal;
+        text-align:center;
+      }
+      .judge-portal-page .input-salt{
+        width:min(100%, 12rem);
+        max-width:12rem;
+      }
+      .judge-portal-page [data-matrix-row="1"] .input-salt{
+        width:auto;
+        max-width:none;
+        min-width:4rem;
+      }
+      .competition-mode-modal .modal-dialog{
+        max-width:calc(100vw - 1rem);
+        margin-left:.5rem;
+        margin-right:.5rem;
+      }
     }
   </style>

@@ -1,0 +1,15 @@
+<div class="accordion" id="calendaritzacionsLogsAcc">
+  <div class="card">
+    <div class="card-header" id="calendaritzacionsLogsHead">
+      <button class="btn btn-link p-0" type="button" data-toggle="collapse" data-target="#calendaritzacionsLogsBody" aria-expanded="true" aria-controls="calendaritzacionsLogsBody">
+        Detalls tecnics (logs)
+      </button>
+    </div>
+    <div id="calendaritzacionsLogsBody" class="collapse show" aria-labelledby="calendaritzacionsLogsHead" data-parent="#calendaritzacionsLogsAcc">
+      <div class="card-body">
+        <pre class="calendaritzacions-pre mb-0" data-logs-panel>{% if logs %}{% for line in logs %}{{ line }}
+{% endfor %}{% else %}Encara no hi ha logs disponibles.{% endif %}</pre>
+      </div>
+    </div>
+  </div>
+</div>

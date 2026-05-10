@@ -16,7 +16,6 @@ services:
       - "8000:8000"
     environment:
       CALENDARITZACIONS_URL: "http://calendaritzacions:8000"  # host dins la xarxa de Compose
-      CERTIFICATS_API: "http://certificats:8000/process-pdfs/"
       CALENDARITZACIONS_API: "http://calendaritzacions:8000/process_async/"
       CALENDARITZACIONS_API_SEGONA_FASE: "http://calendaritzacions:8000/process_async_segona_fase/"
       DESIGNACIONS_API: "http://designacions:8000/process_designacions/"
