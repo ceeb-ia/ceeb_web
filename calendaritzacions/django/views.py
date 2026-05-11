@@ -158,7 +158,7 @@ class RunStatusJsonView(CalendaritzacionsAccessMixin, View):
         if progress is None:
             progress = _progress_from_log_lines(log_lines)
 
-        return JsonResponse(
+        response = JsonResponse(
             {
                 "id": run.pk,
                 "status": run.status,
@@ -174,6 +174,10 @@ class RunStatusJsonView(CalendaritzacionsAccessMixin, View):
                 "audits": run.available_audits,
             }
         )
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+        return response
 
 
 def _read_related_audit_payloads(run: CalendarizationRun, *, exclude: str) -> dict[str, object]:
