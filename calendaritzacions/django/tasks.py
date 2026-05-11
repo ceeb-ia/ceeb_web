@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from celery import signals
 from celery import shared_task
 
+
+logger = logging.getLogger(__name__)
 
 MEMORY_LOST_MESSAGE = (
     "La tasca ha estat interrompuda pel worker abans de finalitzar. "
@@ -18,12 +22,44 @@ def execute_calendarization_run_task(self, run_id: int) -> int:
     from calendaritzacions.django.models import CalendarizationRun
     from calendaritzacions.django.services.runs import execute_run
 
+    logger.info("calendaritzacions: task rebuda run_id=%s celery_task_id=%s", run_id, self.request.id)
+    _push_run_log(run_id, "Worker heavy ha rebut la tasca.", progress=1, status="running")
+
     run = CalendarizationRun.objects.get(pk=run_id)
     if not run.task_id:
         run.task_id = str(self.request.id)
         run.save(update_fields=["task_id"])
+    logger.info(
+        "calendaritzacions: iniciant run_id=%s engine=%s phase=%s input=%s",
+        run_id,
+        run.engine_name,
+        run.phase,
+        _input_name(run),
+    )
+    _push_run_log(
+        run_id,
+        f"Iniciant execucio: motor={run.engine_name}, fase={run.phase}, input={_input_name(run)}",
+        progress=2,
+        status="running",
+    )
     execute_run(run)
+    logger.info("calendaritzacions: run finalitzat run_id=%s", run_id)
     return run_id
+
+
+def _push_run_log(run_id: int, message: str, progress: int | None = None, status: str | None = None) -> None:
+    try:
+        from asgiref.sync import async_to_sync
+        from logs import push_log
+
+        async_to_sync(push_log)(str(run_id), message, progress=progress, status=status)
+    except Exception as exc:  # pragma: no cover - progress logging must not break the run
+        logger.warning("calendaritzacions: no s'ha pogut publicar progres run_id=%s: %s", run_id, exc)
+
+
+def _input_name(run) -> str:
+    input_file = getattr(run, "input_file", None)
+    return str(getattr(input_file, "name", "") or getattr(input_file, "path", "") or "desconegut")
 
 
 @signals.task_failure.connect
