@@ -8,5 +8,5 @@ docker-compose.intern.yml
 # Carpeta font enganxada temporalment; la app integrada viu a certificats/.
 formacio/
 media/
-static/
-staticfiles/
+/static/
+/staticfiles/

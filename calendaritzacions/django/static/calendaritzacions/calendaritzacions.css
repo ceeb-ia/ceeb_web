@@ -1,0 +1,238 @@
+.calendaritzacions-app .card-surface {
+  max-width: 100%;
+}
+
+.calendaritzacions-app .table td,
+.calendaritzacions-app .table th {
+  vertical-align: middle;
+}
+
+.calendaritzacions-pre {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #20242a;
+  max-height: 460px;
+  overflow: auto;
+  padding: .75rem;
+  white-space: pre-wrap;
+}
+
+.calendaritzacions-app .progress {
+  background: #eef1f4;
+}
+
+.audit-hero {
+  background: linear-gradient(135deg, #f6f8fb 0%, #eef6f4 100%);
+  border: 1px solid #dde7e4;
+  border-radius: 8px;
+  color: #1d2939;
+  padding: 1rem;
+}
+
+.audit-hero-kicker {
+  color: #2f6f9f;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.audit-panel {
+  background: #ffffff;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  padding: 1rem;
+}
+
+.calendaritzacions-app .analytics-grid {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.calendaritzacions-app .metric-box {
+  background: #fbfcfe;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  min-height: 104px;
+  padding: .8rem .9rem;
+}
+
+.calendaritzacions-app .metric-label {
+  color: #5f6b76;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin-bottom: .25rem;
+  text-transform: uppercase;
+}
+
+.calendaritzacions-app .metric-value {
+  color: #1f2937;
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.calendaritzacions-app .metric-sub {
+  color: #6b7280;
+  font-size: .82rem;
+  margin-top: .3rem;
+}
+
+.audit-card-grid {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.audit-summary-row {
+  margin-left: -.375rem;
+  margin-right: -.375rem;
+}
+
+.audit-summary-row > [class*="col-"] {
+  padding-left: .375rem;
+  padding-right: .375rem;
+}
+
+.audit-metric {
+  background: #ffffff;
+  border: 1px solid #e4e7ec;
+  border-top: 4px solid #2f6f9f;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  min-height: 132px;
+  overflow: hidden;
+}
+
+.audit-metric .card-body {
+  padding: .85rem .95rem;
+}
+
+.audit-metric-neutral {
+  border-top-color: #2f6f9f;
+}
+
+.metric-box.audit-metric-neutral {
+  border-top: 4px solid #2f6f9f;
+}
+
+.audit-metric-success {
+  border-top-color: #027a48;
+  background: #f6fef9;
+}
+
+.metric-box.audit-metric-success {
+  background: #f6fef9;
+  border-color: #abefc6;
+  border-top: 4px solid #027a48;
+}
+
+.audit-metric-warning {
+  border-top-color: #b54708;
+  background: #fffcf5;
+}
+
+.metric-box.audit-metric-warning {
+  background: #fffcf5;
+  border-color: #fedf89;
+  border-top: 4px solid #b54708;
+}
+
+.audit-metric-danger {
+  border-top-color: #b42318;
+  background: #fffbfa;
+}
+
+.metric-box.audit-metric-danger {
+  background: #fffbfa;
+  border-color: #fecdca;
+  border-top: 4px solid #b42318;
+}
+
+.audit-metric-label,
+.audit-metric-help,
+.audit-bar-value {
+  color: #667085;
+  font-size: .82rem;
+}
+
+.audit-metric-value {
+  color: #17202a;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: .1rem 0 .45rem;
+  overflow-wrap: anywhere;
+}
+
+.audit-metric-dot {
+  background: #2f6f9f;
+  border-radius: 999px;
+  display: inline-block;
+  height: .65rem;
+  width: .65rem;
+}
+
+.audit-metric-success .audit-metric-dot {
+  background: #027a48;
+}
+
+.audit-metric-warning .audit-metric-dot {
+  background: #b54708;
+}
+
+.audit-metric-danger .audit-metric-dot {
+  background: #b42318;
+}
+
+.audit-bar-row {
+  align-items: center;
+  display: grid;
+  gap: .5rem;
+  grid-template-columns: minmax(130px, 1.25fr) minmax(120px, 2fr) 56px;
+  margin-bottom: .55rem;
+}
+
+.audit-bar-label {
+  font-size: .86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-bar-track {
+  background: #edf1f5;
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.audit-bar-fill {
+  background: #2f6f9f;
+  height: 100%;
+}
+
+.audit-bar-fill-danger {
+  background: #b42318;
+}
+
+.audit-table td {
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 575.98px) {
+  .audit-bar-row {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-bar-value {
+    text-align: left;
+  }
+}
