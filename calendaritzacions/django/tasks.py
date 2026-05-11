@@ -48,7 +48,14 @@ def execute_calendarization_run_task(self, run_id: int) -> int:
         status="running",
     )
     execute_run(run)
-    logger.info("calendaritzacions: run finalitzat run_id=%s", run_id)
+    run.refresh_from_db()
+    logger.info(
+        "calendaritzacions: run finalitzat run_id=%s status=%s error=%s output=%s",
+        run_id,
+        run.status,
+        run.error_message,
+        run.output_path,
+    )
     return run_id
 
 
