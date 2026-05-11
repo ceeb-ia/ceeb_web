@@ -6,13 +6,15 @@ from .display import get_display_columns
 from .runtime import execute_classificacio_runtime
 
 
-def active_cfg_values(competicio):
+def active_cfg_values(competicio, *, only_public=False):
     cfgs = (
         ClassificacioConfig.objects
         .filter(competicio=competicio, activa=True)
         .order_by("ordre", "id")
     )
-    return list(cfgs.values("id", "nom", "tipus", "ordre"))
+    if only_public:
+        cfgs = cfgs.filter(publicada=True)
+    return list(cfgs.values("id", "nom", "tipus", "ordre", "publicada"))
 
 
 def default_live_columns():
@@ -70,6 +72,7 @@ def build_live_cfg_payload_row(competicio, cfg, *, compute_fn=compute_classifica
         "id": cfg.id,
         "nom": cfg.nom,
         "tipus": cfg.tipus,
+        "publicada": bool(getattr(cfg, "publicada", True)),
         "columns": runtime["columns"] or get_display_columns(cfg.schema or {}),
         "parts": runtime["parts"],
         **({"error": runtime["error"]} if runtime["error"] else {}),
@@ -94,6 +97,19 @@ def live_data_payload(competicio, since_raw=None, *, build_row_fn=build_live_cfg
     }
 
 
+def public_live_payload(payload):
+    response = dict(payload or {})
+    if response.get("changed") is False:
+        return response
+    cfgs = response.get("cfgs")
+    if isinstance(cfgs, list):
+        response["cfgs"] = [
+            cfg for cfg in cfgs
+            if not isinstance(cfg, dict) or bool(cfg.get("publicada", True))
+        ]
+    return response
+
+
 __all__ = [
     "active_cfg_values",
     "build_live_cfg_payload_row",
@@ -101,4 +117,5 @@ __all__ = [
     "extract_export_value",
     "format_partition_title",
     "live_data_payload",
+    "public_live_payload",
 ]

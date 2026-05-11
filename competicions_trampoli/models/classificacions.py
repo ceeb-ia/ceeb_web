@@ -23,6 +23,7 @@ class ClassificacioConfig(models.Model):
 
     nom = models.CharField(max_length=120, default="Nova classificació")
     activa = models.BooleanField(default=True)
+    publicada = models.BooleanField(default=True)
     ordre = models.PositiveSmallIntegerField(default=1)
 
     tipus = models.CharField(max_length=20, choices=TIPUS_CHOICES, default="individual")

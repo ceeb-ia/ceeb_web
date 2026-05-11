@@ -332,6 +332,10 @@
     els.fNom.value = cfg.nom || "";
     if (els.fSlug) els.fSlug.value = cfg.slug || "";
     els.fActiva.checked = !!cfg.activa;
+    if (els.fPublicada) {
+      els.fPublicada.checked = !!cfg.activa && cfg.publicada !== false;
+      els.fPublicada.disabled = !cfg.activa;
+    }
     setTipusValue(cfg.tipus || "individual");
 
     const schema = cfg.schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
@@ -810,6 +814,7 @@
       nom: defaultName,
       slug: "",
       activa: true,
+      publicada: true,
       ordre: nextOrd,
       tipus: "individual",
       schema: JSON.parse(JSON.stringify(DEFAULT_SCHEMA)),
@@ -834,8 +839,29 @@
   els.fActiva.addEventListener("change", () => {
     const cfg = currentCfg(); if (!cfg) return;
     cfg.activa = !!els.fActiva.checked;
+    if (!cfg.activa) {
+      cfg.publicada = false;
+    } else if (cfg.publicada === undefined) {
+      cfg.publicada = true;
+    }
+    if (els.fPublicada) {
+      els.fPublicada.checked = !!cfg.activa && cfg.publicada !== false;
+      els.fPublicada.disabled = !cfg.activa;
+    }
     renderList();
   });
+  if (els.fPublicada) {
+    els.fPublicada.addEventListener("change", () => {
+      const cfg = currentCfg(); if (!cfg) return;
+      cfg.publicada = !!els.fPublicada.checked;
+      if (cfg.publicada && !cfg.activa) {
+        cfg.activa = true;
+        els.fActiva.checked = true;
+      }
+      els.fPublicada.disabled = !cfg.activa;
+      renderList();
+    });
+  }
   els.fTipus.addEventListener("change", () => {
     const cfg = currentCfg(); if (!cfg) return;
     ensureLegacyTipusOption(els.fTipus.value);

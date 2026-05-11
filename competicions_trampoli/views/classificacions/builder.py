@@ -145,6 +145,7 @@ class ClassificacionsHome(TemplateView):
                 competicio=competicio,
                 nom="General (total)",
                 activa=True,
+                publicada=True,
                 ordre=1,
                 tipus="individual",
                 schema={
@@ -221,6 +222,7 @@ class ClassificacionsHome(TemplateView):
                     "id": cfg.id,
                     "nom": cfg.nom,
                     "activa": cfg.activa,
+                    "publicada": cfg.publicada,
                     "ordre": cfg.ordre,
                     "tipus": cfg.tipus,
                     "schema": builder_schema,
@@ -334,6 +336,9 @@ def classificacio_save(request, pk):
     cid = payload.get("id")
     nom = (payload.get("nom") or "Classificacio").strip()
     activa = bool(payload.get("activa", True))
+    publicada = bool(payload.get("publicada", activa))
+    if not activa:
+        publicada = False
     ordre = int(payload.get("ordre") or 1)
     tipus = (payload.get("tipus") or "individual").strip()
     schema = payload.get("schema") or {}
@@ -362,6 +367,7 @@ def classificacio_save(request, pk):
         obj = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)
         obj.nom = nom
         obj.activa = activa
+        obj.publicada = publicada
         obj.ordre = ordre
         obj.tipus = tipus
         obj.schema = schema
@@ -371,6 +377,7 @@ def classificacio_save(request, pk):
             competicio=competicio,
             nom=nom,
             activa=activa,
+            publicada=publicada,
             ordre=ordre,
             tipus=tipus,
             schema=schema,
@@ -385,6 +392,7 @@ def classificacio_save(request, pk):
                 "nom": obj.nom,
                 "tipus": obj.tipus,
                 "activa": obj.activa,
+                "publicada": obj.publicada,
                 "ordre": obj.ordre,
                 "schema": obj.schema,
             },

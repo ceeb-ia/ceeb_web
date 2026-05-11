@@ -647,6 +647,7 @@
       if (cfgStatus.legacy_inferred) metaBits.push("legacy");
       if (cfgStatus.is_stale) metaBits.push("stale");
       const metaLine = metaBits.join(" · ");
+      const stateLabel = !cfg.activa ? "Inactiva" : (cfg.publicada !== false ? "Pública" : "Interna");
       const disableUp = !reorderEnabled || state.reorderBusy || idx === 0;
       const disableDown = !reorderEnabled || state.reorderBusy || idx === items.length - 1;
       const moveUpTitle = disableUp ? (idx === 0 ? "Ja es la primera classificacio." : reorderTitle) : "Pujar classificacio";
@@ -659,7 +660,7 @@
         <button type="button" class="builder-cfg-main" data-cfg-select="${esc(String(cfg.id))}">
           <div class="d-flex justify-content-between">
             <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${metaLine}</div></div>
-            <div class="small">${cfg.activa ? "Activa" : "Inactiva"}</div>
+            <div class="small">${esc(stateLabel)}</div>
           </div>
         </button>
         ${controlsHtml}

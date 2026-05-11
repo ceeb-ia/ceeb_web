@@ -81,6 +81,7 @@
           template_id: templateId,
           nom: nomFinal,
           activa: false,
+          publicada: false,
           fallback_mode: mode,
           ack_warning: ackWarning,
         });
@@ -210,6 +211,7 @@
         nom: cfg.nom,
         slug: cfg.slug || "",
         activa: !!cfg.activa,
+        publicada: !!cfg.activa && cfg.publicada !== false,
         ordre: cfg.ordre || 1,
         tipus: cfg.tipus || "individual",
         schema: cfg.schema || DEFAULT_SCHEMA
@@ -225,6 +227,7 @@
           cfg.slug = String(out.cfg.slug || cfg.slug || "");
           cfg.nom = String(out.cfg.nom || cfg.nom || "");
           cfg.activa = !!out.cfg.activa;
+          cfg.publicada = !!out.cfg.activa && out.cfg.publicada !== false;
           cfg.tipus = String(out.cfg.tipus || cfg.tipus || "individual");
           cfg.schema = out.cfg.schema || cfg.schema || DEFAULT_SCHEMA;
         }

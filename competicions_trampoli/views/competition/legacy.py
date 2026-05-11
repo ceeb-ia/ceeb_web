@@ -24,6 +24,11 @@ class ConfiguracioCompeticio(TemplateView):
             .order_by("ordre", "id")
         )
         classificacions = list(competicio.classificacions_cfg.order_by("ordre", "id"))
+        classificacions_active_count = sum(1 for item in classificacions if item.activa)
+        classificacions_published_count = sum(
+            1 for item in classificacions
+            if item.activa and getattr(item, "publicada", True)
+        )
         phase_ctx = phase_dashboard_context(competicio)
 
         ctx.update(
@@ -33,7 +38,9 @@ class ConfiguracioCompeticio(TemplateView):
                 "inscripcions_count": competicio.inscripcions.count(),
                 "aparells_count": len(aparells_cfg),
                 "classificacions_count": len(classificacions),
-                "classificacions_active_count": sum(1 for item in classificacions if item.activa),
+                "classificacions_active_count": classificacions_active_count,
+                "classificacions_published_count": classificacions_published_count,
+                "classificacions_internal_count": max(0, classificacions_active_count - classificacions_published_count),
                 "rotacio_franja_count": RotacioFranja.objects.filter(competicio=competicio).count(),
                 "rotacio_assignacio_count": RotacioAssignacio.objects.filter(competicio=competicio).count(),
                 "app_summaries": phase_ctx["app_summaries"],

@@ -3,6 +3,10 @@
 
 {% block content %}
 <style>
+  .live-font-scope {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
   .loop-slide {
     border: 1px solid #dde4ef;
     border-radius: 10px;
@@ -48,6 +52,20 @@
   .live-classif-table th,
   .live-classif-table td {
     vertical-align: top;
+    line-height: 1.25;
+  }
+  .live-col-rank,
+  .live-col-score,
+  .live-col-raw,
+  .live-col-points {
+    white-space: nowrap;
+  }
+  .live-col-name,
+  .live-col-participant {
+    min-width: 12rem;
+    max-width: 24rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .judge-cell {
     min-width: 0;
@@ -110,9 +128,78 @@
     font-size: 0.76rem;
     color: #667085;
   }
+  @media (max-width: 640px) {
+    .container-fluid {
+      padding-left: .55rem;
+      padding-right: .55rem;
+    }
+    .card-surface {
+      padding: .75rem;
+    }
+    .card-surface h2 {
+      font-size: 1.15rem;
+      line-height: 1.2;
+    }
+    .loop-slide {
+      border-radius: 7px;
+    }
+    .loop-slide-head {
+      padding: .45rem .55rem;
+      gap: .5rem;
+    }
+    .loop-cfg {
+      font-size: .92rem;
+    }
+    .loop-part {
+      font-size: .78rem;
+    }
+    .loop-meta .badge {
+      font-size: .68rem;
+      padding: .18rem .32rem;
+    }
+    .live-classif-table {
+      font-size: .76rem;
+    }
+    .live-classif-table th,
+    .live-classif-table td {
+      padding: .28rem .34rem !important;
+      line-height: 1.16;
+    }
+    .live-col-name,
+    .live-col-participant {
+      min-width: 8.5rem;
+      max-width: 12rem;
+    }
+    .judge-row {
+      gap: .25rem;
+      margin-bottom: .12rem;
+    }
+    .judge-label {
+      min-width: 1.55rem;
+      font-size: .72rem;
+    }
+    .judge-items {
+      gap: .12rem;
+    }
+    .judge-item {
+      gap: .16rem;
+      padding: .02rem .22rem;
+      font-size: .68rem;
+    }
+    .team-raw-summary {
+      margin-bottom: .12rem;
+    }
+    .team-raw-list {
+      gap: .14rem;
+    }
+    .team-raw-label,
+    .team-raw-more {
+      font-size: .68rem;
+    }
+  }
 </style>
 
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 live-font-scope">
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
       <div>
@@ -219,10 +306,18 @@
   }
 
   function colClass(col){
+    const cls = [];
     const a = String((col && col.align) || "").toLowerCase();
-    if (a === "right") return "text-right";
-    if (a === "center") return "text-center";
-    return "";
+    const key = String((col && col.key) || "").toLowerCase();
+    const type = String((col && col.type) || "").toLowerCase();
+    if (a === "right") cls.push("text-right");
+    if (a === "center") cls.push("text-center");
+    if (key === "posicio") cls.push("live-col-rank");
+    if (key === "participant" || key === "nom" || key === "entitat_nom") cls.push("live-col-name");
+    if (key === "participants") cls.push("live-col-participant");
+    if (key === "punts") cls.push("live-col-score");
+    if (type === "raw") cls.push("live-col-raw");
+    return cls.join(" ");
   }
 
   function fallbackCellValue(row, key){

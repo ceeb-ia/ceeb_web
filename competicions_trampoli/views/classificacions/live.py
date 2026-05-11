@@ -11,6 +11,7 @@ from ...services.classificacions.live import (
     active_cfg_values,
     build_live_cfg_payload_row as service_build_live_cfg_payload_row,
     live_data_payload as service_live_data_payload,
+    public_live_payload,
 )
 
 
@@ -41,13 +42,17 @@ class ClassificacionsLive(TemplateView):
         ctx = super().get_context_data(**kwargs)
         public_raw = (self.request.GET.get("public") or "").strip().lower()
         is_public = public_raw in {"1", "true", "yes", "on"}
+        data_url = ""
+        if is_public:
+            data_url = f"{reverse('classificacions_live_data', kwargs={'pk': self.competicio.id})}?public=1"
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio),
+                "cfgs": active_cfg_values(self.competicio, only_public=is_public),
                 "is_public": is_public,
                 "hide_base_chrome": is_public,
                 "poll_ms": 4000,
+                "data_url": data_url,
             }
         )
         return ctx
@@ -72,6 +77,9 @@ class ClassificacionsLoopLive(TemplateView):
         ctx = super().get_context_data(**kwargs)
         public_raw = (self.request.GET.get("public") or "").strip().lower()
         is_public = public_raw in {"1", "true", "yes", "on"}
+        data_url = ""
+        if is_public:
+            data_url = f"{reverse('classificacions_live_data', kwargs={'pk': self.competicio.id})}?public=1"
         poll_ms = self._parse_int_param(self.request.GET.get("poll_ms"), 4000, 1000, 60000)
         slide_ms = self._parse_int_param(self.request.GET.get("slide_ms"), 8000, 2000, 120000)
         rows_per_page = self._parse_int_param(self.request.GET.get("rows"), 12, 3, 60)
@@ -81,13 +89,14 @@ class ClassificacionsLoopLive(TemplateView):
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio),
+                "cfgs": active_cfg_values(self.competicio, only_public=is_public),
                 "is_public": is_public,
                 "hide_base_chrome": is_public,
                 "poll_ms": poll_ms,
                 "slide_ms": slide_ms,
                 "rows_per_page": rows_per_page,
                 "transition": transition,
+                "data_url": data_url,
             }
         )
         return ctx
@@ -109,7 +118,7 @@ class PublicClassificacionsLive(TemplateView):
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio),
+                "cfgs": active_cfg_values(self.competicio, only_public=True),
                 "is_public": True,
                 "hide_base_chrome": True,
                 "poll_ms": 4000,
@@ -152,7 +161,7 @@ class PublicClassificacionsLoopLive(TemplateView):
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio),
+                "cfgs": active_cfg_values(self.competicio, only_public=True),
                 "is_public": True,
                 "hide_base_chrome": True,
                 "poll_ms": poll_ms,
@@ -175,6 +184,9 @@ def classificacions_live_data(request, pk):
         compute_payload=live_data_payload,
         since_raw=request.GET.get("since"),
     )
+    public_raw = (request.GET.get("public") or "").strip().lower()
+    if public_raw in {"1", "true", "yes", "on"}:
+        payload = public_live_payload(payload)
     response = JsonResponse(payload)
     response["X-Live-Cache"] = source
     return response
@@ -191,7 +203,7 @@ def public_classificacions_live_data(request, token):
         compute_payload=live_data_payload,
         since_raw=request.GET.get("since"),
     )
-    payload = dict(payload)
+    payload = public_live_payload(payload)
     payload["permissions"] = {"can_view_media": bool(token_obj.can_view_media)}
     response = JsonResponse(payload)
     response["X-Live-Cache"] = source

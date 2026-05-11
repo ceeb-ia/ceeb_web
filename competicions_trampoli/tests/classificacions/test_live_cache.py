@@ -382,6 +382,34 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("permissions", public_res.json())
         self.assertNotIn("permissions", internal_res.json())
 
+    def test_public_live_filters_unpublished_active_classificacions(self):
+        ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Control intern",
+            activa=True,
+            publicada=False,
+            ordre=2,
+            tipus="individual",
+            schema=self._schema(),
+        )
+        fake_redis = self.FakeRedis()
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        self.client.force_login(self.user)
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result):
+                public_res = self.client.get(self._public_url())
+                internal_res = self.client.get(self._internal_url())
+
+        self.assertEqual(public_res.status_code, 200)
+        self.assertEqual(internal_res.status_code, 200)
+        self.assertEqual([cfg["nom"] for cfg in public_res.json().get("cfgs", [])], ["General"])
+        self.assertEqual(
+            [cfg["nom"] for cfg in internal_res.json().get("cfgs", [])],
+            ["General", "Control intern"],
+        )
+
     def test_since_is_served_from_cached_stamp_without_recompute(self):
         fake_redis = self.FakeRedis()
         compute_result = {

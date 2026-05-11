@@ -3,6 +3,10 @@
 
 {% block content %}
 <style>
+  .live-font-scope {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
   .judge-cell {
     min-width: 0;
     max-width: 100%;
@@ -15,6 +19,23 @@
   .live-classif-table th,
   .live-classif-table td {
     vertical-align: top;
+    line-height: 1.25;
+  }
+  .live-col-rank,
+  .live-col-score,
+  .live-col-raw,
+  .live-col-points {
+    white-space: nowrap;
+  }
+  .live-col-name,
+  .live-col-participant {
+    min-width: 12rem;
+    max-width: 24rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .table-responsive {
+    -webkit-overflow-scrolling: touch;
   }
   .judge-row {
     display: flex;
@@ -72,17 +93,52 @@
   .live-row-main {
     display: flex;
     align-items: flex-start;
-    gap: 0.45rem;
+    gap: 0.35rem;
+    min-width: 0;
   }
   .live-detail-toggle {
-    border: 1px solid #d3deed;
-    background: #ffffff;
-    color: #334155;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    line-height: 1;
-    padding: 0.18rem 0.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 1.35rem;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    padding: 0;
     cursor: pointer;
+  }
+  .live-detail-name {
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    padding: 0;
+    cursor: pointer;
+  }
+  .live-detail-name:hover,
+  .live-detail-name:focus {
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+  }
+  .live-detail-toggle:focus,
+  .live-detail-name:focus {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .live-detail-caret {
+    font-size: 0.72rem;
+    line-height: 1;
+    transition: transform 0.18s ease;
+  }
+  .live-detail-toggle[aria-expanded="true"] .live-detail-caret {
+    transform: rotate(90deg);
+  }
+  .live-detail-panel {
+    overflow: hidden;
   }
   .live-detail-shell {
     background: #f8fbff;
@@ -149,8 +205,111 @@
   .part-idx-2 .partition-head { border-left: 4px solid #27ae60; }
   .part-idx-3 .partition-head { border-left: 4px solid #eb5757; }
   .part-idx-4 .partition-head { border-left: 4px solid #56ccf2; }
+  @media (max-width: 640px) {
+    .container-fluid {
+      padding-left: .55rem;
+      padding-right: .55rem;
+    }
+    .card-surface {
+      padding: .75rem;
+    }
+    .card-surface h2 {
+      font-size: 1.15rem;
+      line-height: 1.2;
+    }
+    #cfgTabs {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    #cfgTabs .nav-link {
+      padding: .38rem .55rem;
+      font-size: .82rem;
+    }
+    .partition-card {
+      margin-bottom: .65rem;
+      border-radius: 7px;
+    }
+    .partition-head {
+      padding: .42rem .5rem;
+      gap: .5rem;
+    }
+    .partition-title {
+      font-size: .9rem;
+    }
+    .partition-sub {
+      font-size: .62rem;
+      letter-spacing: 0;
+    }
+    .partition-badge {
+      min-width: 1.55rem;
+      padding: .16rem .35rem;
+      font-size: .68rem;
+    }
+    .live-classif-table {
+      font-size: .76rem;
+    }
+    .live-classif-table th,
+    .live-classif-table td {
+      padding: .28rem .34rem !important;
+      line-height: 1.16;
+    }
+    .live-col-name,
+    .live-col-participant {
+      min-width: 8.5rem;
+      max-width: 12rem;
+    }
+    .live-detail-toggle {
+      font-size: .72rem;
+    }
+    .live-detail-caret {
+      font-size: .66rem;
+      line-height: 1.25;
+    }
+    .live-detail-toggle:focus {
+      outline-offset: 1px;
+    }
+    .live-detail-shell {
+      padding: .45rem;
+      border-radius: 6px;
+    }
+    .live-detail-title {
+      font-size: .72rem;
+      margin-bottom: .32rem;
+    }
+    .live-detail-shell .live-classif-table {
+      font-size: .7rem;
+    }
+    .judge-row {
+      gap: .25rem;
+      margin-bottom: .12rem;
+    }
+    .judge-label {
+      min-width: 1.55rem;
+      font-size: .72rem;
+    }
+    .judge-items {
+      gap: .12rem;
+    }
+    .judge-item {
+      gap: .16rem;
+      padding: .02rem .22rem;
+      font-size: .68rem;
+    }
+    .team-raw-summary {
+      margin-bottom: .12rem;
+    }
+    .team-raw-list {
+      gap: .14rem;
+    }
+    .team-raw-label {
+      font-size: .68rem;
+    }
+  }
 </style>
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 live-font-scope">
   <div class="card-surface">
 
     <!-- CAPÇALERA -->
@@ -193,6 +352,9 @@
                aria-controls="cfg-{{ c.id }}"
                aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
               {{ c.nom }}
+              {% if not is_public and not c.publicada %}
+                <span class="badge badge-secondary ml-1">Interna</span>
+              {% endif %}
               <span class="badge badge-light ml-1" id="badge-{{ c.id }}">—</span>
             </a>
           </li>
@@ -234,6 +396,10 @@
   let timer = null;
   const liveCfgStore = new Map();
   const liveDetailState = new Map();
+  const liveDetailAnimation = {
+    key: "",
+    opening: false,
+  };
 
   const els = {
     status: document.getElementById("liveStatus"),
@@ -258,10 +424,18 @@
   }
 
   function colClass(col){
+    const cls = [];
     const a = String((col && col.align) || "").toLowerCase();
-    if (a === "right") return "text-right";
-    if (a === "center") return "text-center";
-    return "";
+    const key = String((col && col.key) || "").toLowerCase();
+    const type = String((col && col.type) || "").toLowerCase();
+    if (a === "right") cls.push("text-right");
+    if (a === "center") cls.push("text-center");
+    if (key === "posicio") cls.push("live-col-rank");
+    if (key === "participant" || key === "nom" || key === "entitat_nom") cls.push("live-col-name");
+    if (key === "participants") cls.push("live-col-participant");
+    if (key === "punts") cls.push("live-col-score");
+    if (type === "raw") cls.push("live-col-raw");
+    return cls.join(" ");
   }
 
   function fallbackCellValue(row, key){
@@ -414,6 +588,81 @@
     return parts.length ? parts.join(" / ") : "global";
   }
 
+  function activeTabHref(){
+    const active = document.querySelector("#cfgTabs .nav-link.active");
+    return active ? String(active.getAttribute("href") || "") : "";
+  }
+
+  function visibleRowsInActivePane(){
+    const pane = document.querySelector(".tab-pane.active.show, .tab-pane.active");
+    if (!pane) return [];
+    return Array.from(pane.querySelectorAll("[data-live-row-key]"))
+      .filter(row => {
+        const rect = row.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+      });
+  }
+
+  function captureLiveViewportState(){
+    const targetY = window.innerHeight * 0.36;
+    let anchor = null;
+    visibleRowsInActivePane().forEach(row => {
+      const rect = row.getBoundingClientRect();
+      const distance = Math.abs(rect.top - targetY);
+      if (!anchor || distance < anchor.distance) {
+        anchor = {
+          key: row.getAttribute("data-live-row-key") || "",
+          top: rect.top,
+          distance,
+        };
+      }
+    });
+    const scrollables = Array.from(document.querySelectorAll("#cfgContent .table-responsive")).map((node, idx) => ({
+      idx,
+      scrollLeft: node.scrollLeft,
+      scrollTop: node.scrollTop,
+    }));
+    return {
+      activeHref: activeTabHref(),
+      scrollY: window.scrollY || window.pageYOffset || 0,
+      anchor,
+      scrollables,
+    };
+  }
+
+  function restoreLiveViewportState(state){
+    if (!state) return;
+    if (state.activeHref) {
+      const tab = document.querySelector(`#cfgTabs .nav-link[href="${CSS.escape(state.activeHref)}"]`);
+      if (tab && !tab.classList.contains("active")) {
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.tab) {
+          window.jQuery(tab).tab("show");
+        } else {
+          document.querySelectorAll("#cfgTabs .nav-link").forEach(node => node.classList.remove("active"));
+          document.querySelectorAll("#cfgContent .tab-pane").forEach(node => node.classList.remove("active", "show"));
+          tab.classList.add("active");
+          const pane = document.querySelector(state.activeHref);
+          if (pane) pane.classList.add("active", "show");
+        }
+      }
+    }
+    state.scrollables.forEach(item => {
+      const node = document.querySelectorAll("#cfgContent .table-responsive")[item.idx];
+      if (!node) return;
+      node.scrollLeft = item.scrollLeft;
+      node.scrollTop = item.scrollTop;
+    });
+    if (state.anchor && state.anchor.key) {
+      const row = document.querySelector(`[data-live-row-key="${CSS.escape(state.anchor.key)}"]`);
+      if (row) {
+        const rect = row.getBoundingClientRect();
+        window.scrollBy({ top: rect.top - state.anchor.top, left: 0, behavior: "auto" });
+        return;
+      }
+    }
+    window.scrollTo({ top: state.scrollY, left: window.scrollX || 0, behavior: "auto" });
+  }
+
   function renderCfg(cfg){
     const host = document.getElementById("cfg-" + cfg.id);
     if (!host) return;
@@ -460,17 +709,19 @@
       });
       html += '</tr></thead><tbody>';
 
-      (p.rows || []).forEach(r => {
+      (p.rows || []).forEach((r, rIdx) => {
         const cells = r.cells || r.display || {};
         const detail = r && r.detail && Array.isArray(r.detail.sections) && r.detail.sections.length ? r.detail : null;
         const detailKey = detail ? detailStateKey(cfg.id, p.particio, r) : "";
+        const stableRowId = String(r.row_id || `row-${rIdx}`);
+        const rowKey = `${cfg.id}|${String(p.particio || "global")}|${stableRowId}`;
         const detailOpen = detail ? isDetailOpen(detailKey, !!detail.default_open) : false;
         const toggleColKey = columns.some(col => String(col?.key || "") === "participant")
           ? "participant"
           : String(columns[0]?.key || "");
         let toggleInjected = false;
 
-        html += '<tr>';
+        html += '<tr data-live-row-key="' + esc(rowKey) + '" data-live-row-id="' + esc(String(r.row_id || rIdx)) + '">';
         columns.forEach(col => {
           const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
             ? cells[col.key]
@@ -486,9 +737,16 @@
                   ' data-row-id="' + esc(String(r.row_id || "")) + '"' +
                   ' aria-expanded="' + (detailOpen ? 'true' : 'false') + '"' +
                   ' aria-label="' + esc(detailOpen ? 'Amagar detall' : 'Mostrar detall') + '">' +
-                  (detailOpen ? '▾' : '▸') +
+                  '<span class="live-detail-caret" aria-hidden="true">▶</span>' +
                 '</button>' +
-                '<div class="flex-fill">' + cellHtml + '</div>' +
+                '<button type="button" class="live-detail-name js-live-detail-toggle"' +
+                  ' data-cfg-id="' + esc(String(cfg.id)) + '"' +
+                  ' data-part-key="' + esc(String(p.particio || "global")) + '"' +
+                  ' data-row-id="' + esc(String(r.row_id || "")) + '"' +
+                  ' aria-expanded="' + (detailOpen ? 'true' : 'false') + '"' +
+                  ' aria-label="' + esc(detailOpen ? 'Amagar detall' : 'Mostrar detall') + '">' +
+                  cellHtml +
+                '</button>' +
               '</div>';
           }
           html += '<td class="' + esc(colClass(col)) + '">' + cellHtml + '</td>';
@@ -496,7 +754,7 @@
         html += '</tr>';
         if (detail && detailOpen) {
           html += '<tr class="table-light live-detail-row">';
-          html += '<td colspan="' + esc(String(columns.length)) + '">' + renderDetailTable(detail) + '</td>';
+          html += '<td colspan="' + esc(String(columns.length)) + '"><div class="live-detail-panel" data-live-detail-key="' + esc(detailKey) + '">' + renderDetailTable(detail) + '</div></td>';
           html += '</tr>';
         }
       });
@@ -506,6 +764,35 @@
     });
 
     host.innerHTML = html;
+    applyPendingDetailAnimation(host);
+  }
+
+  function applyPendingDetailAnimation(scope){
+    const animation = liveDetailAnimation;
+    if (!animation.key || !scope) return;
+    const panel = scope.querySelector(`[data-live-detail-key="${CSS.escape(animation.key)}"]`);
+    const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      animation.key = "";
+      return;
+    }
+    if (animation.opening && panel) {
+      panel.style.height = "0px";
+      panel.style.opacity = "0";
+      panel.style.transition = "height 180ms ease, opacity 160ms ease";
+      requestAnimationFrame(() => {
+        panel.style.height = `${panel.scrollHeight}px`;
+        panel.style.opacity = "1";
+      });
+      window.setTimeout(() => {
+        panel.style.height = "";
+        panel.style.opacity = "";
+        panel.style.transition = "";
+        animation.key = "";
+      }, 220);
+      return;
+    }
+    animation.key = "";
   }
 
   async function tick(){
@@ -533,7 +820,9 @@
         return;
       }
 
+      const viewportState = captureLiveViewportState();
       (data.cfgs || []).forEach(renderCfg);
+      requestAnimationFrame(() => restoreLiveViewportState(viewportState));
       els.status.textContent = "al dia";
     } catch (e){
       els.status.textContent = "sense connexió";
@@ -550,9 +839,32 @@
       if (!cfgId || !rowId) return;
       const stateKey = `${cfgId}|${partKey}|${rowId}`;
       const nextOpen = String(btn.getAttribute("aria-expanded") || "false") !== "true";
-      liveDetailState.set(stateKey, nextOpen);
       const cfg = liveCfgStore.get(cfgId);
-      if (cfg) renderCfg(cfg);
+      if (!cfg) return;
+      if (!nextOpen) {
+        const panel = document.querySelector(`[data-live-detail-key="${CSS.escape(stateKey)}"]`);
+        const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (panel && !prefersReducedMotion) {
+          const h = panel.scrollHeight;
+          panel.style.height = `${h}px`;
+          panel.style.opacity = "1";
+          panel.style.transition = "height 170ms ease, opacity 150ms ease";
+          btn.setAttribute("aria-expanded", "false");
+          requestAnimationFrame(() => {
+            panel.style.height = "0px";
+            panel.style.opacity = "0";
+          });
+          window.setTimeout(() => {
+            liveDetailState.set(stateKey, false);
+            renderCfg(cfg);
+          }, 190);
+          return;
+        }
+      }
+      liveDetailAnimation.key = stateKey;
+      liveDetailAnimation.opening = nextOpen;
+      liveDetailState.set(stateKey, nextOpen);
+      renderCfg(cfg);
     });
 
     const btnExportActive = document.getElementById("btnExportActiveCfg");
