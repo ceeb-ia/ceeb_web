@@ -67,6 +67,12 @@
               Resultat
             </a>
             {% endif %}
+            {% if run.is_finished %}
+            <form class="d-inline" method="post" action="{% url 'calendaritzacions:run_delete' run.pk %}" onsubmit="return confirm('Eliminar aquesta execucio?');">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% empty %}

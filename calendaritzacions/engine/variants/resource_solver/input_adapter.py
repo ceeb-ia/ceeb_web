@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 try:
@@ -95,8 +96,20 @@ def build_context_from_dataframe(df: pd.DataFrame, config: Any) -> SolverContext
     resources = build_base_resources(teams)
     capacities = estimate_capacities(resources, teams, config)
     pressure = build_resource_pressure(resources, teams, capacities)
-    groups = build_group_specs(teams, phase_name, config)
-    candidates = generate_candidates(teams, groups, phase)
+    groups = []
+    candidates = []
+    for competition_index, (_key, competition_teams) in enumerate(
+        _teams_by_competition(teams),
+        start=1,
+    ):
+        competition_groups = build_group_specs(
+            competition_teams,
+            phase_name,
+            config,
+            group_prefix=f"C{competition_index}_G",
+        )
+        groups.extend(competition_groups)
+        candidates.extend(generate_candidates(competition_teams, competition_groups, phase))
     return SolverContext(
         teams=teams,
         phase=phase,
@@ -104,10 +117,30 @@ def build_context_from_dataframe(df: pd.DataFrame, config: Any) -> SolverContext
         base_resources=resources,
         capacities=capacities,
         pressure=pressure,
-        groups=groups,
-        candidates=candidates,
+        groups=tuple(groups),
+        candidates=tuple(candidates),
         config=config,
     )
+
+
+def _teams_by_competition(
+    teams: tuple[TeamRecord, ...],
+) -> tuple[tuple[tuple[str, ...], tuple[TeamRecord, ...]], ...]:
+    buckets: dict[tuple[str, ...], list[TeamRecord]] = defaultdict(list)
+    for team in teams:
+        buckets[_competition_key(team)].append(team)
+    return tuple(
+        (key, tuple(sorted(items, key=lambda item: item.team_id)))
+        for key, items in sorted(buckets.items())
+    )
+
+
+def _competition_key(team: TeamRecord) -> tuple[str, ...]:
+    parts = (team.modality.strip(), team.category.strip(), team.subcategory.strip())
+    if all(parts):
+        return ("fields", *parts)
+    league_name = team.league_name.strip() or "Sense lliga"
+    return ("league", league_name)
 
 
 def _first_existing(row: pd.Series, columns: tuple[str, ...]) -> Any:

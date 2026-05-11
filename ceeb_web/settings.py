@@ -209,15 +209,16 @@ CELERY_TASK_ROUTES = {
 CALENDARITZACIONS_ASYNC_BACKEND = os.getenv("CALENDARITZACIONS_ASYNC_BACKEND", "celery")
 
 # Evita acaparament de tasques llargues
-worker_prefetch_multiplier = 1
-task_acks_late = True  # si vols ack al final de la tasca
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER", "1"))
+CELERY_TASK_ACKS_LATE = _env_bool("CELERY_TASK_ACKS_LATE", True)
+CELERY_TASK_REJECT_ON_WORKER_LOST = _env_bool("CELERY_TASK_REJECT_ON_WORKER_LOST", False)
 
 # Límits de temps útils (ara sí funcionen perquè no uses 'solo')
 # Allow longer-running tasks (e.g. calendar processing that can take 15-30 minutes)
 # Soft limit: worker will receive a SoftTimeLimitExceeded signal at this time
 # Hard limit: task will be force-terminated after this time
-task_soft_time_limit = 60 * 60  # 60 minutes
-task_time_limit = 60 * 65       # 65 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", str(60 * 60)))
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", str(60 * 65)))
 
 # Logs consola
 CELERYD_HIJACK_ROOT_LOGGER = False

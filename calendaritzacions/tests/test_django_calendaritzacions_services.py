@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 HAS_DJANGO = importlib.util.find_spec("django") is not None
@@ -89,6 +89,44 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
 
         self.assertEqual(run.statuses, ["running", "error"])
         self.assertEqual(run.error_message, "boom")
+
+    def test_worker_lost_signal_marks_run_error(self):
+        from calendaritzacions.django import tasks
+
+        run = SimpleNamespace(is_finished=False, logs=["abans"])
+        run.mark_error = Mock()
+        manager = SimpleNamespace(get=Mock(return_value=run))
+        model = SimpleNamespace(objects=manager, DoesNotExist=Exception)
+        sender = SimpleNamespace(name=tasks.execute_calendarization_run_task.name)
+
+        with patch.dict("sys.modules", {"calendaritzacions.django.models": SimpleNamespace(CalendarizationRun=model)}):
+            tasks.mark_calendarization_worker_lost(
+                sender=sender,
+                exception=Exception("WorkerLostError: signal 9 (SIGKILL)"),
+                args=(12,),
+            )
+
+        manager.get.assert_called_once_with(pk=12)
+        run.mark_error.assert_called_once()
+        message = run.mark_error.call_args.args[0]
+        logs = run.mark_error.call_args.kwargs["logs"]
+        self.assertIn("falta de memòria", message)
+        self.assertEqual(logs[0], "abans")
+        self.assertIn("SIGKILL", logs[-1])
+
+    def test_worker_lost_signal_ignores_other_tasks(self):
+        from calendaritzacions.django import tasks
+
+        sender = SimpleNamespace(name="other.task")
+
+        with patch("calendaritzacions.django.models.CalendarizationRun.objects.get") as get:
+            tasks.mark_calendarization_worker_lost(
+                sender=sender,
+                exception=Exception("WorkerLostError: signal 9"),
+                args=(12,),
+            )
+
+        get.assert_not_called()
 
     def test_audit_reader_discovers_and_reads_json(self):
         from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_audit_artifact

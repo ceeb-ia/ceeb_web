@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from django.http import Http404, JsonResponse
+from pathlib import Path
+
+from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.generic import DetailView, FormView, ListView, View
@@ -68,6 +70,33 @@ class RunDetailView(CalendaritzacionsAccessMixin, DetailView):
     model = CalendarizationRun
     template_name = "calendaritzacions/run_detail.html"
     context_object_name = "run"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["plot_galleries"] = _build_plot_galleries(self.object)
+        return context
+
+
+class RunDeleteView(CalendaritzacionsAccessMixin, View):
+    def post(self, request, *args, **kwargs):
+        run = get_object_or_404(CalendarizationRun, pk=kwargs["pk"])
+        if not run.is_finished:
+            return HttpResponseBadRequest("No es pot eliminar un run pendent o en execucio.")
+        if run.input_file:
+            run.input_file.delete(save=False)
+        run.delete()
+        return redirect("calendaritzacions:run_list")
+
+
+class RunPlotView(CalendaritzacionsAccessMixin, View):
+    def get(self, request, *args, **kwargs):
+        run = get_object_or_404(CalendarizationRun, pk=kwargs["pk"])
+        path = _ensure_run_plot_path(
+            run,
+            artifact=kwargs["artifact"],
+            plot_id=kwargs["plot_id"],
+        )
+        return FileResponse(path.open("rb"), content_type="image/png")
 
 
 class AuditDetailView(CalendaritzacionsAccessMixin, DetailView):
@@ -159,3 +188,77 @@ def _read_related_audit_payloads(run: CalendarizationRun, *, exclude: str) -> di
         except (FileNotFoundError, ValueError, OSError):
             continue
     return related
+
+
+def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
+    galleries: list[dict[str, object]] = []
+    for artifact, title in [
+        ("input_demand", "Plots pre-run"),
+        ("resource_solver_final_plots", "Plots post-run"),
+    ]:
+        plots = _plot_ids_for_artifact(run, artifact)
+        if not plots:
+            continue
+        galleries.append(
+            {
+                "title": title,
+                "artifact": artifact,
+                "plots": [
+                    {
+                        "id": plot_id,
+                        "label": _plot_label(plot_id),
+                        "url": reverse(
+                            "calendaritzacions:run_plot",
+                            kwargs={"pk": run.pk, "artifact": artifact, "plot_id": plot_id},
+                        ),
+                    }
+                    for plot_id in plots
+                ],
+            }
+        )
+    return galleries
+
+
+def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
+    try:
+        payload = read_json_file(str(ensure_run_audit_path(run, artifact)))
+    except (FileNotFoundError, ValueError, OSError, Http404):
+        return []
+    plots = payload.get("plots") if isinstance(payload, dict) else None
+    if not isinstance(plots, dict):
+        return []
+    return sorted(
+        plot_id
+        for plot_id, path in plots.items()
+        if plot_id != "manifest" and path and str(path).lower().endswith(".png")
+    )
+
+
+def _ensure_run_plot_path(run: CalendarizationRun, *, artifact: str, plot_id: str) -> Path:
+    artifact_path = ensure_run_audit_path(run, artifact)
+    payload = read_json_file(str(artifact_path))
+    plots = payload.get("plots") if isinstance(payload, dict) else None
+    if not isinstance(plots, dict) or plot_id not in plots:
+        raise Http404("Plot does not exist.")
+
+    resolved = Path(str(plots[plot_id])).expanduser().resolve()
+    root = artifact_path.parent.resolve()
+    if root not in (resolved, *resolved.parents):
+        raise Http404("Plot path is outside the audit directory.")
+    if resolved.suffix.lower() != ".png" or not resolved.exists() or not resolved.is_file():
+        raise Http404("Plot file does not exist.")
+    return resolved
+
+
+def _plot_label(plot_id: str) -> str:
+    labels = {
+        "heatmap": "Mapa demanda",
+        "friday": "Divendres",
+        "by_venue": "Per pista",
+        "top_slots": "Slots crítics",
+        "group_sizes": "Mida grups",
+        "resource_excess": "Pressió recursos",
+        "entity_conflicts": "Conflictes entitat",
+        "status_summary": "Resum final",
+    }
+    return labels.get(plot_id, plot_id.replace("_", " ").title())

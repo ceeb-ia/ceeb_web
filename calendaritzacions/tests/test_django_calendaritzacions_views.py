@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -73,6 +76,85 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         presenter.assert_called_once_with("resource_solution", {"ok": True}, related_payloads={})
         self.assertEqual(context["audit"]["payload"], {"ok": True})
         self.assertEqual(context["audit"]["presentation"], {"title": "Audit"})
+
+    def test_delete_view_deletes_finished_run_and_redirects(self):
+        from calendaritzacions.django.views import RunDeleteView
+
+        request = SimpleNamespace()
+        input_file = SimpleNamespace(delete=lambda save=False: None)
+        run = SimpleNamespace(is_finished=True, input_file=input_file, delete=lambda: None)
+
+        with (
+            patch("calendaritzacions.django.views.get_object_or_404", return_value=run) as get_object,
+            patch.object(input_file, "delete") as delete_file,
+            patch.object(run, "delete") as delete_run,
+            patch("calendaritzacions.django.views.redirect") as redirect,
+        ):
+            redirect.return_value = SimpleNamespace(status_code=302, url="/")
+            response = RunDeleteView().post(request, pk=7)
+
+        get_object.assert_called_once()
+        delete_file.assert_called_once_with(save=False)
+        delete_run.assert_called_once_with()
+        redirect.assert_called_once_with("calendaritzacions:run_list")
+        self.assertEqual(response.status_code, 302)
+
+    def test_delete_view_rejects_unfinished_run(self):
+        from calendaritzacions.django.views import RunDeleteView
+
+        request = SimpleNamespace()
+        run = SimpleNamespace(is_finished=False)
+
+        with patch("calendaritzacions.django.views.get_object_or_404", return_value=run):
+            response = RunDeleteView().post(request, pk=7)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_build_plot_galleries_reads_registered_plot_artifacts(self):
+        from calendaritzacions.django.views import _build_plot_galleries
+
+        run = SimpleNamespace(pk=7)
+        payloads = {
+            "input_demand": {"plots": {"heatmap": "/tmp/heatmap.png", "manifest": "/tmp/manifest.json"}},
+            "resource_solver_final_plots": {"plots": {"group_sizes": "/tmp/group_sizes.png"}},
+        }
+
+        with (
+            patch("calendaritzacions.django.views.ensure_run_audit_path", side_effect=lambda _run, artifact: artifact),
+            patch("calendaritzacions.django.views.read_json_file", side_effect=lambda path: payloads[path]),
+            patch(
+                "calendaritzacions.django.views.reverse",
+                side_effect=lambda _name, kwargs: f"/runs/{kwargs['pk']}/plots/{kwargs['artifact']}/{kwargs['plot_id']}/",
+            ),
+        ):
+            galleries = _build_plot_galleries(run)
+
+        self.assertEqual([gallery["title"] for gallery in galleries], ["Plots pre-run", "Plots post-run"])
+        self.assertEqual(galleries[0]["plots"][0]["id"], "heatmap")
+        self.assertIn("/runs/7/plots/input_demand/heatmap/", galleries[0]["plots"][0]["url"])
+        self.assertEqual(galleries[1]["plots"][0]["id"], "group_sizes")
+
+    def test_plot_view_serves_registered_png_inside_audit_directory(self):
+        from calendaritzacions.django.views import RunPlotView
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plot_path = root / "plots_input_demand" / "heatmap.png"
+            plot_path.parent.mkdir()
+            plot_path.write_bytes(b"png")
+            audit_path = root / "input_demand.json"
+            audit_path.write_text(json.dumps({"plots": {"heatmap": str(plot_path)}}), encoding="utf-8")
+            run = SimpleNamespace()
+
+            with (
+                patch("calendaritzacions.django.views.get_object_or_404", return_value=run),
+                patch("calendaritzacions.django.views.ensure_run_audit_path", return_value=audit_path),
+            ):
+                response = RunPlotView().get(SimpleNamespace(), pk=7, artifact="input_demand", plot_id="heatmap")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "image/png")
+            response.close()
 
 
 if __name__ == "__main__":

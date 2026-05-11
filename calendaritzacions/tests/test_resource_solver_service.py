@@ -54,13 +54,29 @@ class ResourceSolverServiceTests(unittest.TestCase):
             self.assertIn("resource_solution", result.audit_paths)
             self.assertIn("solver_explanations", result.audit_paths)
             self.assertIn("resource_solver_result", result.audit_paths)
+            self.assertIn("resource_solver_final_plots", result.audit_paths)
             self.assertIn("input_demand", result.audit_paths)
             self.assertIn("input_validation", result.audit_paths)
             self.assertTrue(Path(result.audit_paths["solver_explanations"]).exists())
+            final_plots = json.loads(Path(result.audit_paths["resource_solver_final_plots"]).read_text(encoding="utf-8"))
+            self.assertEqual(final_plots["artifact_type"], "resource_solver_final_plots")
+            self.assertTrue(final_plots["plots"])
             payload = json.loads(Path(result.audit_paths["resource_solver_result"]).read_text(encoding="utf-8"))
             self.assertIn(payload["status"], {"OPTIMAL", "FEASIBLE"})
             workbook = load_workbook(result.output_path, read_only=True)
             self.assertIn("Resum", workbook.sheetnames)
+            assignment_sheet = workbook["Lliga"]
+            headers = [cell.value for cell in assignment_sheet[2]]
+            self.assertIn("Diferències jornades", headers)
+            self.assertNotIn("J1", headers)
+            group_col = headers.index("Grup") + 1
+            self.assertEqual(assignment_sheet.cell(row=3, column=group_col).value, "G1")
+            self.assertTrue(
+                any(log.startswith("pre-solver competicio: Nom Lliga: Lliga |") for log in result.logs)
+            )
+            self.assertTrue(
+                any(log.startswith("post-solver competicio: Nom Lliga: Lliga |") for log in result.logs)
+            )
             self.assertTrue(any(log.startswith("resource_solver: status=") for log in result.logs))
 
     def test_registry_exposes_resource_solver_and_legacy(self):
@@ -113,6 +129,7 @@ class ResourceSolverServiceTests(unittest.TestCase):
             self.assertIn("resource_solution", audit_paths)
             self.assertIn("solver_explanations", audit_paths)
             self.assertIn("resource_solver_result", audit_paths)
+            self.assertIn("resource_solver_final_plots", audit_paths)
             self.assertIn("input_demand", audit_paths)
             self.assertIn("input_validation", audit_paths)
             self.assertEqual(kpis_path, "")

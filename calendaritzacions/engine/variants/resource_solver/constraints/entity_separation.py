@@ -38,14 +38,27 @@ def add_entity_separation_constraints(
 ) -> None:
     """Separate same-entity teams unless that is structurally impossible."""
 
-    teams_by_entity: dict[str, list[str]] = defaultdict(list)
-    for team in context.teams:
-        teams_by_entity[team.entity].append(team.team_id)
+    entity_by_team = {team.team_id: team.entity for team in context.teams}
+    groups_by_team: dict[str, set[str]] = defaultdict(set)
+    teams_by_group: dict[str, set[str]] = defaultdict(set)
+    for candidate in variables.candidate_by_id.values():
+        groups_by_team[candidate.team_id].add(candidate.group_id)
+        teams_by_group[candidate.group_id].add(candidate.team_id)
 
-    num_groups = len(context.groups)
     weight = int(getattr(context.config, "entity_excess_weight", 10_000))
-    for entity, team_ids in sorted(teams_by_entity.items()):
-        for group in context.groups:
+    for group in context.groups:
+        competition_team_ids = teams_by_group.get(group.group_id, set())
+        competition_group_ids = {
+            group_id
+            for team_id in competition_team_ids
+            for group_id in groups_by_team.get(team_id, set())
+        }
+        competition_teams_by_entity: dict[str, list[str]] = defaultdict(list)
+        for team_id in competition_team_ids:
+            competition_teams_by_entity[entity_by_team.get(team_id, "")].append(team_id)
+
+        num_competition_groups = len(competition_group_ids)
+        for entity, team_ids in sorted(competition_teams_by_entity.items()):
             terms = [
                 variables.x[c.candidate_id]
                 for team_id in team_ids
@@ -53,7 +66,7 @@ def add_entity_separation_constraints(
                 if c.group_id == group.group_id
             ]
             count_expr = linear_sum(terms)
-            if len(team_ids) <= num_groups:
+            if len(team_ids) <= num_competition_groups:
                 model.Add(count_expr <= 1)
                 audit.count_constraint("hard_entity_separation")
                 continue
@@ -64,4 +77,3 @@ def add_entity_separation_constraints(
             objective_terms.append(("entity_excess", weight, excess))
             audit.count_constraint("soft_entity_excess")
             audit.count_objective_term("entity_excess")
-

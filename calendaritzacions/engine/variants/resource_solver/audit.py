@@ -131,6 +131,7 @@ def build_solver_model_summary(
             ),
         },
         "time_limit_seconds": getattr(context.config, "time_limit_seconds", None),
+        "num_search_workers": getattr(context.config, "num_search_workers", None),
         "status": status,
         "objective_value": getattr(raw_result, "objective_value", None)
         if raw_result is not None
