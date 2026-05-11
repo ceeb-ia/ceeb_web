@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static_extras %}
 
 {% block title %}{% block calendaritzacions_title %}Calendaritzacions{% endblock %}{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="{% static 'calendaritzacions/calendaritzacions.css' %}">
+<link rel="stylesheet" href="{% staticv 'calendaritzacions/calendaritzacions.css' %}">
 <div class="calendaritzacions-app container-fluid mt-4">
     {% block calendaritzacions_content %}{% endblock %}
 </div>
@@ -12,5 +12,5 @@
 
 {% block extra_scripts %}
 {{ block.super }}
-<script src="{% static 'calendaritzacions/calendaritzacions.js' %}"></script>
+<script src="{% staticv 'calendaritzacions/calendaritzacions.js' %}"></script>
 {% endblock %}
