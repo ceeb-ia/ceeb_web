@@ -134,6 +134,29 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         self.assertIn("/runs/7/plots/input_demand/heatmap/", galleries[0]["plots"][0]["url"])
         self.assertEqual(galleries[1]["plots"][0]["id"], "group_sizes")
 
+    def test_status_view_uses_db_progress_logs_when_redis_has_no_progress(self):
+        from calendaritzacions.django.views import RunStatusJsonView
+
+        run = SimpleNamespace(
+            pk=7,
+            status="running",
+            is_finished=False,
+            logs=["[5%] Preparant motor resource_solver...", "[20%] Construint context resource_solver..."],
+            error_message="",
+            output_path="",
+            available_audits=[],
+        )
+
+        with (
+            patch("calendaritzacions.django.views.get_object_or_404", return_value=run),
+            patch("logs.read_logs_sync", return_value=[]),
+        ):
+            response = RunStatusJsonView().get(SimpleNamespace(), pk=7)
+
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["status"], "running")
+        self.assertEqual(payload["progress"], 20)
+
     def test_plot_view_serves_registered_png_inside_audit_directory(self):
         from calendaritzacions.django.views import RunPlotView
 

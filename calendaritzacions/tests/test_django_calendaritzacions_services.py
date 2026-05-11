@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 
 HAS_DJANGO = importlib.util.find_spec("django") is not None
@@ -75,6 +75,7 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
             task_id="12",
             segona_fase_bool=True,
             engine_name="resource_solver",
+            progress_reporter=ANY,
         )
         self.assertEqual(run.statuses, ["running", "success"])
         self.assertEqual(run.success_kwargs["output_path"], "/tmp/output.xlsx")

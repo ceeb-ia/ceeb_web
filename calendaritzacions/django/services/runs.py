@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.conf import settings
 
 from calendaritzacions.application import process_calendarization
+from calendaritzacions.application.progress import progress_for_task
 from calendaritzacions.django.models import CalendarizationRun
 from calendaritzacions.django.services.audit_reader import discover_audit_paths
 
@@ -23,13 +24,15 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
     run.mark_running()
     logs: list[str] = []
     try:
+        task_id = str(run.pk) if run.pk is not None else None
         output = process_calendarization(
             input_path=run.input_file.path,
             return_logs=True,
             return_artifacts=True,
-            task_id=str(run.pk) if run.pk is not None else None,
+            task_id=task_id,
             segona_fase_bool=(run.phase == CalendarizationRun.PHASE_SECOND),
             engine_name=run.engine_name,
+            progress_reporter=DjangoRunProgressReporter(task_id),
         )
         output_path, logs, audit_paths, kpis_path = _split_process_output(output)
         if not audit_paths:
@@ -38,6 +41,32 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
     except Exception as exc:
         run.mark_error(str(exc), logs=logs)
     return run
+
+
+class DjangoRunProgressReporter:
+    def __init__(self, task_id: str | None) -> None:
+        self._task_id = task_id
+        self._redis_progress = progress_for_task(task_id)
+
+    def report(self, message: str, percent: int | None = None) -> None:
+        self._redis_progress.report(message, percent)
+        if not self._task_id:
+            return
+        _append_progress_log(self._task_id, message, percent)
+
+
+def _append_progress_log(task_id: str, message: str, percent: int | None) -> None:
+    try:
+        run = CalendarizationRun.objects.get(pk=int(task_id))
+    except (CalendarizationRun.DoesNotExist, TypeError, ValueError):
+        return
+    line = f"[{percent}%] {message}" if percent is not None else str(message)
+    logs = list(run.logs or [])
+    if logs and logs[-1] == line:
+        return
+    logs.append(line)
+    run.logs = logs[-200:]
+    run.save(update_fields=["logs"])
 
 
 def enqueue_run(run: CalendarizationRun) -> CalendarizationRun:

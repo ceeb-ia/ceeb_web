@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
@@ -154,6 +155,8 @@ class RunStatusJsonView(CalendaritzacionsAccessMixin, View):
                 for item in redis_logs
                 if isinstance(item, dict) and item.get("message")
             ] or log_lines
+        if progress is None:
+            progress = _progress_from_log_lines(log_lines)
 
         return JsonResponse(
             {
@@ -217,6 +220,18 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
             }
         )
     return galleries
+
+
+def _progress_from_log_lines(log_lines: list[object]) -> int | None:
+    values: list[int] = []
+    for line in log_lines:
+        match = re.match(r"^\[(\d{1,3})%\]", str(line).strip())
+        if not match:
+            continue
+        values.append(max(0, min(100, int(match.group(1)))))
+    if not values:
+        return None
+    return max(values)
 
 
 def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
