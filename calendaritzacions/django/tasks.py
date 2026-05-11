@@ -29,6 +29,9 @@ def execute_calendarization_run_task(self, run_id: int) -> int:
     if not run.task_id:
         run.task_id = str(self.request.id)
         run.save(update_fields=["task_id"])
+    if not run.is_finished:
+        run.mark_running()
+    _append_run_log(run, "Worker heavy ha rebut la tasca.")
     logger.info(
         "calendaritzacions: iniciant run_id=%s engine=%s phase=%s input=%s",
         run_id,
@@ -36,9 +39,11 @@ def execute_calendarization_run_task(self, run_id: int) -> int:
         run.phase,
         _input_name(run),
     )
+    start_message = f"Iniciant execucio: motor={run.engine_name}, fase={run.phase}, input={_input_name(run)}"
+    _append_run_log(run, start_message)
     _push_run_log(
         run_id,
-        f"Iniciant execucio: motor={run.engine_name}, fase={run.phase}, input={_input_name(run)}",
+        start_message,
         progress=2,
         status="running",
     )
@@ -60,6 +65,17 @@ def _push_run_log(run_id: int, message: str, progress: int | None = None, status
 def _input_name(run) -> str:
     input_file = getattr(run, "input_file", None)
     return str(getattr(input_file, "name", "") or getattr(input_file, "path", "") or "desconegut")
+
+
+def _append_run_log(run, message: str) -> None:
+    try:
+        logs = list(run.logs or [])
+        if not logs or logs[-1] != message:
+            logs.append(message)
+            run.logs = logs
+            run.save(update_fields=["logs"])
+    except Exception as exc:  # pragma: no cover - diagnostic logging must not break the run
+        logger.warning("calendaritzacions: no s'ha pogut guardar log inicial run_id=%s: %s", run.pk, exc)
 
 
 @signals.task_failure.connect
