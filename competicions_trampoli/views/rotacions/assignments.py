@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from ...models import Competicio
+from ...models.competicio import ProgramUnit
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
 from ...services.shared.competition_groups import get_group_maps
@@ -14,6 +15,7 @@ from ._shared import (
     _normalize_grups,
     _split_program_keys,
     _sync_assignacio_groups,
+    _sync_assignacio_program_units,
     _sync_assignacio_series,
 )
 
@@ -51,8 +53,17 @@ def rotacions_save(request, pk):
         int(serie.id): serie
         for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
     }
+    program_units_by_id = {
+        int(unit.id): unit
+        for unit in (
+            ProgramUnit.objects
+            .filter(fase__competicio=competicio)
+            .select_related("fase", "fase__comp_aparell")
+        )
+    }
     seen_groups_by_franja = {}
     seen_series_by_franja = {}
+    seen_program_units_by_franja = {}
     validation_errors = []
     normalized_cells = []
 
@@ -73,13 +84,15 @@ def rotacions_save(request, pk):
             continue
 
         if "items" in c:
-            groups, series = _split_program_keys(c.get("items"))
+            groups, series, program_units = _split_program_keys(c.get("items"))
         elif "grups" in c:
             groups = _normalize_grups(c.get("grups"))
             series = []
+            program_units = []
         else:
             groups = _normalize_grups(c.get("grup", None))
             series = []
+            program_units = []
 
         estacio = estacions_by_id.get(es_id)
         is_team_station = bool(
@@ -97,6 +110,13 @@ def rotacions_save(request, pk):
             ]
         else:
             series = []
+        program_units = [
+            unit_id
+            for unit_id in program_units
+            if unit_id in program_units_by_id
+            and int(getattr(getattr(program_units_by_id[unit_id], "fase", None), "comp_aparell_id", 0) or 0)
+            == int(getattr(estacio, "comp_aparell_id", 0) or 0)
+        ]
 
         for group_id in groups:
             owner_map = seen_groups_by_franja.setdefault(fr_id, {})
@@ -112,6 +132,13 @@ def rotacions_save(request, pk):
                 validation_errors.append(
                     f"La serie {serie_id} no pot estar assignada a dues estacions dins la mateixa franja."
                 )
+        for unit_id in program_units:
+            owner_map = seen_program_units_by_franja.setdefault(fr_id, {})
+            previous_estacio = owner_map.setdefault(unit_id, es_id)
+            if previous_estacio != es_id:
+                validation_errors.append(
+                    f"La unitat programable {unit_id} no pot estar assignada a dues estacions dins la mateixa franja."
+                )
 
         normalized_cells.append(
             {
@@ -119,6 +146,7 @@ def rotacions_save(request, pk):
                 "estacio_id": es_id,
                 "groups": groups,
                 "series": series,
+                "program_units": program_units,
             }
         )
 
@@ -140,6 +168,7 @@ def rotacions_save(request, pk):
             )
             _sync_assignacio_groups(assignacio, cell["groups"], groups_by_id)
             _sync_assignacio_series(assignacio, cell["series"], series_by_id)
+            _sync_assignacio_program_units(assignacio, cell["program_units"], program_units_by_id)
 
     return JsonResponse({"ok": True})
 

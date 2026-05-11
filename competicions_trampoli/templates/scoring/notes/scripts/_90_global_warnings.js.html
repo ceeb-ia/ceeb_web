@@ -25,6 +25,7 @@
     const app = detail?.app || {};
     return {
       franja_id: nav.franja_id || unit.franja_id || null,
+      fase_id: nav.fase_id || unit.phase_id || null,
       comp_aparell_id: nav.comp_aparell_id || app.id || unit.comp_aparell_id || null,
       unit_key: nav.unit_key || unit.key || "",
       unit_identity: nav.unit_identity || unit.identity || "",
@@ -52,6 +53,7 @@
     const appId = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedAppId) : String(NOTES_STATE.selectedAppId || "all");
     const franja = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedFranja) : String(NOTES_STATE.selectedFranja || "all");
     const unitId = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedUnitId) : String(NOTES_STATE.selectedUnitId || "all");
+    const phase = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedPhaseId || "all") : String(NOTES_STATE.selectedPhaseId || "all");
     const exercise = typeof allFilterValue === "function" ? allFilterValue(NOTES_STATE.selectedExercise) : String(NOTES_STATE.selectedExercise || "all");
     if(appId !== "all") url.searchParams.set("comp_aparell_id", appId);
     if(franja.startsWith("franja:")) url.searchParams.set("franja_id", franja.replace("franja:", ""));
@@ -59,6 +61,7 @@
       const unit = typeof currentLazyUnit === "function" ? currentLazyUnit() : null;
       if(unit) url.searchParams.set("unit_key", unit.key || "");
     }
+    if(phase.startsWith("phase:")) url.searchParams.set("fase_id", phase.replace("phase:", ""));
     if(exercise !== "all") url.searchParams.set("exercici", exercise);
   }
 
@@ -174,6 +177,7 @@
     if(!unit) return;
     NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
     NOTES_STATE.selectedAppId = String(nav.comp_aparell_id || unit.comp_aparell_id || "");
+    NOTES_STATE.selectedPhaseId = typeof phaseValueForUnit === "function" ? phaseValueForUnit(unit) : (nav.fase_id ? `phase:${nav.fase_id}` : "implicit");
     NOTES_STATE.selectedUnitId = unitIdentity(unit);
     NOTES_STATE.selectedExercise = String(nav.exercici || 1);
     NOTES_STATE.rowFilter = "warnings";

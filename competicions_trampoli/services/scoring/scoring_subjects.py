@@ -16,7 +16,7 @@ from ...models.scoring import (
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
-from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase, InscripcioAparellExclusio
 from .team_scoring import eligible_team_ids_for_comp_aparell, is_team_context_app
 
 
@@ -35,8 +35,11 @@ def subject_key(subject_kind: str, subject_id) -> str:
     return f"{kind}:{subject_id}"
 
 
-def score_store_key(subject_kind: str, subject_id, exercici, comp_aparell_id) -> str:
-    return f"{subject_key(subject_kind, subject_id)}|{int(exercici)}|{int(comp_aparell_id)}"
+def score_store_key(subject_kind: str, subject_id, exercici, comp_aparell_id, fase_id=None) -> str:
+    base = f"{subject_key(subject_kind, subject_id)}|{int(exercici)}|{int(comp_aparell_id)}"
+    if fase_id in (None, "", 0, "0"):
+        return base
+    return f"{base}|{int(fase_id)}"
 
 
 def inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
@@ -111,12 +114,33 @@ def resolve_scoring_subject(
     }, None
 
 
+def resolve_scoring_phase(
+    competicio: Competicio,
+    comp_aparell: CompeticioAparell,
+    raw_phase_id,
+):
+    if raw_phase_id in (None, "", 0, "0"):
+        return None, None
+    try:
+        phase_id = int(raw_phase_id)
+    except Exception:
+        return None, JsonResponse({"ok": False, "error": "fase_id invalid."}, status=400)
+    phase = get_object_or_404(
+        CompeticioAparellFase,
+        pk=phase_id,
+        competicio=competicio,
+        comp_aparell=comp_aparell,
+    )
+    return phase, None
+
+
 def get_or_create_subject_entry_locked(
     *,
     competicio: Competicio,
     comp_aparell: CompeticioAparell,
     exercici: int,
     subject: Dict[str, object],
+    fase: CompeticioAparellFase | None = None,
     defaults: Optional[dict] = None,
 ) -> Tuple[object, bool]:
     defaults = defaults or {}
@@ -124,6 +148,7 @@ def get_or_create_subject_entry_locked(
         "competicio": competicio,
         "comp_aparell": comp_aparell,
         "exercici": exercici,
+        "fase": fase,
     }
     if str(subject.get("subject_kind")) == "team_unit":
         lookup["team_subject"] = subject["team_subject"]

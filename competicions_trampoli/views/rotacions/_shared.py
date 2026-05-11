@@ -4,6 +4,7 @@ from django.conf import settings
 
 from ...models.rotacions import (
     RotacioAssignacioGrup,
+    RotacioAssignacioProgramUnit,
     RotacioAssignacioSerieEquip,
     RotacioEstacio,
 )
@@ -14,6 +15,7 @@ from ...services.inscripcions.queries import (
 )
 from ...services.rotacions.rotacions_ordering import (
     assignacio_grups,
+    assignacio_program_units,
     assignacio_series,
     normalize_positive_int_list,
     unique_ordered,
@@ -99,6 +101,7 @@ def _normalize_program_keys(values):
 def _split_program_keys(values):
     group_ids = []
     serie_ids = []
+    program_unit_ids = []
     for key in _normalize_program_keys(values):
         if key.startswith("g:"):
             try:
@@ -114,7 +117,14 @@ def _split_program_keys(values):
                 continue
             if serie_id > 0:
                 serie_ids.append(serie_id)
-    return unique_ordered(group_ids), unique_ordered(serie_ids)
+        elif key.startswith("pu:"):
+            try:
+                program_unit_id = int(key.split(":", 1)[1])
+            except Exception:
+                continue
+            if program_unit_id > 0:
+                program_unit_ids.append(program_unit_id)
+    return unique_ordered(group_ids), unique_ordered(serie_ids), unique_ordered(program_unit_ids)
 
 
 def _sync_assignacio_series(assignacio, serie_ids, series_by_id):
@@ -159,6 +169,48 @@ def _sync_assignacio_series(assignacio, serie_ids, series_by_id):
     return [serie_id for serie_id, _idx in desired]
 
 
+def _sync_assignacio_program_units(assignacio, program_unit_ids, program_units_by_id):
+    clean_ids = unique_ordered(normalize_positive_int_list(program_unit_ids))
+    desired = []
+    for idx, program_unit_id in enumerate(clean_ids, start=1):
+        program_unit = program_units_by_id.get(program_unit_id)
+        if not program_unit:
+            continue
+        desired.append((program_unit.id, idx))
+
+    existing = {link.program_unit_id: link for link in assignacio.program_unit_links.all()}
+    keep_ids = set()
+    updates = []
+    creates = []
+    for program_unit_id, order_idx in desired:
+        keep_ids.add(program_unit_id)
+        link = existing.get(program_unit_id)
+        if link is None:
+            creates.append(
+                RotacioAssignacioProgramUnit(
+                    assignacio=assignacio,
+                    program_unit_id=program_unit_id,
+                    ordre=order_idx,
+                )
+            )
+            continue
+        if link.ordre != order_idx:
+            link.ordre = order_idx
+            updates.append(link)
+
+    stale_ids = [program_unit_id for program_unit_id in existing.keys() if program_unit_id not in keep_ids]
+    if stale_ids:
+        RotacioAssignacioProgramUnit.objects.filter(
+            assignacio=assignacio,
+            program_unit_id__in=stale_ids,
+        ).delete()
+    if creates:
+        RotacioAssignacioProgramUnit.objects.bulk_create(creates, batch_size=200)
+    if updates:
+        RotacioAssignacioProgramUnit.objects.bulk_update(updates, ["ordre"], batch_size=200)
+    return [program_unit_id for program_unit_id, _idx in desired]
+
+
 def _assignacio_program_keys(assignacio):
     estacio = getattr(assignacio, "estacio", None)
     is_team_station = bool(
@@ -168,8 +220,10 @@ def _assignacio_program_keys(assignacio):
         and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
     )
     if is_team_station:
-        return [f"s:{serie_id}" for serie_id in assignacio_series(assignacio)]
-    return [f"g:{group_id}" for group_id in _assignacio_grups(assignacio)]
+        base_keys = [f"s:{serie_id}" for serie_id in assignacio_series(assignacio)]
+    else:
+        base_keys = [f"g:{group_id}" for group_id in _assignacio_grups(assignacio)]
+    return base_keys + [f"pu:{unit_id}" for unit_id in assignacio_program_units(assignacio)]
 
 
 ROTACIONS_EXPORT_BUILTIN_FIELDS = [
@@ -377,6 +431,7 @@ __all__ = [
     "_save_export_meta",
     "_split_program_keys",
     "_sync_assignacio_groups",
+    "_sync_assignacio_program_units",
     "_sync_assignacio_series",
     "_sync_estacions_aparells",
 ]

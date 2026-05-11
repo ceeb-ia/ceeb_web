@@ -1,0 +1,30 @@
+<header class="phase-dashboard-header">
+  <div class="phase-dashboard-title">
+    <h2>Planner de fases i rondes</h2>
+    <div class="text-muted small">{{ competicio.nom }} · defineix rondes per aparell, unitats competitives i el pas cap a rotacions.</div>
+    <div class="phase-dashboard-stats" aria-label="Resum de fases">
+      <span class="phase-stat">
+        <span class="phase-stat-value">{{ comp_aparells|length }}</span>
+        <span class="phase-stat-label">Aparells</span>
+      </span>
+      <span class="phase-stat">
+        <span class="phase-stat-value">{{ total_phase_count }}</span>
+        <span class="phase-stat-label">Fases</span>
+      </span>
+      <span class="phase-stat">
+        <span class="phase-stat-value">{{ total_unit_count }}</span>
+        <span class="phase-stat-label">Unitats</span>
+      </span>
+      <span class="phase-stat">
+        <span class="phase-stat-value">{{ total_pending_unit_count }}</span>
+        <span class="phase-stat-label">Sense rotacio</span>
+      </span>
+    </div>
+  </div>
+  <div class="phase-dashboard-actions">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparells_list' competicio.id %}">Aparells</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuracio</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'rotacions_planner' competicio.id %}">Rotacions</a>
+    <a class="btn btn-sm btn-info" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
+  </div>
+</header>

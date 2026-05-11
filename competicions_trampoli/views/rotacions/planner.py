@@ -7,7 +7,8 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from ...models import Competicio
-from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
+from ...models.competicio import ProgramUnit
+from ...models.rotacions import RotacioAssignacio, RotacioAssignacioProgramUnit, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
 from ...services.shared.competition_groups import (
     get_group_maps,
@@ -22,6 +23,7 @@ from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_CHOICES,
     ORDER_MODE_LABELS,
     assignacio_series,
+    assignacio_program_units,
     get_rotacions_order_modes,
 )
 from ...services.teams.team_series import get_programmed_series_ids, serie_label
@@ -79,7 +81,8 @@ def rotacions_planner(request, pk):
     program_item_labels = {str(group.id): group_labels_map[str(group.id)] for group in groups}
     program_item_labels.update({f"g:{group.id}": group_labels_map[str(group.id)] for group in groups})
     for serie in series_qs:
-        label = f"{getattr(serie.comp_aparell.aparell, 'nom', '')} · {serie_label(serie)}"
+        app_label = getattr(serie.comp_aparell, "display_nom", "") or getattr(serie.comp_aparell.aparell, "nom", "")
+        label = f"{app_label} · {serie_label(serie)}"
         program_item_labels[f"s:{serie.id}"] = label
         series_sidebar.append({
             "key": f"s:{serie.id}",
@@ -91,7 +94,40 @@ def rotacions_planner(request, pk):
             "is_programmed": int(serie.id) in programmed_series_ids,
             "is_out_of_program": int(serie.id) not in programmed_series_ids,
         })
-    program_sidebar = group_sidebar + series_sidebar
+
+    programmed_program_unit_ids = set(
+        RotacioAssignacioProgramUnit.objects
+        .filter(assignacio__competicio=competicio)
+        .values_list("program_unit_id", flat=True)
+        .distinct()
+    )
+    program_units_qs = (
+        ProgramUnit.objects
+        .filter(fase__competicio=competicio)
+        .select_related("fase", "fase__comp_aparell", "fase__comp_aparell__aparell")
+        .annotate(slots_count=Count("slots"))
+        .order_by("fase__comp_aparell__ordre", "fase__ordre", "ordre", "id")
+    )
+    program_unit_sidebar = []
+    for unit in program_units_qs:
+        fase = unit.fase
+        comp_aparell = fase.comp_aparell
+        app_label = getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "")
+        label = f"{app_label} · {fase.nom} · {unit.nom}"
+        program_item_labels[f"pu:{unit.id}"] = label
+        program_unit_sidebar.append({
+            "key": f"pu:{unit.id}",
+            "kind": "program_unit",
+            "id": int(unit.id),
+            "app_id": int(fase.comp_aparell_id),
+            "phase_id": int(fase.id),
+            "phase_label": fase.nom,
+            "label": label,
+            "members_count": int(getattr(unit, "slots_count", 0) or unit.capacity or 0),
+            "is_programmed": int(unit.id) in programmed_program_unit_ids,
+            "is_out_of_program": int(unit.id) not in programmed_program_unit_ids,
+        })
+    program_sidebar = group_sidebar + series_sidebar + program_unit_sidebar
 
     estacions = list(
         RotacioEstacio.objects
@@ -129,7 +165,7 @@ def rotacions_planner(request, pk):
         RotacioAssignacio.objects
         .filter(competicio=competicio)
         .select_related("franja", "estacio")
-        .prefetch_related("grup_links__grup", "serie_links__serie")
+        .prefetch_related("grup_links__grup", "serie_links__serie", "program_unit_links__program_unit__fase")
     )
     competition_franja_ids = {fr.id for fr in franges if _is_competitive_franja(fr)}
 
@@ -145,9 +181,12 @@ def rotacions_planner(request, pk):
             and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
         )
         if is_team_station:
-            grid.setdefault(a.franja_id, {})[a.estacio_id] = [f"s:{serie_id}" for serie_id in assignacio_series(a)]
+            base_keys = [f"s:{serie_id}" for serie_id in assignacio_series(a)]
         else:
-            grid.setdefault(a.franja_id, {})[a.estacio_id] = [f"g:{group_id}" for group_id in _assignacio_grups(a)]
+            base_keys = [f"g:{group_id}" for group_id in _assignacio_grups(a)]
+        grid.setdefault(a.franja_id, {})[a.estacio_id] = base_keys + [
+            f"pu:{unit_id}" for unit_id in assignacio_program_units(a)
+        ]
 
     ctx = {
         "competicio": competicio,

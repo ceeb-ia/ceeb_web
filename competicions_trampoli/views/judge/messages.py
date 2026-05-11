@@ -99,7 +99,7 @@ def _conversation_payload(conv):
         "token_id": str(conv.judge_token_id),
         "token_label": conv.judge_token.label or "",
         "comp_aparell_id": conv.comp_aparell_id,
-        "comp_aparell_label": getattr(conv.comp_aparell.aparell, "nom", "") or "",
+        "comp_aparell_label": getattr(conv.comp_aparell, "display_nom", "") or getattr(conv.comp_aparell.aparell, "nom", "") or "",
     }
 
 
@@ -408,7 +408,7 @@ def judge_messages_hub(request, competicio_id):
             "comp_aparell": {
                 "id": t.comp_aparell_id,
                 "aparell": {
-                    "nom": getattr(t.comp_aparell.aparell, "nom", "") or "",
+                    "nom": getattr(t.comp_aparell, "display_nom", "") or getattr(t.comp_aparell.aparell, "nom", "") or "",
                 },
             },
         }

@@ -4,8 +4,9 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import Competicio, CompeticioMembership
 from .models.classificacions import ClassificacioTemplateGlobal
-from .models.competicio import CompeticioAparell
+from .models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
 from .models.judging import JudgeConversation, JudgeConversationMessage
+from .models.rotacions import RotacioAssignacioProgramUnit
 
 
 class CompeticioMembershipByCompeticioInline(admin.TabularInline):
@@ -40,9 +41,44 @@ class CompeticioMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(CompeticioAparell)
 class CompeticioAparellAdmin(admin.ModelAdmin):
-    list_display = ("competicio", "aparell", "ordre", "actiu")
+    list_display = ("competicio", "display_nom", "display_codi", "aparell", "ordre", "actiu")
     list_filter = ("actiu", "competicio")
-    search_fields = ("competicio__nom", "aparell__nom", "aparell__codi")
+    search_fields = ("competicio__nom", "nom_local", "codi_local", "aparell__nom", "aparell__codi")
+
+
+@admin.register(CompeticioAparellFase)
+class CompeticioAparellFaseAdmin(admin.ModelAdmin):
+    list_display = ("nom", "codi", "competicio", "comp_aparell", "parent", "ordre", "estat")
+    list_filter = ("estat", "competicio")
+    search_fields = ("nom", "codi", "competicio__nom", "comp_aparell__nom_local", "comp_aparell__codi_local")
+    autocomplete_fields = ("competicio", "comp_aparell", "parent")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(ProgramUnit)
+class ProgramUnitAdmin(admin.ModelAdmin):
+    list_display = ("nom", "fase", "tipus", "ordre", "capacity", "status")
+    list_filter = ("tipus", "status", "fase__competicio")
+    search_fields = ("nom", "fase__nom", "fase__codi", "fase__comp_aparell__nom_local")
+    autocomplete_fields = ("fase",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(ProgramUnitSlot)
+class ProgramUnitSlotAdmin(admin.ModelAdmin):
+    list_display = ("unit", "slot_index", "ordre", "status", "subject_kind", "subject_id", "locked")
+    list_filter = ("status", "subject_kind", "locked")
+    search_fields = ("unit__nom", "subject_kind", "subject_id", "source_particio_key")
+    autocomplete_fields = ("unit",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(RotacioAssignacioProgramUnit)
+class RotacioAssignacioProgramUnitAdmin(admin.ModelAdmin):
+    list_display = ("assignacio", "program_unit", "ordre")
+    list_filter = ("program_unit__fase__competicio", "program_unit__fase")
+    search_fields = ("program_unit__nom", "program_unit__fase__nom", "assignacio__competicio__nom")
+    autocomplete_fields = ("program_unit",)
 
 
 @admin.register(ClassificacioTemplateGlobal)

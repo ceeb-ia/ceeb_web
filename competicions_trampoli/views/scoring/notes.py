@@ -6,7 +6,7 @@ from django.views.generic import TemplateView
 from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
-from ...models.scoring import ScoreEntry, ScoreEntryVideo, ScoringSchema, TeamScoreEntry, TeamScoreEntryVideo
+from ...models.scoring import ScoreEntry, ScoreEntryVideo, TeamScoreEntry, TeamScoreEntryVideo
 from ...services.shared.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
@@ -26,6 +26,7 @@ from ...services.rotacions.rotacions_ordering import (
     unique_ordered,
 )
 from ...services.scoring.scoring_subjects import score_store_key
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
 from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
 from ...services.scoring.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
@@ -177,17 +178,15 @@ class ScoringNotesHome(TemplateView):
         logical_schemas = {}
         team_registry_by_app_id = {}
         for ca in aparells_cfg:
-            ss, _ = ScoringSchema.objects.get_or_create(
-                aparell=ca.aparell,
-                defaults={"schema": {}},
-            )
-            logical_schemas[str(ca.id)] = _logical_schema_for_notes_ui(ss.schema or {}, ca)
+            _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(ca)
+            base_schema = base_schema or {}
+            logical_schemas[str(ca.id)] = _logical_schema_for_notes_ui(base_schema, ca)
             if is_team_context_app(ca):
                 registry = build_team_subject_registry(competicio, ca)
                 team_registry_by_app_id[int(ca.id)] = registry
-                schemas[str(ca.id)] = runtime_schema_for_team_subjects(ss.schema or {}, ca, registry["subjects"])
+                schemas[str(ca.id)] = runtime_schema_for_team_subjects(base_schema, ca, registry["subjects"])
             else:
-                schemas[str(ca.id)] = runtime_schema_for_comp_aparell(ss.schema or {}, ca)
+                schemas[str(ca.id)] = runtime_schema_for_comp_aparell(base_schema, ca)
 
         # ─────────────────────────────
         # SCORES (dict clau -> dades)
@@ -197,6 +196,7 @@ class ScoringNotesHome(TemplateView):
             inscripcio__in=ins,
             exercici__in=exercicis,
             comp_aparell__in=[ca for ca in aparells_cfg if not is_team_context_app(ca)],
+            fase__isnull=True,
         )
         scores_qs = scores_qs.annotate(
             _excluded=Exists(
@@ -234,7 +234,7 @@ class ScoringNotesHome(TemplateView):
                 .values_list("serie_id", flat=True)
                 .distinct()
             )
-            app_name = str(getattr(ca.aparell, "nom", "") or "").strip()
+            app_name = str(getattr(ca, "display_nom", "") or getattr(ca.aparell, "nom", "") or "").strip()
             for raw_subject in app_subjects:
                 subject = dict(raw_subject)
                 bucket_key = team_subject_bucket_key(subject, ca.id)
@@ -281,6 +281,7 @@ class ScoringNotesHome(TemplateView):
                 comp_aparell_id__in=team_score_app_ids,
                 team_subject_id__in=team_subject_ids,
                 exercici__in=exercicis,
+                fase__isnull=True,
             ).select_related("team_subject")
             for s in team_scores_qs:
                 allowed_inputs = _logical_team_input_codes(logical_schemas.get(str(s.comp_aparell_id), {}))
@@ -359,6 +360,7 @@ class ScoringNotesHome(TemplateView):
                     score_entry__inscripcio_id__in=inscripcio_ids,
                     score_entry__comp_aparell_id__in=active_app_ids,
                     score_entry__exercici__in=exercicis,
+                    score_entry__fase__isnull=True,
                 )
                 .exclude(video_file="")
                 .values_list(
@@ -377,6 +379,7 @@ class ScoringNotesHome(TemplateView):
                     team_score_entry__team_subject_id__in=team_subject_ids,
                     team_score_entry__comp_aparell_id__in=team_score_app_ids,
                     team_score_entry__exercici__in=exercicis,
+                    team_score_entry__fase__isnull=True,
                 )
                 .exclude(video_file="")
                 .values_list(

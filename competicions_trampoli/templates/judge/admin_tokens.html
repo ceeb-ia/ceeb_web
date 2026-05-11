@@ -79,7 +79,7 @@
         <select class="form-select form-select-sm" name="comp_aparell" onchange="this.form.submit()">
           {% for ca in comp_aparell_qs %}
             <option value="{{ ca.id }}" {% if comp_aparell and ca.id == comp_aparell.id %}selected{% endif %}>
-              {{ ca.aparell.nom }}
+              {{ ca.display_nom }}
             </option>
           {% endfor %}
         </select>

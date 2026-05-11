@@ -103,7 +103,7 @@
                     aria-label="Aparells de la inscripcio {{ r.nom_i_cognoms }}"
                     {% if not can_edit_inscripcions %}disabled{% endif %}>
                     {% for app in inscripcio_aparells_cfg %}
-                      <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.aparell.nom }}</option>
+                      <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.display_nom }}</option>
                     {% empty %}
                       <option value="" disabled>(Sense aparells actius)</option>
                     {% endfor %}

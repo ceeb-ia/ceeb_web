@@ -183,6 +183,7 @@ def compute_classificacio(competicio, cfg_obj):
         tipus=tipus,
         filtres=filtres,
         equips_cfg=equips_cfg,
+        phase_scope=schema.get("scope") or {},
     )
     aparells = orm_data.aparells
     team_mode = orm_data.team_mode if tipus == "equips" else ""
@@ -743,7 +744,6 @@ def compute_classificacio(competicio, cfg_obj):
                             entries,
                             ordre_principal,
                             victories_cfg,
-                            calc_metric_value_for_ins,
                             forced_app_ids=[app_id],
                             forced_camps=[field_code],
                         )
@@ -791,7 +791,6 @@ def compute_classificacio(competicio, cfg_obj):
                             entries,
                             ordre_principal,
                             victories_cfg,
-                            calc_metric_value_for_ins,
                             forced_app_ids=[app_id],
                             forced_exercici_ids=[ex_idx],
                         )
@@ -840,7 +839,6 @@ def compute_classificacio(competicio, cfg_obj):
                                 entries,
                                 ordre_principal,
                                 victories_cfg,
-                                calc_metric_value_for_ins,
                                 forced_app_ids=[app_id],
                                 forced_exercici_ids=[ex_idx],
                                 forced_camps=[field_code],

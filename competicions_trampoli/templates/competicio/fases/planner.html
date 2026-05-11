@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Fases - {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+{% include "competicio/fases/_styles.html" %}
+
+<div class="container-fluid mt-4">
+  <div class="phase-dashboard-shell">
+    {% include "competicio/fases/_header.html" %}
+
+    {% if messages %}
+      <div class="phase-dashboard-messages">
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }} mb-2">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% include "competicio/fases/_app_selector.html" %}
+
+    {% if comp_aparell %}
+      <div class="phase-dashboard-grid">
+        <aside class="phase-dashboard-sidebar">
+          {% include "competicio/fases/_forms.html" %}
+        </aside>
+        <main class="phase-dashboard-main">
+          {% include "competicio/fases/_phase_flow.html" %}
+        </main>
+      </div>
+    {% else %}
+      {% include "competicio/fases/_no_apps.html" %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

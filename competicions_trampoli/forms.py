@@ -6,7 +6,8 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
-from .models.competicio import Aparell, CompeticioAparell
+from .models.classificacions import ClassificacioConfig
+from .models.competicio import Aparell, CompeticioAparell, CompeticioAparellFase, ProgramUnit
 from .models.scoring import ScoringSchema
 from .services.shared.competition_groups import get_competicio_groups, group_label
 from .services.teams.equip_contexts import (
@@ -588,6 +589,9 @@ class CompeticioAparellForm(forms.ModelForm):
             if not self.user.groups.filter(name="platform_admin").exists():
                 qs = qs.filter(created_by=self.user)
         self.fields["aparell"].queryset = qs.order_by("nom", "id")
+        if not self.is_bound and self.instance and self.instance.pk:
+            self.fields["nom_local"].initial = self.instance.display_nom
+            self.fields["codi_local"].initial = self.instance.display_codi
 
     def clean_aparell(self):
         aparell = self.cleaned_data.get("aparell")
@@ -607,20 +611,22 @@ class CompeticioAparellForm(forms.ModelForm):
                 code="forbidden_aparell_owner",
             )
 
-        qs = CompeticioAparell.objects.filter(
-            competicio=self.competicio,
-            aparell=aparell,
-        )
-
-        if self.instance and self.instance.pk:
-            qs = qs.exclude(pk=self.instance.pk)
-
-        if qs.exists():
-            raise ValidationError(
-                _("Aquest aparell ja esta afegit a la competicio."),
-                code="duplicate_aparell",
-            )
         return aparell
+
+    def _next_local_code(self, base_code):
+        base = str(base_code or "APP").strip().upper() or "APP"
+        if not self.competicio:
+            return base
+        candidate = base
+        suffix = 2
+        while True:
+            qs = CompeticioAparell.objects.filter(competicio=self.competicio, codi_local=candidate)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if not qs.exists():
+                return candidate
+            candidate = f"{base}-{suffix}"
+            suffix += 1
 
     def clean_nombre_exercicis(self):
         n = int(self.cleaned_data.get("nombre_exercicis") or 1)
@@ -636,18 +642,201 @@ class CompeticioAparellForm(forms.ModelForm):
         aparell = cleaned_data.get("aparell")
         if aparell and not getattr(aparell, "actiu", True):
             self.add_error("aparell", "Cal seleccionar un aparell actiu.")
+        if aparell:
+            nom_local = str(cleaned_data.get("nom_local") or "").strip()
+            codi_local = str(cleaned_data.get("codi_local") or "").strip().upper()
+            if not nom_local:
+                nom_local = str(getattr(aparell, "nom", "") or "").strip()
+            if not codi_local:
+                codi_local = self._next_local_code(getattr(aparell, "codi", ""))
+            cleaned_data["nom_local"] = nom_local
+            cleaned_data["codi_local"] = codi_local
+            if self.competicio:
+                qs = CompeticioAparell.objects.filter(competicio=self.competicio, codi_local=codi_local)
+                if self.instance and self.instance.pk:
+                    qs = qs.exclude(pk=self.instance.pk)
+                if qs.exists():
+                    self.add_error(
+                        "codi_local",
+                        ValidationError(
+                            _("Ja existeix una instancia d'aparell amb aquest codi local en aquesta competicio."),
+                            code="duplicate_local_code",
+                        ),
+                    )
         return cleaned_data
 
     class Meta:
         model = CompeticioAparell
         fields = [
             "aparell",
+            "nom_local",
+            "codi_local",
             "nombre_exercicis",
         ]
         widgets = {
             "aparell": forms.Select(attrs={"class": "form-select"}),
+            "nom_local": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Trampoli masculi"}),
+            "codi_local": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: TRAMP-M"}),
             "nombre_exercicis": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 10, "value": 1}),
         }
+        labels = {
+            "aparell": "Aparell base",
+            "nom_local": "Nom local",
+            "codi_local": "Codi local",
+            "nombre_exercicis": "Nombre d'exercicis",
+        }
+        help_texts = {
+            "nom_local": "Nom visible d'aquesta instancia dins la competicio. Si el deixes buit, s'usara el nom base.",
+            "codi_local": "Codi unic dins la competicio. Si el deixes buit, es genera automaticament.",
+        }
+
+
+class CompeticioAparellFaseForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        self.comp_aparell = kwargs.pop("comp_aparell", None)
+        super().__init__(*args, **kwargs)
+        if self.comp_aparell is not None and getattr(self.comp_aparell, "id", None):
+            self.instance.comp_aparell = self.comp_aparell
+            self.instance.competicio = self.comp_aparell.competicio
+        parent_qs = CompeticioAparellFase.objects.none()
+        if self.comp_aparell is not None and getattr(self.comp_aparell, "id", None):
+            parent_qs = CompeticioAparellFase.objects.filter(comp_aparell=self.comp_aparell).order_by("ordre", "id")
+        if self.instance and self.instance.pk:
+            parent_qs = parent_qs.exclude(pk=self.instance.pk)
+        self.fields["parent"].queryset = parent_qs
+
+    def clean_codi(self):
+        return str(self.cleaned_data.get("codi") or "").strip().upper()
+
+    class Meta:
+        model = CompeticioAparellFase
+        fields = ["parent", "nom", "codi", "ordre", "estat"]
+        widgets = {
+            "parent": forms.Select(attrs={"class": "form-select"}),
+            "nom": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Semifinal"}),
+            "codi": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: SEMI"}),
+            "ordre": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
+            "estat": forms.Select(attrs={"class": "form-select"}),
+        }
+        labels = {
+            "parent": "Fase pare",
+            "nom": "Nom",
+            "codi": "Codi",
+            "ordre": "Ordre",
+            "estat": "Estat",
+        }
+
+
+class PhaseSourceCutForm(forms.Form):
+    CUT_MODE_TOP_N = "top_n"
+    PARTITION_GLOBAL = "global"
+    PARTITION_SOURCE = "source_partitions"
+
+    classificacio = forms.ModelChoiceField(
+        label="Classificacio origen",
+        queryset=ClassificacioConfig.objects.none(),
+        widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="Classificacio calculada de la qual sortiran els participants d'aquesta fase.",
+    )
+    cut_mode = forms.ChoiceField(
+        label="Regla de tall",
+        choices=[(CUT_MODE_TOP_N, "Top N per ordre de la classificacio")],
+        initial=CUT_MODE_TOP_N,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    qualifiers_count = forms.IntegerField(
+        label="Classificats",
+        min_value=1,
+        max_value=500,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 500}),
+    )
+    reserve_count = forms.IntegerField(
+        label="Reserves",
+        min_value=0,
+        max_value=200,
+        initial=0,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 0, "max": 200}),
+    )
+    partition_mode = forms.ChoiceField(
+        label="Com aplicar el tall",
+        choices=[
+            (PARTITION_GLOBAL, "Global: una llista unica"),
+            (PARTITION_SOURCE, "Per particio de la classificacio"),
+        ],
+        initial=PARTITION_GLOBAL,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    unit_capacity = forms.IntegerField(
+        label="Places per unitat",
+        min_value=1,
+        max_value=200,
+        initial=8,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+        help_text="Serveix per partir els classificats en una o mes unitats quan es generin.",
+    )
+    unit_name_template = forms.CharField(
+        label="Plantilla de nom",
+        max_length=180,
+        required=False,
+        initial="{fase} - {particio}",
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "{fase} - {particio}"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.competicio = kwargs.pop("competicio", None)
+        super().__init__(*args, **kwargs)
+        qs = ClassificacioConfig.objects.none()
+        if self.competicio is not None and getattr(self.competicio, "id", None):
+            qs = ClassificacioConfig.objects.filter(competicio=self.competicio, activa=True).order_by("ordre", "id")
+        self.fields["classificacio"].queryset = qs
+
+    def clean_unit_name_template(self):
+        value = str(self.cleaned_data.get("unit_name_template") or "").strip()
+        return value or "{fase} - {particio}"
+
+class ProgramUnitManualForm(forms.Form):
+    nom = forms.CharField(
+        label="Nom de la unitat",
+        max_length=180,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Final Infantil F"}),
+    )
+    capacity = forms.IntegerField(
+        label="Places",
+        min_value=1,
+        max_value=200,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+    )
+    tipus = forms.ChoiceField(
+        label="Tipus d'unitat",
+        choices=ProgramUnit.Tipus.choices,
+        initial=ProgramUnit.Tipus.CUSTOM,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    partition_key = forms.CharField(
+        label="Particio / criteri manual",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
+    )
+
+
+class ProgramUnitPartitionForm(forms.Form):
+    label = forms.CharField(
+        label="Nom de la unitat",
+        max_length=180,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Infantil F"}),
+    )
+    key = forms.CharField(
+        label="Particio / criteri manual",
+        max_length=255,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
+    )
+    capacity = forms.IntegerField(
+        label="Places",
+        min_value=1,
+        max_value=200,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+    )
 
 
 class AparellForm(forms.ModelForm):

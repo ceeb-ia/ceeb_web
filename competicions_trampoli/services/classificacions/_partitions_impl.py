@@ -12,12 +12,17 @@ from ._filters_impl import (
     normalize_classificacio_equips_cfg,
     normalize_classificacio_filters,
 )
+from .phase_scope import normalize_phase_scope_payload
 
 
 DEFAULT_SCHEMA = {
     "particions": [],
     "particions_v2": [],
     "particions_custom": {},
+    "scope": {
+        "mode": "implicit",
+        "fase_id": None,
+    },
     "particions_config": {
         BIRTH_YEAR_RANGE_PARTITION_CODE: {
             **DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
@@ -207,6 +212,7 @@ def _merge_schema(schema: dict) -> dict:
     out["particions"] = particio_codes_from_entries(part_entries)
     raw_custom = raw.get("particions_custom", DEFAULT_SCHEMA["particions_custom"]) or {}
     out["particions_custom"] = raw_custom if isinstance(raw_custom, dict) else {}
+    out["scope"] = normalize_phase_scope_payload(raw.get("scope") or {})
     out["particions_config"] = normalize_particions_config(
         raw.get("particions_config", DEFAULT_SCHEMA["particions_config"]) or {}
     )

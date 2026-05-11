@@ -16,7 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ...models import Competicio, Inscripcio
-from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio, ProgramUnit
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
 from ...services.shared.competition_groups import (
@@ -197,7 +197,7 @@ def franges_export_excel(request, pk):
         RotacioAssignacio.objects
         .filter(competicio=competicio, franja_id__in=competition_franja_ids)
         .select_related("franja", "estacio")
-        .prefetch_related("grup_links__grup", "serie_links__serie")
+        .prefetch_related("grup_links__grup", "serie_links__serie", "program_unit_links__program_unit__fase")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
     rotation_unit_step_map = build_rotation_unit_step_map(
@@ -234,6 +234,12 @@ def franges_export_excel(request, pk):
         for items in cell_groups.values()
         for key in items
         if str(key).startswith("s:")
+    })
+    program_unit_ids = sorted({
+        int(key.split(":", 1)[1])
+        for items in cell_groups.values()
+        for key in items
+        if str(key).startswith("pu:")
     })
     ins_by_grup = {}
     excluded_pairs = set()
@@ -278,6 +284,12 @@ def franges_export_excel(request, pk):
         .filter(competicio=competicio, id__in=serie_ids)
         .select_related("comp_aparell__aparell")
     }
+    program_units_by_id = {
+        int(unit.id): unit
+        for unit in ProgramUnit.objects
+        .filter(fase__competicio=competicio, id__in=program_unit_ids)
+        .select_related("fase", "fase__comp_aparell", "fase__comp_aparell__aparell")
+    }
     team_subjects_by_serie = {}
     if serie_ids:
         app_ids_for_series = sorted({int(serie.comp_aparell_id) for serie in series_by_id.values()})
@@ -293,6 +305,36 @@ def franges_export_excel(request, pk):
 
     def _group_label(g):
         return group_labels_by_id.get(g) or group_label(groups_by_id.get(g))
+
+    def _program_unit_label(unit):
+        if not unit:
+            return ""
+        fase = getattr(unit, "fase", None)
+        comp_aparell = getattr(fase, "comp_aparell", None)
+        app_label = getattr(comp_aparell, "display_nom", "") or getattr(getattr(comp_aparell, "aparell", None), "nom", "")
+        return " Â· ".join(x for x in [app_label, getattr(fase, "nom", ""), getattr(unit, "nom", "")] if x)
+
+    def _program_cell_labels(items):
+        labels = []
+        for key in items or []:
+            key = str(key)
+            try:
+                item_id = int(key.split(":", 1)[1])
+            except Exception:
+                continue
+            if key.startswith("g:"):
+                labels.append(_group_label(item_id))
+            elif key.startswith("s:") and item_id in series_by_id:
+                serie = series_by_id.get(item_id)
+                app_label = (
+                    getattr(getattr(serie, "comp_aparell", None), "aparell", None).nom
+                    if serie and getattr(getattr(serie, "comp_aparell", None), "aparell", None)
+                    else ""
+                )
+                labels.append(f"{app_label} Â· {serie_label(serie)}".strip(" Â·"))
+            elif key.startswith("pu:") and item_id in program_units_by_id:
+                labels.append(_program_unit_label(program_units_by_id.get(item_id)))
+        return unique_ordered(label for label in labels if label)
 
     export_meta = _get_export_meta(competicio)
     available_participant_fields = _rotacions_available_participant_fields(competicio)
@@ -684,18 +726,7 @@ def franges_export_excel(request, pk):
                 if not gs:
                     txt = ""
                 else:
-                    if estacio_is_team.get(e.id):
-                        labels = unique_ordered(
-                            f"{getattr(series_by_id.get(int(str(key).split(':', 1)[1])), 'comp_aparell', None).aparell.nom if series_by_id.get(int(str(key).split(':', 1)[1])) and getattr(series_by_id.get(int(str(key).split(':', 1)[1])).comp_aparell, 'aparell', None) else ''} · {serie_label(series_by_id.get(int(str(key).split(':', 1)[1])))}".strip(" ·")
-                            for key in gs
-                            if str(key).startswith("s:") and int(str(key).split(":", 1)[1]) in series_by_id
-                        )
-                    else:
-                        labels = unique_ordered(
-                            _group_label(int(str(key).split(":", 1)[1]))
-                            for key in gs
-                            if str(key).startswith("g:")
-                        )
+                    labels = _program_cell_labels(gs)
                     txt = "\n".join(labels) if labels else "-"
                 cell = ws.cell(row=r, column=j, value=txt)
                 cell.alignment = center

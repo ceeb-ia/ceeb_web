@@ -14,6 +14,7 @@
       '[data-notes-franja-select="1"]',
       '[data-notes-group-select="1"]',
       '[data-notes-app-select="1"]',
+      '[data-notes-phase-select="1"]',
       '[data-notes-exercise-select="1"]',
     ].forEach((selector) => {
       const select = document.querySelector(selector);
@@ -85,6 +86,15 @@
 
   function franjaValueForUnit(unit){
     return unit && unit.franja_id ? `franja:${unit.franja_id}` : "off";
+  }
+
+  function phaseValueForUnit(unit){
+    return unit && unit.phase_id ? `phase:${unit.phase_id}` : "implicit";
+  }
+
+  function phaseIdForValue(value){
+    const resolved = allFilterValue(value);
+    return resolved.startsWith("phase:") ? resolved.replace("phase:", "") : "";
   }
 
   function unitIdentity(unit){
@@ -216,6 +226,7 @@
 
     const url = new URL(NOTES_LAZY_ENDPOINTS.table, window.location.origin);
     if(unit.franja_id) url.searchParams.set("franja_id", unit.franja_id);
+    if(unit.phase_id) url.searchParams.set("fase_id", unit.phase_id);
     url.searchParams.set("comp_aparell_id", unit.comp_aparell_id);
     url.searchParams.set("exercici", exercici);
     url.searchParams.set("unit_key", unit.key);
@@ -240,6 +251,7 @@
       table.dataset.group = String(payload.unit.key || unit.key || "");
       table.dataset.exercici = String(payload.context.exercici || exercici);
       table.dataset.compAparellId = String(payload.context.comp_aparell_id || unit.comp_aparell_id || "");
+      table.dataset.faseId = String(payload.context.fase_id || "");
       table.dataset.rendered = "";
       rerenderTable(table);
       applyNotesRowFilter(table);
@@ -261,6 +273,7 @@
     const franjaSelect = document.querySelector('[data-notes-franja-select="1"]');
     const unitSelect = document.querySelector('[data-notes-group-select="1"]');
     const appSelect = document.querySelector('[data-notes-app-select="1"]');
+    const phaseSelect = document.querySelector('[data-notes-phase-select="1"]');
     const exSelect = document.querySelector('[data-notes-exercise-select="1"]');
     const rowFilterSelect = document.querySelector('[data-notes-row-filter-select="1"]');
     const searchInput = document.querySelector('[data-notes-search-input="1"]');
@@ -277,6 +290,16 @@
       appSelect.dataset.lazyBound = "1";
       appSelect.addEventListener("change", () => {
         NOTES_STATE.selectedAppId = appSelect.value || "all";
+        NOTES_STATE.selectedPhaseId = "all";
+        NOTES_STATE.selectedUnitId = "all";
+        syncLazyToolbar();
+        refreshLazyMainView();
+      });
+    }
+    if(phaseSelect && phaseSelect.dataset.lazyBound !== "1"){
+      phaseSelect.dataset.lazyBound = "1";
+      phaseSelect.addEventListener("change", () => {
+        NOTES_STATE.selectedPhaseId = phaseSelect.value || "all";
         NOTES_STATE.selectedUnitId = "all";
         syncLazyToolbar();
         refreshLazyMainView();
@@ -290,6 +313,7 @@
         if(unit){
           NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
           NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+          NOTES_STATE.selectedPhaseId = phaseValueForUnit(unit);
         }
         syncLazyToolbar();
         refreshLazyMainView();
@@ -406,6 +430,7 @@
         if(!unit) return;
         NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
         NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+        NOTES_STATE.selectedPhaseId = phaseValueForUnit(unit);
         NOTES_STATE.selectedUnitId = unitIdentity(unit);
         NOTES_STATE.selectedExercise = "1";
         NOTES_STATE.rowFilter = "all";
@@ -439,6 +464,7 @@
     if(subject) rememberSubjects([subject]);
     NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
     NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+    NOTES_STATE.selectedPhaseId = phaseValueForUnit(unit);
     NOTES_STATE.selectedUnitId = unitIdentity(unit);
     const exercises = Array.isArray(context?.exercicis) && context.exercicis.length ? context.exercicis : [1];
     NOTES_STATE.selectedExercise = String(exercises[0] || 1);
@@ -574,6 +600,10 @@
     if(Array.isArray(subject.allowed_app_ids) && subject.allowed_app_ids.length){
       if(!subject.allowed_app_ids.map(String).includes(String(unit.comp_aparell_id))) return false;
     }
+    if(Array.isArray(unit.subject_refs) && unit.subject_refs.length){
+      const subjectId = String(subject.subject_id || subject.id || "");
+      return unit.subject_refs.map(String).includes(`${subjectKind}:${subjectId}`);
+    }
     const members = (unit.member_keys || []).map(String);
     return members.includes(subjectGroup);
   }
@@ -581,11 +611,13 @@
   function filteredLazyUnits(){
     const franja = allFilterValue(NOTES_STATE.selectedFranja);
     const appId = allFilterValue(NOTES_STATE.selectedAppId);
+    const phase = allFilterValue(NOTES_STATE.selectedPhaseId || "all");
     const unitId = allFilterValue(NOTES_STATE.selectedUnitId);
     const subject = NOTES_STATE.focusedSubject || null;
     return allLazyUnits().filter((unit) => {
       if(franja !== "all" && franjaValueForUnit(unit) !== franja) return false;
       if(appId !== "all" && String(unit.comp_aparell_id || "") !== appId) return false;
+      if(phase !== "all" && phaseValueForUnit(unit) !== phase) return false;
       if(unitId !== "all" && unitIdentity(unit) !== unitId) return false;
       if(subject && !subjectMatchesUnit(subject, unit)) return false;
       return true;
@@ -621,6 +653,7 @@
     }
     NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
     NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+    NOTES_STATE.selectedPhaseId = phaseValueForUnit(unit);
     NOTES_STATE.selectedUnitId = unitIdentity(unit);
     return unit;
   }
@@ -663,16 +696,18 @@
   function populateLazyUnitOptions(){
     const franja = allFilterValue(NOTES_STATE.selectedFranja);
     const appId = allFilterValue(NOTES_STATE.selectedAppId);
+    const phase = allFilterValue(NOTES_STATE.selectedPhaseId || "all");
     const subject = NOTES_STATE.focusedSubject || null;
     const units = allLazyUnits().filter((unit) => {
       if(franja !== "all" && franjaValueForUnit(unit) !== franja) return false;
       if(appId !== "all" && String(unit.comp_aparell_id || "") !== appId) return false;
+      if(phase !== "all" && phaseValueForUnit(unit) !== phase) return false;
       if(subject && !subjectMatchesUnit(subject, unit)) return false;
       return true;
     });
     const options = [{value:"all", label:`Totes (${units.length})`}].concat(units.map((unit) => ({
       value: unitIdentity(unit),
-      label: `${unit.label || unit.key} - ${unit.app_label || ""} - ${unit.count || 0}`,
+      label: `${unit.label || unit.key} - ${unit.phase_label || unit.app_label || ""} - ${unit.count || 0}`,
     })));
     if(!options.some((option) => String(option.value) === allFilterValue(NOTES_STATE.selectedUnitId))){
       NOTES_STATE.selectedUnitId = "all";
@@ -699,13 +734,52 @@
     setSelectOptions(document.querySelector('[data-notes-exercise-select="1"]'), options, NOTES_STATE.selectedExercise);
   }
 
+  function populateLazyPhaseOptions(){
+    const manifest = NOTES_STATE.manifest || {};
+    const franja = allFilterValue(NOTES_STATE.selectedFranja);
+    const appId = allFilterValue(NOTES_STATE.selectedAppId);
+    const units = allLazyUnits().filter((unit) => {
+      if(franja !== "all" && franjaValueForUnit(unit) !== franja) return false;
+      if(appId !== "all" && String(unit.comp_aparell_id || "") !== appId) return false;
+      return true;
+    });
+    const counts = new Map();
+    units.forEach((unit) => {
+      const value = phaseValueForUnit(unit);
+      counts.set(value, (counts.get(value) || 0) + 1);
+    });
+    const options = [{value:"all", label:`Totes (${units.length})`}];
+    const appIds = appId === "all"
+      ? Array.from(new Set(units.map((unit) => String(unit.comp_aparell_id || "")).filter(Boolean)))
+      : [appId];
+    const seen = new Set();
+    appIds.forEach((id) => {
+      const phases = ((manifest.phases_by_app || {})[String(id)] || [{id:"", label:"Preliminar"}]);
+      phases.forEach((phase) => {
+        const value = phase.id ? `phase:${phase.id}` : "implicit";
+        if(seen.has(value)) return;
+        seen.add(value);
+        const count = counts.get(value) || 0;
+        if(count > 0 || value === "implicit"){
+          options.push({value, label:`${phase.label || "Fase"} (${count})`});
+        }
+      });
+    });
+    if(!options.some((option) => String(option.value) === allFilterValue(NOTES_STATE.selectedPhaseId || "all"))){
+      NOTES_STATE.selectedPhaseId = "all";
+    }
+    setSelectOptions(document.querySelector('[data-notes-phase-select="1"]'), options, NOTES_STATE.selectedPhaseId || "all");
+  }
+
   function syncLazyToolbar(){
     NOTES_STATE.selectedFranja = allFilterValue(NOTES_STATE.selectedFranja);
     NOTES_STATE.selectedAppId = allFilterValue(NOTES_STATE.selectedAppId);
+    NOTES_STATE.selectedPhaseId = allFilterValue(NOTES_STATE.selectedPhaseId || "all");
     NOTES_STATE.selectedUnitId = allFilterValue(NOTES_STATE.selectedUnitId);
     NOTES_STATE.selectedExercise = allFilterValue(NOTES_STATE.selectedExercise);
     populateLazyFranjaOptions();
     populateLazyAppOptions();
+    populateLazyPhaseOptions();
     populateLazyUnitOptions();
     populateLazyExerciseOptions();
     renderLazyProgramStrip();
@@ -743,6 +817,7 @@
       });
       chip.addEventListener("click", () => {
         NOTES_STATE.selectedAppId = appId;
+        NOTES_STATE.selectedPhaseId = "all";
         NOTES_STATE.selectedUnitId = "all";
         syncLazyToolbar();
         refreshLazyMainView();
@@ -754,11 +829,12 @@
   function contextForUnitExercise(unit, exercise){
     return {
       franja_id: unit.franja_id || null,
+      fase_id: unit.phase_id || null,
       comp_aparell_id: unit.comp_aparell_id,
       unit_key: unit.key,
       unit_identity: unitIdentity(unit),
       exercici: exercise,
-      label: [unit.franja_label || (unit.is_out_of_program ? "Fora de programa" : ""), unit.app_label, unit.label].filter(Boolean).join(" - "),
+      label: [unit.phase_label || unit.franja_label || (unit.is_out_of_program ? "Fora de programa" : ""), unit.app_label, unit.label].filter(Boolean).join(" - "),
     };
   }
 
@@ -780,6 +856,7 @@
   function contextLoadKey(context){
     return [
       context?.franja_id || "off",
+      context?.fase_id || "implicit",
       context?.comp_aparell_id || "",
       context?.unit_identity || context?.unit_key || "",
       context?.exercici || "",
@@ -802,6 +879,7 @@
     const exercici = Number(context.exercici || (Array.isArray(context.exercicis) ? context.exercicis[0] : 1) || 1) || 1;
     const url = new URL(NOTES_LAZY_ENDPOINTS.table, window.location.origin);
     if(unit.franja_id) url.searchParams.set("franja_id", unit.franja_id);
+    if(unit.phase_id) url.searchParams.set("fase_id", unit.phase_id);
     url.searchParams.set("comp_aparell_id", unit.comp_aparell_id);
     url.searchParams.set("exercici", exercici);
     url.searchParams.set("unit_key", unit.key);
@@ -845,6 +923,7 @@
       "data-group":String(unit.key || ""),
       "data-exercici":String(context.exercici || 1),
       "data-comp-aparell-id":String(context.comp_aparell_id || unit.comp_aparell_id || ""),
+      "data-fase-id":String(context.fase_id || ""),
     }, [el("thead"), el("tbody")]);
     table.__notesPayload = payload;
     wrap.appendChild(table);
@@ -932,6 +1011,7 @@
     }
     NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
     NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+    NOTES_STATE.selectedPhaseId = phaseValueForUnit(unit);
     NOTES_STATE.selectedUnitId = unitIdentity(unit);
     NOTES_STATE.selectedExercise = String(context.exercici || (Array.isArray(context.exercicis) ? context.exercicis[0] : 1) || 1);
     NOTES_STATE.view = "table";
@@ -1066,6 +1146,7 @@
 
     const url = new URL(NOTES_LAZY_ENDPOINTS.table, window.location.origin);
     if(unit.franja_id) url.searchParams.set("franja_id", unit.franja_id);
+    if(unit.phase_id) url.searchParams.set("fase_id", unit.phase_id);
     url.searchParams.set("comp_aparell_id", unit.comp_aparell_id);
     url.searchParams.set("exercici", exercici);
     url.searchParams.set("unit_key", unit.key);
@@ -1086,6 +1167,7 @@
       table.dataset.group = String(payload.unit.key || unit.key || "");
       table.dataset.exercici = String(payload.context.exercici || exercici);
       table.dataset.compAparellId = String(payload.context.comp_aparell_id || unit.comp_aparell_id || "");
+      table.dataset.faseId = String(payload.context.fase_id || "");
       table.dataset.rendered = "";
       rerenderTable(table);
       applyNotesRowFilter(table);
@@ -1127,6 +1209,7 @@
           NOTES_STATE.focusedSubject = subject;
           NOTES_STATE.selectedFranja = "all";
           NOTES_STATE.selectedAppId = "all";
+          NOTES_STATE.selectedPhaseId = "all";
           NOTES_STATE.selectedUnitId = "all";
           NOTES_STATE.selectedExercise = "all";
           syncLazyToolbar();
@@ -1153,6 +1236,7 @@
   function selectInitialLazyContext(){
     NOTES_STATE.selectedFranja = "all";
     NOTES_STATE.selectedAppId = "all";
+    NOTES_STATE.selectedPhaseId = "all";
     NOTES_STATE.selectedUnitId = "all";
     NOTES_STATE.selectedExercise = "all";
     NOTES_STATE.view = "summary";

@@ -58,7 +58,7 @@ class CompeticioAparellCreate(CreateView):
         try:
             obj.save()
         except IntegrityError:
-            form.add_error("aparell", "Aquest aparell ja esta afegit a la competicio.")
+            form.add_error("codi_local", "Ja existeix una instancia d'aparell amb aquest codi local.")
             return self.form_invalid(form)
 
         self.object = obj

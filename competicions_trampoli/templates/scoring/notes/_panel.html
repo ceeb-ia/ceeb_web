@@ -135,6 +135,10 @@
             <select id="notes-app-select" class="form-control form-control-sm" data-notes-app-select="1"></select>
           </div>
           <div>
+            <label for="notes-phase-select">Fase</label>
+            <select id="notes-phase-select" class="form-control form-control-sm" data-notes-phase-select="1"></select>
+          </div>
+          <div>
             <label for="notes-exercise-select">Exercici</label>
             <select id="notes-exercise-select" class="form-control form-control-sm" data-notes-exercise-select="1"></select>
           </div>
@@ -179,6 +183,7 @@
                  data-notes-main-table="1"
                  data-group=""
                  data-exercici="1"
+                 data-fase-id=""
                  data-comp-aparell-id="">
             <thead></thead>
             <tbody></tbody>
@@ -235,7 +240,7 @@
                      role="tab"
                      aria-controls="pane-{{ group.key }}-app-{{ app.id }}"
                      aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-                    {{ app.aparell.nom }}
+                    {{ app.display_nom }}
                   </a>
                 </li>
               {% endfor %}
@@ -278,7 +283,7 @@
                           <div class="d-flex justify-content-between align-items-center mb-2">
                             <div class="mini-help">
                               {{ group.label }} ·
-                              {{ app.aparell.nom }} · Exercici {{ ex }}
+                              {{ app.display_nom }} · Exercici {{ ex }}
                             </div>
                             <div>
                               <a class="btn btn-sm btn-outline-secondary"
@@ -344,7 +349,7 @@
                      role="tab"
                      aria-controls="off-pane-{{ group.key }}-app-{{ app.id }}"
                      aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-                    {{ app.aparell.nom }}
+                    {{ app.display_nom }}
                   </a>
                 </li>
               {% endfor %}
@@ -386,7 +391,7 @@
                           <div class="d-flex justify-content-between align-items-center mb-2">
                             <div class="mini-help">
                               Fora de programa · {{ group.label }} ·
-                              {{ app.aparell.nom }} · Exercici {{ ex }}
+                              {{ app.display_nom }} · Exercici {{ ex }}
                             </div>
                             <div>
                               <a class="btn btn-sm btn-outline-secondary"

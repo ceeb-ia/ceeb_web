@@ -9,6 +9,7 @@ from .pipeline_runtime import (
 )
 from .ties.serializer_save import canonicalize_desempat_items_for_persistence
 from .ties.pipeline_builder import strip_unsupported_per_exercise_field_pipeline_keys
+from .phase_scope import normalize_schema_phase_scope
 from .validation import (
     build_validation_error_details,
     validate_schema_for_competicio_detailed,
@@ -201,6 +202,7 @@ def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individua
         }
 
     schema_local = _canonicalize_desempat_for_persistence(schema_local, tipus=tipus)
+    schema_local = normalize_schema_phase_scope(schema_local)
 
     schema_local, validation_errors, validation_details = validate_schema_for_competicio_detailed(
         competicio,
@@ -221,6 +223,7 @@ def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individua
         persist=True,
     )
     schema_local = _sync_per_app_puntuacio_legacy_mirrors(schema_local)
+    schema_local = normalize_schema_phase_scope(schema_local)
     schema_local = _canonicalize_desempat_for_persistence(schema_local, tipus=tipus)
     schema_local = with_mode_resolution(competicio, tipus, schema_local)
     return {

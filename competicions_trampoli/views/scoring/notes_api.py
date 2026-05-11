@@ -11,10 +11,10 @@ from ...models.scoring import (
     ScoreEntry,
     ScoreEntryVideo,
     ScoreWarningAcknowledgement,
-    ScoringSchema,
     TeamScoreEntry,
     TeamScoreEntryVideo,
 )
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.notes_units import (
     build_notes_units_context,
     clamp_exercici,
@@ -23,6 +23,7 @@ from ...services.scoring.notes_units import (
     resolve_notes_unit,
     serialize_comp_aparell,
     serialize_franja,
+    serialize_phase,
     serialize_individual_subject,
     subjects_for_unit,
 )
@@ -40,16 +41,14 @@ from .helpers import (
 
 
 def _schema_payload(comp_aparell, competicio):
-    schema_obj, _created = ScoringSchema.objects.get_or_create(
-        aparell=comp_aparell.aparell,
-        defaults={"schema": {}},
-    )
-    logical_schema = _logical_schema_for_notes_ui(schema_obj.schema or {}, comp_aparell)
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
+    base_schema = base_schema or {}
+    logical_schema = _logical_schema_for_notes_ui(base_schema, comp_aparell)
     if is_team_context_app(comp_aparell):
         registry = build_team_subject_registry(competicio, comp_aparell)
-        schema = runtime_schema_for_team_subjects(schema_obj.schema or {}, comp_aparell, registry["subjects"])
+        schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, registry["subjects"])
     else:
-        schema = runtime_schema_for_comp_aparell(schema_obj.schema or {}, comp_aparell)
+        schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell)
     return schema, logical_schema
 
 
@@ -78,6 +77,7 @@ def _initial_context(units, out_of_program_units, apps):
         return None
     return {
         "franja_id": first_unit.get("franja_id"),
+        "fase_id": first_unit.get("phase_id"),
         "comp_aparell_id": first_unit.get("comp_aparell_id"),
         "exercici": 1,
         "unit_key": str(first_unit.get("key")),
@@ -100,6 +100,13 @@ def notes_manifest(request, pk):
             "competition": {"id": competicio.id, "name": competicio.nom},
             "franges": [serialize_franja(franja) for franja in context["franges"]],
             "apps": [serialize_comp_aparell(comp_aparell) for comp_aparell in context["apps"]],
+            "phases_by_app": {
+                str(comp_aparell.id): [
+                    {"id": "", "label": "Preliminar", "code": "DEFAULT", "ordre": 0, "estat": "implicit", "comp_aparell_id": comp_aparell.id},
+                    *[serialize_phase(phase) for phase in context["phases_by_app"].get(int(comp_aparell.id), [])],
+                ]
+                for comp_aparell in context["apps"]
+            },
             "units": context["units"],
             "out_of_program_units": context["out_of_program_units"],
             "schema_summaries": schema_summaries,
@@ -319,7 +326,13 @@ def notes_search(request, pk):
     )
 
 
-def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_schema):
+def _score_phase_filter(qs, phase_id):
+    if phase_id:
+        return qs.filter(fase_id=phase_id)
+    return qs.filter(fase__isnull=True)
+
+
+def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_schema, phase_id=None):
     scores = {}
     if is_team_context_app(comp_aparell):
         subject_ids = [int(subject["subject_id"]) for subject in subjects]
@@ -332,8 +345,9 @@ def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_sche
             exercici=exercici,
             team_subject_id__in=subject_ids,
         )
+        qs = _score_phase_filter(qs, phase_id)
         for score in qs:
-            key = score_store_key("team_unit", score.team_subject_id, score.exercici, score.comp_aparell_id)
+            key = score_store_key("team_unit", score.team_subject_id, score.exercici, score.comp_aparell_id, score.fase_id)
             scores[key] = {
                 "inputs": _sanitize_inputs_for_client(score.inputs or {}, allowed_inputs),
                 "outputs": score.outputs or {},
@@ -363,8 +377,9 @@ def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_sche
         )
         .filter(_excluded=False)
     )
+    qs = _score_phase_filter(qs, phase_id)
     for score in qs:
-        key = score_store_key("inscripcio", score.inscripcio_id, score.exercici, score.comp_aparell_id)
+        key = score_store_key("inscripcio", score.inscripcio_id, score.exercici, score.comp_aparell_id, score.fase_id)
         scores[key] = {
             "inputs": _sanitize_inputs_for_client(score.inputs or {}, allowed_inputs),
             "outputs": score.outputs or {},
@@ -373,7 +388,7 @@ def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_sche
     return scores
 
 
-def _judge_video_presence(competicio, comp_aparell, exercici, subjects):
+def _judge_video_presence(competicio, comp_aparell, exercici, subjects, phase_id=None):
     presence = {}
     if is_team_context_app(comp_aparell):
         subject_ids = [int(subject["subject_id"]) for subject in subjects]
@@ -388,8 +403,9 @@ def _judge_video_presence(competicio, comp_aparell, exercici, subjects):
             .exclude(video_file="")
             .values_list("team_score_entry__team_subject_id", "team_score_entry__exercici", "team_score_entry__comp_aparell_id")
         )
+        rows = rows.filter(team_score_entry__fase_id=phase_id) if phase_id else rows.filter(team_score_entry__fase__isnull=True)
         for subject_id, ex, app_id in rows:
-            presence[score_store_key("team_unit", subject_id, ex, app_id)] = 1
+            presence[score_store_key("team_unit", subject_id, ex, app_id, phase_id)] = 1
         return presence
 
     subject_ids = [int(subject.id) for subject in subjects]
@@ -404,28 +420,31 @@ def _judge_video_presence(competicio, comp_aparell, exercici, subjects):
         .exclude(video_file="")
         .values_list("score_entry__inscripcio_id", "score_entry__exercici", "score_entry__comp_aparell_id")
     )
+    rows = rows.filter(score_entry__fase_id=phase_id) if phase_id else rows.filter(score_entry__fase__isnull=True)
     for inscripcio_id, ex, app_id in rows:
-        presence[score_store_key("inscripcio", inscripcio_id, ex, app_id)] = 1
+        presence[score_store_key("inscripcio", inscripcio_id, ex, app_id, phase_id)] = 1
     return presence
 
 
-def _warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici):
+def _warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=None):
     warnings = []
-    context = {"comp_aparell_id": comp_aparell.id, "exercici": exercici}
+    context = {"comp_aparell_id": comp_aparell.id, "exercici": exercici, "fase_id": phase_id}
     for subject in subjects:
         subject_kind = str(subject.get("subject_kind") or "inscripcio")
         subject_id = subject.get("subject_id", subject.get("id"))
         if not subject_id:
             continue
-        score_key = score_store_key(subject_kind, subject_id, exercici, comp_aparell.id)
-        warnings.extend(
-            generate_score_warnings(
-                logical_schema,
-                scores.get(score_key) or {},
-                subject,
-                context,
-            )
+        score_key = score_store_key(subject_kind, subject_id, exercici, comp_aparell.id, phase_id)
+        generated = generate_score_warnings(
+            logical_schema,
+            scores.get(score_key) or {},
+            subject,
+            context,
         )
+        for warning in generated:
+            if phase_id:
+                warning["fase_id"] = phase_id
+        warnings.extend(generated)
     return warnings
 
 
@@ -452,13 +471,16 @@ def _warning_unit_identity(unit):
 
 
 def _warning_navigation_payload(unit, comp_aparell, exercici):
-    return {
+    payload = {
         "franja_id": unit.get("franja_id"),
         "comp_aparell_id": comp_aparell.id,
         "exercici": exercici,
         "unit_key": str(unit.get("key") or ""),
         "unit_identity": _warning_unit_identity(unit),
     }
+    if unit.get("phase_id"):
+        payload["fase_id"] = unit.get("phase_id")
+    return payload
 
 
 def _enrich_warnings(warnings, *, unit, comp_aparell, exercici, subjects_by_warning_key):
@@ -469,11 +491,13 @@ def _enrich_warnings(warnings, *, unit, comp_aparell, exercici, subjects_by_warn
         "label": unit.get("label") or str(unit.get("key") or ""),
         "franja_id": unit.get("franja_id"),
         "franja_label": unit.get("franja_label") or "",
+        "phase_id": unit.get("phase_id"),
+        "phase_label": unit.get("phase_label") or "",
         "is_out_of_program": bool(unit.get("is_out_of_program")),
     }
     app_payload = {
         "id": comp_aparell.id,
-        "label": str(getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+        "label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
     }
     navigation = _warning_navigation_payload(unit, comp_aparell, exercici)
     for warning in warnings:
@@ -509,11 +533,17 @@ def _warning_ack_key(warning):
         warning.get("subject_kind"),
         warning.get("subject_id"),
         warning.get("comp_aparell_id"),
-        warning.get("exercici"),
-        warning.get("field_code"),
-        warning.get("judge") if warning.get("judge") is not None else "-",
-        warning.get("item") if warning.get("item") is not None else "-",
     ]
+    if warning.get("fase_id") is not None:
+        parts.append(f"fase:{warning.get('fase_id')}")
+    parts.extend(
+        [
+            warning.get("exercici"),
+            warning.get("field_code"),
+            warning.get("judge") if warning.get("judge") is not None else "-",
+            warning.get("item") if warning.get("item") is not None else "-",
+        ]
+    )
     return ":".join(str(part) for part in parts)[:255]
 
 
@@ -584,10 +614,10 @@ def _aggregate_warnings_by_subject(warnings):
     return aggregated
 
 
-def _subject_score_for_warnings(scores, subject, exercici, comp_aparell_id):
+def _subject_score_for_warnings(scores, subject, exercici, comp_aparell_id, phase_id=None):
     subject_kind = str(subject.get("subject_kind") or "inscripcio")
     subject_id = subject.get("subject_id", subject.get("id"))
-    return scores.get(score_store_key(subject_kind, subject_id, exercici, comp_aparell_id)) or {}
+    return scores.get(score_store_key(subject_kind, subject_id, exercici, comp_aparell_id, phase_id)) or {}
 
 
 def _presence_count_for_field(field, score):
@@ -602,7 +632,7 @@ def _presence_count_for_field(field, score):
     return len(present_judges), present_judges
 
 
-def _judge_presence_outlier_warnings(logical_schema, scores, subjects, comp_aparell, exercici):
+def _judge_presence_outlier_warnings(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=None):
     fields = [
         field for field in (logical_schema.get("fields") or [])
         if isinstance(field, dict) and field.get("code") and is_judge_shaped_field(field)
@@ -612,7 +642,7 @@ def _judge_presence_outlier_warnings(logical_schema, scores, subjects, comp_apar
         code = str(field.get("code") or "")
         rows = []
         for subject in subjects:
-            score = _subject_score_for_warnings(scores, subject, exercici, comp_aparell.id)
+            score = _subject_score_for_warnings(scores, subject, exercici, comp_aparell.id, phase_id)
             count, present_judges = _presence_count_for_field(field, score)
             if count is None:
                 continue
@@ -651,9 +681,9 @@ def _judge_presence_outlier_warnings(logical_schema, scores, subjects, comp_apar
     return warnings
 
 
-def _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici):
-    warnings = _warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici)
-    warnings.extend(_judge_presence_outlier_warnings(logical_schema, scores, subjects, comp_aparell, exercici))
+def _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=None):
+    warnings = _warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=phase_id)
+    warnings.extend(_judge_presence_outlier_warnings(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=phase_id))
     return warnings
 
 
@@ -667,15 +697,25 @@ def notes_table(request, pk):
         return JsonResponse({"ok": False, "error": "invalid_comp_aparell"}, status=400)
 
     franja_id = _parse_positive_int(request.GET.get("franja_id"))
+    phase_id = _parse_positive_int(request.GET.get("fase_id"))
+    if phase_id:
+        valid_phase_ids = {int(phase.id) for phase in context["phases_by_app"].get(int(comp_aparell.id), [])}
+        if phase_id not in valid_phase_ids:
+            return JsonResponse({"ok": False, "error": "invalid_fase"}, status=400)
     unit = resolve_notes_unit(
         context,
         comp_aparell.id,
         unit_key=request.GET.get("unit_key"),
         group=request.GET.get("group"),
         franja_id=franja_id,
+        phase_id=phase_id,
     )
     if unit is None:
         return JsonResponse({"ok": False, "error": "invalid_unit"}, status=404)
+    if phase_id and int(unit.get("phase_id") or 0) != phase_id:
+        return JsonResponse({"ok": False, "error": "invalid_phase_unit"}, status=400)
+    if not phase_id and unit.get("phase_id"):
+        return JsonResponse({"ok": False, "error": "invalid_phase_unit"}, status=400)
 
     exercici = clamp_exercici(request.GET.get("exercici"), comp_aparell)
     schema, logical_schema = _schema_payload(comp_aparell, competicio)
@@ -705,10 +745,10 @@ def notes_table(request, pk):
             for idx, subject in enumerate(ordered_subjects, start=1)
         }
 
-    scores = _serialize_scores(competicio, comp_aparell, exercici, ordered_subjects, logical_schema)
+    scores = _serialize_scores(competicio, comp_aparell, exercici, ordered_subjects, logical_schema, phase_id=phase_id)
     warnings = _filter_acknowledged_warnings(
         _enrich_warnings(
-            _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici),
+            _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=phase_id),
             unit=unit,
             comp_aparell=comp_aparell,
             exercici=exercici,
@@ -721,6 +761,7 @@ def notes_table(request, pk):
             "ok": True,
             "context": {
                 "franja_id": unit.get("franja_id") if franja_id else None,
+                "fase_id": phase_id,
                 "comp_aparell_id": comp_aparell.id,
                 "exercici": exercici,
                 "unit_key": str(unit.get("key")),
@@ -732,7 +773,7 @@ def notes_table(request, pk):
             "subjects": subjects,
             "scores": scores,
             "media_counts": media_counts,
-            "judge_video_presence": _judge_video_presence(competicio, comp_aparell, exercici, ordered_subjects),
+            "judge_video_presence": _judge_video_presence(competicio, comp_aparell, exercici, ordered_subjects, phase_id=phase_id),
             "rotation_rank": rotation_rank,
             "warnings": warnings,
         }
@@ -745,6 +786,7 @@ def notes_warnings(request, pk):
     context = build_notes_units_context(competicio)
     comp_aparell_filter = _parse_positive_int(request.GET.get("comp_aparell_id"))
     franja_filter = _parse_positive_int(request.GET.get("franja_id"))
+    phase_filter = _parse_positive_int(request.GET.get("fase_id"))
     unit_key_filter = str(request.GET.get("unit_key") or "").strip()
     exercici_filter = _parse_positive_int(request.GET.get("exercici"))
     limit = _parse_positive_int(request.GET.get("limit")) or 500
@@ -755,6 +797,8 @@ def notes_warnings(request, pk):
         units = [unit for unit in units if int(unit.get("comp_aparell_id") or 0) == comp_aparell_filter]
     if franja_filter:
         units = [unit for unit in units if int(unit.get("franja_id") or 0) == franja_filter]
+    if phase_filter:
+        units = [unit for unit in units if int(unit.get("phase_id") or 0) == phase_filter]
     if unit_key_filter:
         units = [unit for unit in units if str(unit.get("key") or "") == unit_key_filter]
 
@@ -790,8 +834,9 @@ def notes_warnings(request, pk):
         scanned["units"] += 1
         for exercici in exercises:
             exercici = clamp_exercici(exercici, comp_aparell)
-            scores = _serialize_scores(competicio, comp_aparell, exercici, ordered_subjects, logical_schema)
-            unit_warnings = _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici)
+            unit_phase_id = _parse_positive_int(unit.get("phase_id"))
+            scores = _serialize_scores(competicio, comp_aparell, exercici, ordered_subjects, logical_schema, phase_id=unit_phase_id)
+            unit_warnings = _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=unit_phase_id)
             scanned["score_contexts"] += 1
             if not unit_warnings:
                 continue

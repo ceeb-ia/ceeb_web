@@ -209,7 +209,7 @@ def judge_portal(request, token):
             for item in raw_subjects
             if int(comp_aparell.id) in (item.get("allowed_app_ids") or []) or item.get("invalid_reasons")
         ]
-        app_name = str(getattr(comp_aparell.aparell, "nom", "") or "").strip()
+        app_name = str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "").strip()
         for item in base_subjects:
             item.setdefault("nom_i_cognoms", item.get("name") or "")
             item.setdefault("ordre_sortida", item.get("order") or "")
@@ -413,6 +413,7 @@ def judge_portal(request, token):
     entry_filters = {
         "competicio": competicio,
         "comp_aparell": comp_aparell,
+        "fase__isnull": True,
     }
     if team_subject_mode:
         entry_filters["team_subject_id__in"] = subject_ids

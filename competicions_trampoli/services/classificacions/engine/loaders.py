@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ....models import Inscripcio
-from ....models.competicio import CompeticioAparell
+from ....models.competicio import CompeticioAparell, ProgramUnitSlot
 from ....models.scoring import ScoreEntry, TeamScoreEntry
+from ..phase_scope import PHASE_SCOPE_PER_APP, normalize_phase_scope_payload
 from ...scoring.team_scoring import is_team_context_app
 from ...teams.equip_contexts import normalize_equip_context_code
 from .common import (
@@ -91,16 +92,29 @@ def load_inscripcions(
     return all_ins_list, all_ins_by_id, ins_list, ins_by_id
 
 
-def load_score_entries(competicio, *, inscripcions=None, aparells=None) -> list[ScoreEntry]:
-    return list(
+def load_score_entries(
+    competicio,
+    *,
+    inscripcions=None,
+    aparells=None,
+    phase_id=None,
+    include_all_phases: bool = False,
+) -> list[ScoreEntry]:
+    qs = (
         ScoreEntry.objects
         .filter(
             competicio=competicio,
             inscripcio__in=list(inscripcions or []),
             comp_aparell__in=list(aparells or []),
         )
-        .select_related("inscripcio", "comp_aparell")
+        .select_related("inscripcio", "comp_aparell", "fase")
     )
+    if not include_all_phases:
+        if phase_id:
+            qs = qs.filter(fase_id=phase_id)
+        else:
+            qs = qs.filter(fase__isnull=True)
+    return list(qs)
 
 
 def load_team_score_entries(
@@ -109,17 +123,87 @@ def load_team_score_entries(
     aparells=None,
     tipus="",
     team_mode="",
+    phase_id=None,
+    include_all_phases: bool = False,
 ) -> tuple[list[CompeticioAparell], list[TeamScoreEntry]]:
     team_apps = [comp_aparell for comp_aparell in (aparells or []) if is_team_context_app(comp_aparell)]
     if tipus != "equips" or team_mode != "native_team" or not team_apps:
         return team_apps, []
 
-    notes = list(
+    qs = (
         TeamScoreEntry.objects
         .filter(competicio=competicio, comp_aparell__in=team_apps)
-        .select_related("team_subject__equip", "team_subject__context", "comp_aparell")
+        .select_related("team_subject__equip", "team_subject__context", "comp_aparell", "fase")
     )
-    return team_apps, notes
+    if not include_all_phases:
+        if phase_id:
+            qs = qs.filter(fase_id=phase_id)
+        else:
+            qs = qs.filter(fase__isnull=True)
+    return team_apps, list(qs)
+
+
+def phase_slot_subject_ids(competicio, phase_scope=None) -> tuple[set[int] | None, set[int] | None]:
+    scope = normalize_phase_scope_payload(phase_scope or {})
+    phase_id = scope.get("fase_id")
+    if not phase_id:
+        return None, None
+    return phase_slot_subject_ids_for_phase(competicio, phase_id)
+
+
+def phase_slot_subject_ids_for_phase(competicio, phase_id) -> tuple[set[int], set[int]]:
+    inscripcio_ids = set()
+    team_subject_ids = set()
+    slots = (
+        ProgramUnitSlot.objects
+        .filter(
+            unit__fase__competicio=competicio,
+            unit__fase_id=phase_id,
+            subject_id__isnull=False,
+            status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
+        )
+        .values("subject_kind", "subject_id")
+    )
+    for slot in slots:
+        subject_id = normalize_positive_int(slot.get("subject_id"))
+        if subject_id is None:
+            continue
+        kind = str(slot.get("subject_kind") or "").strip().lower()
+        if kind == "inscripcio":
+            inscripcio_ids.add(subject_id)
+        elif kind == "team_unit":
+            team_subject_ids.add(subject_id)
+    return inscripcio_ids, team_subject_ids
+
+
+def phase_scope_subject_filters_by_app(
+    competicio,
+    phase_scope=None,
+    app_ids=None,
+) -> tuple[dict[int, set[int]], dict[int, set[int]], set[int]]:
+    scope = normalize_phase_scope_payload(phase_scope or {})
+    if scope.get("mode") != PHASE_SCOPE_PER_APP:
+        return {}, {}, set()
+    selected_app_ids = {
+        app_id
+        for app_id in (normalize_positive_int(raw_id) for raw_id in (app_ids or []))
+        if app_id is not None
+    }
+    ins_filters = {}
+    team_filters = {}
+    explicit_app_ids = set()
+    for raw_app_id, app_scope in (scope.get("apps") or {}).items():
+        app_id = normalize_positive_int(raw_app_id)
+        if app_id is None or (selected_app_ids and app_id not in selected_app_ids):
+            continue
+        phase_id = normalize_positive_int((app_scope or {}).get("fase_id"))
+        if phase_id is None:
+            continue
+        ins_ids, team_ids = phase_slot_subject_ids_for_phase(competicio, phase_id)
+        ins_filters[app_id] = ins_ids
+        team_filters[app_id] = team_ids
+        explicit_app_ids.add(app_id)
+    return ins_filters, team_filters, explicit_app_ids
 
 
 def build_score_indexes(
@@ -177,6 +261,7 @@ def load_engine_orm_data(
     tipus="",
     filtres=None,
     equips_cfg=None,
+    phase_scope=None,
     matches_filter: InscripcioMatcher | None = None,
 ) -> EngineOrmData:
     aparells = load_comp_aparells(competicio, punt=punt)
@@ -203,19 +288,104 @@ def load_engine_orm_data(
     team_ids_by_app = defaultdict(set)
 
     if aparells:
+        normalized_phase_scope = normalize_phase_scope_payload(phase_scope or {})
+        phase_id = (
+            normalize_positive_int(normalized_phase_scope.get("fase_id"))
+            if normalized_phase_scope.get("mode") != PHASE_SCOPE_PER_APP
+            else None
+        )
+        phase_ids_by_app = {}
+        if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
+            for raw_app_id, app_scope in (normalized_phase_scope.get("apps") or {}).items():
+                app_id = normalize_positive_int(raw_app_id)
+                app_phase_id = normalize_positive_int((app_scope or {}).get("fase_id"))
+                if app_id is not None and app_phase_id is not None:
+                    phase_ids_by_app[app_id] = app_phase_id
+        phase_inscripcio_ids, phase_team_subject_ids = (
+            (None, None)
+            if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP
+            else phase_slot_subject_ids(competicio, normalized_phase_scope)
+        )
+        app_ids = [int(comp_aparell.id) for comp_aparell in aparells]
+        phase_ins_filters_by_app, phase_team_filters_by_app, phase_explicit_app_ids = phase_scope_subject_filters_by_app(
+            competicio,
+            normalized_phase_scope,
+            app_ids=app_ids,
+        )
         all_ins_list, all_ins_by_id, ins_list, ins_by_id = load_inscripcions(
             competicio,
             filtres=filtres,
             matches_filter=matches_filter,
         )
-        notes = load_score_entries(competicio, inscripcions=ins_list, aparells=aparells)
+        if phase_inscripcio_ids is not None:
+            ins_list = [ins for ins in ins_list if int(ins.id) in phase_inscripcio_ids]
+            ins_by_id = {int(ins.id): ins for ins in ins_list}
+        elif phase_explicit_app_ids and set(app_ids).issubset(phase_explicit_app_ids):
+            scoped_ins_ids = set()
+            for ids in phase_ins_filters_by_app.values():
+                scoped_ins_ids.update(ids)
+            ins_list = [ins for ins in ins_list if int(ins.id) in scoped_ins_ids]
+            ins_by_id = {int(ins.id): ins for ins in ins_list}
+        notes = load_score_entries(
+            competicio,
+            inscripcions=ins_list,
+            aparells=aparells,
+            phase_id=phase_id,
+            include_all_phases=normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP,
+        )
+        if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
+            notes = [
+                note for note in notes
+                if (
+                    int(note.comp_aparell_id) in phase_ids_by_app
+                    and int(note.fase_id or 0) == phase_ids_by_app[int(note.comp_aparell_id)]
+                )
+                or (
+                    int(note.comp_aparell_id) not in phase_ids_by_app
+                    and note.fase_id is None
+                )
+            ]
+        if phase_ins_filters_by_app:
+            notes = [
+                note for note in notes
+                if int(note.comp_aparell_id) not in phase_explicit_app_ids
+                or int(note.inscripcio_id) in phase_ins_filters_by_app.get(int(note.comp_aparell_id), set())
+            ]
         notes_by_app, notes_by_key, ins_ids_by_app = build_score_indexes(notes)
         team_apps, team_notes = load_team_score_entries(
             competicio,
             aparells=aparells,
             tipus=tipus,
             team_mode=team_mode,
+            phase_id=phase_id,
+            include_all_phases=normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP,
         )
+        if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
+            team_notes = [
+                note for note in team_notes
+                if (
+                    int(note.comp_aparell_id) in phase_ids_by_app
+                    and int(note.fase_id or 0) == phase_ids_by_app[int(note.comp_aparell_id)]
+                )
+                or (
+                    int(note.comp_aparell_id) not in phase_ids_by_app
+                    and note.fase_id is None
+                )
+            ]
+        if phase_team_subject_ids is not None:
+            team_notes = [
+                note for note in team_notes
+                if int(getattr(note, "team_subject_id", 0) or 0) in phase_team_subject_ids
+            ]
+        elif phase_team_filters_by_app:
+            team_notes = [
+                note for note in team_notes
+                if int(note.comp_aparell_id) not in phase_explicit_app_ids
+                or int(getattr(note, "team_subject_id", 0) or 0) in phase_team_filters_by_app.get(
+                    int(note.comp_aparell_id),
+                    set(),
+                )
+            ]
         team_notes_by_app, team_notes_by_key, team_ids_by_app = build_team_score_indexes(
             team_notes,
             team_context_code=team_context_code,
@@ -251,4 +421,7 @@ __all__ = [
     "load_inscripcions",
     "load_score_entries",
     "load_team_score_entries",
+    "phase_scope_subject_filters_by_app",
+    "phase_slot_subject_ids",
+    "phase_slot_subject_ids_for_phase",
 ]

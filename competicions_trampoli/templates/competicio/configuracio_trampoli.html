@@ -87,8 +87,8 @@
             {% for comp_aparell in aparells %}
               <li class="list-group-item d-flex justify-content-between align-items-center">
                 <span>
-                  <strong>{{ comp_aparell.aparell.nom }}</strong>
-                  <span class="text-muted small"> ({{ comp_aparell.aparell.codi }})</span>
+                  <strong>{{ comp_aparell.display_nom }}</strong>
+                  <span class="text-muted small"> ({{ comp_aparell.display_codi }})</span>
                   {% for bloc in comp_aparell.aparell.scoring_schema.schema.fields %}
                   <span class="small">- {{ bloc.code }}</span>
                   {% endfor %}

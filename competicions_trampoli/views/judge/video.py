@@ -114,6 +114,7 @@ def judge_video_status(request, token):
         "competicio": competicio,
         "exercici": exercici,
         "comp_aparell": comp_aparell,
+        "fase__isnull": True,
     }
     if subject["subject_kind"] == "team_unit":
         entry_filters["team_subject"] = subject["team_subject"]
@@ -578,6 +579,7 @@ def judge_video_delete(request, token):
             competicio=competicio,
             exercici=exercici,
             comp_aparell=comp_aparell,
+            fase__isnull=True,
             **({"team_subject": subject["team_subject"]} if subject["subject_kind"] == "team_unit" else {"inscripcio": subject["inscripcio"]}),
         )
         .first()
@@ -720,6 +722,7 @@ def judge_video_file(request, token, subject_kind, subject_id, exercici):
         "competicio": competicio,
         "exercici": _clamp_exercici_for_aparell(comp_aparell, exercici),
         "comp_aparell": comp_aparell,
+        "fase__isnull": True,
     }
     if subject["subject_kind"] == "team_unit":
         entry_filters["team_subject"] = subject["team_subject"]

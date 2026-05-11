@@ -50,13 +50,35 @@
                 {{ form.aparell }}
                 {{ form.aparell.errors }}
               </div>
+              {% if object and object.pk %}
               <a
                 id="puntuacio-link"
                 class="btn btn-outline-secondary"
-                data-url-template="{% url 'aparell_scoring_schema_update' pk=0 %}"
-                href="#"
-                style="display:none;"
+                href="{% url 'scoring_schema_update' competicio.id object.id %}?next={{ request.get_full_path|urlencode }}"
               >Puntuacio</a>
+              {% else %}
+              <button
+                id="puntuacio-link"
+                type="button"
+                class="btn btn-outline-secondary"
+                disabled
+                title="Desa primer l'aparell dins la competicio"
+              >Puntuacio</button>
+              {% endif %}
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-12 col-md-7">
+                <label class="form-label mb-0" for="{{ form.nom_local.id_for_label }}">Nom local</label>
+                <span class="text-muted small d-block">{{ form.nom_local.help_text }}</span>
+                {{ form.nom_local }}
+                {{ form.nom_local.errors }}
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label mb-0" for="{{ form.codi_local.id_for_label }}">Codi local</label>
+                <span class="text-muted small d-block">{{ form.codi_local.help_text }}</span>
+                {{ form.codi_local }}
+                {{ form.codi_local.errors }}
+              </div>
             </div>
             <div class="d-flex justify-content-between align-items-center">
               <label class="form-label mb-0" for="{{ form.nombre_exercicis.id_for_label }}">Nombre d'Exercicis</label>
@@ -96,8 +118,7 @@
 <script>
   (function () {
     var select = document.getElementById('{{ form.aparell.id_for_label }}');
-    var link = document.getElementById('puntuacio-link');
-    if (!select || !link) return;
+    if (!select) return;
     var unitLabel = document.getElementById('competition-unit-label');
     var unitHelp = document.getElementById('competition-unit-help');
     var unitByAparell = {
@@ -108,26 +129,6 @@
       },
       {% endfor %}
     };
-
-    function updatePuntuacioLink() {
-      var aparellId = select.value;
-      if (!aparellId) {
-        link.style.display = 'none';
-        link.setAttribute('href', '#');
-        return;
-      }
-
-      var urlTemplate = link.getAttribute('data-url-template');
-      var href = urlTemplate.replace('/0/', '/' + aparellId + '/');
-      var nextUrl = window.location.pathname + window.location.search;
-      var sep = href.indexOf('?') === -1 ? '?' : '&';
-
-      link.setAttribute('href', href + sep + 'next=' + encodeURIComponent(nextUrl));
-      link.style.display = 'inline-block';
-    }
-
-    select.addEventListener('change', updatePuntuacioLink);
-    updatePuntuacioLink();
 
     function updateCompetitionUnit() {
       if (!unitLabel || !unitHelp) return;

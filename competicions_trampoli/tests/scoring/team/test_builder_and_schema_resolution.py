@@ -427,6 +427,35 @@ class TeamContextScoringBuilderAndSchemaResolutionTests(TeamContextScoringFlowTe
         self.assertEqual(bootstrap["schema_initial"], schema.schema)
         self.assertIn(f"comp-aparell:{self.comp_app.id}", bootstrap["schema_draft_storage_key"])
 
+    def test_scoring_schema_builder_competition_post_creates_local_override(self):
+        global_schema = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        local_payload = {
+            "fields": [
+                {"code": "ALT", "label": "Alternatiu", "type": "number"},
+            ],
+            "computed": [],
+        }
+
+        response = self.client.post(
+            reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": self.comp_app.id}),
+            data={"schema_json": json.dumps(local_payload)},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        global_schema.refresh_from_db()
+        self.assertEqual(global_schema.schema["fields"][0]["code"], "SYNC")
+        local_schema = ScoringSchema.objects.get(comp_aparell=self.comp_app)
+        self.assertIsNone(local_schema.aparell_id)
+        self.assertEqual(local_schema.schema["fields"][0]["code"], "ALT")
+
     def test_scoring_schema_builder_rehydrates_last_posted_invalid_schema(self):
         existing = ScoringSchema.objects.create(
             aparell=self.app,

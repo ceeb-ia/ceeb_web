@@ -778,6 +778,7 @@
                   <button type="button" class="filter-chip is-active" data-program-kind="all">Tots</button>
                   <button type="button" class="filter-chip" data-program-kind="group">Grups</button>
                   <button type="button" class="filter-chip" data-program-kind="series">Equips</button>
+                  <button type="button" class="filter-chip" data-program-kind="program_unit">Fases</button>
                   <button type="button" class="filter-chip" data-program-non-empty="true">No buits</button>
                 </div>
               </div>
@@ -802,6 +803,13 @@
                     </div>
                     <div class="group-bucket-list" id="programmed-series-list"></div>
                   </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Fases</div>
+                      <span class="badge badge-light" id="programmed-units-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="programmed-unit-list"></div>
+                  </div>
                 </div>
 
                 <div class="group-bucket planner-program-bucket" id="out-of-program-bucket">
@@ -822,6 +830,13 @@
                       <span class="badge badge-light" id="out-of-program-series-kind-count">0</span>
                     </div>
                     <div class="group-bucket-list" id="out-of-program-series-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Fases</div>
+                      <span class="badge badge-light" id="out-of-program-units-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="out-of-program-unit-list"></div>
                   </div>
                 </div>
               </div>
@@ -1567,7 +1582,7 @@ function normalizeGroups(raw){
     if (!value) continue;
     let key = value;
     if (/^\d+$/.test(value)) key = `g:${value}`;
-    if (!/^([gs]:\d+)$/.test(key) || seen.has(key)) continue;
+    if (!/^(g|s|pu):\d+$/.test(key) || seen.has(key)) continue;
     seen.add(key);
     out.push(key);
   }
@@ -1584,13 +1599,16 @@ function canonicalProgramKey(item){
   if (rawKey) return rawKey;
   const id = String(item.id || "").trim();
   if (!id) return "";
-  return String(item.kind || "") === "series" ? `s:${id}` : `g:${id}`;
+  if (String(item.kind || "") === "series") return `s:${id}`;
+  if (String(item.kind || "") === "program_unit") return `pu:${id}`;
+  return `g:${id}`;
 }
 
 function getProgramSidebarItems(){
   return (Array.isArray(groupSidebar) ? groupSidebar : []).map((item) => {
     if (!item || typeof item !== "object") return null;
-    const kind = String(item.kind || "").toLowerCase() === "series" ? "series" : "group";
+    const rawKind = String(item.kind || "").toLowerCase();
+    const kind = rawKind === "series" ? "series" : (rawKind === "program_unit" ? "program_unit" : "group");
     const key = canonicalProgramKey(item);
     const membersCount = Number(item.members_count || 0);
     const isProgrammed = item.is_programmed != null ? !!item.is_programmed : false;
@@ -1611,6 +1629,11 @@ function itemAllowedInStation(itemKey, estacioId){
   const mode = stationModeFor(estacioId);
   const key = String(itemKey || "");
   if (!key) return true;
+  if (key.startsWith("pu:")){
+    const item = getProgramSidebarItems().find((candidate) => String(candidate.key || "") === key);
+    if (!item) return false;
+    return !!mode.comp_aparell_id && Number(item.app_id || 0) === Number(mode.comp_aparell_id || 0);
+  }
   if (mode.mode === "group") return key.startsWith("g:");
   if (mode.mode === "series") return key.startsWith("s:");
   return false;
@@ -1693,7 +1716,7 @@ function renderGroupBuckets(){
   if (summary) summary.classList.toggle("is-quiet", outGroupCount <= 0);
   if (summaryText) {
     summaryText.textContent = outGroupCount
-      ? "Hi ha grups o series que existeixen pero encara no formen part de l'horari actual."
+      ? "Hi ha grups, series o blocs de fase que existeixen pero encara no formen part de l'horari actual."
       : "Tots els elements programables actuals estan situats dins el programa de rotacions.";
   }
 
@@ -2558,8 +2581,12 @@ function itemMatchesPlannerFilters(item){
   if (kindFilter !== "all" && String(item.kind || "") !== kindFilter) return false;
   if (programFilters.nonEmptyOnly && Number(item.members_count || 0) <= 0) return false;
   if (mode){
-    if (mode.mode === "group" && item.kind !== "group") return false;
-    if (mode.mode === "series" && item.kind !== "series") return false;
+    if (item.kind === "program_unit"){
+      if (!mode.comp_aparell_id || Number(item.app_id || 0) !== Number(mode.comp_aparell_id || 0)) return false;
+    } else {
+      if (mode.mode === "group" && item.kind !== "group") return false;
+      if (mode.mode === "series" && item.kind !== "series") return false;
+    }
   }
   if (query){
     const haystack = [
@@ -2579,12 +2606,14 @@ function itemMatchesPlannerFilters(item){
 function splitPlannerItemsByKind(items){
   const groups = [];
   const series = [];
+  const units = [];
   (Array.isArray(items) ? items : []).forEach((item) => {
     if (!item) return;
     if (item.kind === "series") series.push(item);
+    else if (item.kind === "program_unit") units.push(item);
     else groups.push(item);
   });
-  return { groups, series };
+  return { groups, series, units };
 }
 
 function renderPlannerSummary(){
@@ -2598,7 +2627,7 @@ function renderPlannerSummary(){
   if (summary) summary.classList.toggle("is-quiet", outGroupCount <= 0);
   if (summaryText) {
     summaryText.textContent = outGroupCount
-      ? "Hi ha grups o series que existeixen pero encara no formen part de l'horari actual."
+      ? "Hi ha grups, series o blocs de fase que existeixen pero encara no formen part de l'horari actual."
       : "Tots els elements programables actuals estan situats dins el programa de rotacions.";
   }
   if (outGroupsBadge) outGroupsBadge.textContent = `${outGroupCount} elements`;
@@ -2844,16 +2873,20 @@ function updateFilterButtons(){
 function renderProgramables(){
   const programmedWrap = document.getElementById("programmed-group-list");
   const programmedSeriesWrap = document.getElementById("programmed-series-list");
+  const programmedUnitWrap = document.getElementById("programmed-unit-list");
   const outWrap = document.getElementById("out-of-program-group-list");
   const outSeriesWrap = document.getElementById("out-of-program-series-list");
+  const outUnitWrap = document.getElementById("out-of-program-unit-list");
   const programmedBucket = document.getElementById("programmed-bucket");
   const outBucket = document.getElementById("out-of-program-bucket");
   const programmedCountEl = document.getElementById("programmed-groups-count");
   const programmedGroupsKindCountEl = document.getElementById("programmed-groups-kind-count");
   const programmedSeriesKindCountEl = document.getElementById("programmed-series-kind-count");
+  const programmedUnitsKindCountEl = document.getElementById("programmed-units-kind-count");
   const outCountEl = document.getElementById("out-of-program-groups-count");
   const outGroupsKindCountEl = document.getElementById("out-of-program-groups-kind-count");
   const outSeriesKindCountEl = document.getElementById("out-of-program-series-kind-count");
+  const outUnitsKindCountEl = document.getElementById("out-of-program-units-kind-count");
   const state = getProgramBuckets();
   const placementFilter = String(programFilters.placement || "all");
   const programmedVisible = state.programmed.filter(itemMatchesPlannerFilters);
@@ -2874,6 +2907,11 @@ function renderProgramables(){
       ? programmedSplit.series.map(groupChipHtml).join("")
       : '<div class="group-bucket-empty">Encara no hi ha equips col·locats al programa.</div>';
   }
+  if (programmedUnitWrap) {
+    programmedUnitWrap.innerHTML = programmedSplit.units.length
+      ? programmedSplit.units.map(groupChipHtml).join("")
+      : '<div class="group-bucket-empty">Encara no hi ha blocs de fase col.locats al programa.</div>';
+  }
   if (outWrap) {
     outWrap.innerHTML = outSplit.groups.length
       ? outSplit.groups.map(groupChipHtml).join("")
@@ -2885,12 +2923,20 @@ function renderProgramables(){
       : '<div class="group-bucket-empty">No hi ha equips fora de programa.</div>';
   }
 
+  if (outUnitWrap) {
+    outUnitWrap.innerHTML = outSplit.units.length
+      ? outSplit.units.map(groupChipHtml).join("")
+      : '<div class="group-bucket-empty">No hi ha blocs de fase fora de programa.</div>';
+  }
+
   if (programmedCountEl) programmedCountEl.textContent = String(programmedVisible.length);
   if (programmedGroupsKindCountEl) programmedGroupsKindCountEl.textContent = String(programmedSplit.groups.length);
   if (programmedSeriesKindCountEl) programmedSeriesKindCountEl.textContent = String(programmedSplit.series.length);
+  if (programmedUnitsKindCountEl) programmedUnitsKindCountEl.textContent = String(programmedSplit.units.length);
   if (outCountEl) outCountEl.textContent = String(outVisible.filter((item) => Number(item?.members_count || 0) > 0).length);
   if (outGroupsKindCountEl) outGroupsKindCountEl.textContent = String(outSplit.groups.length);
   if (outSeriesKindCountEl) outSeriesKindCountEl.textContent = String(outSplit.series.length);
+  if (outUnitsKindCountEl) outUnitsKindCountEl.textContent = String(outSplit.units.length);
 
   const searchInput = document.getElementById("programSearch");
   if (searchInput && searchInput.value !== programFilters.query) {

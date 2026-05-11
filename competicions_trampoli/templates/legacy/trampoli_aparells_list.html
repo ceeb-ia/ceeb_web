@@ -34,14 +34,24 @@
             {% endif %}
             <th style="width:90px;">Exercicis</th>
             <th style="width:90px;">Actiu</th>
-            <th style="width:120px;"></th>
+            <th style="width:190px;"></th>
           </tr>
         </thead>
         <tbody>
           {% for ca in aparells_cfg %}
             <tr>
-              <td class="fw-semibold">{{ ca.aparell.codi }}</td>
-              <td class="fw-semibold">{{ ca.aparell.nom }}</td>
+              <td class="fw-semibold">
+                {{ ca.display_codi }}
+                {% if ca.display_codi != ca.aparell.codi %}
+                  <div class="text-muted small">Base: {{ ca.aparell.codi }}</div>
+                {% endif %}
+              </td>
+              <td class="fw-semibold">
+                {{ ca.display_nom }}
+                {% if ca.display_nom != ca.aparell.nom %}
+                  <div class="text-muted small">Base: {{ ca.aparell.nom }}</div>
+                {% endif %}
+              </td>
               {% if show_owner %}
                 <td>
                   {% firstof ca.aparell.created_by.get_full_name ca.aparell.created_by.username %}
@@ -57,6 +67,8 @@
                 {% endif %}
               </td>
               <td class="text-right">
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ ca.id }}">Fases</a>
                 <a class="btn btn-sm btn-outline-secondary"
                    href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                 

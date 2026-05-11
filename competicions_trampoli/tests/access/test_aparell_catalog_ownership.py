@@ -176,6 +176,100 @@ class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
             CompeticioAparell.objects.filter(competicio=self.comp, aparell=foreign).exists()
         )
 
+    def test_can_attach_same_base_aparell_multiple_times_with_local_identity(self):
+        aparell = self._create_aparell("TRA", "Trampoli", owner=self.user_a)
+
+        first = CompeticioAparell.objects.create(
+            competicio=self.comp,
+            aparell=aparell,
+            nom_local="Trampoli masculi",
+            codi_local="TRA-M",
+            ordre=1,
+        )
+        second = CompeticioAparell.objects.create(
+            competicio=self.comp,
+            aparell=aparell,
+            nom_local="Trampoli femeni",
+            codi_local="TRA-F",
+            ordre=2,
+        )
+
+        self.assertEqual(first.aparell_id, second.aparell_id)
+        self.assertNotEqual(first.id, second.id)
+        self.assertEqual(first.display_nom, "Trampoli masculi")
+        self.assertEqual(second.display_codi, "TRA-F")
+
+    def test_competicio_aparell_form_autogenerates_local_code_for_duplicate_base(self):
+        aparell = self._create_aparell("TRA", "Trampoli", owner=self.user_a)
+        CompeticioAparell.objects.create(
+            competicio=self.comp,
+            aparell=aparell,
+            nom_local="Trampoli masculi",
+            codi_local="TRA",
+        )
+
+        form = CompeticioAparellForm(
+            data={
+                "aparell": aparell.id,
+                "nom_local": "Trampoli femeni",
+                "codi_local": "",
+                "nombre_exercicis": 1,
+            },
+            competicio=self.comp,
+            user=self.user_a,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        obj = form.save(commit=False)
+        obj.competicio = self.comp
+        obj.save()
+        self.assertEqual(obj.codi_local, "TRA-2")
+
+    def test_competicio_aparell_form_rejects_duplicate_local_code(self):
+        aparell = self._create_aparell("TRA", "Trampoli", owner=self.user_a)
+        CompeticioAparell.objects.create(
+            competicio=self.comp,
+            aparell=aparell,
+            nom_local="Trampoli masculi",
+            codi_local="TRA-M",
+        )
+
+        form = CompeticioAparellForm(
+            data={
+                "aparell": aparell.id,
+                "nom_local": "Trampoli femeni",
+                "codi_local": "TRA-M",
+                "nombre_exercicis": 1,
+            },
+            competicio=self.comp,
+            user=self.user_a,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("codi_local", form.errors)
+
+    def test_competicio_aparell_edit_links_to_local_scoring_schema(self):
+        aparell = self._create_aparell("TRA", "Trampoli", owner=self.user_a)
+        comp_aparell = CompeticioAparell.objects.create(
+            competicio=self.comp,
+            aparell=aparell,
+            nom_local="Trampoli masculi",
+            codi_local="TRA-M",
+        )
+
+        self.client.force_login(self.user_a)
+        res = self.client.get(
+            reverse(
+                "trampoli_aparell_edit",
+                kwargs={"pk": self.comp.id, "app_id": comp_aparell.id},
+            )
+        )
+
+        self.assertEqual(res.status_code, 200)
+        body = res.content.decode("utf-8")
+        self.assertIn(reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": comp_aparell.id}), body)
+        self.assertNotIn(reverse("aparell_scoring_schema_update", kwargs={"pk": aparell.id}), body)
+
     def test_cannot_edit_foreign_aparell_catalog_entry(self):
         foreign = self._create_aparell("TRA", "Aparell aliÃƒÂ¨", owner=self.user_b)
         self.client.force_login(self.user_a)

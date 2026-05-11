@@ -13,6 +13,7 @@
 
   const CFGS = parseJsonScript("cfgs-data-v2", []);
   const APARELLS = parseJsonScript("aparells-data-v2", []);
+  const FASES = parseJsonScript("fases-data-v2", []);
   const EQUIPS = parseJsonScript("equips-data-v2", []);
   const EQUIP_CONTEXTS = parseJsonScript("equip-contexts-data-v2", []);
   const PARTICIO_FIELDS = parseJsonScript("particio-fields-data-v2", []);
@@ -47,6 +48,7 @@
     particions: [],
     particions_v2: [],
     particions_custom: {},
+    scope: { mode: "implicit", fase_id: null },
     particions_config: {
       [BIRTH_YEAR_RANGE_PARTITION_CODE]: {
         ranges: [],

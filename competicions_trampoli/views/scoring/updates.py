@@ -5,8 +5,9 @@ from django.views.decorators.http import require_GET
 
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
-from ...models.scoring import ScoreEntry, ScoringSchema, TeamScoreEntry
+from ...models.scoring import ScoreEntry, TeamScoreEntry
 from ...services.shared.incremental_feeds import FeedCursor, parse_feed_cursor
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.team_scoring import is_team_context_app
 from ...services.scoring.team_subject_contract import build_team_subject_registry, filter_team_subject_ids_for_serie
 from .helpers import (
@@ -99,14 +100,15 @@ def _collect_team_scoring_updates(competicio, cursor: FeedCursor, *, comp_aparel
             )
         else:
             allowed_team_ids_by_app[int(app.id)] = set(registry["all_by_id"].keys())
-        ss, _ = ScoringSchema.objects.get_or_create(aparell=app.aparell, defaults={"schema": {}})
-        allowed_inputs_by_app[int(app.id)] = _logical_team_input_codes(ss.schema or {})
+        _schema_obj, schema = resolve_scoring_schema_for_comp_aparell(app)
+        allowed_inputs_by_app[int(app.id)] = _logical_team_input_codes(schema or {})
 
     qs = (
         TeamScoreEntry.objects
         .filter(
             competicio=competicio,
             comp_aparell_id__in=team_app_ids,
+            fase__isnull=True,
         )
         .select_related("team_subject")
         .order_by("updated_at", "id")
@@ -162,7 +164,7 @@ def scoring_updates(request, pk):
 
     rows = []
     allowed_inputs_by_app = {}
-    qs = ScoreEntry.objects.filter(competicio=competicio)
+    qs = ScoreEntry.objects.filter(competicio=competicio, fase__isnull=True)
     qs = qs.annotate(
         _excluded=Exists(
             InscripcioAparellExclusio.objects.filter(
@@ -190,9 +192,9 @@ def scoring_updates(request, pk):
     for score_entry in qs.select_related("inscripcio")[: SCORING_UPDATES_LIMIT + 1]:
         if int(score_entry.comp_aparell_id) not in allowed_inputs_by_app:
             comp_aparell = CompeticioAparell.objects.filter(pk=score_entry.comp_aparell_id, competicio=competicio).first()
-            ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}}) if comp_aparell else (None, False)
+            _schema_obj, schema = resolve_scoring_schema_for_comp_aparell(comp_aparell) if comp_aparell else (None, {})
             allowed_inputs_by_app[int(score_entry.comp_aparell_id)] = _allowed_input_codes_for_schema(
-                ss.schema if ss is not None else {},
+                schema or {},
                 comp_aparell,
             )
         rows.append(

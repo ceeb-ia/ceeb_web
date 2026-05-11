@@ -1,0 +1,41 @@
+<div class="phase-unit-row">
+  <div>
+    <div class="phase-unit-name">{{ unit.nom }}</div>
+    <div class="phase-unit-meta text-muted small">
+      <span>{{ unit.get_tipus_display }}</span>
+      <span>{{ unit.ui_slot_count|default:unit.slots_count }} places</span>
+      <span>{{ unit.ui_competitive_slots_count }} assignades</span>
+      {% if unit.partition_key %}<span>Criteri: {{ unit.partition_key }}</span>{% endif %}
+    </div>
+    {% if unit.ui_programmed_labels %}
+      <div class="text-muted small mt-1">
+        {% for label in unit.ui_programmed_labels %}
+          <span>{{ label }}</span>{% if not forloop.last %}<span> - </span>{% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% if unit.slots.all %}
+      <div class="phase-slot-summary">
+        <span class="badge badge-light border">{{ unit.ui_competitive_slots_count }}/{{ unit.ui_slot_count }} places amb participant/equip</span>
+        {% if unit.ui_empty_slots_count %}
+          <span class="badge badge-light border">{{ unit.ui_empty_slots_count }} buides</span>
+        {% endif %}
+      </div>
+      <div class="phase-slot-list">
+        {% for slot in unit.slots.all %}
+          <span class="phase-slot-chip {% if slot.status != 'empty' %}is-filled{% else %}is-empty{% endif %}">
+            Plaça {{ slot.slot_index }} · {{ slot.get_status_display }}{% if slot.subject_kind %} · {{ slot.subject_kind }}:{{ slot.subject_id }}{% endif %}
+          </span>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  <div class="phase-unit-statuses">
+    {% if unit.ui_is_programmed %}
+      <span class="badge badge-success">Programat</span>
+    {% else %}
+      <span class="badge badge-warning">Pendent de programar</span>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'rotacions_planner' competicio.id %}">Rotacions</a>
+    {% endif %}
+  </div>
+</div>

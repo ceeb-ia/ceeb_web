@@ -55,6 +55,21 @@
           </div>
         </div>
 
+        {% if not is_global_builder %}
+        <div class="border rounded p-3 mb-3">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="font-weight-bold">Abast de fase</div>
+              <div class="small text-muted">Sense fase explicita, la classificacio usa la preliminar implicita i el comportament actual.</div>
+            </div>
+            <div class="builder-inline-note">Fase 5</div>
+          </div>
+          <div id="phaseScopeRows" class="mb-2"></div>
+          <div class="small text-muted" id="phaseScopeHint"></div>
+        </div>
+        {% endif %}
+
+
         <div class="row">
           <div class="col-12 col-md-6 mb-3">
             <label class="font-weight-bold">2. Tractament dels Aparells</label>
