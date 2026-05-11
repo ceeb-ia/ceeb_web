@@ -39,7 +39,16 @@ class DjangoCalendarizationUrlsTests(unittest.TestCase):
         names = {pattern.name for pattern in urls.urlpatterns}
         self.assertEqual(
             names,
-            {"run_list", "run_create", "run_detail", "run_status", "run_download", "audit_detail"},
+            {
+                "run_list",
+                "run_create",
+                "run_detail",
+                "run_delete",
+                "run_status",
+                "run_download",
+                "run_plot",
+                "audit_detail",
+            },
         )
 
     def test_urls_reverse_with_expected_arguments(self):
@@ -48,8 +57,16 @@ class DjangoCalendarizationUrlsTests(unittest.TestCase):
         self.assertEqual(reverse("calendaritzacions:run_list"), "/")
         self.assertEqual(reverse("calendaritzacions:run_create"), "/new/")
         self.assertEqual(reverse("calendaritzacions:run_detail", kwargs={"pk": 7}), "/runs/7/")
+        self.assertEqual(reverse("calendaritzacions:run_delete", kwargs={"pk": 7}), "/runs/7/delete/")
         self.assertEqual(reverse("calendaritzacions:run_status", kwargs={"pk": 7}), "/runs/7/status/")
         self.assertEqual(reverse("calendaritzacions:run_download", kwargs={"pk": 7}), "/runs/7/download/")
+        self.assertEqual(
+            reverse(
+                "calendaritzacions:run_plot",
+                kwargs={"pk": 7, "artifact": "input_demand", "plot_id": "heatmap"},
+            ),
+            "/runs/7/plots/input_demand/heatmap/",
+        )
         self.assertEqual(
             reverse("calendaritzacions:audit_detail", kwargs={"pk": 7, "artifact": "resource_solution"}),
             "/runs/7/audit/resource_solution/",

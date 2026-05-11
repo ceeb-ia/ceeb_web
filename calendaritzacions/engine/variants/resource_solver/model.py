@@ -163,6 +163,7 @@ def _model_summary(
         "objective_terms": objective_summary(objective_terms),
         "weights": objective_weights(objective_terms),
         "time_limit_seconds": getattr(context.config, "time_limit_seconds", None),
+        "num_search_workers": getattr(context.config, "num_search_workers", None),
     }
 
 
@@ -176,6 +177,9 @@ def _solve_cp_sat_model(
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = float(getattr(config, "time_limit_seconds", 30.0))
+    num_search_workers = int(getattr(config, "num_search_workers", 0) or 0)
+    if num_search_workers > 0:
+        solver.parameters.num_search_workers = num_search_workers
     started = perf_counter()
     status_code = solver.Solve(built_model.model)
     wall_time = perf_counter() - started
@@ -360,10 +364,7 @@ def _construct_greedy_assignment(
     selected: list[Candidate] = []
     group_entity_counts: dict[tuple[str, str], int] = defaultdict(int)
     team_by_id = {team.team_id: team for team in context.teams}
-    entity_team_count: dict[str, int] = defaultdict(int)
-    for team in context.teams:
-        entity_team_count[team.entity] += 1
-    num_groups = len(context.groups)
+    competition_group_count, competition_entity_count = _competition_entity_counts(context)
 
     for team in sorted(context.teams, key=lambda item: item.team_id):
         options = sorted(
@@ -380,7 +381,10 @@ def _construct_greedy_assignment(
             slot = (candidate.group_id, candidate.number)
             if remaining_by_group.get(candidate.group_id, 0) <= 0 or slot in used_slots:
                 continue
-            if entity_team_count[team.entity] <= num_groups:
+            if (
+                competition_entity_count.get((candidate.group_id, team.entity), 0)
+                <= competition_group_count.get(candidate.group_id, len(context.groups))
+            ):
                 if group_entity_counts[(candidate.group_id, team.entity)] > 0:
                     continue
             chosen = candidate
@@ -422,16 +426,21 @@ def _evaluate_assignment_combo(
         if count_by_group[group.group_id] != group.target_size:
             return None
 
-    empty_counts = [len(group.numbers) - count_by_group[group.group_id] for group in context.groups]
     objective_value = 0
     empty_mode = getattr(context.config, "empty_number_balance_mode", "hard")
-    if empty_counts and max(empty_counts) - min(empty_counts) > 1:
-        if empty_mode == "hard":
-            return None
-        objective_value += (
-            max(empty_counts)
-            - min(empty_counts)
-        ) * int(getattr(context.config, "empty_number_imbalance_weight", 1_000))
+    for group_ids in _competition_group_sets(context):
+        empty_counts = [
+            len(group.numbers) - count_by_group[group.group_id]
+            for group in context.groups
+            if group.group_id in group_ids
+        ]
+        if empty_counts and max(empty_counts) - min(empty_counts) > 1:
+            if empty_mode == "hard":
+                return None
+            objective_value += (
+                max(empty_counts)
+                - min(empty_counts)
+            ) * int(getattr(context.config, "empty_number_imbalance_weight", 1_000))
 
     entity_excess = _fallback_entity_excess(context, combo)
     if entity_excess is None:
@@ -463,18 +472,18 @@ def _fallback_entity_excess(
     combo: tuple[Candidate, ...],
 ) -> dict[tuple[str, str], int] | None:
     team_entity = {team.team_id: team.entity for team in context.teams}
-    entity_team_count: dict[str, int] = defaultdict(int)
-    for team in context.teams:
-        entity_team_count[team.entity] += 1
+    competition_group_count, competition_entity_count = _competition_entity_counts(context)
 
     count_by_entity_group: dict[tuple[str, str], int] = defaultdict(int)
     for candidate in combo:
         count_by_entity_group[(team_entity[candidate.team_id], candidate.group_id)] += 1
 
-    num_groups = len(context.groups)
     excess: dict[tuple[str, str], int] = {}
     for (entity, group_id), count in count_by_entity_group.items():
-        if entity_team_count[entity] <= num_groups:
+        if (
+            competition_entity_count.get((group_id, entity), 0)
+            <= competition_group_count.get(group_id, len(context.groups))
+        ):
             if count > 1:
                 return None
             continue
@@ -482,6 +491,61 @@ def _fallback_entity_excess(
         if value:
             excess[(entity, group_id)] = value
     return excess
+
+
+def _competition_group_sets(context: SolverContext) -> tuple[tuple[str, ...], ...]:
+    team_to_groups: dict[str, set[str]] = defaultdict(set)
+    group_to_teams: dict[str, set[str]] = defaultdict(set)
+    for candidate in context.candidates:
+        team_to_groups[candidate.team_id].add(candidate.group_id)
+        group_to_teams[candidate.group_id].add(candidate.team_id)
+
+    if not group_to_teams:
+        return (tuple(group.group_id for group in context.groups),)
+
+    seen: set[tuple[str, ...]] = set()
+    group_sets: list[tuple[str, ...]] = []
+    for _group_id, team_ids in sorted(group_to_teams.items()):
+        related = tuple(
+            sorted(
+                {
+                    related_group_id
+                    for team_id in team_ids
+                    for related_group_id in team_to_groups.get(team_id, set())
+                }
+            )
+        )
+        if related and related not in seen:
+            seen.add(related)
+            group_sets.append(related)
+    return tuple(group_sets)
+
+
+def _competition_entity_counts(
+    context: SolverContext,
+) -> tuple[dict[str, int], dict[tuple[str, str], int]]:
+    team_entity = {team.team_id: team.entity for team in context.teams}
+    team_to_groups: dict[str, set[str]] = defaultdict(set)
+    group_to_teams: dict[str, set[str]] = defaultdict(set)
+    for candidate in context.candidates:
+        team_to_groups[candidate.team_id].add(candidate.group_id)
+        group_to_teams[candidate.group_id].add(candidate.team_id)
+
+    group_count_by_group: dict[str, int] = {}
+    entity_count_by_group: dict[tuple[str, str], int] = {}
+    for group_id, team_ids in group_to_teams.items():
+        competition_group_ids = {
+            related_group_id
+            for team_id in team_ids
+            for related_group_id in team_to_groups.get(team_id, set())
+        }
+        group_count_by_group[group_id] = len(competition_group_ids)
+        counts: dict[str, int] = defaultdict(int)
+        for team_id in team_ids:
+            counts[team_entity.get(team_id, "")] += 1
+        for entity, count in counts.items():
+            entity_count_by_group[(group_id, entity)] = count
+    return group_count_by_group, entity_count_by_group
 
 
 def _fallback_resource_usage(

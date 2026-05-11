@@ -12,6 +12,8 @@ class ResourceSolverContractsTests(unittest.TestCase):
         self.assertEqual(config.empty_number_balance_mode, "hard")
         self.assertEqual(config.phase_name, "primera_fase")
         self.assertEqual(config.resource_excess_weight, 100_000)
+        self.assertEqual(config.time_limit_seconds, 1800.0)
+        self.assertEqual(config.num_search_workers, 2)
 
     def test_team_and_group_records_are_instantiable(self):
         team = TeamRecord(

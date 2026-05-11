@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter, defaultdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -97,9 +98,28 @@ class ResourceSolverEngine:
             context=context,
         )
 
+        try:
+            from calendaritzacions.reporting.resource_solver_plots import (
+                write_resource_solver_final_plots,
+            )
+
+            final_plots = write_resource_solver_final_plots(
+                output_dir / "plots_final",
+                result=result,
+                context=context,
+                stem=f"resource_solver_{Path(input_path).stem}",
+            )
+            manifest_path = final_plots.get("manifest")
+            if manifest_path:
+                audit_paths["resource_solver_final_plots"] = manifest_path
+            logs.append(f"resource_solver: plots finals generats={max(0, len(final_plots) - 1)}")
+        except Exception as exc:
+            logs.append(f"resource_solver: plots finals no generats ({exc})")
+
         logs.extend(str(item) for item in result.logs)
         logs.append(f"resource_solver: status={result.status}")
         logs.extend(_result_log_lines(result))
+        logs.extend(_competition_result_log_lines(result, context))
         logs.append(f"resource_solver: excel={output_path.name}")
         _report(progress, "Excel i auditoria resource_solver generats.", 90)
         return EngineResult(
@@ -162,6 +182,7 @@ class ResourceSolverEngine:
             f"teams={len(context.teams)} groups={len(context.groups)} "
             f"resources={len(context.base_resources)} candidates={len(context.candidates)}"
         )
+        logs.extend(_competition_context_log_lines(context))
         _report(progress, "Executant CP-SAT resource_solver...", 50)
         built_model = build_solver_model(context)
         summary = getattr(built_model, "summary", {}) or {}
@@ -295,8 +316,29 @@ def _context_log_lines(context: SolverContext) -> list[str]:
         "pre-solver: "
         f"weights resource_excess={getattr(context.config, 'resource_excess_weight', '-')} "
         f"entity_excess={getattr(context.config, 'entity_excess_weight', '-')} "
-        f"empty_balance={getattr(context.config, 'empty_number_imbalance_weight', '-')}",
+        f"empty_balance={getattr(context.config, 'empty_number_imbalance_weight', '-')} "
+        f"time_limit={getattr(context.config, 'time_limit_seconds', '-')}s "
+        f"search_workers={getattr(context.config, 'num_search_workers', '-')}",
     ]
+
+
+def _competition_context_log_lines(context: SolverContext) -> list[str]:
+    summaries = _competition_summaries(context)
+    if not summaries:
+        return []
+
+    lines = [f"pre-solver: competicions={len(summaries)}"]
+    for summary in summaries:
+        repartiment = ",".join(str(value) for value in summary["repartiment"])
+        lines.append(
+            "pre-solver competicio: "
+            f"{summary['label']} | teams={summary['teams']} "
+            f"groups={summary['groups']} repartiment=[{repartiment}] "
+            f"candidates={summary['candidates']} "
+            f"critical_resources={summary['critical_resources']} "
+            f"max_pressure={summary['max_pressure']:.2f}"
+        )
+    return lines
 
 
 def _result_log_lines(result: Any) -> list[str]:
@@ -314,6 +356,116 @@ def _result_log_lines(result: Any) -> list[str]:
     if status == "INFEASIBLE":
         lines.append("post-solver: cap solucio compleix les restriccions actives")
     return lines
+
+
+def _competition_result_log_lines(result: Any, context: SolverContext) -> list[str]:
+    summaries = _competition_summaries(context)
+    if not summaries:
+        return []
+
+    label_by_team = {team.team_id: _team_competition_label(team) for team in context.teams}
+    label_by_group = _group_label_map(context)
+    assigned_by_label = Counter()
+    matches_by_label = Counter()
+    entity_excess_by_label = Counter()
+
+    for assignment in getattr(result, "assignments", ()) or ():
+        assigned_by_label[label_by_team.get(assignment.team_id, "(desconegut)")] += 1
+    for match in getattr(result, "real_matches", ()) or ():
+        matches_by_label[label_by_team.get(match.home_team_id, "(desconegut)")] += 1
+    for (_entity, group_id), excess in (getattr(result, "entity_excess", {}) or {}).items():
+        entity_excess_by_label[label_by_group.get(group_id, "(desconegut)")] += int(excess)
+
+    lines = []
+    for summary in summaries:
+        label = str(summary["label"])
+        lines.append(
+            "post-solver competicio: "
+            f"{label} | assigned={assigned_by_label[label]}/{summary['teams']} "
+            f"matches={matches_by_label[label]} "
+            f"entity_excess={entity_excess_by_label[label]}"
+        )
+    return lines
+
+
+def _competition_summaries(context: SolverContext) -> list[dict[str, Any]]:
+    teams_by_label: dict[str, list[Any]] = defaultdict(list)
+    for team in context.teams:
+        teams_by_label[_team_competition_label(team)].append(team)
+
+    group_ids_by_team: dict[str, set[str]] = defaultdict(set)
+    candidate_count_by_label = Counter()
+    team_by_id = {team.team_id: team for team in context.teams}
+    for candidate in context.candidates:
+        group_ids_by_team[candidate.team_id].add(candidate.group_id)
+        team = team_by_id.get(candidate.team_id)
+        if team is not None:
+            candidate_count_by_label[_team_competition_label(team)] += 1
+
+    group_by_id = {group.group_id: group for group in context.groups}
+    summaries: list[dict[str, Any]] = []
+    for label, teams in sorted(teams_by_label.items(), key=lambda item: item[0].casefold()):
+        team_ids = {team.team_id for team in teams}
+        group_ids = {
+            group_id
+            for team_id in team_ids
+            for group_id in group_ids_by_team.get(team_id, set())
+        }
+        pressure_rows = [
+            row
+            for row in context.pressure
+            if any(team_id in team_ids for team_id in getattr(row, "team_ids", ()) or ())
+        ]
+        summaries.append(
+            {
+                "label": label,
+                "teams": len(teams),
+                "groups": len(group_ids),
+                "repartiment": [
+                    group_by_id[group_id].target_size
+                    for group_id in sorted(group_ids, key=_natural_group_key)
+                    if group_id in group_by_id
+                ],
+                "candidates": int(candidate_count_by_label[label]),
+                "critical_resources": sum(1 for row in pressure_rows if getattr(row, "is_critical", False)),
+                "max_pressure": max((float(getattr(row, "pressure", 0.0) or 0.0) for row in pressure_rows), default=0.0),
+            }
+        )
+    return summaries
+
+
+def _group_label_map(context: SolverContext) -> dict[str, str]:
+    label_by_group: dict[str, str] = {}
+    team_by_id = {team.team_id: team for team in context.teams}
+    for candidate in context.candidates:
+        team = team_by_id.get(candidate.team_id)
+        if team is not None:
+            label_by_group[candidate.group_id] = _team_competition_label(team)
+    return label_by_group
+
+
+def _team_competition_label(team: Any) -> str:
+    parts = [
+        str(getattr(team, "modality", "") or "").strip(),
+        str(getattr(team, "category", "") or "").strip(),
+        str(getattr(team, "subcategory", "") or "").strip(),
+    ]
+    if all(parts):
+        return " / ".join(parts)
+    league = str(getattr(team, "league_name", "") or "").strip()
+    return f"Nom Lliga: {league or 'Sense lliga'}"
+
+
+def _natural_group_key(group_id: str) -> tuple[str, int]:
+    text = str(group_id)
+    digits = ""
+    for char in reversed(text):
+        if not char.isdigit():
+            break
+        digits = char + digits
+    if not digits:
+        return (text, 0)
+    return (text[: -len(digits)], int(digits))
 
 
 def _input_detected_summary(input_df: pd.DataFrame) -> dict[str, int]:

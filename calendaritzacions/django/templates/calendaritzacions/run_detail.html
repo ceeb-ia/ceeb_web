@@ -55,10 +55,39 @@
           {% else %}
           <div class="alert alert-light small mb-0">El resultat estara disponible quan acabi el proces.</div>
           {% endif %}
+          {% if run.is_finished %}
+          <form class="mt-2" method="post" action="{% url 'calendaritzacions:run_delete' run.pk %}" onsubmit="return confirm('Eliminar aquesta execucio?');">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar run</button>
+          </form>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
+
+  {% if plot_galleries %}
+  <div class="border rounded p-3 mb-3">
+    <div class="font-weight-bold mb-2">Plots</div>
+    {% for gallery in plot_galleries %}
+    <div class="mb-3">
+      <div class="text-muted small font-weight-bold mb-2">{{ gallery.title }}</div>
+      <div class="row">
+        {% for plot in gallery.plots %}
+        <div class="col-12 col-xl-6 mb-3">
+          <div class="border rounded p-2 h-100">
+            <div class="small font-weight-bold mb-2">{{ plot.label }}</div>
+            <a href="{{ plot.url }}" target="_blank" rel="noopener">
+              <img class="img-fluid border rounded" src="{{ plot.url }}" alt="{{ plot.label }}">
+            </a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% include "calendaritzacions/partials/audit_links.html" with run=run %}
   {% include "calendaritzacions/partials/logs_panel.html" with logs=run.logs %}

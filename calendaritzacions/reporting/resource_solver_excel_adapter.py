@@ -49,6 +49,7 @@ def _build_result_tables(
     teams_by_id = {team.team_id: team for team in context.teams}
     assignment_by_group_number = _assignments_by_group_number(result.assignments)
     grouped_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    group_ids_by_sheet: dict[str, set[str]] = defaultdict(set)
 
     empty_numbers_by_group: dict[str, list[int]] = {}
     for group_id in sorted(assignment_by_group_number, key=_natural_group_key):
@@ -62,6 +63,7 @@ def _build_result_tables(
             if team is None:
                 continue
             sheet_key = _sheet_key(team)
+            group_ids_by_sheet[sheet_key].add(assignment.group_id)
             grouped_rows[sheet_key].append(
                 _team_row(
                     team=team,
@@ -74,9 +76,8 @@ def _build_result_tables(
             )
 
     tables: list[pd.DataFrame] = []
-    for sheet_key, rows in list(grouped_rows.items()):
-        groups_in_sheet = sorted({str(row.get("Grup", "")) for row in rows if row.get("Grup")}, key=_natural_group_key)
-        for group_id in groups_in_sheet:
+    for sheet_key in list(grouped_rows):
+        for group_id in sorted(group_ids_by_sheet.get(sheet_key, set()), key=_natural_group_key):
             for number in empty_numbers_by_group.get(group_id, []):
                 empty_row = _empty_slot_row(group_id, number)
                 empty_row["_Categoria"] = sheet_key
@@ -103,12 +104,6 @@ def _team_row(
     sheet_key: str,
 ) -> dict[str, Any]:
     requested_number = _requested_number(team.seed_request_original)
-    schedule = _schedule_cells(
-        assignment=assignment,
-        context=context,
-        assignment_by_group_number=assignment_by_group_number,
-        teams_by_id=teams_by_id,
-    )
     differences = _round_differences(
         requested_number=requested_number,
         assigned_number=assignment.number,
@@ -124,7 +119,7 @@ def _team_row(
         "Modalitat": team.modality,
         "Categoria": team.category,
         "Subcategoria": team.subcategory,
-        "Grup": assignment.group_id,
+        "Grup": _display_group_id(assignment.group_id),
         "Id": team.team_id,
         "Nom": team.name,
         "Entitat": team.entity,
@@ -139,7 +134,6 @@ def _team_row(
         "Jornades afectades": len(differences),
         "Diferències jornades": differences,
     }
-    row.update(schedule)
     return row
 
 
@@ -150,7 +144,7 @@ def _empty_slot_row(group_id: str, number: int) -> dict[str, Any]:
         "Modalitat": "",
         "Categoria": "",
         "Subcategoria": "",
-        "Grup": group_id,
+        "Grup": _display_group_id(group_id),
         "Id": "",
         "Nom": "Descans",
         "Entitat": "Descans",
@@ -165,30 +159,6 @@ def _empty_slot_row(group_id: str, number: int) -> dict[str, Any]:
         "Jornades afectades": "",
         "Diferències jornades": [],
     }
-
-
-def _schedule_cells(
-    *,
-    assignment: Assignment,
-    context: SolverContext,
-    assignment_by_group_number: dict[str, dict[int, Assignment]],
-    teams_by_id: dict[str, TeamRecord],
-) -> dict[str, str]:
-    group_assignments = assignment_by_group_number.get(assignment.group_id, {})
-    cells: dict[str, str] = {}
-    for round_index, round_matches in enumerate(context.phase, start=1):
-        label = "Descans"
-        for home_number, away_number in round_matches:
-            if assignment.number == home_number:
-                opponent = _opponent_name(group_assignments.get(away_number), teams_by_id)
-                label = f"Casa vs {opponent}" if opponent else "Descans"
-                break
-            if assignment.number == away_number:
-                opponent = _opponent_name(group_assignments.get(home_number), teams_by_id)
-                label = f"Fora vs {opponent}" if opponent else "Descans"
-                break
-        cells[f"J{round_index}"] = label
-    return cells
 
 
 def _round_differences(
@@ -260,7 +230,7 @@ def _build_entity_conflicts(result: ResourceSolverResult, context: SolverContext
         rows.append(
             {
                 "Categoria": ", ".join(sorted(categories)) if categories else "",
-                "Grup": group_id,
+                "Grup": _display_group_id(group_id),
                 "Entitat": entity,
                 "Count": int(excess) + 1,
             }
@@ -324,8 +294,9 @@ def _assignments_by_group_number(
 
 def _sheet_key(team: TeamRecord) -> str:
     parts = [team.modality, team.category, team.subcategory]
-    label = " - ".join(part for part in parts if part)
-    return label or team.league_name or "Categoria"
+    if all(str(part).strip() for part in parts):
+        return " - ".join(str(part).strip() for part in parts)
+    return team.league_name or "Categoria"
 
 
 def _requested_number(value: Any) -> int | None:
@@ -375,3 +346,10 @@ def _natural_group_key(group_id: str) -> tuple[str, int]:
     if not match:
         return (str(group_id), 0)
     return (str(group_id)[: match.start()], int(match.group(1)))
+
+
+def _display_group_id(group_id: str) -> str:
+    match = re.match(r"^C\d+_(G\d+)$", str(group_id))
+    if match:
+        return match.group(1)
+    return str(group_id)
