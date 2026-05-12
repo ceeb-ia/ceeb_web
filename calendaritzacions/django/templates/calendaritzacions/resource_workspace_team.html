@@ -1,0 +1,123 @@
+{% extends "calendaritzacions/base.html" %}
+
+{% block calendaritzacions_title %}Equip {{ team.team_id }}{% endblock %}
+
+{% block calendaritzacions_content %}
+<div class="card-surface p-3 resource-workspace">
+  <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+    <div class="mb-2">
+      <div class="text-muted small">{{ team.competition }}</div>
+      <h2 class="mb-0">{{ team.team_name }}</h2>
+      <div class="text-muted small">{{ team.entity }} · {{ team.team_id }}</div>
+    </div>
+    <div class="btn-toolbar">
+      <a class="btn btn-sm btn-outline-secondary mr-2" href="{% url 'calendaritzacions:resource_workspace' run.pk %}">Workspace</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_detail' run.pk %}">Run</a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-4 mb-3">
+      <div class="workspace-panel h-100">
+        <div class="font-weight-bold mb-2">Assignacio</div>
+        <dl class="row small mb-0">
+          <dt class="col-5">Grup</dt><dd class="col-7">{{ team.group_id }}</dd>
+          <dt class="col-5">Numero</dt><dd class="col-7">{{ team.number }}</dd>
+          <dt class="col-5">Peticio</dt><dd class="col-7">{{ team.seed_request_original }}</dd>
+          <dt class="col-5">Localies</dt><dd class="col-7">{{ team.home_resources|length }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-8 mb-3">
+      <div class="workspace-panel h-100">
+        <div class="font-weight-bold mb-2">Per que aquest numero?</div>
+        <p class="mb-0">{{ team.explanation }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="workspace-panel mb-3">
+    <div class="font-weight-bold mb-2">Recursos que consumeix com a local</div>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped workspace-table mb-0">
+        <thead class="thead-light">
+        <tr>
+          <th>Jornada</th>
+          <th>Recurs</th>
+          <th>Us final</th>
+          <th>Estat</th>
+          <th>Comparteix amb</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for resource in team.home_resources %}
+        <tr>
+          <td>{{ resource.round }}</td>
+          <td>{{ resource.resource }}</td>
+          <td>{{ resource.locals_count }} / {{ resource.capacity }}</td>
+          <td>{{ resource.incident_status }}{% if resource.incident_excess %} (+{{ resource.incident_excess }}){% endif %}</td>
+          <td>
+            {% for peer in resource.sharing_teams %}
+              <div>{{ peer }}</div>
+            {% empty %}
+              -
+            {% endfor %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center text-muted">No hi ha recursos de local registrats.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-xl-6 mb-3">
+      <div class="workspace-panel h-100">
+        <div class="font-weight-bold mb-2">Partits com a local</div>
+        <div class="table-responsive">
+          <table class="table table-sm workspace-table mb-0">
+            <thead class="thead-light">
+            <tr><th>Jornada</th><th>Rival</th><th>Recurs</th></tr>
+            </thead>
+            <tbody>
+            {% for match in team.home_matches %}
+            <tr><td>{{ match.round }}</td><td>{{ match.away_team }}</td><td>{{ match.resource }}</td></tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted">Sense partits locals.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-6 mb-3">
+      <div class="workspace-panel h-100">
+        <div class="font-weight-bold mb-2">Alternatives candidates</div>
+        <div class="table-responsive">
+          <table class="table table-sm workspace-table mb-0">
+            <thead class="thead-light">
+            <tr><th>Grup</th><th>Numero</th><th>Exces actual recursos</th><th>Recursos critics</th></tr>
+            </thead>
+            <tbody>
+            {% for alternative in team.alternatives %}
+            <tr>
+              <td>{{ alternative.group_id }}</td>
+              <td>{{ alternative.number }}</td>
+              <td>{{ alternative.current_resource_excess }}</td>
+              <td>{{ alternative.critical_resources }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted">No hi ha cataleg de candidats disponible.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

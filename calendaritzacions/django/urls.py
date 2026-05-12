@@ -6,6 +6,9 @@ from django.urls import path
 
 from calendaritzacions.django.views import (
     AuditDetailView,
+    ResourceWorkspaceIncidentDetailView,
+    ResourceWorkspaceOverviewView,
+    ResourceWorkspaceTeamDetailView,
     RunCreateView,
     RunDeleteView,
     RunDetailView,
@@ -27,4 +30,15 @@ urlpatterns = [
     path("runs/<int:pk>/download/", RunDownloadView.as_view(), name="run_download"),
     path("runs/<int:pk>/plots/<slug:artifact>/<slug:plot_id>/", RunPlotView.as_view(), name="run_plot"),
     path("runs/<int:pk>/audit/<slug:artifact>/", AuditDetailView.as_view(), name="audit_detail"),
+    path("runs/<int:pk>/workspace/", ResourceWorkspaceOverviewView.as_view(), name="resource_workspace"),
+    path(
+        "runs/<int:pk>/workspace/incidents/<path:incident_id>/",
+        ResourceWorkspaceIncidentDetailView.as_view(),
+        name="resource_workspace_incident",
+    ),
+    path(
+        "runs/<int:pk>/workspace/teams/<path:team_id>/",
+        ResourceWorkspaceTeamDetailView.as_view(),
+        name="resource_workspace_team",
+    ),
 ]

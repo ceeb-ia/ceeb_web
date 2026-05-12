@@ -129,3 +129,178 @@ class CalendarizationRun(models.Model):
         self.error_message = message
         self.finished_at = timezone.now()
         self._save_status_fields(["status", "logs", "error_message", "finished_at"])
+
+
+class AssignmentWorkspace(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_ACTIVE = "active"
+    STATUS_APPLIED = "applied"
+    STATUS_ARCHIVED = "archived"
+
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_APPLIED, "Applied"),
+        (STATUS_ARCHIVED, "Archived"),
+    )
+
+    run = models.ForeignKey(CalendarizationRun, on_delete=models.CASCADE, related_name="assignment_workspaces")
+    name = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    source_artifact = models.CharField(max_length=128, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at", "-id")
+        indexes = (
+            models.Index(fields=("run", "status", "-updated_at"), name="cal_ws_run_status_idx"),
+            models.Index(fields=("run", "-created_at"), name="cal_ws_run_created_idx"),
+        )
+
+    def __str__(self) -> str:
+        return self.name or f"Workspace {self.pk or '-'} for run {self.run_id}"
+
+
+class WorkspaceAssignment(models.Model):
+    workspace = models.ForeignKey(AssignmentWorkspace, on_delete=models.CASCADE, related_name="assignments")
+    run = models.ForeignKey(CalendarizationRun, on_delete=models.CASCADE, related_name="workspace_assignments")
+    team_id = models.CharField(max_length=128)
+    team_name = models.CharField(max_length=255, blank=True)
+    entity = models.CharField(max_length=255, blank=True)
+    group_id = models.CharField(max_length=128, blank=True)
+    assigned_number = models.PositiveSmallIntegerField(null=True, blank=True)
+    seed_request_original = models.CharField(max_length=64, blank=True)
+    previous_group_id = models.CharField(max_length=128, blank=True)
+    previous_number = models.PositiveSmallIntegerField(null=True, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("team_id", "id")
+        constraints = (
+            models.UniqueConstraint(fields=("workspace", "team_id"), name="cal_ws_assignment_team_uniq"),
+        )
+        indexes = (
+            models.Index(fields=("run", "team_id"), name="cal_wsa_run_team_idx"),
+            models.Index(fields=("workspace", "team_id"), name="cal_wsa_ws_team_idx"),
+            models.Index(fields=("workspace", "group_id", "assigned_number"), name="cal_wsa_ws_slot_idx"),
+        )
+
+    def __str__(self) -> str:
+        label = self.team_name or self.team_id
+        slot = f"{self.group_id}:{self.assigned_number}" if self.group_id or self.assigned_number else "-"
+        return f"{label} -> {slot}"
+
+
+class WorkspaceResourceIncident(models.Model):
+    TYPE_RESOURCE_EXCESS = "resource_excess"
+    TYPE_SEED_DEVIATION = "seed_deviation"
+    TYPE_ASSIGNMENT_CONFLICT = "assignment_conflict"
+    TYPE_OTHER = "other"
+
+    STATUS_OPEN = "open"
+    STATUS_REVIEWING = "reviewing"
+    STATUS_RESOLVED = "resolved"
+    STATUS_IGNORED = "ignored"
+
+    TYPE_CHOICES = (
+        (TYPE_RESOURCE_EXCESS, "Resource excess"),
+        (TYPE_SEED_DEVIATION, "Seed deviation"),
+        (TYPE_ASSIGNMENT_CONFLICT, "Assignment conflict"),
+        (TYPE_OTHER, "Other"),
+    )
+    STATUS_CHOICES = (
+        (STATUS_OPEN, "Open"),
+        (STATUS_REVIEWING, "Reviewing"),
+        (STATUS_RESOLVED, "Resolved"),
+        (STATUS_IGNORED, "Ignored"),
+    )
+
+    workspace = models.ForeignKey(AssignmentWorkspace, on_delete=models.CASCADE, related_name="resource_incidents")
+    run = models.ForeignKey(CalendarizationRun, on_delete=models.CASCADE, related_name="workspace_resource_incidents")
+    incident_type = models.CharField(max_length=64, choices=TYPE_CHOICES, default=TYPE_RESOURCE_EXCESS)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    severity = models.PositiveSmallIntegerField(default=0)
+    resource_id = models.CharField(max_length=255, blank=True)
+    excess = models.IntegerField(default=0)
+    locals_count = models.PositiveIntegerField(default=0)
+    capacity = models.PositiveIntegerField(default=0)
+    team_ids = models.JSONField(default=list, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("status", "-severity", "-excess", "resource_id", "id")
+        indexes = (
+            models.Index(fields=("run", "status", "incident_type"), name="cal_wsi_run_status_type_idx"),
+            models.Index(fields=("run", "resource_id", "-excess"), name="cal_wsi_run_resource_idx"),
+            models.Index(fields=("workspace", "status", "resource_id"), name="cal_wsi_ws_triage_idx"),
+        )
+
+    def __str__(self) -> str:
+        target = self.resource_id or self.incident_type
+        return f"{target} ({self.status})"
+
+
+class WorkspaceResourceMatch(models.Model):
+    workspace = models.ForeignKey(AssignmentWorkspace, on_delete=models.CASCADE, related_name="resource_matches")
+    run = models.ForeignKey(CalendarizationRun, on_delete=models.CASCADE, related_name="workspace_resource_matches")
+    round_index = models.PositiveSmallIntegerField(null=True, blank=True)
+    group_id = models.CharField(max_length=128, blank=True)
+    home_team_id = models.CharField(max_length=128, blank=True)
+    away_team_id = models.CharField(max_length=128, blank=True)
+    home_resource_id = models.CharField(max_length=255, blank=True)
+    away_resource_id = models.CharField(max_length=255, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("round_index", "group_id", "id")
+        indexes = (
+            models.Index(fields=("run", "home_team_id"), name="cal_wsm_run_home_team_idx"),
+            models.Index(fields=("run", "away_team_id"), name="cal_wsm_run_away_team_idx"),
+            models.Index(fields=("workspace", "round_index", "group_id"), name="cal_wsm_ws_round_idx"),
+            models.Index(fields=("run", "home_resource_id", "round_index"), name="cal_wsm_run_resource_idx"),
+        )
+
+    def __str__(self) -> str:
+        return f"Round {self.round_index or '-'}: {self.home_team_id or '-'} vs {self.away_team_id or '-'}"
+
+
+class WorkspaceChangeLog(models.Model):
+    workspace = models.ForeignKey(AssignmentWorkspace, on_delete=models.CASCADE, related_name="change_logs")
+    run = models.ForeignKey(CalendarizationRun, on_delete=models.CASCADE, related_name="workspace_change_logs")
+    assignment = models.ForeignKey(
+        WorkspaceAssignment,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="change_logs",
+    )
+    incident = models.ForeignKey(
+        WorkspaceResourceIncident,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="change_logs",
+    )
+    action = models.CharField(max_length=128)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = (
+            models.Index(fields=("workspace", "-created_at"), name="cal_wcl_ws_created_idx"),
+            models.Index(fields=("run", "-created_at"), name="cal_wcl_run_created_idx"),
+            models.Index(fields=("run", "action"), name="cal_wcl_run_action_idx"),
+        )
+
+    def __str__(self) -> str:
+        return f"{self.action} on workspace {self.workspace_id}"

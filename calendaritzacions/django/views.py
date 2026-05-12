@@ -78,6 +78,72 @@ class RunDetailView(CalendaritzacionsAccessMixin, DetailView):
         return context
 
 
+class ResourceWorkspaceOverviewView(CalendaritzacionsAccessMixin, DetailView):
+    model = CalendarizationRun
+    template_name = "calendaritzacions/resource_workspace.html"
+    context_object_name = "run"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = _get_or_create_workspace_for_run(self.object)
+        summary = _get_workspace_summary(workspace)
+        context.update(
+            {
+                "workspace": workspace,
+                "workspace_summary": summary,
+                "kpis": summary.get("kpis", []),
+                "top_incidents": _decorate_workspace_incidents(self.object, summary.get("top_incidents", [])),
+                "incident_summaries": _decorate_workspace_incidents(self.object, summary.get("incident_summaries", [])),
+                "league_summaries": summary.get("league_summaries", []),
+                "assignment_summaries": summary.get("assignment_summaries", []),
+                "plot_galleries": _build_plot_galleries(self.object),
+                "workspace_audits": self.object.available_audits,
+            }
+        )
+        return context
+
+
+class ResourceWorkspaceIncidentDetailView(CalendaritzacionsAccessMixin, DetailView):
+    model = CalendarizationRun
+    template_name = "calendaritzacions/resource_workspace_incident.html"
+    context_object_name = "run"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = _get_or_create_workspace_for_run(self.object)
+        incident = _get_workspace_incident_detail(workspace, self.kwargs["incident_id"])
+        if incident is None:
+            raise Http404("Incident does not exist.")
+        context.update(
+            {
+                "workspace": workspace,
+                "incident": incident,
+                "incident_id": self.kwargs["incident_id"],
+            }
+        )
+        return context
+
+
+class ResourceWorkspaceTeamDetailView(CalendaritzacionsAccessMixin, DetailView):
+    model = CalendarizationRun
+    template_name = "calendaritzacions/resource_workspace_team.html"
+    context_object_name = "run"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = _get_or_create_workspace_for_run(self.object)
+        team = _get_workspace_team_detail(workspace, self.kwargs["team_id"])
+        if team is None:
+            raise Http404("Team assignment does not exist.")
+        context.update(
+            {
+                "workspace": workspace,
+                "team": team,
+            }
+        )
+        return context
+
+
 class RunDeleteView(CalendaritzacionsAccessMixin, View):
     def post(self, request, *args, **kwargs):
         run = get_object_or_404(CalendarizationRun, pk=kwargs["pk"])
@@ -195,6 +261,75 @@ def _read_related_audit_payloads(run: CalendarizationRun, *, exclude: str) -> di
         except (FileNotFoundError, ValueError, OSError):
             continue
     return related
+
+
+def _get_workspace_services():
+    try:
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_incident_detail,
+            get_workspace_summary,
+            get_workspace_team_detail,
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name != "calendaritzacions.django.services.workspaces":
+            raise
+        raise Http404("Resource workspace service is not available.") from exc
+    return get_or_create_workspace_for_run, get_workspace_summary, get_workspace_incident_detail, get_workspace_team_detail
+
+
+def _get_or_create_workspace_for_run(run: CalendarizationRun):
+    get_or_create_workspace_for_run, _, _, _ = _get_workspace_services()
+    try:
+        return get_or_create_workspace_for_run(run)
+    except ValueError as exc:
+        raise Http404(str(exc)) from exc
+
+
+def _get_workspace_summary(workspace) -> dict[str, object]:
+    _, get_workspace_summary, _, _ = _get_workspace_services()
+    summary = get_workspace_summary(workspace)
+    return summary if isinstance(summary, dict) else {}
+
+
+def _get_workspace_incident_detail(workspace, incident_id: str):
+    _, _, get_workspace_incident_detail, _ = _get_workspace_services()
+    return get_workspace_incident_detail(workspace, incident_id)
+
+
+def _get_workspace_team_detail(workspace, team_id: str):
+    _, _, _, get_workspace_team_detail = _get_workspace_services()
+    return get_workspace_team_detail(workspace, team_id)
+
+
+def _decorate_workspace_incidents(run: CalendarizationRun, incidents: object) -> list[object]:
+    if not isinstance(incidents, list):
+        return []
+
+    decorated: list[object] = []
+    for incident in incidents:
+        incident_id = _workspace_incident_id(incident)
+        if not incident_id:
+            decorated.append(incident)
+            continue
+        if isinstance(incident, dict):
+            item = dict(incident)
+            item["detail_url"] = reverse(
+                "calendaritzacions:resource_workspace_incident",
+                kwargs={"pk": run.pk, "incident_id": incident_id},
+            )
+            decorated.append(item)
+        else:
+            decorated.append(incident)
+    return decorated
+
+
+def _workspace_incident_id(incident: object) -> str:
+    if isinstance(incident, dict):
+        value = incident.get("id") or incident.get("incident_id") or incident.get("key")
+    else:
+        value = getattr(incident, "id", "") or getattr(incident, "incident_id", "") or getattr(incident, "key", "")
+    return str(value) if value else ""
 
 
 def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:

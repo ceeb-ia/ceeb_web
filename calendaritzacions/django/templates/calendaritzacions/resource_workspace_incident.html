@@ -1,0 +1,103 @@
+{% extends "calendaritzacions/base.html" %}
+
+{% block calendaritzacions_title %}Incidencia {{ incident_id }}{% endblock %}
+
+{% block calendaritzacions_content %}
+<div class="card-surface p-3 resource-workspace">
+  <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+    <div class="mb-2">
+      <div class="text-muted small">Workspace #{{ run.id }}</div>
+      <h2 class="mb-0">{{ incident.title }}</h2>
+      <div class="text-muted small">{{ incident.summary }}</div>
+    </div>
+    <div class="btn-toolbar">
+      <a class="btn btn-sm btn-outline-secondary mr-2" href="{% url 'calendaritzacions:resource_workspace' run.pk %}">Workspace</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_detail' run.pk %}">Run</a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-4 mb-3">
+      <div class="workspace-panel h-100">
+        <div class="font-weight-bold mb-2">Context</div>
+        <dl class="row small mb-0">
+          <dt class="col-5">Id</dt><dd class="col-7">{{ incident.id }}</dd>
+          <dt class="col-5">Lliga</dt><dd class="col-7">{{ incident.league }}</dd>
+          <dt class="col-5">Equip</dt><dd class="col-7">{{ incident.team }}</dd>
+          <dt class="col-5">Recurs</dt><dd class="col-7">{{ incident.resource }}</dd>
+          <dt class="col-5">Impacte</dt><dd class="col-7">{{ incident.impact }}</dd>
+          <dt class="col-5">Estat</dt><dd class="col-7">{{ incident.status|default:"-" }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-8 mb-3">
+      <div class="workspace-panel h-100">
+        <div class="font-weight-bold mb-2">Detall</div>
+        {% if incident.detail %}
+        <p class="mb-3">{{ incident.detail }}</p>
+        {% endif %}
+
+        {% if incident.facts %}
+        <div class="mb-3">
+          <div class="text-muted small font-weight-bold mb-2">Dades</div>
+          <div class="table-responsive">
+            <table class="table table-sm workspace-table mb-0">
+              <tbody>
+              {% for fact in incident.facts %}
+              <tr>
+                <th>{{ fact.label }}</th>
+                <td>{{ fact.value|default:"-" }}</td>
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if incident.recommendations %}
+        <div>
+          <div class="text-muted small font-weight-bold mb-2">Opcions</div>
+          <ul class="workspace-list mb-0">
+            {% for recommendation in incident.recommendations %}
+            <li>{{ recommendation }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if incident.affected_matches %}
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-2">Partits afectats</div>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped workspace-table mb-0">
+        <thead class="thead-light">
+        <tr>
+          <th>Partit</th>
+          <th>Equip local</th>
+          <th>Equip visitant</th>
+          <th>Jornada</th>
+          <th>Recurs</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for match in incident.affected_matches %}
+        <tr>
+          <td>{{ match.id }}</td>
+          <td><a href="{% url 'calendaritzacions:resource_workspace_team' run.pk match.home_team_id %}">{{ match.home_team }}</a></td>
+          <td><a href="{% url 'calendaritzacions:resource_workspace_team' run.pk match.away_team_id %}">{{ match.away_team }}</a></td>
+          <td>{{ match.round }}</td>
+          <td>{{ match.resource }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -227,6 +227,216 @@
   overflow-wrap: anywhere;
 }
 
+.resource-workspace .btn-toolbar {
+  gap: .5rem;
+}
+
+.workspace-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.workspace-tabs .nav-link {
+  color: #344054;
+  font-weight: 700;
+}
+
+.workspace-tabs .nav-link.active {
+  color: #1f2937;
+}
+
+.workspace-kpi-grid {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.workspace-kpi,
+.workspace-panel,
+.workspace-empty {
+  background: #ffffff;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+
+.workspace-kpi {
+  border-top: 4px solid #2f6f9f;
+  min-height: 104px;
+  padding: .8rem .9rem;
+}
+
+.workspace-kpi-warning {
+  background: #fffcf5;
+  border-color: #fedf89;
+  border-top-color: #b54708;
+}
+
+.workspace-kpi-danger {
+  background: #fffbfa;
+  border-color: #fecdca;
+  border-top-color: #b42318;
+}
+
+.workspace-kpi-success {
+  background: #f6fef9;
+  border-color: #abefc6;
+  border-top-color: #027a48;
+}
+
+.workspace-kpi-label {
+  color: #5f6b76;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin-bottom: .25rem;
+  text-transform: uppercase;
+}
+
+.workspace-kpi-value {
+  color: #1f2937;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.workspace-kpi-sub {
+  color: #6b7280;
+  font-size: .82rem;
+  margin-top: .3rem;
+}
+
+.workspace-panel {
+  padding: 1rem;
+}
+
+.workspace-empty {
+  color: #6b7280;
+  padding: 1rem;
+}
+
+.workspace-table td,
+.workspace-table th {
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
+.workspace-assignment-table-wrap {
+  max-height: 72vh;
+  overflow: auto;
+}
+
+.workspace-assignment-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.workspace-assignment-table td {
+  min-width: 96px;
+}
+
+.workspace-assignment-table td:first-child,
+.workspace-assignment-table th:first-child {
+  min-width: 220px;
+}
+
+.workspace-col-explanation {
+  min-width: 150px;
+}
+
+.workspace-row-details summary {
+  color: #2f6f9f;
+  cursor: pointer;
+  font-size: .84rem;
+  font-weight: 700;
+  list-style-position: inside;
+  white-space: nowrap;
+}
+
+.workspace-row-details[open] {
+  min-width: 260px;
+}
+
+.workspace-column-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+}
+
+.workspace-column-controls label {
+  color: #475467;
+  font-size: .84rem;
+  margin-bottom: 0;
+}
+
+.workspace-plot-link {
+  color: inherit;
+  display: block;
+  text-decoration: none;
+}
+
+.workspace-list {
+  padding-left: 1.1rem;
+}
+
+.calendaritzacions-app .filter-panel {
+  background: #ffffff;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+.calendaritzacions-app .filter-panel__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.calendaritzacions-app .filter-panel__summary,
+.calendaritzacions-app .filter-panel__status {
+  color: #667085;
+  font-size: .84rem;
+}
+
+.calendaritzacions-app .filter-panel__body {
+  padding-top: 1rem;
+}
+
+.calendaritzacions-app .filter-panel__label {
+  color: #344054;
+  font-size: .78rem;
+  font-weight: 700;
+  margin-bottom: .25rem;
+  text-transform: uppercase;
+}
+
+.calendaritzacions-app .filter-panel__footer {
+  align-items: center;
+  border-top: 1px solid #eef1f4;
+  display: flex;
+  gap: .75rem;
+  justify-content: space-between;
+  padding-top: .75rem;
+}
+
+.calendaritzacions-app .filter-empty-state {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  color: #667085;
+  margin-top: .75rem;
+  padding: .9rem;
+  text-align: center;
+}
+
 @media (max-width: 575.98px) {
   .audit-bar-row {
     grid-template-columns: 1fr;
@@ -234,5 +444,12 @@
 
   .audit-bar-value {
     text-align: left;
+  }
+
+  .calendaritzacions-app .filter-panel__header,
+  .calendaritzacions-app .filter-panel__footer,
+  .workspace-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

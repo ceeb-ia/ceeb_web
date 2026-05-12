@@ -1,0 +1,574 @@
+{% extends "calendaritzacions/base.html" %}
+
+{% block calendaritzacions_title %}Workspace run {{ run.id }}{% endblock %}
+
+{% block calendaritzacions_content %}
+<div class="card-surface p-3 resource-workspace">
+  <div class="workspace-header mb-3">
+    <div>
+      <div class="text-muted small">Workspace de calendaritzacio</div>
+      <h2 class="mb-0">Run #{{ run.id }}</h2>
+      <div class="text-muted small">{{ run.input_name }} &middot; {{ run.phase }} &middot; {{ run.engine_name }}</div>
+    </div>
+    <div class="btn-toolbar">
+      <a class="btn btn-sm btn-outline-secondary mr-2" href="{% url 'calendaritzacions:run_detail' run.pk %}">Run tecnic</a>
+      {% if run.output_path %}
+      <a class="btn btn-sm btn-success mr-2" href="{% url 'calendaritzacions:run_download' run.pk %}">Excel</a>
+      {% endif %}
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_list' %}">Historic</a>
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs workspace-tabs" id="workspaceTabs" role="tablist">
+    <li class="nav-item">
+      <a class="nav-link active" id="workspace-summary-tab" data-toggle="tab" href="#workspace-summary" role="tab" aria-controls="workspace-summary" aria-selected="true">Resum</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="workspace-assignments-tab" data-toggle="tab" href="#workspace-assignments" role="tab" aria-controls="workspace-assignments" aria-selected="false">Assignacions <span class="badge badge-light">{{ assignment_summaries|length }}</span></a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="workspace-incidents-tab" data-toggle="tab" href="#workspace-incidents" role="tab" aria-controls="workspace-incidents" aria-selected="false">Incidencies <span class="badge badge-light">{{ incident_summaries|length }}</span></a>
+    </li>
+  </ul>
+
+  <div class="tab-content pt-3" id="workspaceTabsContent">
+    <div class="tab-pane fade show active" id="workspace-summary" role="tabpanel" aria-labelledby="workspace-summary-tab">
+      <div class="workspace-kpi-grid mb-3">
+        {% for kpi in kpis %}
+        <div class="workspace-kpi workspace-kpi-{{ kpi.status|default:'neutral' }}">
+          <div class="workspace-kpi-label">{{ kpi.label }}</div>
+          <div class="workspace-kpi-value">{{ kpi.value }}</div>
+          {% if kpi.subtitle %}
+          <div class="workspace-kpi-sub">{{ kpi.subtitle }}</div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <div class="workspace-empty">No hi ha KPIs disponibles per aquest workspace.</div>
+        {% endfor %}
+      </div>
+
+      <div class="row">
+        <div class="col-12 col-xl-5 mb-3">
+          <div class="workspace-panel h-100">
+            <div class="font-weight-bold mb-2">Run</div>
+            <dl class="row small mb-0">
+              <dt class="col-4">Fitxer</dt><dd class="col-8">{{ run.input_name }}</dd>
+              <dt class="col-4">Motor</dt><dd class="col-8">{{ run.engine_name }}</dd>
+              <dt class="col-4">Fase</dt><dd class="col-8">{{ run.phase }}</dd>
+              <dt class="col-4">Estat</dt><dd class="col-8">{{ run.status }}</dd>
+              <dt class="col-4">Creat</dt><dd class="col-8">{% if run.created_at %}{{ run.created_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
+              <dt class="col-4">Final</dt><dd class="col-8">{% if run.finished_at %}{{ run.finished_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="col-12 col-xl-7 mb-3">
+          <div class="workspace-panel h-100">
+            <div class="font-weight-bold mb-2">Resum per lliga</div>
+            <div class="table-responsive">
+              <table class="table table-sm workspace-table mb-0">
+                <thead class="thead-light">
+                <tr><th>Lliga</th><th>Equips</th><th>Incidencies</th><th>Pressio</th></tr>
+                </thead>
+                <tbody>
+                {% for league in league_summaries %}
+                <tr>
+                  <td class="font-weight-bold">{{ league.name }}</td>
+                  <td>{{ league.teams }}</td>
+                  <td>{{ league.incidents }}</td>
+                  <td>{{ league.resource_pressure }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted">No hi ha resum per lliga.</td></tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if plot_galleries %}
+      <div class="workspace-panel mb-3">
+        <div class="font-weight-bold mb-2">Plots del run</div>
+        {% for gallery in plot_galleries %}
+        <div class="mb-3">
+          <div class="text-muted small font-weight-bold mb-2">{{ gallery.title }}</div>
+          <div class="row">
+            {% for plot in gallery.plots %}
+            <div class="col-12 col-xl-6 mb-3">
+              <a href="{{ plot.url }}" target="_blank" rel="noopener" class="workspace-plot-link">
+                <div class="small font-weight-bold mb-2">{{ plot.label }}</div>
+                <img class="img-fluid border rounded" src="{{ plot.url }}" alt="{{ plot.label }}">
+              </a>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="workspace-panel">
+        <div class="font-weight-bold mb-2">Auditoria disponible</div>
+        {% for artifact in workspace_audits %}
+        <a class="btn btn-sm btn-outline-secondary mb-1" href="{% url 'calendaritzacions:audit_detail' run.pk artifact %}">{{ artifact }}</a>
+        {% empty %}
+        <span class="text-muted small">No hi ha artefactes d'auditoria registrats.</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="workspace-assignments" role="tabpanel" aria-labelledby="workspace-assignments-tab">
+      <div class="filter-panel" id="workspaceAssignmentFiltersPanel">
+        <div class="filter-panel__header">
+          <div>
+            <div class="font-weight-bold">Filtres d'assignacions</div>
+            <div class="filter-panel__summary" id="workspaceFiltersSummary">Sense filtres actius.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#workspaceFiltersCollapse" aria-expanded="true" aria-controls="workspaceFiltersCollapse" id="workspaceFiltersToggle">Amagar filtres</button>
+        </div>
+        <div class="collapse show" id="workspaceFiltersCollapse">
+          <div class="filter-panel__body">
+            <div class="form-row">
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Equip o entitat</div>
+                <input id="workspaceFilterTeam" class="form-control form-control-sm" placeholder="Cerca equip, entitat o id..." />
+              </div>
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Lliga / categoria</div>
+                <input id="workspaceFilterCompetition" class="form-control form-control-sm" placeholder="Cerca lliga, modalitat o categoria..." />
+              </div>
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Seu / recurs</div>
+                <input id="workspaceFilterResource" class="form-control form-control-sm" placeholder="Cerca pista, dia o hora..." />
+              </div>
+              <div class="col-12 col-md-4 col-xl-2 mb-3">
+                <div class="filter-panel__label">Grup</div>
+                <input id="workspaceFilterGroup" class="form-control form-control-sm" placeholder="Ex. C1_G1" />
+              </div>
+              <div class="col-12 col-md-4 col-xl-2 mb-3">
+                <div class="filter-panel__label">Numero</div>
+                <select id="workspaceFilterNumber" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                  <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-xl-2 mb-3">
+                <div class="filter-panel__label">Nivell</div>
+                <input id="workspaceFilterLevel" class="form-control form-control-sm" placeholder="Nivell..." />
+              </div>
+              <div class="col-12 col-md-4 col-xl-3 mb-3">
+                <div class="filter-panel__label">Estat recursos</div>
+                <select id="workspaceFilterStatus" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  <option value="excess">Amb exces</option>
+                  <option value="shared">Comparteix recurs</option>
+                  <option value="clean">Sense exces ni coincidencia</option>
+                </select>
+              </div>
+            </div>
+            <div class="workspace-column-controls mb-3">
+              <span class="filter-panel__label mr-2">Columnes</span>
+              <label><input type="checkbox" data-column-toggle="level" checked> Nivell</label>
+              <label><input type="checkbox" data-column-toggle="venue" checked> Seu</label>
+              <label><input type="checkbox" data-column-toggle="request" checked> Peticio</label>
+              <label><input type="checkbox" data-column-toggle="resources" checked> Recursos</label>
+              <label><input type="checkbox" data-column-toggle="explanation" checked> Explicacio</label>
+            </div>
+            <div class="filter-panel__footer">
+              <div class="filter-panel__status" id="workspaceFiltersResultSummary">Mostrant totes les assignacions.</div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceFiltersReset">Netejar filtres</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-panel">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <div class="font-weight-bold">Assignacions i explicabilitat</div>
+            <div class="text-muted small">Taula de treball sobre la solucio final. Obre el detall d'un equip per veure recursos, coincidencies i alternatives candidates.</div>
+          </div>
+          <span class="text-muted small">{{ assignment_summaries|length }} visibles</span>
+        </div>
+        <div class="table-responsive workspace-assignment-table-wrap">
+          <table class="table table-sm table-hover workspace-table workspace-assignment-table mb-0">
+            <thead class="thead-light">
+            <tr>
+              <th>Equip</th>
+              <th>Lliga</th>
+              <th>Categoria</th>
+              <th class="workspace-col-level">Nivell</th>
+              <th class="workspace-col-venue">Seu</th>
+              <th>Grup</th>
+              <th>Num.</th>
+              <th class="workspace-col-request">Peticio</th>
+              <th class="workspace-col-resources">Recursos locals</th>
+              <th>Exces</th>
+              <th class="workspace-col-explanation">Explicacio</th>
+              <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for assignment in assignment_summaries %}
+            <tr class="workspace-assignment-row"
+                data-team="{{ assignment.team_id }} {{ assignment.team_name }} {{ assignment.entity }}"
+                data-competition="{{ assignment.filter_text }}"
+                data-group="{{ assignment.group_id }}"
+                data-number="{{ assignment.number }}"
+                data-level="{{ assignment.level }}"
+                data-resource="{{ assignment.resource_text }} {{ assignment.venue }} {{ assignment.day }} {{ assignment.time }}"
+                data-has-excess="{% if assignment.has_resource_excess %}1{% else %}0{% endif %}"
+                data-has-shared="{% if assignment.has_shared_resources %}1{% else %}0{% endif %}">
+              <td>
+                <div class="font-weight-bold">{{ assignment.team_name }}</div>
+                <div class="text-muted small">{{ assignment.entity }}</div>
+              </td>
+              <td>{{ assignment.league_name }}</td>
+              <td>{{ assignment.modality }} {{ assignment.category }} {{ assignment.subcategory }}</td>
+              <td class="workspace-col-level">{{ assignment.level }}</td>
+              <td class="workspace-col-venue">
+                <div>{{ assignment.venue }}</div>
+                <div class="text-muted small">{{ assignment.day }} {{ assignment.time }}</div>
+              </td>
+              <td>{{ assignment.group_id }}</td>
+              <td class="font-weight-bold">{{ assignment.number }}</td>
+              <td class="workspace-col-request">{{ assignment.seed_request_original }}</td>
+              <td class="workspace-col-resources">
+                <div>{{ assignment.home_resources }} recursos</div>
+                {% if assignment.shared_resources %}<div class="text-warning small">{{ assignment.shared_resources }} compartits</div>{% endif %}
+                {% if assignment.home_resource_labels %}
+                <details class="workspace-row-details">
+                  <summary>Veure recursos</summary>
+                {% for resource in assignment.home_resource_labels %}
+                <div class="text-muted small">{{ resource }}</div>
+                {% endfor %}
+                </details>
+                {% endif %}
+              </td>
+              <td>{% if assignment.resource_excess %}<span class="badge badge-danger">+{{ assignment.resource_excess }}</span>{% else %}<span class="badge badge-success">0</span>{% endif %}</td>
+              <td class="workspace-col-explanation">
+                <details class="workspace-row-details">
+                  <summary>Veure explicacio</summary>
+                  <div class="text-muted small mt-1">{{ assignment.explanation }}</div>
+                </details>
+              </td>
+              <td class="text-right">
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'calendaritzacions:resource_workspace_team' run.pk assignment.team_id %}">Detall</a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="12" class="text-center text-muted">No hi ha assignacions materialitzades.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div id="workspaceFiltersEmptyState" class="filter-empty-state d-none">Cap assignacio coincideix amb els filtres actius.</div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="workspace-incidents" role="tabpanel" aria-labelledby="workspace-incidents-tab">
+      <div class="filter-panel" id="workspaceIncidentFiltersPanel">
+        <div class="filter-panel__header">
+          <div>
+            <div class="font-weight-bold">Filtres d'incidencies</div>
+            <div class="filter-panel__summary" id="workspaceIncidentFiltersSummary">Sense filtres actius.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#workspaceIncidentFiltersCollapse" aria-expanded="true" aria-controls="workspaceIncidentFiltersCollapse" id="workspaceIncidentFiltersToggle">Amagar filtres</button>
+        </div>
+        <div class="collapse show" id="workspaceIncidentFiltersCollapse">
+          <div class="filter-panel__body">
+            <div class="form-row">
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Text</div>
+                <input id="workspaceIncidentFilterText" class="form-control form-control-sm" placeholder="Cerca recurs, equip o descripcio..." />
+              </div>
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Lliga</div>
+                <input id="workspaceIncidentFilterLeague" class="form-control form-control-sm" placeholder="Cerca lliga..." />
+              </div>
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Recurs</div>
+                <input id="workspaceIncidentFilterResource" class="form-control form-control-sm" placeholder="Cerca pista, dia o hora..." />
+              </div>
+              <div class="col-12 col-md-4 col-xl-2 mb-3">
+                <div class="filter-panel__label">Exces minim</div>
+                <input id="workspaceIncidentFilterMinExcess" type="number" min="0" step="1" class="form-control form-control-sm" placeholder="0" />
+              </div>
+            </div>
+            <div class="filter-panel__footer">
+              <div class="filter-panel__status" id="workspaceIncidentFiltersResultSummary">Mostrant totes les incidencies.</div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceIncidentFiltersReset">Netejar filtres</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-panel">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <div class="font-weight-bold">Incidencies de recursos</div>
+            <div class="text-muted small">La incidencia principal del nou solver és l'exces de capacitat per pista/franja/jornada.</div>
+          </div>
+          <span class="text-muted small">{{ incident_summaries|length }} visibles</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover workspace-table mb-0">
+            <thead class="thead-light">
+            <tr><th>Incidencia</th><th>Lliga</th><th>Impacte</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for incident in incident_summaries %}
+            <tr class="workspace-incident-row"
+                data-text="{{ incident.title }} {{ incident.summary }} {{ incident.resource }} {{ incident.team_ids|join:' ' }}"
+                data-league="{{ incident.league }}"
+                data-resource="{{ incident.resource }}"
+                data-excess="{{ incident.count }}">
+              <td>
+                <div class="font-weight-bold">{{ incident.title }}</div>
+                <div class="text-muted small">{{ incident.summary }}</div>
+              </td>
+              <td>{{ incident.league }}</td>
+              <td>{{ incident.impact }}</td>
+              <td class="text-right">
+                {% if incident.detail_url %}<a class="btn btn-sm btn-outline-primary" href="{{ incident.detail_url }}">Detall</a>{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="4" class="text-center text-muted">No hi ha exces de recursos en la solucio final.</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div id="workspaceIncidentFiltersEmptyState" class="filter-empty-state d-none">Cap incidencia coincideix amb els filtres actius.</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+<script>
+  (function(){
+    var rows = Array.from(document.querySelectorAll('.workspace-assignment-row'));
+    var teamInput = document.getElementById('workspaceFilterTeam');
+    var competitionInput = document.getElementById('workspaceFilterCompetition');
+    var resourceInput = document.getElementById('workspaceFilterResource');
+    var groupInput = document.getElementById('workspaceFilterGroup');
+    var numberSelect = document.getElementById('workspaceFilterNumber');
+    var levelInput = document.getElementById('workspaceFilterLevel');
+    var statusSelect = document.getElementById('workspaceFilterStatus');
+    var resetButton = document.getElementById('workspaceFiltersReset');
+    var summary = document.getElementById('workspaceFiltersSummary');
+    var resultSummary = document.getElementById('workspaceFiltersResultSummary');
+    var emptyState = document.getElementById('workspaceFiltersEmptyState');
+    var filtersToggle = document.getElementById('workspaceFiltersToggle');
+    var filtersCollapse = document.getElementById('workspaceFiltersCollapse');
+    var columnToggles = Array.from(document.querySelectorAll('[data-column-toggle]'));
+    var incidentRows = Array.from(document.querySelectorAll('.workspace-incident-row'));
+    var incidentTextInput = document.getElementById('workspaceIncidentFilterText');
+    var incidentLeagueInput = document.getElementById('workspaceIncidentFilterLeague');
+    var incidentResourceInput = document.getElementById('workspaceIncidentFilterResource');
+    var incidentMinExcessInput = document.getElementById('workspaceIncidentFilterMinExcess');
+    var incidentResetButton = document.getElementById('workspaceIncidentFiltersReset');
+    var incidentSummary = document.getElementById('workspaceIncidentFiltersSummary');
+    var incidentResultSummary = document.getElementById('workspaceIncidentFiltersResultSummary');
+    var incidentEmptyState = document.getElementById('workspaceIncidentFiltersEmptyState');
+    var incidentFiltersToggle = document.getElementById('workspaceIncidentFiltersToggle');
+    var incidentFiltersCollapse = document.getElementById('workspaceIncidentFiltersCollapse');
+
+    function normalize(value){
+      return (value || '').toString().toLowerCase().trim();
+    }
+
+    function activeFilterCount(){
+      return [
+        teamInput ? teamInput.value : '',
+        competitionInput ? competitionInput.value : '',
+        resourceInput ? resourceInput.value : '',
+        groupInput ? groupInput.value : '',
+        numberSelect ? numberSelect.value : '',
+        levelInput ? levelInput.value : '',
+        statusSelect ? statusSelect.value : ''
+      ].filter(function(value){ return normalize(value) !== ''; }).length;
+    }
+
+    function matchesStatus(row, status){
+      if (!status) return true;
+      var hasExcess = row.dataset.hasExcess === '1';
+      var hasShared = row.dataset.hasShared === '1';
+      if (status === 'excess') return hasExcess;
+      if (status === 'shared') return hasShared;
+      if (status === 'clean') return !hasExcess && !hasShared;
+      return true;
+    }
+
+    function applyFilters(){
+      var teamQ = normalize(teamInput ? teamInput.value : '');
+      var competitionQ = normalize(competitionInput ? competitionInput.value : '');
+      var resourceQ = normalize(resourceInput ? resourceInput.value : '');
+      var groupQ = normalize(groupInput ? groupInput.value : '');
+      var numberQ = normalize(numberSelect ? numberSelect.value : '');
+      var levelQ = normalize(levelInput ? levelInput.value : '');
+      var statusQ = normalize(statusSelect ? statusSelect.value : '');
+      var visible = 0;
+
+      rows.forEach(function(row){
+        var ok = true;
+        ok = ok && (!teamQ || normalize(row.dataset.team).indexOf(teamQ) !== -1);
+        ok = ok && (!competitionQ || normalize(row.dataset.competition).indexOf(competitionQ) !== -1);
+        ok = ok && (!resourceQ || normalize(row.dataset.resource).indexOf(resourceQ) !== -1);
+        ok = ok && (!groupQ || normalize(row.dataset.group).indexOf(groupQ) !== -1);
+        ok = ok && (!numberQ || normalize(row.dataset.number) === numberQ);
+        ok = ok && (!levelQ || normalize(row.dataset.level).indexOf(levelQ) !== -1);
+        ok = ok && matchesStatus(row, statusQ);
+        row.style.display = ok ? '' : 'none';
+        if (ok) visible += 1;
+      });
+
+      var active = activeFilterCount();
+      if (summary) {
+        summary.textContent = active ? active + ' filtre' + (active === 1 ? '' : 's') + ' actiu' + (active === 1 ? '' : 's') + '.' : 'Sense filtres actius.';
+      }
+      if (resultSummary) {
+        resultSummary.textContent = 'Mostrant ' + visible + ' de ' + rows.length + ' assignacions.';
+      }
+      if (emptyState) {
+        emptyState.classList.toggle('d-none', visible !== 0 || rows.length === 0);
+      }
+    }
+
+    function resetFilters(){
+      [teamInput, competitionInput, resourceInput, groupInput, levelInput].forEach(function(input){
+        if (input) input.value = '';
+      });
+      if (numberSelect) numberSelect.value = '';
+      if (statusSelect) statusSelect.value = '';
+      applyFilters();
+    }
+
+    function updateFilterToggleLabel(){
+      if (!filtersToggle || !filtersCollapse) return;
+      filtersToggle.textContent = filtersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
+    }
+
+    function applyColumnVisibility(){
+      columnToggles.forEach(function(toggle){
+        var key = toggle.getAttribute('data-column-toggle');
+        var visible = toggle.checked;
+        document.querySelectorAll('.workspace-col-' + key).forEach(function(cell){
+          cell.style.display = visible ? '' : 'none';
+        });
+      });
+    }
+
+    function numberOrNull(value){
+      var raw = normalize(value);
+      if (!raw) return null;
+      var parsed = parseInt(raw, 10);
+      return isNaN(parsed) ? null : parsed;
+    }
+
+    function activeIncidentFilterCount(){
+      return [
+        incidentTextInput ? incidentTextInput.value : '',
+        incidentLeagueInput ? incidentLeagueInput.value : '',
+        incidentResourceInput ? incidentResourceInput.value : '',
+        incidentMinExcessInput ? incidentMinExcessInput.value : ''
+      ].filter(function(value){ return normalize(value) !== ''; }).length;
+    }
+
+    function applyIncidentFilters(){
+      var textQ = normalize(incidentTextInput ? incidentTextInput.value : '');
+      var leagueQ = normalize(incidentLeagueInput ? incidentLeagueInput.value : '');
+      var resourceQ = normalize(incidentResourceInput ? incidentResourceInput.value : '');
+      var minExcess = numberOrNull(incidentMinExcessInput ? incidentMinExcessInput.value : '');
+      var visible = 0;
+
+      incidentRows.forEach(function(row){
+        var excess = numberOrNull(row.dataset.excess) || 0;
+        var ok = true;
+        ok = ok && (!textQ || normalize(row.dataset.text).indexOf(textQ) !== -1);
+        ok = ok && (!leagueQ || normalize(row.dataset.league).indexOf(leagueQ) !== -1);
+        ok = ok && (!resourceQ || normalize(row.dataset.resource).indexOf(resourceQ) !== -1);
+        ok = ok && (minExcess === null || excess >= minExcess);
+        row.style.display = ok ? '' : 'none';
+        if (ok) visible += 1;
+      });
+
+      var active = activeIncidentFilterCount();
+      if (incidentSummary) {
+        incidentSummary.textContent = active ? active + ' filtre' + (active === 1 ? '' : 's') + ' actiu' + (active === 1 ? '' : 's') + '.' : 'Sense filtres actius.';
+      }
+      if (incidentResultSummary) {
+        incidentResultSummary.textContent = 'Mostrant ' + visible + ' de ' + incidentRows.length + ' incidencies.';
+      }
+      if (incidentEmptyState) {
+        incidentEmptyState.classList.toggle('d-none', visible !== 0 || incidentRows.length === 0);
+      }
+    }
+
+    function resetIncidentFilters(){
+      [incidentTextInput, incidentLeagueInput, incidentResourceInput, incidentMinExcessInput].forEach(function(input){
+        if (input) input.value = '';
+      });
+      applyIncidentFilters();
+    }
+
+    function updateIncidentFilterToggleLabel(){
+      if (!incidentFiltersToggle || !incidentFiltersCollapse) return;
+      incidentFiltersToggle.textContent = incidentFiltersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
+    }
+
+    function activateTabFromHash(){
+      var hash = window.location.hash;
+      if (!hash) return;
+      var link = document.querySelector('.workspace-tabs a[href="' + hash + '"]');
+      if (link && window.jQuery) {
+        window.jQuery(link).tab('show');
+      }
+    }
+
+    [teamInput, competitionInput, resourceInput, groupInput, numberSelect, levelInput, statusSelect].forEach(function(control){
+      if (!control) return;
+      control.addEventListener('input', applyFilters);
+      control.addEventListener('change', applyFilters);
+    });
+    columnToggles.forEach(function(toggle){
+      toggle.addEventListener('change', applyColumnVisibility);
+    });
+    [incidentTextInput, incidentLeagueInput, incidentResourceInput, incidentMinExcessInput].forEach(function(control){
+      if (!control) return;
+      control.addEventListener('input', applyIncidentFilters);
+      control.addEventListener('change', applyIncidentFilters);
+    });
+    if (resetButton) resetButton.addEventListener('click', resetFilters);
+    if (incidentResetButton) incidentResetButton.addEventListener('click', resetIncidentFilters);
+    if (filtersCollapse) {
+      filtersCollapse.addEventListener('shown.bs.collapse', updateFilterToggleLabel);
+      filtersCollapse.addEventListener('hidden.bs.collapse', updateFilterToggleLabel);
+    }
+    if (incidentFiltersCollapse) {
+      incidentFiltersCollapse.addEventListener('shown.bs.collapse', updateIncidentFilterToggleLabel);
+      incidentFiltersCollapse.addEventListener('hidden.bs.collapse', updateIncidentFilterToggleLabel);
+    }
+    document.querySelectorAll('.workspace-tabs a[data-toggle="tab"]').forEach(function(tabLink){
+      tabLink.addEventListener('shown.bs.tab', function(event){
+        if (event.target && event.target.getAttribute('href')) {
+          history.replaceState(null, '', event.target.getAttribute('href'));
+        }
+      });
+    });
+    applyFilters();
+    applyIncidentFilters();
+    applyColumnVisibility();
+    updateFilterToggleLabel();
+    updateIncidentFilterToggleLabel();
+    activateTabFromHash();
+  })();
+</script>
+{% endblock %}

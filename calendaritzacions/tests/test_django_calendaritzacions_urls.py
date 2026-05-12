@@ -48,6 +48,9 @@ class DjangoCalendarizationUrlsTests(unittest.TestCase):
                 "run_download",
                 "run_plot",
                 "audit_detail",
+                "resource_workspace",
+                "resource_workspace_incident",
+                "resource_workspace_team",
             },
         )
 
@@ -70,6 +73,15 @@ class DjangoCalendarizationUrlsTests(unittest.TestCase):
         self.assertEqual(
             reverse("calendaritzacions:audit_detail", kwargs={"pk": 7, "artifact": "resource_solution"}),
             "/runs/7/audit/resource_solution/",
+        )
+        self.assertEqual(reverse("calendaritzacions:resource_workspace", kwargs={"pk": 7}), "/runs/7/workspace/")
+        self.assertEqual(
+            reverse("calendaritzacions:resource_workspace_incident", kwargs={"pk": 7, "incident_id": 3}),
+            "/runs/7/workspace/incidents/3/",
+        )
+        self.assertEqual(
+            reverse("calendaritzacions:resource_workspace_team", kwargs={"pk": 7, "team_id": "ABC"}),
+            "/runs/7/workspace/teams/ABC/",
         )
 
 
