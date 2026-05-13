@@ -27,6 +27,12 @@
       <a class="nav-link" id="workspace-assignments-tab" data-toggle="tab" href="#workspace-assignments" role="tab" aria-controls="workspace-assignments" aria-selected="false">Assignacions <span class="badge badge-light">{{ assignment_summaries|length }}</span></a>
     </li>
     <li class="nav-item">
+      <a class="nav-link" id="workspace-calendars-tab" data-toggle="tab" href="#workspace-calendars" role="tab" aria-controls="workspace-calendars" aria-selected="false">Calendaris <span class="badge badge-light">{{ calendar_view.groups|length }}</span></a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="workspace-venue-sheets-tab" data-toggle="tab" href="#workspace-venue-sheets" role="tab" aria-controls="workspace-venue-sheets" aria-selected="false">Fitxes jornada <span class="badge badge-light">{{ venue_round_sheets.sheets|length }}</span></a>
+    </li>
+    <li class="nav-item">
       <a class="nav-link" id="workspace-incidents-tab" data-toggle="tab" href="#workspace-incidents" role="tab" aria-controls="workspace-incidents" aria-selected="false">Incidencies <span class="badge badge-light">{{ incident_summaries|length }}</span></a>
     </li>
   </ul>
@@ -63,7 +69,13 @@
         </div>
         <div class="col-12 col-xl-7 mb-3">
           <div class="workspace-panel h-100">
-            <div class="font-weight-bold mb-2">Resum per lliga</div>
+            <div class="d-flex flex-wrap justify-content-between align-items-start mb-2">
+              <div>
+                <div class="font-weight-bold">Resum per lliga</div>
+                <div class="text-muted small" id="workspaceLeagueSummaryStatus">Mostrant resum per lliga.</div>
+              </div>
+              <input id="workspaceLeagueFilterText" class="form-control form-control-sm workspace-summary-filter" placeholder="Filtra lliga..." />
+            </div>
             <div class="table-responsive">
               <table class="table table-sm workspace-table mb-0">
                 <thead class="thead-light">
@@ -71,7 +83,7 @@
                 </thead>
                 <tbody>
                 {% for league in league_summaries %}
-                <tr>
+                <tr class="workspace-league-row" data-text="{{ league.name }}" data-index="{{ forloop.counter0 }}">
                   <td class="font-weight-bold">{{ league.name }}</td>
                   <td>{{ league.teams }}</td>
                   <td>{{ league.incidents }}</td>
@@ -82,6 +94,12 @@
                 {% endfor %}
                 </tbody>
               </table>
+            </div>
+            <div id="workspaceLeagueEmptyState" class="filter-empty-state d-none">Cap lliga coincideix amb el filtre.</div>
+            <div class="workspace-pagination mt-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceLeaguePrev">Anterior</button>
+              <span class="text-muted small" id="workspaceLeaguePageStatus"></span>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceLeagueNext">Seguent</button>
             </div>
           </div>
         </div>
@@ -268,6 +286,318 @@
       </div>
     </div>
 
+    <div class="tab-pane fade" id="workspace-calendars" role="tabpanel" aria-labelledby="workspace-calendars-tab">
+      <div class="filter-panel" id="workspaceCalendarFiltersPanel">
+        <div class="filter-panel__header">
+          <div>
+            <div class="font-weight-bold">Filtres de calendaris</div>
+            <div class="filter-panel__summary" id="workspaceCalendarFiltersSummary">Sense filtres actius.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#workspaceCalendarFiltersCollapse" aria-expanded="true" aria-controls="workspaceCalendarFiltersCollapse" id="workspaceCalendarFiltersToggle">Amagar filtres</button>
+        </div>
+        <div class="collapse show" id="workspaceCalendarFiltersCollapse">
+          <div class="filter-panel__body">
+            <div class="form-row">
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Text</div>
+                <input id="workspaceCalendarFilterText" class="form-control form-control-sm" placeholder="Cerca grup, equip, entitat, lliga..." />
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Grup</div>
+                <select id="workspaceCalendarFilterGroup" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  {% for group in calendar_view.filters.groups %}
+                  <option value="{{ group.token }}">{{ group.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Modalitat</div>
+                <select id="workspaceCalendarFilterModality" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for value in calendar_view.filters.modalities %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Categoria</div>
+                <select id="workspaceCalendarFilterCategory" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for value in calendar_view.filters.categories %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Nivell</div>
+                <select id="workspaceCalendarFilterLevel" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  {% for value in calendar_view.filters.levels %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Lliga</div>
+                <select id="workspaceCalendarFilterLeague" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for value in calendar_view.filters.leagues %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Estat</div>
+                <select id="workspaceCalendarFilterStatus" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  <option value="entity">Conflicte entitat</option>
+                  <option value="resource">Exces recurs</option>
+                  <option value="clean">Sense incidencies</option>
+                </select>
+              </div>
+            </div>
+            <div class="filter-panel__footer">
+              <div class="filter-panel__status" id="workspaceCalendarFiltersResultSummary">Mostrant tots els calendaris.</div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceCalendarFiltersReset">Netejar filtres</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% for group in calendar_view.groups %}
+      <div class="workspace-panel workspace-calendar-group mb-3"
+           data-text="{{ group.filter_text }}"
+           data-group="{{ group.group_token }}"
+           data-modality="{{ group.modality_tokens }}"
+           data-category="{{ group.category_tokens }}"
+           data-level="{{ group.level_tokens }}"
+           data-league="{{ group.league_tokens }}"
+           data-has-entity="{% if group.has_entity_conflict %}1{% else %}0{% endif %}"
+           data-has-resource="{% if group.has_resource_excess %}1{% else %}0{% endif %}">
+        <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+          <div>
+            <div class="text-muted small">{{ group.competition }}</div>
+            <div class="font-weight-bold h5 mb-0">{{ group.group_id }}</div>
+          </div>
+          <div class="workspace-venue-sheet__badges">
+            <span class="badge badge-light">{{ group.team_count }} equips</span>
+            {% if group.has_entity_conflict %}<span class="badge badge-warning">Conflicte entitat</span>{% endif %}
+            {% if group.has_resource_excess %}<span class="badge badge-danger">Exces recurs</span>{% endif %}
+          </div>
+        </div>
+        <div class="table-responsive workspace-calendar-wrap">
+          <table class="table table-sm workspace-table workspace-calendar-table mb-0">
+            <thead class="thead-light">
+            <tr>
+              <th>Equip</th>
+              {% for round in group.rounds %}
+              <th>J{{ round }}</th>
+              {% endfor %}
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in group.rows %}
+            <tr class="{% if row.has_entity_conflict %}workspace-calendar-row-warning{% endif %}">
+              <th>
+                <div class="font-weight-bold">{{ row.number }}. {{ row.team_name }}</div>
+                <div class="text-muted small">{{ row.entity }}</div>
+              </th>
+              {% for cell in row.cells %}
+              <td>
+                <div class="workspace-calendar-cell workspace-calendar-cell-{{ cell.side|lower }} {% if cell.has_resource_excess %}workspace-calendar-cell-danger{% endif %} {% if cell.has_entity_conflict %}workspace-calendar-cell-warning{% endif %}">
+                  <div class="workspace-calendar-cell__side">{{ cell.side }}</div>
+                  {% if cell.opponent %}
+                  <div class="workspace-calendar-cell__opponent">{{ cell.opponent }}</div>
+                  {% endif %}
+                  {% if cell.resource %}
+                  <div class="workspace-calendar-cell__resource">{{ cell.resource }}</div>
+                  {% endif %}
+                </div>
+              </td>
+              {% endfor %}
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted">No hi ha equips en aquest grup.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% empty %}
+      <div class="workspace-empty">No hi ha calendaris materialitzats.</div>
+      {% endfor %}
+      <div id="workspaceCalendarFiltersEmptyState" class="filter-empty-state d-none">Cap calendari coincideix amb els filtres actius.</div>
+    </div>
+
+    <div class="tab-pane fade" id="workspace-venue-sheets" role="tabpanel" aria-labelledby="workspace-venue-sheets-tab">
+      <div class="filter-panel" id="workspaceVenueSheetFiltersPanel">
+        <div class="filter-panel__header">
+          <div>
+            <div class="font-weight-bold">Filtres de fitxes</div>
+            <div class="filter-panel__summary" id="workspaceVenueSheetFiltersSummary">Sense filtres actius.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#workspaceVenueSheetFiltersCollapse" aria-expanded="true" aria-controls="workspaceVenueSheetFiltersCollapse" id="workspaceVenueSheetFiltersToggle">Amagar filtres</button>
+        </div>
+        <div class="collapse show" id="workspaceVenueSheetFiltersCollapse">
+          <div class="filter-panel__body">
+            <div class="form-row">
+              <div class="col-12 col-lg-6 mb-3">
+                <div class="filter-panel__label">Seu</div>
+                <select id="workspaceVenueSheetFilterVenue" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for venue in venue_round_sheets.venues %}
+                  <option value="{{ venue.venue_key }}">{{ venue.venue }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-lg-3 mb-3">
+                <div class="filter-panel__label">Jornada</div>
+                <select id="workspaceVenueSheetFilterRound" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for round in venue_round_sheets.rounds %}
+                  <option value="{{ round }}">J{{ round }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-lg-3 mb-3">
+                <div class="filter-panel__label">Modalitat</div>
+                <select id="workspaceVenueSheetFilterModality" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for modality in venue_round_sheets.modalities %}
+                  <option value="{{ modality.token }}">{{ modality.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="filter-panel__footer">
+              <div class="filter-panel__status" id="workspaceVenueSheetFiltersResultSummary">Mostrant totes les fitxes.</div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceVenueSheetFiltersReset">Netejar filtres</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% for sheet in venue_round_sheets.sheets %}
+      <div class="workspace-panel workspace-venue-sheet mb-3" data-venue="{{ sheet.venue_key }}" data-round="{{ sheet.round }}" data-modalities="{{ sheet.modality_filter }}">
+        <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+          <div>
+            <div class="text-muted small">Fitxa de jornada</div>
+            <div class="font-weight-bold h5 mb-0">{{ sheet.venue }} &middot; {{ sheet.round_label }}</div>
+          </div>
+          <div class="workspace-venue-sheet__badges">
+            <span class="badge badge-light">N max pistes: {{ sheet.max_capacity }}</span>
+            <span class="badge badge-light">{{ sheet.match_count }} partits</span>
+            <span class="badge badge-light">{{ sheet.saturation_pct }}% ocupacio</span>
+            {% for modality in sheet.modalities %}
+            <span class="badge badge-light">{{ modality }}</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="workspace-venue-summary mb-3">
+          <div>
+            <span class="workspace-venue-summary__label">Equips demanda</span>
+            <strong>{{ sheet.requested_team_count }}</strong>
+          </div>
+          <div>
+            <span class="workspace-venue-summary__label">Franges</span>
+            <strong>{{ sheet.slot_count }}</strong>
+          </div>
+          <div>
+            <span class="workspace-venue-summary__label">Max equips/franja</span>
+            <strong>{{ sheet.max_demand_count }}</strong>
+          </div>
+          <div>
+            <span class="workspace-venue-summary__label">Pistes pintades</span>
+            <strong>{{ sheet.max_capacity }}</strong>
+          </div>
+        </div>
+
+        <details class="workspace-row-details mb-3">
+          <summary>Validar estimacio per franges</summary>
+          <div class="table-responsive mt-2">
+            <table class="table table-sm workspace-table mb-0">
+              <thead class="thead-light">
+              <tr><th>Dia</th><th>Franja</th><th>Equips demanda</th><th>N estimat</th><th>Equips / pista</th></tr>
+              </thead>
+              <tbody>
+              {% for slot in sheet.slots %}
+              <tr>
+                <td>{{ slot.day }}</td>
+                <td>{{ slot.hour_slot }}</td>
+                <td>{{ slot.demand_count }}</td>
+                <td>{{ slot.estimated_capacity }}</td>
+                <td>{{ slot.demand_per_court }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted">No hi ha franges d'entrada per aquesta seu.</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <div class="table-responsive workspace-venue-sheet__wrap">
+          <table class="table table-sm workspace-table workspace-venue-sheet__table mb-0">
+            <thead class="thead-light">
+            <tr>
+              <th>Franja</th>
+              {% for court in sheet.court_columns %}
+              <th>Pista {{ court }}</th>
+              {% endfor %}
+              <th>Sat.</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in sheet.rows %}
+            <tr class="{% if row.over_capacity %}workspace-venue-sheet__row-warning{% endif %}">
+              <th>
+                <div>{{ row.day }}</div>
+                <div class="text-muted small">{{ row.hour_slot }}</div>
+                <div class="text-muted small">N franja: {{ row.estimated_capacity }}</div>
+              </th>
+              {% for match in row.matches %}
+              <td>
+                <div class="workspace-match-cell">
+                  <div class="workspace-match-cell__meta">{{ match.group_id }}</div>
+                  <div class="workspace-match-cell__team">{{ match.home_team_name }}</div>
+                  <div class="workspace-match-cell__versus">vs {{ match.away_team_name }}</div>
+                  {% if match.competition %}<div class="workspace-match-cell__competition">{{ match.competition }}</div>{% endif %}
+                  <a class="workspace-match-cell__link" href="{% url 'calendaritzacions:resource_workspace_team' run.pk match.home_team_id %}">Detall</a>
+                </div>
+              </td>
+              {% endfor %}
+              {% for empty_cell in row.empty_cells %}
+              <td class="workspace-venue-sheet__empty"></td>
+              {% endfor %}
+              <td>
+                <span class="badge {% if row.over_capacity %}badge-danger{% else %}badge-light{% endif %}">{{ row.match_count }}/{{ sheet.max_capacity }}</span>
+              </td>
+            </tr>
+            {% if row.overflow_matches %}
+            <tr class="workspace-venue-sheet__overflow">
+              <td colspan="{{ sheet.overflow_colspan }}">
+                <span class="font-weight-bold">Exces fora de pistes pintades:</span>
+                {% for match in row.overflow_matches %}
+                <span class="badge badge-danger">{{ match.home_team_name }} vs {{ match.away_team_name }}</span>
+                {% endfor %}
+              </td>
+            </tr>
+            {% endif %}
+            {% empty %}
+            <tr><td colspan="2" class="text-center text-muted">No hi ha franges per aquesta fitxa.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% empty %}
+      <div class="workspace-empty">No hi ha partits materialitzats per construir fitxes de jornada.</div>
+      {% endfor %}
+      <div id="workspaceVenueSheetFiltersEmptyState" class="filter-empty-state d-none">Cap fitxa coincideix amb els filtres actius.</div>
+    </div>
+
     <div class="tab-pane fade" id="workspace-incidents" role="tabpanel" aria-labelledby="workspace-incidents-tab">
       <div class="filter-panel" id="workspaceIncidentFiltersPanel">
         <div class="filter-panel__header">
@@ -282,15 +612,15 @@
             <div class="form-row">
               <div class="col-12 col-lg-4 mb-3">
                 <div class="filter-panel__label">Text</div>
-                <input id="workspaceIncidentFilterText" class="form-control form-control-sm" placeholder="Cerca recurs, equip o descripcio..." />
+                <input id="workspaceIncidentFilterText" class="form-control form-control-sm" placeholder="Cerca tipus, recurs, grup, equip o descripcio..." />
               </div>
               <div class="col-12 col-lg-4 mb-3">
                 <div class="filter-panel__label">Lliga</div>
                 <input id="workspaceIncidentFilterLeague" class="form-control form-control-sm" placeholder="Cerca lliga..." />
               </div>
               <div class="col-12 col-lg-4 mb-3">
-                <div class="filter-panel__label">Recurs</div>
-                <input id="workspaceIncidentFilterResource" class="form-control form-control-sm" placeholder="Cerca pista, dia o hora..." />
+                <div class="filter-panel__label">Recurs / grup</div>
+                <input id="workspaceIncidentFilterResource" class="form-control form-control-sm" placeholder="Cerca pista, dia, hora o grup..." />
               </div>
               <div class="col-12 col-md-4 col-xl-2 mb-3">
                 <div class="filter-panel__label">Exces minim</div>
@@ -316,15 +646,16 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover workspace-table mb-0">
             <thead class="thead-light">
-            <tr><th>Incidencia</th><th>Lliga</th><th>Impacte</th><th></th></tr>
+            <tr><th>Tipus</th><th>Incidencia</th><th>Lliga</th><th>Impacte</th><th></th></tr>
             </thead>
             <tbody>
             {% for incident in incident_summaries %}
             <tr class="workspace-incident-row"
-                data-text="{{ incident.title }} {{ incident.summary }} {{ incident.resource }} {{ incident.team_ids|join:' ' }}"
+                data-text="{{ incident.type }} {{ incident.title }} {{ incident.summary }} {{ incident.resource }} {{ incident.team }} {{ incident.team_ids|join:' ' }}"
                 data-league="{{ incident.league }}"
                 data-resource="{{ incident.resource }}"
                 data-excess="{{ incident.count }}">
+              <td>{{ incident.type }}</td>
               <td>
                 <div class="font-weight-bold">{{ incident.title }}</div>
                 <div class="text-muted small">{{ incident.summary }}</div>
@@ -337,7 +668,7 @@
             </tr>
             {% empty %}
             <tr>
-              <td colspan="4" class="text-center text-muted">No hi ha exces de recursos en la solucio final.</td>
+              <td colspan="5" class="text-center text-muted">No hi ha incidencies en la solucio final.</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -355,6 +686,15 @@
 <script>
   (function(){
     var rows = Array.from(document.querySelectorAll('.workspace-assignment-row'));
+    var leagueRows = Array.from(document.querySelectorAll('.workspace-league-row'));
+    var leagueFilterText = document.getElementById('workspaceLeagueFilterText');
+    var leagueSummaryStatus = document.getElementById('workspaceLeagueSummaryStatus');
+    var leaguePageStatus = document.getElementById('workspaceLeaguePageStatus');
+    var leagueEmptyState = document.getElementById('workspaceLeagueEmptyState');
+    var leaguePrevButton = document.getElementById('workspaceLeaguePrev');
+    var leagueNextButton = document.getElementById('workspaceLeagueNext');
+    var leaguePage = 1;
+    var leaguePageSize = 10;
     var teamInput = document.getElementById('workspaceFilterTeam');
     var competitionInput = document.getElementById('workspaceFilterCompetition');
     var resourceInput = document.getElementById('workspaceFilterResource');
@@ -380,9 +720,62 @@
     var incidentEmptyState = document.getElementById('workspaceIncidentFiltersEmptyState');
     var incidentFiltersToggle = document.getElementById('workspaceIncidentFiltersToggle');
     var incidentFiltersCollapse = document.getElementById('workspaceIncidentFiltersCollapse');
+    var venueSheetRows = Array.from(document.querySelectorAll('.workspace-venue-sheet'));
+    var venueSheetVenueSelect = document.getElementById('workspaceVenueSheetFilterVenue');
+    var venueSheetRoundSelect = document.getElementById('workspaceVenueSheetFilterRound');
+    var venueSheetModalitySelect = document.getElementById('workspaceVenueSheetFilterModality');
+    var venueSheetResetButton = document.getElementById('workspaceVenueSheetFiltersReset');
+    var venueSheetSummary = document.getElementById('workspaceVenueSheetFiltersSummary');
+    var venueSheetResultSummary = document.getElementById('workspaceVenueSheetFiltersResultSummary');
+    var venueSheetEmptyState = document.getElementById('workspaceVenueSheetFiltersEmptyState');
+    var venueSheetFiltersToggle = document.getElementById('workspaceVenueSheetFiltersToggle');
+    var venueSheetFiltersCollapse = document.getElementById('workspaceVenueSheetFiltersCollapse');
+    var calendarGroups = Array.from(document.querySelectorAll('.workspace-calendar-group'));
+    var calendarTextInput = document.getElementById('workspaceCalendarFilterText');
+    var calendarGroupSelect = document.getElementById('workspaceCalendarFilterGroup');
+    var calendarModalitySelect = document.getElementById('workspaceCalendarFilterModality');
+    var calendarCategorySelect = document.getElementById('workspaceCalendarFilterCategory');
+    var calendarLevelSelect = document.getElementById('workspaceCalendarFilterLevel');
+    var calendarLeagueSelect = document.getElementById('workspaceCalendarFilterLeague');
+    var calendarStatusSelect = document.getElementById('workspaceCalendarFilterStatus');
+    var calendarResetButton = document.getElementById('workspaceCalendarFiltersReset');
+    var calendarSummary = document.getElementById('workspaceCalendarFiltersSummary');
+    var calendarResultSummary = document.getElementById('workspaceCalendarFiltersResultSummary');
+    var calendarEmptyState = document.getElementById('workspaceCalendarFiltersEmptyState');
+    var calendarFiltersToggle = document.getElementById('workspaceCalendarFiltersToggle');
+    var calendarFiltersCollapse = document.getElementById('workspaceCalendarFiltersCollapse');
 
     function normalize(value){
       return (value || '').toString().toLowerCase().trim();
+    }
+
+    function hasToken(value, token){
+      if (!token) return true;
+      return normalize(value).split(/\s+/).indexOf(token) !== -1;
+    }
+
+    function applyLeaguePagination(){
+      var query = normalize(leagueFilterText ? leagueFilterText.value : '');
+      var filtered = leagueRows.filter(function(row){
+        return !query || normalize(row.dataset.text).indexOf(query) !== -1;
+      });
+      var totalPages = Math.max(1, Math.ceil(filtered.length / leaguePageSize));
+      leaguePage = Math.min(Math.max(1, leaguePage), totalPages);
+      var start = (leaguePage - 1) * leaguePageSize;
+      var visibleSet = new Set(filtered.slice(start, start + leaguePageSize));
+
+      leagueRows.forEach(function(row){
+        row.style.display = visibleSet.has(row) ? '' : 'none';
+      });
+      if (leagueSummaryStatus) {
+        leagueSummaryStatus.textContent = 'Mostrant ' + filtered.length + ' de ' + leagueRows.length + ' lligues.';
+      }
+      if (leaguePageStatus) {
+        leaguePageStatus.textContent = filtered.length ? ('Pagina ' + leaguePage + ' de ' + totalPages) : 'Sense resultats';
+      }
+      if (leaguePrevButton) leaguePrevButton.disabled = leaguePage <= 1;
+      if (leagueNextButton) leagueNextButton.disabled = leaguePage >= totalPages;
+      if (leagueEmptyState) leagueEmptyState.classList.toggle('d-none', filtered.length !== 0 || leagueRows.length === 0);
     }
 
     function activeFilterCount(){
@@ -524,6 +917,122 @@
       incidentFiltersToggle.textContent = incidentFiltersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
     }
 
+    function activeVenueSheetFilterCount(){
+      return [
+        venueSheetVenueSelect ? venueSheetVenueSelect.value : '',
+        venueSheetRoundSelect ? venueSheetRoundSelect.value : '',
+        venueSheetModalitySelect ? venueSheetModalitySelect.value : ''
+      ].filter(function(value){ return normalize(value) !== ''; }).length;
+    }
+
+    function applyVenueSheetFilters(){
+      var venueQ = normalize(venueSheetVenueSelect ? venueSheetVenueSelect.value : '');
+      var roundQ = normalize(venueSheetRoundSelect ? venueSheetRoundSelect.value : '');
+      var modalityQ = normalize(venueSheetModalitySelect ? venueSheetModalitySelect.value : '');
+      var visible = 0;
+
+      venueSheetRows.forEach(function(row){
+        var ok = true;
+        ok = ok && (!venueQ || normalize(row.dataset.venue) === venueQ);
+        ok = ok && (!roundQ || normalize(row.dataset.round) === roundQ);
+        ok = ok && (!modalityQ || normalize(row.dataset.modalities).split(/\s+/).indexOf(modalityQ) !== -1);
+        row.style.display = ok ? '' : 'none';
+        if (ok) visible += 1;
+      });
+
+      var active = activeVenueSheetFilterCount();
+      if (venueSheetSummary) {
+        venueSheetSummary.textContent = active ? active + ' filtre' + (active === 1 ? '' : 's') + ' actiu' + (active === 1 ? '' : 's') + '.' : 'Sense filtres actius.';
+      }
+      if (venueSheetResultSummary) {
+        venueSheetResultSummary.textContent = 'Mostrant ' + visible + ' de ' + venueSheetRows.length + ' fitxes.';
+      }
+      if (venueSheetEmptyState) {
+        venueSheetEmptyState.classList.toggle('d-none', visible !== 0 || venueSheetRows.length === 0);
+      }
+    }
+
+    function resetVenueSheetFilters(){
+      if (venueSheetVenueSelect) venueSheetVenueSelect.value = '';
+      if (venueSheetRoundSelect) venueSheetRoundSelect.value = '';
+      if (venueSheetModalitySelect) venueSheetModalitySelect.value = '';
+      applyVenueSheetFilters();
+    }
+
+    function updateVenueSheetFilterToggleLabel(){
+      if (!venueSheetFiltersToggle || !venueSheetFiltersCollapse) return;
+      venueSheetFiltersToggle.textContent = venueSheetFiltersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
+    }
+
+    function activeCalendarFilterCount(){
+      return [
+        calendarTextInput ? calendarTextInput.value : '',
+        calendarGroupSelect ? calendarGroupSelect.value : '',
+        calendarModalitySelect ? calendarModalitySelect.value : '',
+        calendarCategorySelect ? calendarCategorySelect.value : '',
+        calendarLevelSelect ? calendarLevelSelect.value : '',
+        calendarLeagueSelect ? calendarLeagueSelect.value : '',
+        calendarStatusSelect ? calendarStatusSelect.value : ''
+      ].filter(function(value){ return normalize(value) !== ''; }).length;
+    }
+
+    function matchesCalendarStatus(group, status){
+      if (!status) return true;
+      var hasEntity = group.dataset.hasEntity === '1';
+      var hasResource = group.dataset.hasResource === '1';
+      if (status === 'entity') return hasEntity;
+      if (status === 'resource') return hasResource;
+      if (status === 'clean') return !hasEntity && !hasResource;
+      return true;
+    }
+
+    function applyCalendarFilters(){
+      var textQ = normalize(calendarTextInput ? calendarTextInput.value : '');
+      var groupQ = normalize(calendarGroupSelect ? calendarGroupSelect.value : '');
+      var modalityQ = normalize(calendarModalitySelect ? calendarModalitySelect.value : '');
+      var categoryQ = normalize(calendarCategorySelect ? calendarCategorySelect.value : '');
+      var levelQ = normalize(calendarLevelSelect ? calendarLevelSelect.value : '');
+      var leagueQ = normalize(calendarLeagueSelect ? calendarLeagueSelect.value : '');
+      var statusQ = normalize(calendarStatusSelect ? calendarStatusSelect.value : '');
+      var visible = 0;
+
+      calendarGroups.forEach(function(group){
+        var ok = true;
+        ok = ok && (!textQ || normalize(group.dataset.text).indexOf(textQ) !== -1);
+        ok = ok && hasToken(group.dataset.group, groupQ);
+        ok = ok && hasToken(group.dataset.modality, modalityQ);
+        ok = ok && hasToken(group.dataset.category, categoryQ);
+        ok = ok && hasToken(group.dataset.level, levelQ);
+        ok = ok && hasToken(group.dataset.league, leagueQ);
+        ok = ok && matchesCalendarStatus(group, statusQ);
+        group.style.display = ok ? '' : 'none';
+        if (ok) visible += 1;
+      });
+
+      var active = activeCalendarFilterCount();
+      if (calendarSummary) {
+        calendarSummary.textContent = active ? active + ' filtre' + (active === 1 ? '' : 's') + ' actiu' + (active === 1 ? '' : 's') + '.' : 'Sense filtres actius.';
+      }
+      if (calendarResultSummary) {
+        calendarResultSummary.textContent = 'Mostrant ' + visible + ' de ' + calendarGroups.length + ' grups.';
+      }
+      if (calendarEmptyState) {
+        calendarEmptyState.classList.toggle('d-none', visible !== 0 || calendarGroups.length === 0);
+      }
+    }
+
+    function resetCalendarFilters(){
+      [calendarTextInput, calendarGroupSelect, calendarModalitySelect, calendarCategorySelect, calendarLevelSelect, calendarLeagueSelect, calendarStatusSelect].forEach(function(control){
+        if (control) control.value = '';
+      });
+      applyCalendarFilters();
+    }
+
+    function updateCalendarFilterToggleLabel(){
+      if (!calendarFiltersToggle || !calendarFiltersCollapse) return;
+      calendarFiltersToggle.textContent = calendarFiltersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
+    }
+
     function activateTabFromHash(){
       var hash = window.location.hash;
       if (!hash) return;
@@ -538,6 +1047,24 @@
       control.addEventListener('input', applyFilters);
       control.addEventListener('change', applyFilters);
     });
+    if (leagueFilterText) {
+      leagueFilterText.addEventListener('input', function(){
+        leaguePage = 1;
+        applyLeaguePagination();
+      });
+    }
+    if (leaguePrevButton) {
+      leaguePrevButton.addEventListener('click', function(){
+        leaguePage -= 1;
+        applyLeaguePagination();
+      });
+    }
+    if (leagueNextButton) {
+      leagueNextButton.addEventListener('click', function(){
+        leaguePage += 1;
+        applyLeaguePagination();
+      });
+    }
     columnToggles.forEach(function(toggle){
       toggle.addEventListener('change', applyColumnVisibility);
     });
@@ -546,8 +1073,20 @@
       control.addEventListener('input', applyIncidentFilters);
       control.addEventListener('change', applyIncidentFilters);
     });
+    [venueSheetVenueSelect, venueSheetRoundSelect, venueSheetModalitySelect].forEach(function(control){
+      if (!control) return;
+      control.addEventListener('input', applyVenueSheetFilters);
+      control.addEventListener('change', applyVenueSheetFilters);
+    });
+    [calendarTextInput, calendarGroupSelect, calendarModalitySelect, calendarCategorySelect, calendarLevelSelect, calendarLeagueSelect, calendarStatusSelect].forEach(function(control){
+      if (!control) return;
+      control.addEventListener('input', applyCalendarFilters);
+      control.addEventListener('change', applyCalendarFilters);
+    });
     if (resetButton) resetButton.addEventListener('click', resetFilters);
     if (incidentResetButton) incidentResetButton.addEventListener('click', resetIncidentFilters);
+    if (venueSheetResetButton) venueSheetResetButton.addEventListener('click', resetVenueSheetFilters);
+    if (calendarResetButton) calendarResetButton.addEventListener('click', resetCalendarFilters);
     if (filtersCollapse) {
       filtersCollapse.addEventListener('shown.bs.collapse', updateFilterToggleLabel);
       filtersCollapse.addEventListener('hidden.bs.collapse', updateFilterToggleLabel);
@@ -555,6 +1094,14 @@
     if (incidentFiltersCollapse) {
       incidentFiltersCollapse.addEventListener('shown.bs.collapse', updateIncidentFilterToggleLabel);
       incidentFiltersCollapse.addEventListener('hidden.bs.collapse', updateIncidentFilterToggleLabel);
+    }
+    if (venueSheetFiltersCollapse) {
+      venueSheetFiltersCollapse.addEventListener('shown.bs.collapse', updateVenueSheetFilterToggleLabel);
+      venueSheetFiltersCollapse.addEventListener('hidden.bs.collapse', updateVenueSheetFilterToggleLabel);
+    }
+    if (calendarFiltersCollapse) {
+      calendarFiltersCollapse.addEventListener('shown.bs.collapse', updateCalendarFilterToggleLabel);
+      calendarFiltersCollapse.addEventListener('hidden.bs.collapse', updateCalendarFilterToggleLabel);
     }
     document.querySelectorAll('.workspace-tabs a[data-toggle="tab"]').forEach(function(tabLink){
       tabLink.addEventListener('shown.bs.tab', function(event){
@@ -564,10 +1111,15 @@
       });
     });
     applyFilters();
+    applyLeaguePagination();
     applyIncidentFilters();
+    applyVenueSheetFilters();
+    applyCalendarFilters();
     applyColumnVisibility();
     updateFilterToggleLabel();
     updateIncidentFilterToggleLabel();
+    updateVenueSheetFilterToggleLabel();
+    updateCalendarFilterToggleLabel();
     activateTabFromHash();
   })();
 </script>

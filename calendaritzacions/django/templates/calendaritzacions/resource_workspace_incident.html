@@ -70,9 +70,51 @@
     </div>
   </div>
 
+  {% if incident.team_calendars %}
+  <div class="workspace-panel mb-3">
+    <div class="font-weight-bold mb-2">Calendaris dels equips en conflicte</div>
+    <div class="row">
+      {% for team in incident.team_calendars %}
+      <div class="col-12 col-xl-6 mb-3">
+        <div class="workspace-subpanel h-100">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="font-weight-bold">
+                <a href="{% url 'calendaritzacions:resource_workspace_team' run.pk team.team_id %}">{{ team.team_name }}</a>
+              </div>
+              <div class="text-muted small">{{ team.team_id }}</div>
+            </div>
+            <span class="badge badge-light">Num. {{ team.number }}</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm workspace-table mb-0">
+              <thead class="thead-light">
+              <tr><th>J</th><th>Casa/Fora</th><th>Rival</th><th>Recurs</th></tr>
+              </thead>
+              <tbody>
+              {% for row in team.calendar %}
+              <tr>
+                <td>{{ row.round }}</td>
+                <td>{{ row.side }}</td>
+                <td>{{ row.opponent }}</td>
+                <td>{{ row.resource }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted">Sense partits registrats.</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if incident.affected_matches %}
   <div class="workspace-panel">
-    <div class="font-weight-bold mb-2">Partits afectats</div>
+    <div class="font-weight-bold mb-2">Partits relacionats</div>
     <div class="table-responsive">
       <table class="table table-sm table-striped workspace-table mb-0">
         <thead class="thead-light">

@@ -170,3 +170,398 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(team_detail["home_resources"][0]["incident_status"], "Amb incidencia")
         self.assertEqual(team_detail["home_resources"][0]["sharing_teams"], ["Equip C (C)"])
         self.assertEqual(team_detail["alternatives"][0]["number"], 2)
+
+    def test_venue_round_sheets_use_max_venue_capacity_for_columns(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun
+        from calendaritzacions.django.services.workspaces import (
+            get_workspace_calendar_view,
+            get_or_create_workspace_for_run,
+            get_workspace_venue_round_sheets,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": team_id, "group_id": "G1", "number": index}
+                            for index, team_id in enumerate(["A", "B", "C", "D", "E", "F"], start=1)
+                        ],
+                        "real_matches": [
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "A",
+                                "away_team_id": "B",
+                                "resource_id": "pavello|divendres|18-00|J1",
+                            },
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "C",
+                                "away_team_id": "D",
+                                "resource_id": "pavello|divendres|18-00|J1",
+                            },
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "E",
+                                "away_team_id": "F",
+                                "resource_id": "pavello|divendres|19-00|J1",
+                            },
+                        ],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {
+                            "team_id": team_id,
+                            "name": f"Equip {team_id}",
+                            "entity": "Club",
+                            "league_name": "Lliga",
+                            "modality": "Futbol" if team_id in {"A", "B", "C", "D"} else "Volei",
+                        }
+                        for team_id in ["A", "B", "C", "D", "E", "F"]
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text("[]", encoding="utf-8")
+            resource_pressure.write_text(
+                json.dumps(
+                    [
+                        {
+                            "resource_id": "pavello|divendres|18-00",
+                            "venue": "Pavello",
+                            "day": "Divendres",
+                            "hour_slot": "18:00",
+                            "teams": ["A", "B", "C", "D"],
+                            "demand_count": 4,
+                            "estimated_capacity": 2,
+                        },
+                        {
+                            "resource_id": "pavello|divendres|19-00",
+                            "venue": "Pavello",
+                            "day": "Divendres",
+                            "hour_slot": "19:00",
+                            "teams": ["A", "B", "C", "D", "E", "F"],
+                            "demand_count": 6,
+                            "estimated_capacity": 3,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            payload = get_workspace_venue_round_sheets(workspace)
+            calendar = get_workspace_calendar_view(workspace)
+
+        sheet = payload["sheets"][0]
+        rows_by_hour = {row["hour_slot"]: row for row in sheet["rows"]}
+        self.assertEqual(sheet["venue"], "Pavello")
+        self.assertEqual(sheet["max_capacity"], 3)
+        self.assertEqual(list(sheet["court_columns"]), [1, 2, 3])
+        self.assertEqual(sheet["requested_team_count"], 6)
+        self.assertEqual(payload["modalities"], [{"label": "Futbol", "token": "futbol"}, {"label": "Volei", "token": "volei"}])
+        self.assertEqual(sheet["modality_filter"], "futbol volei")
+        self.assertEqual(rows_by_hour["18:00"]["match_count"], 2)
+        self.assertEqual(len(list(rows_by_hour["18:00"]["empty_cells"])), 1)
+        self.assertEqual(rows_by_hour["19:00"]["estimated_capacity"], 3)
+        self.assertEqual(calendar["filters"]["modality"], [{"label": "Futbol", "token": "futbol"}, {"label": "Volei", "token": "volei"}])
+        calendar_group = calendar["groups"][0]
+        self.assertEqual(calendar_group["group_id"], "G1")
+        self.assertEqual(calendar_group["rounds"], [1])
+        self.assertEqual(calendar_group["rows"][0]["cells"][0]["side"], "Casa")
+        self.assertIn("Equip B", calendar_group["rows"][0]["cells"][0]["opponent"])
+        self.assertIn("pavello - divendres - 18-00 - J1", calendar_group["rows"][0]["cells"][0]["resource"])
+
+    def test_workspace_calendar_view_groups_rounds_rests_filters_and_incidents(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_calendar_view,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "A", "group_id": "G1", "number": 1},
+                            {"team_id": "B", "group_id": "G1", "number": 2},
+                            {"team_id": "C", "group_id": "G1", "number": 3},
+                        ],
+                        "real_matches": [
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "A",
+                                "away_team_id": "B",
+                                "resource_id": "pavello|divendres|18-00|J1",
+                            },
+                            {
+                                "round_index": 2,
+                                "group_id": "G1",
+                                "home_team_id": "C",
+                                "away_team_id": "A",
+                                "resource_id": "pavello|dissabte|10-00|J2",
+                            },
+                        ],
+                        "resource_usage": [
+                            {
+                                "resource_id": "pavello|divendres|18-00|J1",
+                                "locals_count": 2,
+                                "capacity": 1,
+                                "excess": 1,
+                                "team_ids": ["A"],
+                            }
+                        ],
+                        "group_summary": [
+                            {
+                                "group_id": "G1",
+                                "assigned_numbers": {"1": "A", "2": "B", "3": "C"},
+                                "entity_excess": {"Club": 1},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {
+                            "team_id": "A",
+                            "name": "Equip A",
+                            "entity": "Club",
+                            "league_name": "Lliga 1",
+                            "modality": "Futbol",
+                            "category": "Mini",
+                            "subcategory": "Mixt",
+                            "level": "A",
+                            "venue": "Pavello",
+                        },
+                        {
+                            "team_id": "B",
+                            "name": "Equip B",
+                            "entity": "Club",
+                            "league_name": "Lliga 1",
+                            "modality": "Futbol",
+                            "category": "Mini",
+                            "subcategory": "Mixt",
+                            "level": "A",
+                            "venue": "Pavello",
+                        },
+                        {
+                            "team_id": "C",
+                            "name": "Equip C",
+                            "entity": "Altre",
+                            "league_name": "Lliga 1",
+                            "modality": "Futbol",
+                            "category": "Mini",
+                            "subcategory": "Mixt",
+                            "level": "A",
+                            "venue": "Pavello",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text("[]", encoding="utf-8")
+            resource_pressure.write_text("[]", encoding="utf-8")
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            payload = get_workspace_calendar_view(workspace)
+
+        self.assertEqual(payload["rounds"], [1, 2])
+        self.assertEqual(payload["filters"]["modality"], [{"label": "Futbol", "token": "futbol"}])
+        self.assertEqual(payload["filters"]["category"], [{"label": "Mini", "token": "mini"}])
+        self.assertEqual(payload["filters"]["subcategory"], [{"label": "Mixt", "token": "mixt"}])
+        self.assertEqual(payload["filters"]["level"], [{"label": "A", "token": "a"}])
+        self.assertEqual(payload["filters"]["league"], [{"label": "Lliga 1", "token": "lliga-1"}])
+        self.assertEqual(payload["filters"]["venue"], [{"label": "Pavello", "token": "pavello"}])
+        self.assertEqual(
+            payload["filters"]["entity"],
+            [{"label": "Altre", "token": "altre"}, {"label": "Club", "token": "club"}],
+        )
+
+        group = payload["groups"][0]
+        self.assertEqual(group["group_id"], "G1")
+        self.assertEqual(group["competition"], "Lliga 1 / Futbol / Mini / Mixt")
+        self.assertEqual(group["modality"], "Futbol")
+        self.assertEqual(group["category"], "Mini")
+        self.assertEqual(group["subcategory"], "Mixt")
+        self.assertEqual(group["level"], "A")
+        self.assertEqual(group["venue"], "Pavello")
+        self.assertEqual(group["rounds"], [1, 2])
+        self.assertIn("Equip A", group["filter_text"])
+        self.assertEqual([row["team_id"] for row in group["rows"]], ["A", "B", "C"])
+
+        row_a, row_b, row_c = group["rows"]
+        self.assertIn("Futbol", row_a["filter_text"])
+        self.assertEqual(row_a["cells"][0]["side"], "Casa")
+        self.assertEqual(row_a["cells"][0]["opponent_id"], "B")
+        self.assertIn("Equip B", row_a["cells"][0]["opponent"])
+        self.assertEqual(row_a["cells"][0]["resource"], "pavello - divendres - 18-00 - J1")
+        self.assertIsNotNone(row_a["cells"][0]["match_id"])
+        self.assertTrue(row_a["cells"][0]["has_resource_incident"])
+        self.assertTrue(row_a["cells"][0]["has_entity_incident"])
+        self.assertEqual(row_a["cells"][1]["side"], "Fora")
+        self.assertEqual(row_a["cells"][1]["resource"], "")
+
+        self.assertEqual(row_b["cells"][0]["side"], "Fora")
+        self.assertFalse(row_b["cells"][0]["has_resource_incident"])
+        self.assertEqual(row_b["cells"][1]["side"], "Descans")
+        self.assertTrue(row_b["cells"][1]["has_entity_incident"])
+
+        self.assertEqual(row_c["cells"][0]["side"], "Descans")
+        self.assertFalse(row_c["cells"][0]["has_entity_incident"])
+        self.assertEqual(row_c["cells"][1]["side"], "Casa")
+        self.assertEqual(row_c["cells"][1]["opponent_id"], "A")
+
+    def test_workspace_materializes_entity_conflicts_with_team_calendars(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun, WorkspaceResourceIncident
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_incident_detail,
+            get_workspace_summary,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "A", "group_id": "G1", "number": 1},
+                            {"team_id": "B", "group_id": "G1", "number": 2},
+                            {"team_id": "C", "group_id": "G1", "number": 3},
+                        ],
+                        "real_matches": [
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "A",
+                                "away_team_id": "B",
+                                "resource_id": "pista-a|divendres|18-00|J1",
+                            },
+                            {
+                                "round_index": 2,
+                                "group_id": "G1",
+                                "home_team_id": "C",
+                                "away_team_id": "A",
+                                "resource_id": "pista-b|dissabte|19-00|J2",
+                            },
+                        ],
+                        "resource_usage": [],
+                        "group_summary": [
+                            {
+                                "group_id": "G1",
+                                "assigned_numbers": {"1": "A", "2": "B", "3": "C"},
+                                "empty_numbers": [4, 5, 6, 7, 8],
+                                "rests_by_team": {},
+                                "entity_excess": {"Club": 1},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {"team_id": "A", "name": "Equip A", "entity": "Club", "league_name": "Lliga 1"},
+                        {"team_id": "B", "name": "Equip B", "entity": "Club", "league_name": "Lliga 1"},
+                        {"team_id": "C", "name": "Equip C", "entity": "Altre", "league_name": "Lliga 1"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text("[]", encoding="utf-8")
+            resource_pressure.write_text("[]", encoding="utf-8")
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            summary = get_workspace_summary(workspace)
+            incident = WorkspaceResourceIncident.objects.get(
+                workspace=workspace,
+                incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
+            )
+            detail = get_workspace_incident_detail(workspace, incident.pk)
+
+        self.assertEqual(incident.team_ids, ["A", "B"])
+        self.assertEqual(incident.excess, 1)
+        self.assertEqual(summary["kpis"][3]["value"], 1)
+        self.assertEqual(summary["incident_summaries"][0]["type"], "Conflicte entitat")
+        self.assertEqual(len(detail["team_calendars"]), 2)
+        self.assertEqual(detail["team_calendars"][0]["team_name"], "Equip A")
+        self.assertEqual(detail["team_calendars"][0]["calendar"][0]["side"], "Casa")

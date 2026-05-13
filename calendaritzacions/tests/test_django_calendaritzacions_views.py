@@ -115,7 +115,7 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
 
         run = SimpleNamespace(pk=7)
         payloads = {
-            "input_demand": {"plots": {"heatmap": "/tmp/heatmap.png", "manifest": "/tmp/manifest.json"}},
+            "input_demand": {"plots": {"heatmap": "/tmp/heatmap.png", "friday": "/tmp/friday.png", "manifest": "/tmp/manifest.json"}},
             "resource_solver_final_plots": {"plots": {"group_sizes": "/tmp/group_sizes.png"}},
         }
 
@@ -131,6 +131,7 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
 
         self.assertEqual([gallery["title"] for gallery in galleries], ["Plots pre-run", "Plots post-run"])
         self.assertEqual(galleries[0]["plots"][0]["id"], "heatmap")
+        self.assertNotIn("friday", [plot["id"] for plot in galleries[0]["plots"]])
         self.assertIn("/runs/7/plots/input_demand/heatmap/", galleries[0]["plots"][0]["url"])
         self.assertEqual(galleries[1]["plots"][0]["id"], "group_sizes")
 

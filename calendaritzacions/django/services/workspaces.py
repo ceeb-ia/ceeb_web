@@ -18,7 +18,7 @@ from calendaritzacions.django.models import (
 )
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
-HYDRATION_VERSION = 2
+HYDRATION_VERSION = 3
 
 
 def get_or_create_workspace_for_run(
@@ -69,6 +69,7 @@ def hydrate_workspace_from_audits(
         _create_assignments(workspace, assignments, teams, candidates, pressure, usage_by_resource)
         created_matches = _create_matches(workspace, matches, teams)
         _create_resource_incidents(workspace, usage_rows, created_matches, teams)
+        _create_entity_conflict_incidents(workspace, solution, teams)
         workspace.summary = _build_persisted_summary(workspace)
         workspace.status = AssignmentWorkspace.STATUS_ACTIVE
         workspace.source_artifact = "resource_solution"
@@ -83,10 +84,12 @@ def get_workspace_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
     if not _workspace_is_current(workspace):
         hydrate_workspace_from_audits(workspace.run, workspace=workspace)
 
-    incident_qs = WorkspaceResourceIncident.objects.filter(
-        workspace=workspace,
-        incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS,
-    ).order_by("-excess", "-locals_count", "resource_id")
+    incident_qs = WorkspaceResourceIncident.objects.filter(workspace=workspace).order_by(
+        "status",
+        "-severity",
+        "incident_type",
+        "resource_id",
+    )
     incidents = list(incident_qs)
     return {
         "kpis": _workspace_kpis(workspace),
@@ -112,6 +115,9 @@ def get_workspace_incident_detail(
         incident = WorkspaceResourceIncident.objects.get(workspace=workspace, pk=incident_pk)
     except WorkspaceResourceIncident.DoesNotExist:
         return None
+
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT:
+        return _entity_conflict_incident_detail(workspace, incident)
 
     resource_id = incident.resource_id
     matches = WorkspaceResourceMatch.objects.filter(
@@ -163,6 +169,87 @@ def get_workspace_incident_detail(
             "Revisar un equip local d'aquest recurs i provar un numero/grup que canviï la jornada de localia.",
             "Prioritzar moviments dins la mateixa lliga abans de tocar altres competicions.",
             "Si l'exces és acceptable operativament, deixar-lo marcat per revisio manual.",
+        ],
+    }
+
+
+def _entity_conflict_incident_detail(
+    workspace: AssignmentWorkspace,
+    incident: WorkspaceResourceIncident,
+) -> dict[str, Any]:
+    payload = incident.payload or {}
+    entity = str(payload.get("entity") or "-")
+    group_id = str(payload.get("group_id") or "-")
+    assignments = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(
+            workspace=workspace,
+            team_id__in=incident.team_ids or [],
+        )
+    }
+    group_matches = list(
+        WorkspaceResourceMatch.objects.filter(
+            workspace=workspace,
+            group_id=group_id,
+        ).order_by("round_index", "id")
+    )
+    team_calendars = []
+    affected_matches = []
+    for team_id in incident.team_ids or []:
+        assignment = assignments.get(team_id)
+        if assignment is None:
+            continue
+        calendar = []
+        for match in group_matches:
+            if match.home_team_id != team_id and match.away_team_id != team_id:
+                continue
+            is_home = match.home_team_id == team_id
+            opponent_id = match.away_team_id if is_home else match.home_team_id
+            opponent_name = match.payload.get("away_team_name" if is_home else "home_team_name", "")
+            row = {
+                "id": match.pk,
+                "round": match.round_index,
+                "side": "Casa" if is_home else "Fora",
+                "opponent_id": opponent_id,
+                "opponent": _team_label(opponent_id, opponent_name),
+                "resource": _resource_label(match.home_resource_id) if is_home else "-",
+                "home_team": _team_label(match.home_team_id, match.payload.get("home_team_name", "")),
+                "home_team_id": match.home_team_id,
+                "away_team": _team_label(match.away_team_id, match.payload.get("away_team_name", "")),
+                "away_team_id": match.away_team_id,
+            }
+            calendar.append(row)
+            affected_matches.append(row)
+        team_calendars.append(
+            {
+                "team_id": team_id,
+                "team_name": assignment.team_name or team_id,
+                "number": assignment.assigned_number,
+                "group_id": assignment.group_id,
+                "calendar": calendar,
+            }
+        )
+
+    unique_matches = {row["id"]: row for row in affected_matches}
+    return {
+        **_incident_summary(incident),
+        "detail": (
+            "Hi ha mes d'un equip de la mateixa entitat dins el mateix grup. "
+            "A sota es mostra el calendari dels equips implicats per revisar el conflicte esportiu."
+        ),
+        "facts": [
+            {"label": "Entitat", "value": entity},
+            {"label": "Grup", "value": group_id},
+            {"label": "Equips implicats", "value": len(incident.team_ids or [])},
+            {"label": "Exces", "value": incident.excess},
+            {"label": "Lliga", "value": _top_league_label(payload.get("league_counts"))},
+        ],
+        "affected_matches": list(unique_matches.values()),
+        "team_calendars": sorted(team_calendars, key=lambda row: (row["number"] or 99, row["team_name"])),
+        "recommendations": [
+            "Provar moure un dels equips implicats a un altre grup candidat de la mateixa competicio.",
+            "Prioritzar canvis que mantinguin mida de grup i no crein exces de recurs.",
+            "Comparar els numeros assignats abans de canviar-los: el conflicte principal es de composicio de grup.",
         ],
     }
 
@@ -233,6 +320,417 @@ def get_workspace_team_detail(
         "alternatives": alternatives[:16],
         "explanation": _team_explanation(assignment, resource_rows, selected_candidate),
     }
+
+
+def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any]:
+    """Return a read-only calendar matrix grouped by workspace group."""
+
+    if not _workspace_is_current(workspace):
+        hydrate_workspace_from_audits(workspace.run, workspace=workspace)
+
+    assignments = list(
+        WorkspaceAssignment.objects.filter(workspace=workspace).order_by(
+            "group_id",
+            "assigned_number",
+            "team_name",
+            "team_id",
+        )
+    )
+    matches = list(
+        WorkspaceResourceMatch.objects.filter(workspace=workspace).order_by(
+            "group_id",
+            "round_index",
+            "id",
+        )
+    )
+    incidents = list(WorkspaceResourceIncident.objects.filter(workspace=workspace))
+
+    assignments_by_group: dict[str, list[WorkspaceAssignment]] = defaultdict(list)
+    for assignment in assignments:
+        assignments_by_group[assignment.group_id or "-"].append(assignment)
+
+    matches_by_group: dict[str, list[WorkspaceResourceMatch]] = defaultdict(list)
+    match_by_group_team_round: dict[tuple[str, str, int], WorkspaceResourceMatch] = {}
+    home_venues_by_team: dict[str, str] = {}
+    rounds = set()
+    for match in matches:
+        group_id = match.group_id or "-"
+        round_index = int(match.round_index or 0)
+        if round_index:
+            rounds.add(round_index)
+        matches_by_group[group_id].append(match)
+        if match.home_team_id and match.home_resource_id:
+            base_resource_id, _round_label = _split_resource_round(match.home_resource_id)
+            venue = next((part for part in base_resource_id.split("|") if part), "")
+            if venue:
+                home_venues_by_team.setdefault(match.home_team_id, venue)
+        if round_index:
+            match_by_group_team_round[(group_id, match.home_team_id, round_index)] = match
+            match_by_group_team_round[(group_id, match.away_team_id, round_index)] = match
+
+    resource_incidents: dict[str, list[WorkspaceResourceIncident]] = defaultdict(list)
+    entity_incidents: dict[tuple[str, str], list[WorkspaceResourceIncident]] = defaultdict(list)
+    for incident in incidents:
+        if incident.incident_type == WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS and incident.resource_id:
+            resource_incidents[incident.resource_id].append(incident)
+            continue
+        if incident.incident_type != WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT:
+            continue
+        payload = incident.payload or {}
+        group_id = str(payload.get("group_id") or "")
+        for team_id in incident.team_ids or []:
+            entity_incidents[(group_id, str(team_id))].append(incident)
+
+    filter_values: dict[str, set[str]] = {
+        "group": set(),
+        "modality": set(),
+        "category": set(),
+        "subcategory": set(),
+        "level": set(),
+        "league": set(),
+        "entity": set(),
+        "venue": set(),
+    }
+    groups = []
+    for group_id, group_assignments in sorted(assignments_by_group.items(), key=lambda item: _text_sort(item[0])):
+        filter_values["group"].add(group_id)
+        group_assignments = sorted(
+            group_assignments,
+            key=lambda assignment: (
+                assignment.assigned_number if assignment.assigned_number is not None else 9999,
+                _text_sort(assignment.team_name),
+                assignment.team_id,
+            ),
+        )
+        group_rounds = sorted({int(match.round_index or 0) for match in matches_by_group.get(group_id, []) if match.round_index})
+        columns = [_calendar_column(round_index) for round_index in group_rounds]
+        rows = []
+        row_filter_fields = []
+        for assignment in group_assignments:
+            fields = _assignment_calendar_filter_fields(assignment)
+            if not fields["venue"]:
+                fields["venue"] = home_venues_by_team.get(assignment.team_id, "")
+            row_filter_fields.append(fields)
+            for key, value in fields.items():
+                if key in filter_values and value:
+                    filter_values[key].add(value)
+
+            cells = []
+            for round_index in group_rounds:
+                match = match_by_group_team_round.get((group_id, assignment.team_id, round_index))
+                cells.append(
+                    _calendar_cell(
+                        assignment,
+                        match,
+                        round_index,
+                        resource_incidents,
+                        entity_incidents.get((group_id, assignment.team_id), []),
+                    )
+                )
+            has_entity_conflict = any(cell["has_entity_incident"] for cell in cells)
+            has_resource_excess = any(cell["has_resource_incident"] for cell in cells)
+            rows.append(
+                {
+                    "team_id": assignment.team_id,
+                    "team_name": assignment.team_name or assignment.team_id,
+                    "entity": assignment.entity,
+                    "number": assignment.assigned_number,
+                    "assigned_number": assignment.assigned_number,
+                    "group_id": assignment.group_id,
+                    "has_entity_conflict": has_entity_conflict,
+                    "has_resource_excess": has_resource_excess,
+                    **fields,
+                    "filter_text": _calendar_filter_text(
+                        [
+                            assignment.team_id,
+                            assignment.team_name,
+                            assignment.entity,
+                            assignment.group_id,
+                            assignment.assigned_number,
+                            *fields.values(),
+                        ]
+                    ),
+                    "cells": cells,
+                }
+            )
+
+        group_fields = _group_calendar_fields(row_filter_fields)
+        has_entity_conflict = any(row["has_entity_conflict"] for row in rows)
+        has_resource_excess = any(row["has_resource_excess"] for row in rows)
+        group_filter_text = _calendar_filter_text(
+            [
+                group_id,
+                group_fields.get("competition", ""),
+                group_fields.get("league", ""),
+                group_fields.get("modality", ""),
+                group_fields.get("category", ""),
+                group_fields.get("subcategory", ""),
+                group_fields.get("level", ""),
+                group_fields.get("entity", ""),
+                group_fields.get("venue", ""),
+                *[row["filter_text"] for row in rows],
+            ]
+        )
+        groups.append(
+            {
+                "group_id": group_id,
+                "group_token": _filter_token(group_id),
+                **group_fields,
+                "modality_tokens": _calendar_tokens(row.get("modality", "") for row in rows),
+                "category_tokens": _calendar_tokens(row.get("category", "") for row in rows),
+                "level_tokens": _calendar_tokens(row.get("level", "") for row in rows),
+                "league_tokens": _calendar_tokens(row.get("league", "") for row in rows),
+                "columns": columns,
+                "rounds": [column["round"] for column in columns],
+                "rows": rows,
+                "team_count": len(rows),
+                "match_count": len(matches_by_group.get(group_id, [])),
+                "has_entity_conflict": has_entity_conflict,
+                "has_resource_excess": has_resource_excess,
+                "filter_text": group_filter_text,
+            }
+        )
+
+    global_columns = [_calendar_column(round_index) for round_index in sorted(rounds)]
+    filters = {
+        key: [{"label": value, "token": _filter_token(value)} for value in sorted(values, key=_text_sort)]
+        for key, values in filter_values.items()
+    }
+    filters.update(
+        {
+            "groups": filters["group"],
+            "modalities": filters["modality"],
+            "categories": filters["category"],
+            "subcategories": filters["subcategory"],
+            "levels": filters["level"],
+            "leagues": filters["league"],
+            "entities": filters["entity"],
+            "venues": filters["venue"],
+        }
+    )
+    return {
+        "columns": global_columns,
+        "rounds": [column["round"] for column in global_columns],
+        "filters": filters,
+        "groups": groups,
+    }
+
+
+def get_workspace_venue_round_sheets(workspace: AssignmentWorkspace) -> dict[str, Any]:
+    """Return visual match sheets grouped by venue and round."""
+
+    if not _workspace_is_current(workspace):
+        hydrate_workspace_from_audits(workspace.run, workspace=workspace)
+
+    payloads = _read_payloads(workspace.run)
+    pressure_rows = _venue_pressure_rows(payloads.get("resource_pressure", []))
+    venue_meta = _venue_sheet_meta(pressure_rows)
+    assignments = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(workspace=workspace)
+    }
+    matches_by_venue_round: dict[tuple[str, int], dict[str, Any]] = {}
+
+    for match in WorkspaceResourceMatch.objects.filter(workspace=workspace).order_by("round_index", "home_resource_id", "group_id"):
+        base_resource_id, round_label = _split_resource_round(match.home_resource_id)
+        meta = pressure_rows.get(base_resource_id) or _fallback_pressure_row(base_resource_id)
+        venue = str(meta.get("venue") or "")
+        day = str(meta.get("day") or "")
+        hour_slot = str(meta.get("hour_slot") or "")
+        venue_key = _venue_key(venue)
+        round_index = match.round_index or _round_number(round_label) or 0
+        slot_key = _slot_key(day, hour_slot)
+        sheet = matches_by_venue_round.setdefault(
+            (venue_key, round_index),
+            {
+                "venue_key": venue_key,
+                "venue": venue or _resource_label(base_resource_id),
+                "round": round_index,
+                "round_label": f"J{round_index}" if round_index else round_label or "-",
+                "slots": defaultdict(list),
+            },
+        )
+        item = _venue_sheet_match(match, assignments)
+        sheet["slots"][slot_key].append(item)
+
+    sheets = []
+    for key, sheet in sorted(matches_by_venue_round.items(), key=lambda item: (_text_sort(item[1]["venue"]), item[1]["round"])):
+        venue_key, _round_index = key
+        meta = venue_meta.get(venue_key, _empty_venue_meta(sheet["venue"], venue_key))
+        if not meta["slots"]:
+            for slot_key in sorted(sheet["slots"]):
+                day, hour_slot = slot_key.split("||", 1)
+                meta["slots"].append(
+                    {
+                        "day": day,
+                        "hour_slot": hour_slot,
+                        "estimated_capacity": 1,
+                        "demand_count": 0,
+                        "demand_per_court": 0,
+                    }
+                )
+            meta["slot_count"] = len(meta["slots"])
+        max_courts = max(1, int(meta.get("max_capacity") or 1))
+        rows = []
+        total_matches = 0
+        sheet_modalities = set()
+        for slot in meta.get("slots", []):
+            slot_key = _slot_key(slot["day"], slot["hour_slot"])
+            matches = list(sheet["slots"].get(slot_key, []))
+            sheet_modalities.update(match["modality"] for match in matches if match.get("modality"))
+            total_matches += len(matches)
+            rows.append(
+                {
+                    **slot,
+                    "matches": matches[:max_courts],
+                    "overflow_matches": matches[max_courts:],
+                    "match_count": len(matches),
+                    "empty_cells": range(max(0, max_courts - min(len(matches), max_courts))),
+                    "saturation_pct": _pct(len(matches), max_courts),
+                    "over_capacity": len(matches) > int(slot.get("estimated_capacity") or max_courts),
+                }
+            )
+        sheets.append(
+            {
+                **meta,
+                "round": sheet["round"],
+                "round_label": sheet["round_label"],
+                "court_columns": range(1, max_courts + 1),
+                "overflow_colspan": max_courts + 2,
+                "rows": rows,
+                "match_count": total_matches,
+                "saturation_pct": _pct(total_matches, max(1, len(rows) * max_courts)),
+                "modalities": sorted(sheet_modalities, key=_text_sort),
+                "modality_filter": " ".join(sorted({_filter_token(value) for value in sheet_modalities if value})),
+            }
+        )
+
+    modalities = sorted({modality for sheet in sheets for modality in sheet.get("modalities", [])}, key=_text_sort)
+    return {
+        "sheets": sheets,
+        "venues": sorted(venue_meta.values(), key=lambda item: _text_sort(item["venue"])),
+        "rounds": sorted({sheet["round"] for sheet in sheets}),
+        "modalities": [{"label": modality, "token": _filter_token(modality)} for modality in modalities],
+    }
+
+
+def _calendar_column(round_index: int) -> dict[str, Any]:
+    return {
+        "round": round_index,
+        "jornada": round_index,
+        "label": f"J{round_index}",
+    }
+
+
+def _calendar_cell(
+    assignment: WorkspaceAssignment,
+    match: WorkspaceResourceMatch | None,
+    round_index: int,
+    resource_incidents: dict[str, list[WorkspaceResourceIncident]],
+    entity_incidents: list[WorkspaceResourceIncident],
+) -> dict[str, Any]:
+    entity_incident_ids = [incident.pk for incident in entity_incidents]
+    if match is None:
+        return {
+            "round": round_index,
+            "jornada": round_index,
+            "side": "Descans",
+            "opponent": "",
+            "opponent_id": "",
+            "resource": "",
+            "resource_id": "",
+            "match_id": None,
+            "has_incident": bool(entity_incident_ids),
+            "has_resource_incident": False,
+            "has_entity_incident": bool(entity_incident_ids),
+            "has_resource_excess": False,
+            "has_entity_conflict": bool(entity_incident_ids),
+            "incident_ids": entity_incident_ids,
+            "resource_incident_ids": [],
+            "entity_incident_ids": entity_incident_ids,
+        }
+
+    is_home = match.home_team_id == assignment.team_id
+    opponent_id = match.away_team_id if is_home else match.home_team_id
+    opponent_name = match.payload.get("away_team_name" if is_home else "home_team_name", "")
+    local_resource_incidents = resource_incidents.get(match.home_resource_id, []) if is_home else []
+    resource_incident_ids = [incident.pk for incident in local_resource_incidents]
+    incident_ids = [*resource_incident_ids, *entity_incident_ids]
+    resource_id = match.home_resource_id if is_home else ""
+    return {
+        "round": round_index,
+        "jornada": round_index,
+        "side": "Casa" if is_home else "Fora",
+        "opponent": _team_label(opponent_id, opponent_name),
+        "opponent_id": opponent_id,
+        "resource": _resource_label(resource_id) if is_home else "",
+        "resource_id": resource_id,
+        "match_id": match.pk,
+        "has_incident": bool(incident_ids),
+        "has_resource_incident": bool(resource_incident_ids),
+        "has_entity_incident": bool(entity_incident_ids),
+        "has_resource_excess": bool(resource_incident_ids),
+        "has_entity_conflict": bool(entity_incident_ids),
+        "incident_ids": incident_ids,
+        "resource_incident_ids": resource_incident_ids,
+        "entity_incident_ids": entity_incident_ids,
+    }
+
+
+def _assignment_calendar_filter_fields(assignment: WorkspaceAssignment) -> dict[str, str]:
+    team = _assignment_team(assignment)
+    return {
+        "competition": _assignment_competition_label(assignment),
+        "league": str(team.get("league_name") or "").strip(),
+        "modality": str(team.get("modality") or "").strip(),
+        "category": str(team.get("category") or "").strip(),
+        "subcategory": str(team.get("subcategory") or "").strip(),
+        "level": str(team.get("level") or "").strip(),
+        "entity": assignment.entity.strip(),
+        "venue": _assignment_venue(assignment, team),
+    }
+
+
+def _assignment_team(assignment: WorkspaceAssignment) -> dict[str, Any]:
+    team = (assignment.payload or {}).get("team")
+    return team if isinstance(team, dict) else {}
+
+
+def _assignment_venue(assignment: WorkspaceAssignment, team: dict[str, Any]) -> str:
+    for key in ("venue", "venue_name", "facility", "home_venue"):
+        value = str(team.get(key) or "").strip()
+        if value:
+            return value
+    home_resources = (assignment.payload or {}).get("home_resources")
+    if not isinstance(home_resources, list):
+        return ""
+    for row in home_resources:
+        if not isinstance(row, dict):
+            continue
+        resource_id = str(row.get("base_resource_id") or row.get("resource_id") or "").strip()
+        base_resource_id, _round_label = _split_resource_round(resource_id)
+        venue = str(row.get("venue") or "").strip() or next((part for part in base_resource_id.split("|") if part), "")
+        if venue:
+            return venue
+    return ""
+
+
+def _group_calendar_fields(rows: list[dict[str, str]]) -> dict[str, str]:
+    keys = ("competition", "league", "modality", "category", "subcategory", "level", "entity", "venue")
+    return {key: _common_text(row.get(key, "") for row in rows) for key in keys}
+
+
+def _common_text(values: Any) -> str:
+    unique = {str(value).strip() for value in values if str(value or "").strip()}
+    return next(iter(unique)) if len(unique) == 1 else ""
+
+
+def _calendar_filter_text(values: list[Any]) -> str:
+    return " ".join(str(value).strip() for value in values if str(value or "").strip())
+
+
+def _calendar_tokens(values: Any) -> str:
+    return " ".join(sorted({_filter_token(value) for value in values if str(value or "").strip()}))
 
 
 def _validate_workspace_run(run: CalendarizationRun) -> None:
@@ -408,23 +906,110 @@ def _create_resource_incidents(
         WorkspaceResourceIncident.objects.bulk_create(rows)
 
 
+def _create_entity_conflict_incidents(
+    workspace: AssignmentWorkspace,
+    solution: dict[str, Any],
+    teams: dict[str, dict[str, Any]],
+) -> None:
+    rows = []
+    for conflict in _entity_conflicts_from_solution(solution, teams):
+        team_ids = conflict["team_ids"]
+        if len(team_ids) <= 1:
+            continue
+        league_counts = Counter(_competition_label(teams.get(team_id, {})) for team_id in team_ids)
+        excess = max(1, len(team_ids) - 1)
+        rows.append(
+            WorkspaceResourceIncident(
+                workspace=workspace,
+                run=workspace.run,
+                incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
+                status=WorkspaceResourceIncident.STATUS_OPEN,
+                severity=excess,
+                resource_id=f"{conflict['group_id']}|{conflict['entity']}"[:255],
+                excess=excess,
+                locals_count=len(team_ids),
+                capacity=1,
+                team_ids=team_ids,
+                payload=_json_safe(
+                    {
+                        "entity": conflict["entity"],
+                        "group_id": conflict["group_id"],
+                        "team_slots": conflict["team_slots"],
+                        "league_counts": dict(league_counts),
+                    }
+                ),
+            )
+        )
+    if rows:
+        WorkspaceResourceIncident.objects.bulk_create(rows)
+
+
+def _entity_conflicts_from_solution(
+    solution: dict[str, Any],
+    teams: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    conflicts = []
+    for summary in _list(solution.get("group_summary")):
+        if not isinstance(summary, dict):
+            continue
+        group_id = str(summary.get("group_id") or "")
+        assigned_numbers = summary.get("assigned_numbers") if isinstance(summary.get("assigned_numbers"), dict) else {}
+        entity_excess = summary.get("entity_excess") if isinstance(summary.get("entity_excess"), dict) else {}
+        for entity, excess in entity_excess.items():
+            if int(_number(excess)) <= 0:
+                continue
+            entity_text = str(entity)
+            team_slots = []
+            for number, team_id_raw in assigned_numbers.items():
+                team_id = str(team_id_raw)
+                if str(teams.get(team_id, {}).get("entity") or "") != entity_text:
+                    continue
+                team_slots.append(
+                    {
+                        "team_id": team_id,
+                        "team_name": str(teams.get(team_id, {}).get("name") or team_id),
+                        "number": _int_or_none(number),
+                    }
+                )
+            conflicts.append(
+                {
+                    "entity": entity_text,
+                    "group_id": group_id,
+                    "team_ids": [row["team_id"] for row in sorted(team_slots, key=lambda row: (row["number"] or 99, row["team_name"]))],
+                    "team_slots": sorted(team_slots, key=lambda row: (row["number"] or 99, row["team_name"])),
+                }
+            )
+    return conflicts
+
+
 def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
     incidents = WorkspaceResourceIncident.objects.filter(workspace=workspace)
+    resource_incidents = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS)
+    entity_conflicts = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT)
     return {
         "hydration_version": HYDRATION_VERSION,
         "assignments": WorkspaceAssignment.objects.filter(workspace=workspace).count(),
         "matches": WorkspaceResourceMatch.objects.filter(workspace=workspace).count(),
-        "resource_incidents": incidents.count(),
-        "resource_excess_total": sum(incident.excess for incident in incidents),
+        "resource_incidents": resource_incidents.count(),
+        "entity_conflicts": entity_conflicts.count(),
+        "resource_excess_total": sum(incident.excess for incident in resource_incidents),
     }
 
 
 def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
     assignments_count = WorkspaceAssignment.objects.filter(workspace=workspace).count()
     matches_count = WorkspaceResourceMatch.objects.filter(workspace=workspace).count()
-    incidents = WorkspaceResourceIncident.objects.filter(workspace=workspace)
-    excess_total = sum(incident.excess for incident in incidents)
-    resource_count = incidents.count()
+    resource_incidents = WorkspaceResourceIncident.objects.filter(
+        workspace=workspace,
+        incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS,
+    )
+    entity_conflicts = WorkspaceResourceIncident.objects.filter(
+        workspace=workspace,
+        incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
+    )
+    excess_total = sum(incident.excess for incident in resource_incidents)
+    resource_count = resource_incidents.count()
+    entity_conflict_count = entity_conflicts.count()
     return [
         {"label": "Equips assignats", "value": assignments_count, "status": "neutral"},
         {"label": "Partits", "value": matches_count, "status": "neutral"},
@@ -433,6 +1018,11 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
             "value": excess_total,
             "subtitle": f"{resource_count} recursos afectats",
             "status": "danger" if excess_total else "success",
+        },
+        {
+            "label": "Conflictes entitat",
+            "value": entity_conflict_count,
+            "status": "warning" if entity_conflict_count else "success",
         },
         {
             "label": "Lligues",
@@ -445,6 +1035,29 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
 
 def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
     payload = incident.payload or {}
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT:
+        entity = str(payload.get("entity") or "-")
+        group_id = str(payload.get("group_id") or "-")
+        return {
+            "id": incident.pk,
+            "incident_id": incident.pk,
+            "type": "Conflicte entitat",
+            "title": f"{entity} - {group_id}",
+            "summary": f"{len(incident.team_ids or [])} equips de la mateixa entitat al grup",
+            "description": f"{len(incident.team_ids or [])} equips de la mateixa entitat al grup",
+            "impact": f"+{incident.excess}",
+            "count": incident.excess,
+            "severity": incident.severity,
+            "status": incident.get_status_display(),
+            "resource": group_id,
+            "venue": group_id,
+            "league": _top_league_label(payload.get("league_counts")),
+            "competition": _top_league_label(payload.get("league_counts")),
+            "team": entity,
+            "team_name": entity,
+            "team_ids": incident.team_ids or [],
+            "payload": payload,
+        }
     return {
         "id": incident.pk,
         "incident_id": incident.pk,
@@ -571,6 +1184,162 @@ def _assignment_summaries(workspace: AssignmentWorkspace) -> list[dict[str, Any]
             }
         )
     return rows
+
+
+def _venue_pressure_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    prepared = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        resource_id = str(row.get("resource_id") or "")
+        if not resource_id:
+            continue
+        prepared[resource_id] = {
+            "resource_id": resource_id,
+            "venue": str(row.get("venue") or ""),
+            "day": str(row.get("day") or ""),
+            "hour_slot": str(row.get("hour_slot") or ""),
+            "estimated_capacity": max(1, int(_number(row.get("estimated_capacity")) or 1)),
+            "demand_count": int(_number(row.get("demand_count"))),
+            "team_ids": [str(team_id) for team_id in (row.get("teams") or row.get("team_ids") or [])],
+        }
+    return prepared
+
+
+def _venue_sheet_meta(pressure_rows: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    venues: dict[str, dict[str, Any]] = {}
+    for row in pressure_rows.values():
+        venue = str(row.get("venue") or "")
+        venue_key = _venue_key(venue)
+        meta = venues.setdefault(venue_key, _empty_venue_meta(venue or "-", venue_key))
+        estimated_capacity = int(row.get("estimated_capacity") or 1)
+        demand_count = int(row.get("demand_count") or 0)
+        meta["max_capacity"] = max(int(meta["max_capacity"]), estimated_capacity)
+        meta["max_demand_count"] = max(int(meta["max_demand_count"]), demand_count)
+        meta["requested_team_ids"].update(str(team_id) for team_id in row.get("team_ids", []))
+        meta["slots"].append(
+            {
+                "day": str(row.get("day") or ""),
+                "hour_slot": str(row.get("hour_slot") or ""),
+                "estimated_capacity": estimated_capacity,
+                "demand_count": demand_count,
+                "demand_per_court": round(demand_count / estimated_capacity, 2) if estimated_capacity else 0,
+            }
+        )
+
+    for meta in venues.values():
+        meta["slots"] = sorted(meta["slots"], key=lambda item: (_day_order(item["day"]), _time_order(item["hour_slot"]), item["day"], item["hour_slot"]))
+        meta["slot_count"] = len(meta["slots"])
+        meta["requested_team_count"] = len(meta["requested_team_ids"])
+        meta["requested_team_ids"] = sorted(meta["requested_team_ids"])
+    return venues
+
+
+def _empty_venue_meta(venue: str, venue_key: str) -> dict[str, Any]:
+    return {
+        "venue": venue,
+        "venue_key": venue_key,
+        "max_capacity": 1,
+        "max_demand_count": 0,
+        "requested_team_ids": set(),
+        "requested_team_count": 0,
+        "slot_count": 0,
+        "slots": [],
+    }
+
+
+def _fallback_pressure_row(base_resource_id: str) -> dict[str, Any]:
+    parts = [part for part in str(base_resource_id).split("|") if part]
+    return {
+        "resource_id": base_resource_id,
+        "venue": parts[0] if len(parts) > 0 else base_resource_id,
+        "day": parts[1] if len(parts) > 1 else "",
+        "hour_slot": parts[2] if len(parts) > 2 else "",
+        "estimated_capacity": 1,
+        "demand_count": 0,
+        "team_ids": [],
+    }
+
+
+def _venue_sheet_match(
+    match: WorkspaceResourceMatch,
+    assignments: dict[str, WorkspaceAssignment],
+) -> dict[str, Any]:
+    home_assignment = assignments.get(match.home_team_id)
+    away_assignment = assignments.get(match.away_team_id)
+    return {
+        "id": match.pk,
+        "group_id": match.group_id,
+        "home_team_id": match.home_team_id,
+        "away_team_id": match.away_team_id,
+        "home_team": _team_label(match.home_team_id, match.payload.get("home_team_name", "") or (home_assignment.team_name if home_assignment else "")),
+        "away_team": _team_label(match.away_team_id, match.payload.get("away_team_name", "") or (away_assignment.team_name if away_assignment else "")),
+        "home_team_name": match.payload.get("home_team_name", "") or (home_assignment.team_name if home_assignment else match.home_team_id),
+        "away_team_name": match.payload.get("away_team_name", "") or (away_assignment.team_name if away_assignment else match.away_team_id),
+        "competition": _assignment_competition_label(home_assignment) if home_assignment else "",
+        "modality": _assignment_modality(home_assignment) if home_assignment else "",
+        "home_entity": home_assignment.entity if home_assignment else "",
+    }
+
+
+def _slot_key(day: str, hour_slot: str) -> str:
+    return f"{day}||{hour_slot}"
+
+
+def _venue_key(venue: str) -> str:
+    return str(venue or "-").strip().casefold()
+
+
+def _filter_token(value: str) -> str:
+    return str(value or "").strip().casefold().replace(" ", "-")
+
+
+def _assignment_modality(assignment: WorkspaceAssignment | None) -> str:
+    if assignment is None:
+        return ""
+    team = (assignment.payload or {}).get("team")
+    if not isinstance(team, dict):
+        return ""
+    return str(team.get("modality") or "").strip()
+
+
+def _round_number(round_label: str) -> int | None:
+    text = str(round_label or "").strip().lstrip("Jj")
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pct(value: int, total: int) -> int:
+    return int(round((value / total) * 100)) if total else 0
+
+
+def _day_order(day: str) -> int:
+    key = str(day or "").strip().casefold()
+    order = {
+        "dilluns": 1,
+        "dimarts": 2,
+        "dimecres": 3,
+        "dijous": 4,
+        "divendres": 5,
+        "dissabte": 6,
+        "diumenge": 7,
+    }
+    return order.get(key, 99)
+
+
+def _time_order(value: str) -> tuple[int, str]:
+    text = str(value or "")
+    parts = text.replace("-", ":").split(":")
+    try:
+        return (int(parts[0]) * 60 + int(parts[1]), text)
+    except (IndexError, TypeError, ValueError):
+        return (9999, text)
+
+
+def _text_sort(value: str) -> str:
+    return str(value or "").casefold()
 
 
 def _team_lookup(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

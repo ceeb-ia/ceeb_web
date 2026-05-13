@@ -96,6 +96,8 @@ class ResourceWorkspaceOverviewView(CalendaritzacionsAccessMixin, DetailView):
                 "incident_summaries": _decorate_workspace_incidents(self.object, summary.get("incident_summaries", [])),
                 "league_summaries": summary.get("league_summaries", []),
                 "assignment_summaries": summary.get("assignment_summaries", []),
+                "venue_round_sheets": _get_workspace_venue_round_sheets(workspace),
+                "calendar_view": _get_workspace_calendar_view(workspace),
                 "plot_galleries": _build_plot_galleries(self.object),
                 "workspace_audits": self.object.available_audits,
             }
@@ -267,6 +269,8 @@ def _get_workspace_services():
     try:
         from calendaritzacions.django.services.workspaces import (
             get_or_create_workspace_for_run,
+            get_workspace_calendar_view,
+            get_workspace_venue_round_sheets,
             get_workspace_incident_detail,
             get_workspace_summary,
             get_workspace_team_detail,
@@ -275,11 +279,18 @@ def _get_workspace_services():
         if exc.name != "calendaritzacions.django.services.workspaces":
             raise
         raise Http404("Resource workspace service is not available.") from exc
-    return get_or_create_workspace_for_run, get_workspace_summary, get_workspace_incident_detail, get_workspace_team_detail
+    return (
+        get_or_create_workspace_for_run,
+        get_workspace_summary,
+        get_workspace_incident_detail,
+        get_workspace_team_detail,
+        get_workspace_venue_round_sheets,
+        get_workspace_calendar_view,
+    )
 
 
 def _get_or_create_workspace_for_run(run: CalendarizationRun):
-    get_or_create_workspace_for_run, _, _, _ = _get_workspace_services()
+    get_or_create_workspace_for_run, _, _, _, _, _ = _get_workspace_services()
     try:
         return get_or_create_workspace_for_run(run)
     except ValueError as exc:
@@ -287,19 +298,31 @@ def _get_or_create_workspace_for_run(run: CalendarizationRun):
 
 
 def _get_workspace_summary(workspace) -> dict[str, object]:
-    _, get_workspace_summary, _, _ = _get_workspace_services()
+    _, get_workspace_summary, _, _, _, _ = _get_workspace_services()
     summary = get_workspace_summary(workspace)
     return summary if isinstance(summary, dict) else {}
 
 
 def _get_workspace_incident_detail(workspace, incident_id: str):
-    _, _, get_workspace_incident_detail, _ = _get_workspace_services()
+    _, _, get_workspace_incident_detail, _, _, _ = _get_workspace_services()
     return get_workspace_incident_detail(workspace, incident_id)
 
 
 def _get_workspace_team_detail(workspace, team_id: str):
-    _, _, _, get_workspace_team_detail = _get_workspace_services()
+    _, _, _, get_workspace_team_detail, _, _ = _get_workspace_services()
     return get_workspace_team_detail(workspace, team_id)
+
+
+def _get_workspace_venue_round_sheets(workspace) -> dict[str, object]:
+    _, _, _, _, get_workspace_venue_round_sheets, _ = _get_workspace_services()
+    payload = get_workspace_venue_round_sheets(workspace)
+    return payload if isinstance(payload, dict) else {"sheets": [], "venues": [], "rounds": []}
+
+
+def _get_workspace_calendar_view(workspace) -> dict[str, object]:
+    _, _, _, _, _, get_workspace_calendar_view = _get_workspace_services()
+    payload = get_workspace_calendar_view(workspace)
+    return payload if isinstance(payload, dict) else {"groups": [], "filters": {}}
 
 
 def _decorate_workspace_incidents(run: CalendarizationRun, incidents: object) -> list[object]:
@@ -384,7 +407,7 @@ def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
     return sorted(
         plot_id
         for plot_id, path in plots.items()
-        if plot_id != "manifest" and path and str(path).lower().endswith(".png")
+        if plot_id not in {"manifest", "friday"} and path and str(path).lower().endswith(".png")
     )
 
 
@@ -407,8 +430,9 @@ def _ensure_run_plot_path(run: CalendarizationRun, *, artifact: str, plot_id: st
 def _plot_label(plot_id: str) -> str:
     labels = {
         "heatmap": "Mapa demanda",
-        "friday": "Divendres",
         "by_venue": "Per pista",
+        "seed_requests_by_modality": "Peticions per modalitat",
+        "assigned_numbers_by_modality": "Assignacions per modalitat",
         "top_slots": "Slots crítics",
         "group_sizes": "Mida grups",
         "resource_excess": "Pressió recursos",

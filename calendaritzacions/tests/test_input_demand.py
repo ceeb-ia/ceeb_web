@@ -25,6 +25,7 @@ class InputDemandAnalysisTests(unittest.TestCase):
                     "Modalitat": "Futbol",
                     "Nom Lliga": "Lliga 1",
                     "Categoria": "Cat 1",
+                    "Núm. sorteig": 1,
                 },
                 {
                     "Id": "B",
@@ -35,6 +36,7 @@ class InputDemandAnalysisTests(unittest.TestCase):
                     "Modalitat": "Volei",
                     "Nom Lliga": "Lliga 2",
                     "Categoria": "Cat 2",
+                    "Núm. sorteig": "CASA",
                 },
                 {
                     "Id": "C",
@@ -45,6 +47,7 @@ class InputDemandAnalysisTests(unittest.TestCase):
                     "Modalitat": "Futbol",
                     "Nom Lliga": "Lliga 1",
                     "Categoria": "Cat 1",
+                    "Núm. sorteig": 2,
                 },
                 {
                     "Id": "D",
@@ -55,6 +58,7 @@ class InputDemandAnalysisTests(unittest.TestCase):
                     "Modalitat": "Futbol",
                     "Nom Lliga": "Lliga 3",
                     "Categoria": "Cat 3",
+                    "Núm. sorteig": "",
                 },
             ]
         )
@@ -81,6 +85,14 @@ class InputDemandAnalysisTests(unittest.TestCase):
             if row["pista_joc"] == "Pavello 1" and row["dia_partit"] == "Dissabte"
         ]
         self.assertEqual(saturday[0]["horari_partit"], "18:00")
+        seed_rows = {
+            (row["modalitat"], row["peticio"]): row["equips"]
+            for row in analysis["seed_requests_by_modality"]
+        }
+        self.assertEqual(seed_rows[("Futbol", "1")], 1)
+        self.assertEqual(seed_rows[("Futbol", "2")], 1)
+        self.assertEqual(seed_rows[("Futbol", "Sense peticio")], 1)
+        self.assertEqual(seed_rows[("Volei", "CASA")], 1)
 
     def test_build_input_demand_payload_is_json_ready(self):
         analysis = build_input_demand_analysis(
@@ -118,7 +130,8 @@ class InputDemandAnalysisTests(unittest.TestCase):
             plots = write_input_demand_plots(analysis, Path(tmp), stem="input_demand_test")
 
             self.assertIn("heatmap", plots)
-            self.assertIn("friday", plots)
+            self.assertNotIn("friday", plots)
+            self.assertIn("seed_requests_by_modality", plots)
             for path in plots.values():
                 self.assertTrue(Path(path).exists())
 

@@ -255,6 +255,7 @@
 
 .workspace-kpi,
 .workspace-panel,
+.workspace-subpanel,
 .workspace-empty {
   background: #ffffff;
   border: 1px solid #e4e7ec;
@@ -311,6 +312,11 @@
 
 .workspace-panel {
   padding: 1rem;
+}
+
+.workspace-subpanel {
+  background: #fbfcfe;
+  padding: .85rem;
 }
 
 .workspace-empty {
@@ -378,6 +384,205 @@
   color: inherit;
   display: block;
   text-decoration: none;
+}
+
+.workspace-summary-filter {
+  max-width: 220px;
+}
+
+.workspace-pagination {
+  align-items: center;
+  display: flex;
+  gap: .65rem;
+  justify-content: flex-end;
+}
+
+.workspace-venue-summary {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.workspace-calendar-wrap {
+  max-height: 76vh;
+  overflow: auto;
+}
+
+.workspace-calendar-table {
+  min-width: 860px;
+  table-layout: fixed;
+}
+
+.workspace-calendar-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.workspace-calendar-table th:first-child,
+.workspace-calendar-table td:first-child {
+  min-width: 220px;
+  width: 220px;
+}
+
+.workspace-calendar-row-warning > th {
+  background: #fffcf5;
+}
+
+.workspace-calendar-cell {
+  background: #ffffff;
+  border: 1px solid #d0d5dd;
+  border-left: 4px solid #98a2b3;
+  border-radius: 6px;
+  min-height: 88px;
+  padding: .5rem;
+}
+
+.workspace-calendar-cell-casa {
+  border-left-color: #2f6f9f;
+}
+
+.workspace-calendar-cell-fora {
+  border-left-color: #667085;
+}
+
+.workspace-calendar-cell-descans {
+  background: #f8fafc;
+  color: #667085;
+}
+
+.workspace-calendar-cell-warning {
+  background: #fffcf5;
+  border-color: #fedf89;
+}
+
+.workspace-calendar-cell-danger {
+  background: #fffbfa;
+  border-color: #fecdca;
+}
+
+.workspace-calendar-cell__side {
+  color: #344054;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workspace-calendar-cell__opponent {
+  color: #1f2937;
+  font-size: .86rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: .25rem;
+}
+
+.workspace-calendar-cell__resource {
+  color: #667085;
+  font-size: .75rem;
+  line-height: 1.25;
+  margin-top: .3rem;
+}
+
+.workspace-venue-summary > div {
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  padding: .65rem .75rem;
+}
+
+.workspace-venue-summary__label {
+  color: #667085;
+  display: block;
+  font-size: .74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workspace-venue-sheet__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  justify-content: flex-end;
+}
+
+.workspace-venue-sheet__wrap {
+  max-height: 76vh;
+  overflow: auto;
+}
+
+.workspace-venue-sheet__table {
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+.workspace-venue-sheet__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.workspace-venue-sheet__table th:first-child,
+.workspace-venue-sheet__table td:first-child {
+  min-width: 140px;
+  width: 140px;
+}
+
+.workspace-venue-sheet__table th:last-child,
+.workspace-venue-sheet__table td:last-child {
+  min-width: 76px;
+  width: 76px;
+}
+
+.workspace-venue-sheet__empty {
+  background: #f8fafc;
+}
+
+.workspace-venue-sheet__row-warning {
+  background: #fffbfa;
+}
+
+.workspace-venue-sheet__overflow td {
+  background: #fff1f3;
+  color: #912018;
+}
+
+.workspace-match-cell {
+  background: #ffffff;
+  border: 1px solid #d0d5dd;
+  border-left: 4px solid #2f6f9f;
+  border-radius: 6px;
+  min-height: 104px;
+  padding: .55rem .6rem;
+}
+
+.workspace-match-cell__meta {
+  color: #2f6f9f;
+  font-size: .72rem;
+  font-weight: 700;
+  margin-bottom: .25rem;
+  text-transform: uppercase;
+}
+
+.workspace-match-cell__team {
+  color: #1f2937;
+  font-size: .88rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.workspace-match-cell__versus,
+.workspace-match-cell__competition {
+  color: #667085;
+  font-size: .78rem;
+  line-height: 1.25;
+  margin-top: .2rem;
+}
+
+.workspace-match-cell__link {
+  display: inline-block;
+  font-size: .78rem;
+  font-weight: 700;
+  margin-top: .45rem;
 }
 
 .workspace-list {

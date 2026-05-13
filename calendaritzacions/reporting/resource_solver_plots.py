@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ def write_resource_solver_final_plots(
         ("group_sizes", _plot_group_sizes(result)),
         ("resource_excess", _plot_resource_excess(result)),
         ("entity_conflicts", _plot_entity_conflicts(result)),
+        ("assigned_numbers_by_modality", _plot_assigned_numbers_by_modality(result, context)),
         ("status_summary", _plot_status_summary(result, context)),
     ]
 
@@ -151,6 +153,55 @@ def _plot_status_summary(result: ResourceSolverResult, context: SolverContext) -
     ax.set_title(f"Resum final solver: {result.status}")
     ax.set_ylabel("Valor")
     ax.tick_params(axis="x", rotation=30)
+    return fig
+
+
+def _plot_assigned_numbers_by_modality(result: ResourceSolverResult, context: SolverContext) -> Any | None:
+    if not result.assignments:
+        return None
+    import matplotlib.pyplot as plt
+
+    modality_by_team = {
+        team.team_id: (team.modality.strip() or "Sense modalitat")
+        for team in context.teams
+    }
+    counts: Counter[tuple[str, int]] = Counter()
+    totals: Counter[str] = Counter()
+    for assignment in result.assignments:
+        modality = modality_by_team.get(assignment.team_id, "Sense modalitat")
+        counts[(modality, int(assignment.number))] += 1
+        totals[modality] += 1
+
+    modalities = [modality for modality, _total in totals.most_common(12)]
+    if not modalities:
+        return None
+
+    cols = min(3, len(modalities))
+    rows = math.ceil(len(modalities) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.6 * cols, 3.8 * rows))
+    try:
+        axes = axes.flatten()
+    except AttributeError:
+        axes = [axes]
+
+    palette = ["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1", "#FF9DA7"]
+    for ax, modality in zip(axes, modalities):
+        labels = []
+        values = []
+        for number in range(1, 9):
+            count = counts.get((modality, number), 0)
+            if count:
+                labels.append(str(number))
+                values.append(count)
+        if not values:
+            ax.axis("off")
+            continue
+        ax.pie(values, labels=labels, autopct="%1.0f%%", startangle=90, colors=palette[: len(values)], textprops={"fontsize": 8})
+        ax.set_title(str(modality), fontsize=10)
+    for ax in axes[len(modalities):]:
+        ax.axis("off")
+    fig.suptitle("Assignacio final de numeros per modalitat", fontsize=13)
+    fig.tight_layout()
     return fig
 
 

@@ -16,6 +16,11 @@ VENUE_COLUMN = "Pista joc"
 DAY_COLUMN = "Dia partit"
 TIME_COLUMN = "Horari partit"
 TEAM_ID_COLUMN = "Id"
+SEED_COLUMN_CANDIDATES = (
+    "Núm. sorteig",
+    "Num. sorteig",
+    "NÃºm. sorteig",
+)
 
 MISSING_VENUE = "(sense pista)"
 MISSING_DAY = "(sense dia)"
@@ -58,6 +63,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         ["pista_joc", "dia_partit", "horari_partit"],
         count_col,
     )
+    seed_requests_by_modality = _seed_requests_by_modality(prepared, count_col)
 
     by_venue_day_time = _sort_slot_frame(by_venue_day_time)
     by_venue_day = _sort_day_frame(by_venue_day)
@@ -99,6 +105,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         "by_venue_day_time": by_venue_day_time.to_dict("records"),
         "friday_by_venue_time": friday.to_dict("records"),
         "top_demand_slots": top_slots.to_dict("records"),
+        "seed_requests_by_modality": seed_requests_by_modality,
         "missing_fields": missing_fields,
         "columns": {
             "venue": VENUE_COLUMN,
@@ -136,15 +143,15 @@ def write_input_demand_plots(
     generated: dict[str, str] = {}
 
     slot_df = pd.DataFrame(analysis.get("by_venue_day_time", []))
-    friday_df = pd.DataFrame(analysis.get("friday_by_venue_time", []))
     venue_df = pd.DataFrame(analysis.get("by_venue", []))
     top_df = pd.DataFrame(analysis.get("top_demand_slots", []))
+    seed_request_df = pd.DataFrame(analysis.get("seed_requests_by_modality", []))
 
     for plot_id, plotter, frame in [
         ("heatmap", _plot_global_heatmap, slot_df),
-        ("friday", _plot_friday_heatmap, friday_df),
         ("by_venue", _plot_by_venue_bar, venue_df),
         ("top_slots", _plot_top_slots_bar, top_df),
+        ("seed_requests_by_modality", _plot_seed_requests_by_modality, seed_request_df),
     ]:
         if frame.empty:
             continue
@@ -176,6 +183,13 @@ def _prepare_demand_frame(df: pd.DataFrame) -> pd.DataFrame:
     prepared["is_missing_venue"] = prepared["pista_joc"].eq(MISSING_VENUE)
     prepared["is_missing_day"] = prepared["dia_partit"].eq(MISSING_DAY)
     prepared["is_missing_time"] = prepared["horari_partit"].eq(MISSING_TIME)
+    prepared["modalitat_peticio"] = (
+        _normalized_text_column(prepared, "Modalitat", "Sense modalitat")
+        if "Modalitat" in prepared.columns
+        else pd.Series(["Sense modalitat"] * len(prepared), index=prepared.index)
+    )
+    seed_column = next((column for column in SEED_COLUMN_CANDIDATES if column in prepared.columns), None)
+    prepared["numero_sorteig_peticio"] = prepared[seed_column].map(_seed_request_label) if seed_column else "Sense peticio"
     return prepared
 
 
@@ -240,6 +254,22 @@ def _missing_field_records(df: pd.DataFrame) -> dict[str, list[dict[str, Any]]]:
     }
 
 
+def _seed_requests_by_modality(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    if data.empty:
+        return []
+    grouped = (
+        data.groupby(["modalitat_peticio", "numero_sorteig_peticio"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"modalitat_peticio": "modalitat", "numero_sorteig_peticio": "peticio"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    grouped["_request_order"] = grouped["peticio"].map(_seed_request_order)
+    grouped = grouped.sort_values(["modalitat", "_request_order", "peticio"], kind="stable").drop(columns=["_request_order"])
+    return grouped.to_dict("records")
+
+
 def _normalized_text_column(df: pd.DataFrame, column: str, missing_label: str) -> pd.Series:
     if column not in df.columns:
         return pd.Series([missing_label] * len(df), index=df.index)
@@ -255,6 +285,29 @@ def _normalized_time_column(df: pd.DataFrame, column: str) -> pd.Series:
     if column not in df.columns:
         return pd.Series([MISSING_TIME] * len(df), index=df.index)
     return df[column].map(_format_time_value)
+
+
+def _seed_request_label(value: Any) -> str:
+    if _is_missing(value):
+        return "Sense peticio"
+    text = " ".join(str(value).strip().split())
+    if not text:
+        return "Sense peticio"
+    upper = _day_key(text).upper()
+    if upper in {"CASA", "FORA"}:
+        return upper
+    try:
+        number = int(float(text.replace(",", ".")))
+    except (TypeError, ValueError):
+        return "Altres"
+    return str(number) if 1 <= number <= 8 else "Altres"
+
+
+def _seed_request_order(value: Any) -> int:
+    text = str(value)
+    if text.isdigit():
+        return int(text)
+    return {"CASA": 20, "FORA": 21, "Altres": 98, "Sense peticio": 99}.get(text, 97)
 
 
 def _format_time_value(value: Any) -> str:
@@ -341,24 +394,6 @@ def _plot_global_heatmap(df: pd.DataFrame):
     return fig
 
 
-def _plot_friday_heatmap(df: pd.DataFrame):
-    import matplotlib.pyplot as plt
-
-    pivot = df.pivot_table(index="pista_joc", columns="horari_partit", values="equips", aggfunc="sum", fill_value=0)
-    if pivot.empty:
-        return None
-    fig, ax = plt.subplots(figsize=(max(8, 0.6 * len(pivot.columns)), max(5, 0.35 * len(pivot.index))))
-    image = ax.imshow(pivot.to_numpy(), aspect="auto", cmap="OrRd")
-    ax.set_xticks(range(len(pivot.columns)), pivot.columns, rotation=45, ha="right", fontsize=8)
-    ax.set_yticks(range(len(pivot.index)), pivot.index, fontsize=8)
-    ax.set_xlabel("Hora")
-    ax.set_ylabel("Pista joc")
-    ax.set_title("Demanda de divendres per pista i hora")
-    fig.colorbar(image, ax=ax, label="Equips")
-    fig.tight_layout()
-    return fig
-
-
 def _plot_by_venue_bar(df: pd.DataFrame):
     import matplotlib.pyplot as plt
 
@@ -387,6 +422,41 @@ def _plot_top_slots_bar(df: pd.DataFrame):
     ax.set_xlabel("Equips")
     ax.set_title("Franges amb mes demanda")
     ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_seed_requests_by_modality(df: pd.DataFrame):
+    if df.empty:
+        return None
+    import matplotlib.pyplot as plt
+
+    totals = df.groupby("modalitat", dropna=False)["equips"].sum().sort_values(ascending=False)
+    modalities = list(totals.head(12).index)
+    if not modalities:
+        return None
+
+    cols = min(3, len(modalities))
+    rows = math.ceil(len(modalities) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.6 * cols, 3.8 * rows))
+    if not isinstance(axes, (list, tuple)):
+        try:
+            axes = axes.flatten()
+        except AttributeError:
+            axes = [axes]
+    else:
+        axes = list(axes)
+
+    palette = ["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC"]
+    for ax, modality in zip(axes, modalities):
+        subset = df[df["modalitat"] == modality].sort_values("peticio", key=lambda series: series.map(_seed_request_order), kind="stable")
+        values = subset["equips"].astype(int).tolist()
+        labels = subset["peticio"].astype(str).tolist()
+        ax.pie(values, labels=labels, autopct="%1.0f%%", startangle=90, colors=palette[: len(values)], textprops={"fontsize": 8})
+        ax.set_title(str(modality), fontsize=10)
+    for ax in axes[len(modalities):]:
+        ax.axis("off")
+    fig.suptitle("Peticions de numero de sorteig per modalitat", fontsize=13)
     fig.tight_layout()
     return fig
 
