@@ -15,6 +15,7 @@ class ResourceSolverContractsTests(unittest.TestCase):
         self.assertEqual(config.resource_excess_weight, 100_000)
         self.assertEqual(config.time_limit_seconds, 1800.0)
         self.assertEqual(config.num_search_workers, 2)
+        self.assertEqual(config.max_memory_mb, 0)
         self.assertEqual(config.level_constraint_mode, "off")
         self.assertEqual(config.level_a_mismatch_weight, 1_000_000)
         self.assertEqual(config.level_band_mismatch_weight, 200_000)

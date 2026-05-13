@@ -177,6 +177,7 @@ def _model_summary(
         "weights": objective_weights(objective_terms),
         "time_limit_seconds": getattr(context.config, "time_limit_seconds", None),
         "num_search_workers": getattr(context.config, "num_search_workers", None),
+        "max_memory_mb": getattr(context.config, "max_memory_mb", None),
     }
 
 
@@ -193,6 +194,9 @@ def _solve_cp_sat_model(
     num_search_workers = int(getattr(config, "num_search_workers", 0) or 0)
     if num_search_workers > 0:
         solver.parameters.num_search_workers = num_search_workers
+    max_memory_mb = int(getattr(config, "max_memory_mb", 0) or 0)
+    if max_memory_mb > 0 and hasattr(solver.parameters, "max_memory_in_mb"):
+        solver.parameters.max_memory_in_mb = max_memory_mb
     started = perf_counter()
     status_code = solver.Solve(built_model.model)
     wall_time = perf_counter() - started

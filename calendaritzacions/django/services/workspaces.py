@@ -20,6 +20,7 @@ from calendaritzacions.django.models import (
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
 HYDRATION_VERSION = 4
+MAX_POSITIVE_SMALLINT = 32767
 RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
@@ -1341,7 +1342,7 @@ def _create_resource_incidents(
                 run=workspace.run,
                 incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS,
                 status=WorkspaceResourceIncident.STATUS_OPEN,
-                severity=excess,
+                severity=_incident_severity(excess),
                 resource_id=resource_id,
                 excess=excess,
                 locals_count=int(_number(item.get("locals_count"))),
@@ -1377,7 +1378,7 @@ def _create_entity_conflict_incidents(
                 run=workspace.run,
                 incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
                 status=WorkspaceResourceIncident.STATUS_OPEN,
-                severity=excess,
+                severity=_incident_severity(excess),
                 resource_id=f"{conflict['group_id']}|{conflict['entity']}"[:255],
                 excess=excess,
                 locals_count=len(team_ids),
@@ -1438,7 +1439,7 @@ def _create_linkage_violation_incidents(
                 run=workspace.run,
                 incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
                 status=WorkspaceResourceIncident.STATUS_OPEN,
-                severity=max(1, int(math.ceil(violation_cost))),
+                severity=_incident_severity(violation_cost),
                 resource_id=resource_id,
                 excess=max(1, int(math.ceil(violation_cost))),
                 locals_count=len(team_ids),
@@ -1516,7 +1517,7 @@ def _create_level_mismatch_incidents(
                 run=workspace.run,
                 incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH,
                 status=WorkspaceResourceIncident.STATUS_OPEN,
-                severity=max(1, int(math.ceil(cost))),
+                severity=_incident_severity(cost),
                 resource_id=f"{group_id}|level_mismatch"[:255] if group_id else "level_mismatch",
                 excess=max(1, int(math.ceil(cost))),
                 locals_count=len(team_ids),
@@ -2457,6 +2458,10 @@ def _number(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _incident_severity(value: Any) -> int:
+    return min(MAX_POSITIVE_SMALLINT, max(1, int(math.ceil(_number(value)))))
 
 
 def _int_or_none(value: Any) -> int | None:

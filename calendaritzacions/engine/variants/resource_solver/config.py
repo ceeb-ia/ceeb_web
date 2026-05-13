@@ -30,6 +30,9 @@ class ResourceSolverConfig:
     num_search_workers: int = field(
         default_factory=lambda: _env_int("CALENDARITZACIONS_SOLVER_NUM_SEARCH_WORKERS", 2)
     )
+    max_memory_mb: int = field(
+        default_factory=lambda: _env_int("CALENDARITZACIONS_SOLVER_MAX_MEMORY_MB", 0)
+    )
     capacity_mode: str = "soft"
     resource_excess_weight: int = 100_000
     entity_excess_weight: int = 10_000
@@ -74,6 +77,13 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
                 config,
                 "num_search_workers",
                 _env_int("CALENDARITZACIONS_SOLVER_NUM_SEARCH_WORKERS", 2),
+            )
+        ),
+        max_memory_mb=int(
+            getattr(
+                config,
+                "max_memory_mb",
+                _env_int("CALENDARITZACIONS_SOLVER_MAX_MEMORY_MB", 0),
             )
         ),
         linkage_mode=str(getattr(config, "linkage_mode", default_linkage_mode) or default_linkage_mode),

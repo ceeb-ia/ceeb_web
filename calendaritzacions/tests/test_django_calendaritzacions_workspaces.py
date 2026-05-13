@@ -444,8 +444,8 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
                                     "team_levels": {"A": "A", "B": "C"},
                                     "raw_levels": {"A": "A", "B": "E"},
                                     "family": "level_a_mismatch",
-                                    "cost": 1000,
-                                    "violation_cost": 1000,
+                                    "cost": 1000000,
+                                    "violation_cost": 1000000,
                                 }
                             ],
                         }
@@ -480,7 +480,8 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(incident.payload["group_id"], "G1")
         self.assertEqual(incident.payload["teams"][0]["normalized_level"], "A")
         self.assertEqual(incident.payload["teams"][1]["normalized_level"], "C")
-        self.assertEqual(incident.payload["violation_cost"], 1000.0)
+        self.assertEqual(incident.payload["violation_cost"], 1000000.0)
+        self.assertEqual(incident.severity, 32767)
         self.assertEqual(summary["raw_summary"]["level_mismatches"], 1)
         self.assertEqual(summary["incident_summaries"][0]["type_key"], "level_mismatch")
         self.assertEqual(detail["facts"][0]["value"], "G1")
