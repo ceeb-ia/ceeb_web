@@ -83,6 +83,9 @@
                 <a href="{% url 'calendaritzacions:resource_workspace_team' run.pk team.team_id %}">{{ team.team_name }}</a>
               </div>
               <div class="text-muted small">{{ team.team_id }}</div>
+              {% if team.normalized_level %}
+              <div class="text-muted small">Nivell {{ team.raw_level|default:"-" }} -> {{ team.normalized_level }}</div>
+              {% endif %}
             </div>
             <div class="text-right">
               {% if team.side and team.side != "-" %}<span class="badge badge-light">{{ team.side }}</span>{% endif %}

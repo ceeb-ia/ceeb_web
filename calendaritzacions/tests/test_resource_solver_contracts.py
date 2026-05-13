@@ -1,6 +1,7 @@
 import unittest
 
 from calendaritzacions.engine.variants.resource_solver.config import ResourceSolverConfig
+from calendaritzacions.engine.variants.resource_solver.config import coerce_resource_solver_config
 from calendaritzacions.engine.variants.resource_solver.types import GroupSpec, TeamRecord
 
 
@@ -14,6 +15,23 @@ class ResourceSolverContractsTests(unittest.TestCase):
         self.assertEqual(config.resource_excess_weight, 100_000)
         self.assertEqual(config.time_limit_seconds, 1800.0)
         self.assertEqual(config.num_search_workers, 2)
+        self.assertEqual(config.level_constraint_mode, "off")
+        self.assertEqual(config.level_a_mismatch_weight, 1_000_000)
+        self.assertEqual(config.level_band_mismatch_weight, 200_000)
+
+    def test_coerces_level_constraint_mode_from_engine_config(self):
+        from calendaritzacions.engine.config import EngineConfig
+
+        config = coerce_resource_solver_config(
+            EngineConfig(
+                name="resource_solver",
+                phase_name="segona_fase",
+                resource_solver_level_constraint_mode="soft",
+            )
+        )
+
+        self.assertEqual(config.phase_name, "segona_fase")
+        self.assertEqual(config.level_constraint_mode, "soft")
 
     def test_team_and_group_records_are_instantiable(self):
         team = TeamRecord(

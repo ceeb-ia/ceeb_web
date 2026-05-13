@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 import math
 from pathlib import Path
+import re
 from typing import Any
 
 from django.db import transaction
@@ -77,6 +78,7 @@ def hydrate_workspace_from_audits(
         _create_resource_incidents(workspace, usage_rows, created_matches, teams)
         _create_entity_conflict_incidents(workspace, solution, teams)
         _create_linkage_violation_incidents(workspace, solution, solver_explanations, teams)
+        _create_level_mismatch_incidents(workspace, solver_explanations, teams)
         workspace.summary = _build_persisted_summary(workspace)
         workspace.status = AssignmentWorkspace.STATUS_ACTIVE
         workspace.source_artifact = "resource_solution"
@@ -127,6 +129,8 @@ def get_workspace_incident_detail(
         return _entity_conflict_incident_detail(workspace, incident)
     if incident.incident_type == WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION:
         return _linkage_violation_incident_detail(workspace, incident)
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH:
+        return _level_mismatch_incident_detail(workspace, incident)
 
     resource_id = incident.resource_id
     matches = WorkspaceResourceMatch.objects.filter(
@@ -350,6 +354,95 @@ def _linkage_violation_incident_detail(
             "Revisar els numeros assignats dels equips en el mateix grup de linkage.",
             "Comparar els calendaris dels equips implicats abans de canviar grup o numero.",
             "Si el cost es menor que altres pressions, deixar la incidencia marcada per decisio manual.",
+        ],
+    }
+
+
+def _level_mismatch_incident_detail(
+    workspace: AssignmentWorkspace,
+    incident: WorkspaceResourceIncident,
+) -> dict[str, Any]:
+    payload = incident.payload or {}
+    team_ids = [str(team_id) for team_id in (incident.team_ids or [])]
+    assignments = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(
+            workspace=workspace,
+            team_id__in=team_ids,
+        )
+    }
+    group_id = str(payload.get("group_id") or "")
+    group_matches = list(
+        WorkspaceResourceMatch.objects.filter(
+            workspace=workspace,
+            group_id=group_id,
+        ).order_by("round_index", "id")
+    )
+    team_calendars = []
+    affected_matches = []
+    for team in _list(payload.get("teams")):
+        if not isinstance(team, dict):
+            continue
+        team_id = str(team.get("team_id") or "")
+        if not team_id:
+            continue
+        assignment = assignments.get(team_id)
+        calendar = []
+        for match in group_matches:
+            if match.home_team_id != team_id and match.away_team_id != team_id:
+                continue
+            is_home = match.home_team_id == team_id
+            opponent_id = match.away_team_id if is_home else match.home_team_id
+            opponent_name = match.payload.get("away_team_name" if is_home else "home_team_name", "")
+            row = {
+                "id": match.pk,
+                "round": match.round_index,
+                "side": "Casa" if is_home else "Fora",
+                "opponent_id": opponent_id,
+                "opponent": _team_label(opponent_id, opponent_name),
+                "resource": _resource_label(match.home_resource_id) if is_home else "-",
+                "home_team": _team_label(match.home_team_id, match.payload.get("home_team_name", "")),
+                "home_team_id": match.home_team_id,
+                "away_team": _team_label(match.away_team_id, match.payload.get("away_team_name", "")),
+                "away_team_id": match.away_team_id,
+            }
+            calendar.append(row)
+            affected_matches.append(row)
+        team_calendars.append(
+            {
+                "team_id": team_id,
+                "team_name": str(team.get("team_name") or (assignment.team_name if assignment else team_id)),
+                "number": team.get("assigned_number") or (assignment.assigned_number if assignment else None),
+                "group_id": team.get("group_id") or group_id or (assignment.group_id if assignment else ""),
+                "raw_level": team.get("raw_level") or "-",
+                "normalized_level": team.get("normalized_level") or "-",
+                "calendar": calendar,
+            }
+        )
+
+    unique_matches = {row["id"]: row for row in affected_matches}
+    return {
+        **_incident_summary(incident),
+        "detail": (
+            "El grup combina equips amb nivells normalitzats incompatibles segons la restriccio de nivell. "
+            "La incidencia es soft: el solver ha prioritzat altres restriccions o no ha trobat una alternativa millor."
+        ),
+        "facts": [
+            {"label": "Grup", "value": group_id or "-"},
+            {"label": "Familia", "value": payload.get("family") or "-"},
+            {"label": "Cost", "value": payload.get("violation_cost") or incident.excess},
+            {"label": "Equips implicats", "value": len(team_ids)},
+            {"label": "Nivells", "value": _level_pair_label(payload.get("teams"))},
+        ],
+        "affected_matches": list(unique_matches.values()),
+        "team_calendars": sorted(
+            team_calendars,
+            key=lambda row: (row.get("number") or 9999, row.get("team_name") or ""),
+        ),
+        "recommendations": [
+            "Provar moure un equip implicat a un grup amb nivell normalitzat compatible.",
+            "Prioritzar no barrejar A amb no-A quan hi hagi alternativa.",
+            "Usar equips B/C com a pont abans de barrejar directament B amb C.",
         ],
     }
 
@@ -1358,6 +1451,84 @@ def _create_linkage_violation_incidents(
         WorkspaceResourceIncident.objects.bulk_create(rows)
 
 
+def _create_level_mismatch_incidents(
+    workspace: AssignmentWorkspace,
+    solver_explanations: dict[str, Any],
+    teams: dict[str, dict[str, Any]],
+) -> None:
+    level_band = solver_explanations.get("level_band") if isinstance(solver_explanations, dict) else None
+    if not isinstance(level_band, dict) or not level_band.get("enabled"):
+        return
+
+    normalized_by_team = {
+        str(row.get("team_id") or ""): row
+        for row in _list(level_band.get("normalized_teams"))
+        if isinstance(row, dict) and str(row.get("team_id") or "")
+    }
+    assignments = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(workspace=workspace)
+    }
+    rows = []
+    for violation in _list(level_band.get("violations")):
+        if not isinstance(violation, dict):
+            continue
+        team_ids = [str(team_id) for team_id in _list(violation.get("team_ids")) if str(team_id or "")]
+        if len(team_ids) < 2:
+            continue
+        group_id = str(violation.get("group_id") or "")
+        team_rows = []
+        for team_id in team_ids:
+            normalized = normalized_by_team.get(team_id, {})
+            assignment = assignments.get(team_id)
+            team = teams.get(team_id, {})
+            team_rows.append(
+                {
+                    "team_id": team_id,
+                    "team_name": str(
+                        normalized.get("team_name")
+                        or team.get("name")
+                        or (assignment.team_name if assignment else team_id)
+                    ),
+                    "group_id": group_id or (assignment.group_id if assignment else ""),
+                    "assigned_number": normalized.get("assigned_number")
+                    or (assignment.assigned_number if assignment else None),
+                    "raw_level": str(normalized.get("raw_level") or team.get("level") or ""),
+                    "normalized_level": str(
+                        normalized.get("normalized_level")
+                        or (violation.get("team_levels") or {}).get(team_id)
+                        or ""
+                    ),
+                }
+            )
+        league_counts = Counter(_competition_label(teams.get(team_id, {})) for team_id in team_ids)
+        cost = _number(violation.get("violation_cost") or violation.get("cost") or 1)
+        payload = {
+            **violation,
+            "group_id": group_id,
+            "teams": team_rows,
+            "violation_cost": cost,
+            "league_counts": dict(league_counts),
+        }
+        rows.append(
+            WorkspaceResourceIncident(
+                workspace=workspace,
+                run=workspace.run,
+                incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH,
+                status=WorkspaceResourceIncident.STATUS_OPEN,
+                severity=max(1, int(math.ceil(cost))),
+                resource_id=f"{group_id}|level_mismatch"[:255] if group_id else "level_mismatch",
+                excess=max(1, int(math.ceil(cost))),
+                locals_count=len(team_ids),
+                capacity=0,
+                team_ids=team_ids,
+                payload=_json_safe(payload),
+            )
+        )
+    if rows:
+        WorkspaceResourceIncident.objects.bulk_create(rows)
+
+
 def _linkage_violations_from_audits(
     solution: dict[str, Any],
     solver_explanations: dict[str, Any],
@@ -1579,6 +1750,7 @@ def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
     resource_incidents = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS)
     entity_conflicts = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT)
     linkage_violations = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION)
+    level_mismatches = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH)
     return {
         "hydration_version": HYDRATION_VERSION,
         "assignments": WorkspaceAssignment.objects.filter(workspace=workspace).count(),
@@ -1586,6 +1758,7 @@ def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
         "resource_incidents": resource_incidents.count(),
         "entity_conflicts": entity_conflicts.count(),
         "linkage_violations": linkage_violations.count(),
+        "level_mismatches": level_mismatches.count(),
         "resource_excess_total": sum(incident.excess for incident in resource_incidents),
     }
 
@@ -1605,10 +1778,15 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
         workspace=workspace,
         incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
     )
+    level_mismatches = WorkspaceResourceIncident.objects.filter(
+        workspace=workspace,
+        incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH,
+    )
     excess_total = sum(incident.excess for incident in resource_incidents)
     resource_count = resource_incidents.count()
     entity_conflict_count = entity_conflicts.count()
     linkage_violation_count = linkage_violations.count()
+    level_mismatch_count = level_mismatches.count()
     return [
         {"label": "Equips assignats", "value": assignments_count, "status": "neutral"},
         {"label": "Partits", "value": matches_count, "status": "neutral"},
@@ -1627,6 +1805,11 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
             "label": "Linkage violat",
             "value": linkage_violation_count,
             "status": "warning" if linkage_violation_count else "success",
+        },
+        {
+            "label": "Nivell incompatible",
+            "value": level_mismatch_count,
+            "status": "warning" if level_mismatch_count else "success",
         },
         {
             "label": "Lligues",
@@ -1690,6 +1873,35 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
             "status": incident.get_status_display(),
             "resource": _resource_label(incident.resource_id),
             "venue": venue or _resource_label(incident.resource_id),
+            "league": _top_league_label(payload.get("league_counts")),
+            "competition": _top_league_label(payload.get("league_counts")),
+            "team": ", ".join(team_labels) if team_labels else "-",
+            "team_name": ", ".join(team_labels) if team_labels else "-",
+            "team_ids": incident.team_ids or [],
+            "payload": payload,
+        }
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH:
+        group_id = str(payload.get("group_id") or "-")
+        family = str(payload.get("family") or "-")
+        team_labels = [
+            str(team.get("team_name") or team.get("team_id") or "")
+            for team in _list(payload.get("teams"))
+            if isinstance(team, dict)
+        ]
+        return {
+            "id": incident.pk,
+            "incident_id": incident.pk,
+            "type_key": incident.incident_type,
+            "type": "Nivell incompatible",
+            "title": f"{group_id} - {_level_pair_label(payload.get('teams'))}",
+            "summary": f"{family} al grup {group_id}",
+            "description": f"{family} al grup {group_id}",
+            "impact": f"+{payload.get('violation_cost') or incident.excess}",
+            "count": incident.excess,
+            "severity": incident.severity,
+            "status": incident.get_status_display(),
+            "resource": group_id,
+            "venue": group_id,
             "league": _top_league_label(payload.get("league_counts")),
             "competition": _top_league_label(payload.get("league_counts")),
             "team": ", ".join(team_labels) if team_labels else "-",
@@ -2164,13 +2376,57 @@ def _top_league_label(value: Any) -> str:
     return f"{label}{suffix}" if count else str(label)
 
 
+def _level_pair_label(value: Any) -> str:
+    labels = []
+    for team in _list(value):
+        if not isinstance(team, dict):
+            continue
+        team_name = str(team.get("team_name") or team.get("team_id") or "").strip()
+        raw = str(team.get("raw_level") or "-").strip()
+        normalized = str(team.get("normalized_level") or "-").strip()
+        if team_name:
+            labels.append(f"{team_name}: {raw}->{normalized}")
+    return " / ".join(labels) if labels else "-"
+
+
 def _resource_label(resource_id: str) -> str:
     if not resource_id:
         return "-"
     base, round_label = _split_resource_round(resource_id)
-    parts = [part for part in base.split("|") if part]
+    parts = [_resource_part_label(part) for part in base.split("|") if part]
     label = " - ".join(parts) if parts else resource_id
     return f"{label} - {round_label}" if round_label else label
+
+
+def _resource_part_label(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"\d{1,2}-\d{2}", text):
+        return text.replace("-", ":")
+
+    days = {
+        "dilluns": "Dilluns",
+        "dimarts": "Dimarts",
+        "dimecres": "Dimecres",
+        "dijous": "Dijous",
+        "divendres": "Divendres",
+        "dissabte": "Dissabte",
+        "diumenge": "Diumenge",
+    }
+    folded = text.casefold()
+    if folded in days:
+        return days[folded]
+
+    humanized = re.sub(r"[-_]+", " ", text).strip()
+    humanized = re.sub(r"\s+", " ", humanized).casefold()
+    humanized = re.sub(r"\bl\s+([aeiouàèéíïòóúü])", r"l'\1", humanized)
+    humanized = re.sub(
+        r"(?<=\s)([a-z])(?=\s|$)",
+        lambda match: match.group(1).upper(),
+        humanized,
+    )
+    return humanized[:1].upper() + humanized[1:] if humanized else text
 
 
 def _split_resource_round(resource_id: str) -> tuple[str, str]:

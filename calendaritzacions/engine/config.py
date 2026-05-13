@@ -11,3 +11,4 @@ class EngineConfig:
 
     name: str = "legacy"
     phase_name: str = "primera_fase"
+    resource_solver_level_constraint_mode: str = "off"

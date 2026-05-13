@@ -94,6 +94,29 @@ class InputDemandAnalysisTests(unittest.TestCase):
         self.assertEqual(seed_rows[("Futbol", "Sense peticio")], 1)
         self.assertEqual(seed_rows[("Volei", "CASA")], 1)
 
+    def test_build_input_demand_normalizes_levels_by_modality(self):
+        analysis = build_input_demand_analysis(
+            pd.DataFrame(
+                [
+                    {"Id": "A", "Modalitat": "Futbol", "Nivell": "A"},
+                    {"Id": "B", "Modalitat": "Futbol", "Nivell": "Nivell C"},
+                    {"Id": "C", "Modalitat": "Futbol", "Nivell": "D"},
+                    {"Id": "D", "Modalitat": "Volei", "Nivell": "E"},
+                    {"Id": "E", "Modalitat": "Volei", "Nivell": ""},
+                ]
+            )
+        )
+
+        levels = {
+            (row["modalitat"], row["nivell"]): row["equips"]
+            for row in analysis["level_distribution_by_modality"]
+        }
+
+        self.assertEqual(levels[("Futbol", "A")], 1)
+        self.assertEqual(levels[("Futbol", "B-C")], 2)
+        self.assertEqual(levels[("Volei", "C")], 1)
+        self.assertEqual(levels[("Volei", "Sense nivell")], 1)
+
     def test_build_input_demand_payload_is_json_ready(self):
         analysis = build_input_demand_analysis(
             pd.DataFrame(
@@ -168,6 +191,8 @@ class InputDemandAnalysisTests(unittest.TestCase):
             self.assertIn("heatmap", plots)
             self.assertNotIn("friday", plots)
             self.assertIn("seed_requests_by_modality", plots)
+            self.assertIn("level_distribution_by_modality", plots)
+            self.assertIn("manifest", plots)
             for path in plots.values():
                 self.assertTrue(Path(path).exists())
 

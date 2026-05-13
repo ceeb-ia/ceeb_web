@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, time, timedelta
 import math
 from pathlib import Path
@@ -55,7 +56,11 @@ OPTIONAL_SEGMENT_COLUMNS = [
     "Modalitat",
     "Categoria",
     "Subcategoria",
+    "Nivell",
 ]
+
+LEVEL_COLUMN = "Nivell"
+LEVEL_ORDER = ["A", "B", "B-C", "C", "Sense nivell"]
 
 DAY_ORDER = {
     "dilluns": 1,
@@ -90,6 +95,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
     linkage_presence = _linkage_presence_distribution(prepared, count_col)
     home_away_by_linkage = _home_away_by_linkage(prepared, count_col)
     linkage_side_distribution = _linkage_side_distribution(prepared, count_col)
+    level_distribution_by_modality = _level_distribution_by_modality(prepared, count_col)
 
     by_venue_day_time = _sort_slot_frame(by_venue_day_time)
     by_venue_day = _sort_day_frame(by_venue_day)
@@ -139,6 +145,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         "linkage_presence": linkage_presence,
         "home_away_by_linkage": home_away_by_linkage,
         "linkage_side_distribution": linkage_side_distribution,
+        "level_distribution_by_modality": level_distribution_by_modality,
         "missing_fields": missing_fields,
         "columns": {
             "venue": VENUE_COLUMN,
@@ -148,6 +155,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
             "linkage_group": _first_existing_column(df, LINKAGE_GROUP_COLUMN_CANDIDATES),
             "linkage_side": _first_existing_column(df, LINKAGE_SIDE_COLUMN_CANDIDATES),
             "linkage_source": _first_existing_column(df, LINKAGE_SOURCE_COLUMN_CANDIDATES),
+            "level": LEVEL_COLUMN if LEVEL_COLUMN in df.columns else None,
             "optional_segments": [col for col in OPTIONAL_SEGMENT_COLUMNS if col in df.columns],
         },
     }
@@ -186,6 +194,7 @@ def write_input_demand_plots(
     linkage_presence_df = pd.DataFrame(analysis.get("linkage_presence", []))
     home_away_linkage_df = pd.DataFrame(analysis.get("home_away_by_linkage", []))
     linkage_side_df = pd.DataFrame(analysis.get("linkage_side_distribution", []))
+    level_distribution_df = pd.DataFrame(analysis.get("level_distribution_by_modality", []))
 
     for plot_id, plotter, frame in [
         ("heatmap", _plot_global_heatmap, slot_df),
@@ -196,6 +205,7 @@ def write_input_demand_plots(
         ("linkage_presence", _plot_linkage_presence, linkage_presence_df),
         ("home_away_by_linkage", _plot_home_away_by_linkage, home_away_linkage_df),
         ("linkage_side_distribution", _plot_linkage_side_distribution, linkage_side_df),
+        ("level_distribution_by_modality", _plot_level_distribution_by_modality, level_distribution_df),
     ]:
         if frame.empty:
             continue
@@ -207,6 +217,20 @@ def write_input_demand_plots(
         plt.close(fig)
         generated[plot_id] = str(file_path)
 
+    manifest_path = output_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "artifact_type": "input_demand_plots",
+                "plots": generated,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    generated["manifest"] = str(manifest_path)
     return generated
 
 
@@ -257,6 +281,11 @@ def _prepare_demand_frame(df: pd.DataFrame) -> pd.DataFrame:
     prepared["te_linkage"] = prepared["linkage_group"].astype(str).str.strip().ne("") if linkage_group_column else False
     prepared["linkage_status"] = prepared["te_linkage"].map(lambda value: "Amb linkage" if value else "Sense linkage")
     prepared["linkage_side_label"] = prepared["linkage_side"].map(_home_away_request_label)
+    prepared["nivell_normalitzat"] = (
+        prepared[LEVEL_COLUMN].map(_normalize_level_label)
+        if LEVEL_COLUMN in prepared.columns
+        else pd.Series(["Sense nivell"] * len(prepared), index=prepared.index)
+    )
     return prepared
 
 
@@ -400,6 +429,24 @@ def _linkage_side_distribution(df: pd.DataFrame, count_col: str) -> list[dict[st
     return grouped.sort_values(["_order", "side"], kind="stable").drop(columns=["_order"]).to_dict("records")
 
 
+def _level_distribution_by_modality(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    if data.empty:
+        return []
+    grouped = (
+        data.groupby(["modalitat_peticio", "nivell_normalitzat"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"modalitat_peticio": "modalitat", "nivell_normalitzat": "nivell"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    totals = grouped.groupby("modalitat", dropna=False)["equips"].transform("sum").replace(0, pd.NA)
+    grouped["percentatge"] = (grouped["equips"] / totals * 100).fillna(0.0).round(2)
+    grouped["_level_order"] = grouped["nivell"].map(_level_order)
+    grouped = grouped.sort_values(["modalitat", "_level_order", "nivell"], kind="stable").drop(columns=["_level_order"])
+    return grouped.to_dict("records")
+
+
 def _distribution_count(rows: list[dict[str, Any]], label: str) -> int:
     for row in rows:
         if row.get("peticio") == label or row.get("side") == label:
@@ -462,6 +509,29 @@ def _seed_request_order(value: Any) -> int:
     if text.isdigit():
         return int(text)
     return {"CASA": 20, "FORA": 21, "Altres": 98, "Sense peticio": 99}.get(text, 97)
+
+
+def _normalize_level_label(value: Any) -> str:
+    if _is_missing(value):
+        return "Sense nivell"
+    key = _day_key(value).upper()
+    if not key:
+        return "Sense nivell"
+    if re.search(r"\bB\s*[-/]\s*C\b", key):
+        return "B-C"
+    match = re.search(r"\b([A-E])\b", key)
+    if not match:
+        match = re.search(r"(?:NIVELL\s*)?([A-E])\s*$", key)
+    if not match:
+        return "Sense nivell"
+    return {"A": "A", "B": "B", "C": "B-C", "D": "B-C", "E": "C"}[match.group(1)]
+
+
+def _level_order(value: Any) -> int:
+    try:
+        return LEVEL_ORDER.index(str(value))
+    except ValueError:
+        return len(LEVEL_ORDER)
 
 
 def _format_time_value(value: Any) -> str:
@@ -681,6 +751,45 @@ def _plot_linkage_side_distribution(df: pd.DataFrame):
     ax.set_title("Costat de linkage")
     ax.set_ylabel("Equips")
     ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_level_distribution_by_modality(df: pd.DataFrame):
+    if df.empty:
+        return None
+    import matplotlib.pyplot as plt
+
+    totals = df.groupby("modalitat", dropna=False)["equips"].sum().sort_values(ascending=False)
+    modalities = list(totals.head(12).index)
+    if not modalities:
+        return None
+
+    cols = min(3, len(modalities))
+    rows = math.ceil(len(modalities) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.6 * cols, 3.8 * rows))
+    try:
+        axes = axes.flatten()
+    except AttributeError:
+        axes = [axes]
+
+    colors = {"A": "#4E79A7", "B": "#59A14F", "B-C": "#EDC948", "C": "#E15759", "Sense nivell": "#BAB0AC"}
+    for ax, modality in zip(axes, modalities):
+        subset = df[df["modalitat"] == modality].sort_values("nivell", key=lambda series: series.map(_level_order), kind="stable")
+        values = subset["equips"].astype(int).tolist()
+        labels = subset["nivell"].astype(str).tolist()
+        ax.pie(
+            values,
+            labels=labels,
+            autopct="%1.0f%%",
+            startangle=90,
+            colors=[colors.get(label, "#76B7B2") for label in labels],
+            textprops={"fontsize": 8},
+        )
+        ax.set_title(str(modality), fontsize=10)
+    for ax in axes[len(modalities):]:
+        ax.axis("off")
+    fig.suptitle("Distribucio de nivells normalitzats per modalitat", fontsize=13)
     fig.tight_layout()
     return fig
 

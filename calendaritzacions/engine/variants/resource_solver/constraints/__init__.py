@@ -26,6 +26,10 @@ from calendaritzacions.engine.variants.resource_solver.constraints.linkage impor
     LinkageConstraints,
     add_linkage_constraints,
 )
+from calendaritzacions.engine.variants.resource_solver.constraints.level_band import (
+    LevelBandConstraints,
+    add_level_band_constraints,
+)
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
     ResourceCapacityConstraints,
     add_resource_capacity_constraints,
@@ -39,6 +43,7 @@ DEFAULT_CONSTRAINT_BUILDERS = (
     EntitySeparationConstraints(),
     ResourceCapacityConstraints(),
     LinkageConstraints(),
+    LevelBandConstraints(),
 )
 
 __all__ = [
@@ -49,6 +54,7 @@ __all__ = [
     "EmptyNumberConstraints",
     "EntitySeparationConstraints",
     "GroupSizeConstraints",
+    "LevelBandConstraints",
     "LinkageConstraints",
     "ModelVariables",
     "ObjectiveTerm",
@@ -57,6 +63,7 @@ __all__ = [
     "add_empty_number_constraints",
     "add_entity_separation_constraints",
     "add_group_size_constraints",
+    "add_level_band_constraints",
     "add_linkage_constraints",
     "add_resource_capacity_constraints",
     "candidate_resource_by_round",

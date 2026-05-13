@@ -40,6 +40,9 @@ class ResourceSolverConfig:
     linkage_mode: str = "off"
     linkage_violation_weight: int = 100_000
     linkage_max_group_size: int = 2
+    level_constraint_mode: str = "off"
+    level_a_mismatch_weight: int = 1_000_000
+    level_band_mismatch_weight: int = 200_000
     phase_name: str = "primera_fase"
     max_group_size: int = 8
     min_group_size: int = 6
@@ -52,6 +55,11 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         return config
     engine_name = str(getattr(config, "name", "") or "")
     default_linkage_mode = "input" if engine_name in {"resource_solver_linkage", "resource_solver_vinculacio"} else "off"
+    level_constraint_mode = getattr(
+        config,
+        "resource_solver_level_constraint_mode",
+        getattr(config, "level_constraint_mode", "off"),
+    )
     return ResourceSolverConfig(
         phase_name=getattr(config, "phase_name", "primera_fase"),
         time_limit_seconds=float(
@@ -71,4 +79,7 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         linkage_mode=str(getattr(config, "linkage_mode", default_linkage_mode) or default_linkage_mode),
         linkage_violation_weight=int(getattr(config, "linkage_violation_weight", 100_000)),
         linkage_max_group_size=int(getattr(config, "linkage_max_group_size", 2)),
+        level_constraint_mode=str(level_constraint_mode or "off"),
+        level_a_mismatch_weight=int(getattr(config, "level_a_mismatch_weight", 1_000_000)),
+        level_band_mismatch_weight=int(getattr(config, "level_band_mismatch_weight", 200_000)),
     )

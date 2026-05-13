@@ -26,6 +26,7 @@ class ModelVariables:
     resource_usage_terms: dict[tuple[str, int], list[Any]] = field(default_factory=dict)
     resource_usage_counts: dict[tuple[str, int], Any] = field(default_factory=dict)
     linkage_violation: dict[tuple[str, str], Any] = field(default_factory=dict)
+    level_band_violation: dict[tuple[str, str, str], Any] = field(default_factory=dict)
 
 
 @dataclass

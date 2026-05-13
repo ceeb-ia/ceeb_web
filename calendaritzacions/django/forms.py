@@ -12,7 +12,7 @@ class CalendarizationRunForm(forms.ModelForm):
 
     class Meta:
         model = CalendarizationRun
-        fields = ["input_file", "engine_name", "phase"]
+        fields = ["input_file", "engine_name", "phase", "resource_solver_level_constraint_mode"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

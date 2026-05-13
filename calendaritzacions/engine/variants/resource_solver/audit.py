@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from calendaritzacions.engine.variants.resource_solver.solution import result_to_json_ready
+from calendaritzacions.engine.variants.resource_solver.constraints.level_band import (
+    level_constraint_enabled,
+    level_mismatch_family,
+    level_mismatch_weight,
+    normalize_level,
+)
 from calendaritzacions.engine.variants.resource_solver.types import (
     ResourceSolverResult,
     SolverContext,
@@ -138,6 +144,12 @@ def build_solver_model_summary(
                 "empty_number_imbalance_weight",
                 None,
             ),
+            "level_a_mismatch_weight": getattr(context.config, "level_a_mismatch_weight", None),
+            "level_band_mismatch_weight": getattr(
+                context.config,
+                "level_band_mismatch_weight",
+                None,
+            ),
         },
         "time_limit_seconds": getattr(context.config, "time_limit_seconds", None),
         "num_search_workers": getattr(context.config, "num_search_workers", None),
@@ -183,6 +195,7 @@ def build_solver_explanations(
     }
     seed_deviations = _seed_deviations(result, context)
     linkage = build_linkage_audit(result, context)
+    level_band = build_level_band_audit(result, context)
 
     return {
         "status": result.status,
@@ -196,7 +209,119 @@ def build_solver_explanations(
         "rests_by_group": rests,
         "seed_request_deviations_informative_only": seed_deviations,
         "linkage": linkage,
+        "level_band": level_band,
         "notes": _explanation_notes(result),
+    }
+
+
+def build_level_band_audit(
+    result: ResourceSolverResult,
+    context: SolverContext,
+) -> dict[str, Any]:
+    """Summarize normalized level compatibility from final same-group assignments."""
+
+    enabled = level_constraint_enabled(context)
+    teams_by_id = {team.team_id: team for team in context.teams}
+    assigned_by_team = {assignment.team_id: assignment for assignment in result.assignments}
+    rows_by_group: dict[str, list[dict[str, Any]]] = {}
+    normalized_teams: list[dict[str, Any]] = []
+
+    for team_id, assignment in sorted(assigned_by_team.items()):
+        team = teams_by_id.get(team_id)
+        if team is None:
+            continue
+        raw_level = getattr(team, "level", "")
+        normalized_level = normalize_level(raw_level)
+        row = {
+            "team_id": team_id,
+            "team_name": getattr(team, "name", team_id),
+            "assigned_group_id": assignment.group_id,
+            "assigned_number": int(assignment.number),
+            "raw_level": "" if raw_level is None else str(raw_level),
+            "normalized_level": normalized_level,
+        }
+        normalized_teams.append(row)
+        rows_by_group.setdefault(assignment.group_id, []).append(row)
+
+    if not enabled:
+        return {
+            "enabled": False,
+            "mode": str(getattr(context.config, "level_constraint_mode", "off") or "off"),
+            "summary": {
+                "groups": len(rows_by_group),
+                "teams": len(normalized_teams),
+                "checked_pairs": 0,
+                "ok_pairs": 0,
+                "violations": 0,
+                "cost": 0,
+            },
+            "normalized_teams": normalized_teams,
+            "groups": [],
+            "violations": [],
+        }
+
+    groups: list[dict[str, Any]] = []
+    violations: list[dict[str, Any]] = []
+    checked_pairs = 0
+    ok_pairs = 0
+
+    for group_id, rows in sorted(rows_by_group.items()):
+        sorted_rows = sorted(rows, key=lambda row: str(row["team_id"]))
+        group_violations: list[dict[str, Any]] = []
+        group_checked_pairs = 0
+        for left, right in itertools.combinations(sorted_rows, 2):
+            checked_pairs += 1
+            group_checked_pairs += 1
+            family = level_mismatch_family(left["normalized_level"], right["normalized_level"])
+            if family is None:
+                ok_pairs += 1
+                continue
+            cost = level_mismatch_weight(context, family)
+            violation = {
+                "group_id": group_id,
+                "team_ids": [left["team_id"], right["team_id"]],
+                "team_levels": {
+                    left["team_id"]: left["normalized_level"],
+                    right["team_id"]: right["normalized_level"],
+                },
+                "raw_levels": {
+                    left["team_id"]: left["raw_level"],
+                    right["team_id"]: right["raw_level"],
+                },
+                "family": family,
+                "severity": "violation",
+                "cost": cost,
+                "violation_cost": cost,
+            }
+            group_violations.append(violation)
+            violations.append(violation)
+        groups.append(
+            {
+                "group_id": group_id,
+                "teams_count": len(sorted_rows),
+                "checked_pairs": group_checked_pairs,
+                "violations_count": len(group_violations),
+                "cost": sum(int(item.get("cost", 0) or 0) for item in group_violations),
+                "result": "OK" if not group_violations else "Violation",
+                "teams": sorted_rows,
+                "violations": group_violations,
+            }
+        )
+
+    return {
+        "enabled": enabled,
+        "mode": str(getattr(context.config, "level_constraint_mode", "off") or "off"),
+        "summary": {
+            "groups": len(groups),
+            "teams": len(normalized_teams),
+            "checked_pairs": checked_pairs,
+            "ok_pairs": ok_pairs,
+            "violations": len(violations),
+            "cost": sum(int(item.get("cost", 0) or 0) for item in violations),
+        },
+        "normalized_teams": normalized_teams,
+        "groups": groups,
+        "violations": violations,
     }
 
 

@@ -18,6 +18,7 @@ def process_calendarization(
     task_id: Optional[str] = None,
     segona_fase_bool: bool = False,
     engine_name: str = "legacy",
+    resource_solver_level_constraint_mode: str = "off",
     progress_reporter: ProgressReporter | None = None,
 ) -> LegacyProcessResult:
     """Process a calendarization request through the application orchestration boundary."""
@@ -29,6 +30,7 @@ def process_calendarization(
         config = EngineConfig(
             name=engine_name,
             phase_name="segona_fase" if segona_fase_bool else "primera_fase",
+            resource_solver_level_constraint_mode=resource_solver_level_constraint_mode,
         )
         engine = get_engine(engine_name)
         if hasattr(engine, "run"):

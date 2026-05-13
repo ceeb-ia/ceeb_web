@@ -37,6 +37,12 @@
         {{ form.phase }}
         {% if form.phase.errors %}<div class="text-danger small">{{ form.phase.errors }}</div>{% endif %}
       </div>
+
+      <div class="form-group col-12 col-lg-4">
+        <label for="{{ form.resource_solver_level_constraint_mode.id_for_label }}">Restriccio de nivell</label>
+        {{ form.resource_solver_level_constraint_mode }}
+        {% if form.resource_solver_level_constraint_mode.errors %}<div class="text-danger small">{{ form.resource_solver_level_constraint_mode.errors }}</div>{% endif %}
+      </div>
     </div>
 
     <div class="d-flex align-items-center">

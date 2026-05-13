@@ -1,7 +1,7 @@
 import importlib
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class ApplicationRegistryCompatibilityTests(unittest.TestCase):
@@ -43,6 +43,29 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
             segona_fase_bool=True,
         )
         finalize.assert_called_once()
+
+    def test_process_calendarization_passes_resource_solver_level_mode_to_engine_config(self):
+        from calendaritzacions.application.use_cases import process_calendarization
+
+        engine = Mock()
+        engine.run.return_value = Mock(
+            output_path="out.xlsx",
+            logs=["ok"],
+            audit_paths={},
+            kpis_path="",
+        )
+
+        with patch("calendaritzacions.engine.registry.get_engine", return_value=engine):
+            result = process_calendarization(
+                "input.xlsx",
+                return_artifacts=True,
+                engine_name="resource_solver",
+                resource_solver_level_constraint_mode="soft",
+            )
+
+        self.assertEqual(result, ("out.xlsx", ["ok"], {}, ""))
+        config = engine.run.call_args.kwargs["config"]
+        self.assertEqual(config.resource_solver_level_constraint_mode, "soft")
 
     def test_fastapi_app_uses_application_use_case(self):
         import calendaritzacions.app as app

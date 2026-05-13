@@ -23,6 +23,9 @@ class CalendarizationRun(models.Model):
     ENGINE_RESOURCE_SOLVER_LINKAGE = "resource_solver_linkage"
     ENGINE_RESOURCE_SOLVER_VINCULACIO = "resource_solver_vinculacio"
 
+    LEVEL_CONSTRAINT_OFF = "off"
+    LEVEL_CONSTRAINT_SOFT = "soft"
+
     PHASE_FIRST = "primera_fase"
     PHASE_SECOND = "segona_fase"
 
@@ -42,11 +45,20 @@ class CalendarizationRun(models.Model):
         (PHASE_FIRST, "Primera fase"),
         (PHASE_SECOND, "Segona fase"),
     )
+    LEVEL_CONSTRAINT_CHOICES = (
+        (LEVEL_CONSTRAINT_OFF, "Desactivat"),
+        (LEVEL_CONSTRAINT_SOFT, "Suau"),
+    )
 
     input_file = models.FileField(upload_to=input_upload_to)
     input_name = models.CharField(max_length=255, blank=True)
     engine_name = models.CharField(max_length=64, choices=ENGINE_CHOICES, default=ENGINE_RESOURCE_SOLVER)
     phase = models.CharField(max_length=32, choices=PHASE_CHOICES, default=PHASE_FIRST)
+    resource_solver_level_constraint_mode = models.CharField(
+        max_length=16,
+        choices=LEVEL_CONSTRAINT_CHOICES,
+        default=LEVEL_CONSTRAINT_OFF,
+    )
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING)
     task_id = models.CharField(max_length=255, blank=True)
     output_path = models.TextField(blank=True)
@@ -204,6 +216,7 @@ class WorkspaceResourceIncident(models.Model):
     TYPE_SEED_DEVIATION = "seed_deviation"
     TYPE_ASSIGNMENT_CONFLICT = "assignment_conflict"
     TYPE_LINKAGE_VIOLATION = "linkage_violation"
+    TYPE_LEVEL_MISMATCH = "level_mismatch"
     TYPE_OTHER = "other"
 
     STATUS_OPEN = "open"
@@ -216,6 +229,7 @@ class WorkspaceResourceIncident(models.Model):
         (TYPE_SEED_DEVIATION, "Seed deviation"),
         (TYPE_ASSIGNMENT_CONFLICT, "Assignment conflict"),
         (TYPE_LINKAGE_VIOLATION, "Linkage violation"),
+        (TYPE_LEVEL_MISMATCH, "Level mismatch"),
         (TYPE_OTHER, "Other"),
     )
     STATUS_CHOICES = (

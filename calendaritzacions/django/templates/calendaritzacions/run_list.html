@@ -64,6 +64,10 @@
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_detail' run.pk %}">
               Seguiment
             </a>
+            {% if run.engine_name != "legacy" and run.status == run.STATUS_SUCCESS %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'calendaritzacions:resource_workspace' run.pk %}">Workspace</a>
+            {% endif %}
+
             {% if run.status == run.STATUS_SUCCESS and run.output_path %}
             <a class="btn btn-sm btn-success" href="{% url 'calendaritzacions:run_download' run.pk %}">
               Resultat

@@ -35,6 +35,7 @@ class FakeRun:
         self.input_file = SimpleNamespace(path="input.xlsx")
         self.phase = "segona_fase"
         self.engine_name = "resource_solver"
+        self.resource_solver_level_constraint_mode = "soft"
         self.statuses = []
 
     def mark_running(self):
@@ -75,6 +76,7 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
             task_id="12",
             segona_fase_bool=True,
             engine_name="resource_solver",
+            resource_solver_level_constraint_mode="soft",
             progress_reporter=ANY,
         )
         self.assertEqual(run.statuses, ["running", "success"])

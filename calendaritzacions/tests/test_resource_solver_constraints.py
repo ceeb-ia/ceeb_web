@@ -1,7 +1,9 @@
 import unittest
+from types import SimpleNamespace
 
 from calendaritzacions.domain.phases import PRIMERA_FASE
 from calendaritzacions.engine.variants.resource_solver.config import ResourceSolverConfig
+from calendaritzacions.engine.variants.resource_solver.constraints.level_band import normalize_level
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
     candidate_resource_by_round,
 )
@@ -22,6 +24,19 @@ def _team(team_id, entity=None):
         name=team_id,
         entity=entity or team_id,
         league_name="L",
+        venue="P",
+        day="D",
+        time="18:00",
+    )
+
+
+def _level_team(team_id, level):
+    return TeamRecord(
+        team_id=team_id,
+        name=team_id,
+        entity=team_id,
+        league_name="L",
+        level=level,
         venue="P",
         day="D",
         time="18:00",
@@ -130,7 +145,67 @@ class ResourceSolverConstraintTests(unittest.TestCase):
         self.assertEqual(result.status, "OPTIMAL")
         self.assertEqual(result.resource_excess, {})
 
+    def test_level_band_normalizes_prefixed_input_levels(self):
+        self.assertEqual(normalize_level("Nivell A"), "A")
+        self.assertEqual(normalize_level("Nivell B"), "B")
+        self.assertEqual(normalize_level("Nivell C"), "B/C")
+        self.assertEqual(normalize_level("Nivell D"), "B/C")
+        self.assertEqual(normalize_level("Nivell E"), "C")
+
+    def test_level_band_fallback_prefers_a_teams_together(self):
+        teams = [_level_team("A1", "A"), _level_team("A2", "A"), _level_team("B1", "B")]
+        groups = [
+            GroupSpec("G1", 1, 2, 2, "primera_fase", numbers=(1, 2)),
+            GroupSpec("G2", 1, 2, 1, "primera_fase", numbers=(1, 2)),
+        ]
+        candidates = [
+            _candidate(team.team_id, group.group_id, number)
+            for team in teams
+            for group in groups
+            for number in group.numbers
+        ]
+        config = SimpleNamespace(
+            level_constraint_mode="soft",
+            level_a_mismatch_weight=1000,
+            level_band_mismatch_weight=100,
+        )
+
+        result = solve_context(_context(teams, groups, candidates, config=config), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        by_group = {}
+        for assignment in result.assignments:
+            by_group.setdefault(assignment.group_id, set()).add(assignment.team_id)
+        self.assertIn({"A1", "A2"}, by_group.values())
+        self.assertEqual(result.objective_value, 0.0)
+
+    def test_level_band_fallback_treats_blank_as_b_c_compatible_band(self):
+        teams = [_level_team("B1", "B"), _level_team("U1", ""), _level_team("C1", "E")]
+        groups = [
+            GroupSpec("G1", 1, 2, 2, "primera_fase", numbers=(1, 2)),
+            GroupSpec("G2", 1, 2, 1, "primera_fase", numbers=(1, 2)),
+        ]
+        candidates = [
+            _candidate(team.team_id, group.group_id, number)
+            for team in teams
+            for group in groups
+            for number in group.numbers
+        ]
+        config = SimpleNamespace(
+            level_constraint_mode="soft",
+            level_a_mismatch_weight=1000,
+            level_band_mismatch_weight=100,
+        )
+
+        result = solve_context(_context(teams, groups, candidates, config=config), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        by_group = {}
+        for assignment in result.assignments:
+            by_group.setdefault(assignment.group_id, set()).add(assignment.team_id)
+        self.assertIn({"B1", "U1"}, by_group.values())
+        self.assertEqual(result.objective_value, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
-

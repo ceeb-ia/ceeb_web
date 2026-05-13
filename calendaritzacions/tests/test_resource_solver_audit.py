@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from calendaritzacions.domain.phases import PRIMERA_FASE
 from calendaritzacions.engine.variants.resource_solver.audit import (
     build_audit_payloads,
+    build_level_band_audit,
     write_audit_payloads,
 )
 from calendaritzacions.engine.variants.resource_solver.config import ResourceSolverConfig
@@ -130,6 +131,52 @@ class ResourceSolverAuditTests(unittest.TestCase):
         self.assertEqual(linkage["summary"]["groups"], 1)
         self.assertEqual(linkage["summary"]["violations"], 1)
         self.assertEqual(linkage["violations"][0]["expected_relation"], "opposite_number")
+
+    def test_level_band_audit_reports_normalization_and_violation_costs(self):
+        base = _context(
+            config=SimpleNamespace(
+                level_constraint_mode="soft",
+                level_a_mismatch_weight=1000,
+                level_band_mismatch_weight=100,
+            )
+        )
+        context = SolverContext(
+            teams=(
+                TeamRecord("T1", "Team 1", "Club A", "League", level="Nivell A"),
+                TeamRecord("T2", "Team 2", "Club B", "League", level="Nivell D"),
+                TeamRecord("T3", "Team 3", "Club C", "League", level="Nivell E"),
+            ),
+            phase=base.phase,
+            phase_name=base.phase_name,
+            base_resources=base.base_resources,
+            capacities=base.capacities,
+            pressure=base.pressure,
+            groups=base.groups,
+            candidates=base.candidates,
+            config=base.config,
+        )
+        result = build_solution(
+            SimpleNamespace(
+                status="FEASIBLE",
+                assignments=(
+                    Assignment("T1", "G1", 1),
+                    Assignment("T2", "G1", 2),
+                    Assignment("T3", "G2", 1),
+                ),
+            ),
+            context,
+        )
+
+        level_band = build_level_band_audit(result, context)
+
+        normalized = {
+            item["team_id"]: item["normalized_level"]
+            for item in level_band["normalized_teams"]
+        }
+        self.assertEqual(normalized, {"T1": "A", "T2": "B/C", "T3": "C"})
+        self.assertEqual(level_band["summary"]["violations"], 1)
+        self.assertEqual(level_band["violations"][0]["family"], "level_a_mismatch")
+        self.assertEqual(level_band["violations"][0]["cost"], 1000)
 
 
 def _context(config: ResourceSolverConfig | None = None) -> SolverContext:

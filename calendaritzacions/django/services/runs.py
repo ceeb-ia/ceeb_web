@@ -32,6 +32,7 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
             task_id=task_id,
             segona_fase_bool=(run.phase == CalendarizationRun.PHASE_SECOND),
             engine_name=run.engine_name,
+            resource_solver_level_constraint_mode=run.resource_solver_level_constraint_mode,
             progress_reporter=DjangoRunProgressReporter(task_id),
         )
         output_path, logs, audit_paths, kpis_path = _split_process_output(output)

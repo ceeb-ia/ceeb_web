@@ -163,7 +163,7 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(incident.capacity, 1)
         self.assertEqual(incident.team_ids, ["A", "C"])
         self.assertEqual(summary["kpis"][2]["value"], 1)
-        self.assertEqual(summary["top_incidents"][0]["title"], "pista-a - divendres - 18-00 - J1")
+        self.assertEqual(summary["top_incidents"][0]["title"], "Pista A - Divendres - 18:00 - J1")
         self.assertEqual(len(detail["affected_matches"]), 2)
         self.assertEqual(team_detail["number"], 1)
         self.assertIn("grup G1", team_detail["explanation"])
@@ -362,6 +362,130 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(venue_sheets["sheets"][0]["linkage_groups"], ["LG-1"])
         self.assertEqual(venue_sheets["sheets"][0]["rows"][0]["matches"][0]["linkage_groups"], ["LG-1"])
 
+    def test_workspace_hydrates_level_mismatch_incidents(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun, WorkspaceResourceIncident
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_incident_detail,
+            get_workspace_summary,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            solver_explanations = root / "solver_explanations.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "A", "group_id": "G1", "number": 1},
+                            {"team_id": "B", "group_id": "G1", "number": 2},
+                        ],
+                        "real_matches": [
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "A",
+                                "away_team_id": "B",
+                                "resource_id": "pista-a|divendres|18-00|J1",
+                            }
+                        ],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {"team_id": "A", "name": "Equip A", "entity": "Club A", "league_name": "Lliga 1", "level": "A"},
+                        {"team_id": "B", "name": "Equip B", "entity": "Club B", "league_name": "Lliga 1", "level": "E"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text("[]", encoding="utf-8")
+            resource_pressure.write_text("[]", encoding="utf-8")
+            solver_explanations.write_text(
+                json.dumps(
+                    {
+                        "level_band": {
+                            "enabled": True,
+                            "mode": "soft",
+                            "normalized_teams": [
+                                {
+                                    "team_id": "A",
+                                    "team_name": "Equip A",
+                                    "assigned_group_id": "G1",
+                                    "assigned_number": 1,
+                                    "raw_level": "A",
+                                    "normalized_level": "A",
+                                },
+                                {
+                                    "team_id": "B",
+                                    "team_name": "Equip B",
+                                    "assigned_group_id": "G1",
+                                    "assigned_number": 2,
+                                    "raw_level": "E",
+                                    "normalized_level": "C",
+                                },
+                            ],
+                            "violations": [
+                                {
+                                    "group_id": "G1",
+                                    "team_ids": ["A", "B"],
+                                    "team_levels": {"A": "A", "B": "C"},
+                                    "raw_levels": {"A": "A", "B": "E"},
+                                    "family": "level_a_mismatch",
+                                    "cost": 1000,
+                                    "violation_cost": 1000,
+                                }
+                            ],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                    "solver_explanations": str(solver_explanations),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            incident = WorkspaceResourceIncident.objects.get(
+                workspace=workspace,
+                incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH,
+            )
+            summary = get_workspace_summary(workspace)
+            detail = get_workspace_incident_detail(workspace, incident.pk)
+
+        self.assertEqual(incident.team_ids, ["A", "B"])
+        self.assertEqual(incident.payload["group_id"], "G1")
+        self.assertEqual(incident.payload["teams"][0]["normalized_level"], "A")
+        self.assertEqual(incident.payload["teams"][1]["normalized_level"], "C")
+        self.assertEqual(incident.payload["violation_cost"], 1000.0)
+        self.assertEqual(summary["raw_summary"]["level_mismatches"], 1)
+        self.assertEqual(summary["incident_summaries"][0]["type_key"], "level_mismatch")
+        self.assertEqual(detail["facts"][0]["value"], "G1")
+        self.assertEqual(detail["team_calendars"][0]["normalized_level"], "A")
+
     def test_venue_round_sheets_use_max_venue_capacity_for_columns(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")
@@ -491,7 +615,7 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(calendar_group["rounds"], [1])
         self.assertEqual(calendar_group["rows"][0]["cells"][0]["side"], "Casa")
         self.assertIn("Equip B", calendar_group["rows"][0]["cells"][0]["opponent"])
-        self.assertIn("pavello - divendres - 18-00 - J1", calendar_group["rows"][0]["cells"][0]["resource"])
+        self.assertIn("Pavello - Divendres - 18:00 - J1", calendar_group["rows"][0]["cells"][0]["resource"])
 
     def test_workspace_calendar_view_groups_rounds_rests_filters_and_incidents(self):
         if not HAS_DJANGO:
@@ -642,7 +766,7 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(row_a["cells"][0]["side"], "Casa")
         self.assertEqual(row_a["cells"][0]["opponent_id"], "B")
         self.assertIn("Equip B", row_a["cells"][0]["opponent"])
-        self.assertEqual(row_a["cells"][0]["resource"], "pavello - divendres - 18-00 - J1")
+        self.assertEqual(row_a["cells"][0]["resource"], "Pavello - Divendres - 18:00 - J1")
         self.assertIsNotNone(row_a["cells"][0]["match_id"])
         self.assertTrue(row_a["cells"][0]["has_resource_incident"])
         self.assertTrue(row_a["cells"][0]["has_entity_incident"])

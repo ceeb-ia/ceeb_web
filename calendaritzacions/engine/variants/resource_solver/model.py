@@ -18,6 +18,10 @@ from calendaritzacions.engine.variants.resource_solver.constraints.base import (
 from calendaritzacions.engine.variants.resource_solver.constraints.linkage import (
     fallback_linkage_violations,
 )
+from calendaritzacions.engine.variants.resource_solver.constraints.level_band import (
+    fallback_level_band_violations,
+    level_mismatch_weight,
+)
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
     candidate_resource_by_round,
     capacity_for_resource,
@@ -53,6 +57,7 @@ class RawSolverResult:
     resource_excess: dict[tuple[str, int], int]
     logs: tuple[str, ...] = ()
     linkage_violations: dict[tuple[str, str], int] = field(default_factory=dict)
+    level_band_violations: dict[tuple[str, str, str], str] = field(default_factory=dict)
 
 
 def _load_cp_model() -> Any | None:
@@ -163,8 +168,10 @@ def _model_summary(
         + len(variables.real_home)
         + len(variables.entity_excess)
         + len(variables.resource_excess)
-        + len(variables.linkage_violation),
+        + len(variables.linkage_violation)
+        + len(variables.level_band_violation),
         "num_linkage_violation_vars": len(variables.linkage_violation),
+        "num_level_band_violation_vars": len(variables.level_band_violation),
         "constraints": dict(audit.constraints),
         "objective_terms": objective_summary(objective_terms),
         "weights": objective_weights(objective_terms),
@@ -223,6 +230,11 @@ def _solve_cp_sat_model(
     linkage_violations = {
         key: int(solver.Value(var)) for key, var in built_model.variables.linkage_violation.items()
     }
+    level_band_violations = {
+        key: _objective_family_for_level_violation(built_model, key)
+        for key, var in built_model.variables.level_band_violation.items()
+        if int(solver.Value(var)) > 0
+    }
 
     return RawSolverResult(
         status=status,
@@ -234,6 +246,7 @@ def _solve_cp_sat_model(
         entity_excess=entity_excess,
         resource_excess=resource_excess,
         linkage_violations=linkage_violations,
+        level_band_violations=level_band_violations,
     )
 
 
@@ -280,7 +293,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
                 started,
                 logs=(f"fallback search space too large: {search_space}",),
             )
-        objective_value, entity_excess, resource_excess, linkage_violations = evaluation
+        objective_value, entity_excess, resource_excess, linkage_violations, level_band_violations = evaluation
         status = "OPTIMAL" if objective_value == 0 else "FEASIBLE"
         assignments = tuple(
             sorted(
@@ -301,6 +314,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
             entity_excess=entity_excess,
             resource_excess=resource_excess,
             linkage_violations=linkage_violations,
+            level_band_violations=level_band_violations,
             logs=(f"deterministic greedy fallback used; search space {search_space}",),
         )
 
@@ -311,6 +325,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
             dict[tuple[str, str], int],
             dict[tuple[str, int], int],
             dict[tuple[str, str], int],
+            dict[tuple[str, str, str], str],
         ]
         | None
     ) = None
@@ -318,7 +333,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
         evaluation = _evaluate_assignment_combo(context, combo)
         if evaluation is None:
             continue
-        objective_value, entity_excess, resource_excess, linkage_violations = evaluation
+        objective_value, entity_excess, resource_excess, linkage_violations, level_band_violations = evaluation
         if best is None or objective_value < best[0] or (
             objective_value == best[0]
             and _combo_sort_key(combo) < _combo_sort_key(best[1])
@@ -329,12 +344,13 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
                 entity_excess,
                 resource_excess,
                 linkage_violations,
+                level_band_violations,
             )
 
     if best is None:
         return _fallback_result("INFEASIBLE", started)
 
-    objective_value, combo, entity_excess, resource_excess, linkage_violations = best
+    objective_value, combo, entity_excess, resource_excess, linkage_violations, level_band_violations = best
     assignments = tuple(
         sorted(
             (Assignment(c.team_id, c.group_id, c.number) for c in combo),
@@ -354,6 +370,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
         entity_excess=entity_excess,
         resource_excess=resource_excess,
         linkage_violations=linkage_violations,
+        level_band_violations=level_band_violations,
         logs=("deterministic fallback solver used",),
     )
 
@@ -443,6 +460,7 @@ def _evaluate_assignment_combo(
         dict[tuple[str, str], int],
         dict[tuple[str, int], int],
         dict[tuple[str, str], int],
+        dict[tuple[str, str, str], str],
     ]
     | None
 ):
@@ -504,7 +522,22 @@ def _evaluate_assignment_combo(
         getattr(context.config, "linkage_violation_weight", 1_000_000)
     )
 
-    return objective_value, entity_excess, resource_excess, linkage_violations
+    level_band_violations = fallback_level_band_violations(context, combo)
+    for family in level_band_violations.values():
+        objective_value += level_mismatch_weight(context, family)
+
+    return objective_value, entity_excess, resource_excess, linkage_violations, level_band_violations
+
+
+def _objective_family_for_level_violation(
+    built_model: BuiltModel,
+    key: tuple[str, str, str],
+) -> str:
+    var = built_model.variables.level_band_violation.get(key)
+    for family, _weight, term in built_model.objective_terms:
+        if term is var and family in {"level_a_mismatch", "level_band_mismatch"}:
+            return family
+    return "level_band_mismatch"
 
 
 def _fallback_entity_excess(

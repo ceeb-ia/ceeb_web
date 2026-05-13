@@ -36,11 +36,19 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
         from calendaritzacions.django.models import CalendarizationRun
 
         form = CalendarizationRunForm(
-            data={"engine_name": CalendarizationRun.ENGINE_LEGACY, "phase": CalendarizationRun.PHASE_SECOND},
+            data={
+                "engine_name": CalendarizationRun.ENGINE_LEGACY,
+                "phase": CalendarizationRun.PHASE_SECOND,
+                "resource_solver_level_constraint_mode": CalendarizationRun.LEVEL_CONSTRAINT_SOFT,
+            },
             files={"input_file": SimpleUploadedFile("input.xlsx", b"data")},
         )
 
         self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(
+            form.cleaned_data["resource_solver_level_constraint_mode"],
+            CalendarizationRun.LEVEL_CONSTRAINT_SOFT,
+        )
 
     def test_form_rejects_unsupported_file_extension(self):
         from django.core.files.uploadedfile import SimpleUploadedFile

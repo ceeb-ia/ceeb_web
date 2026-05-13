@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
+import unicodedata
 
 from calendaritzacions.engine.variants.resource_solver.audit import build_linkage_audit
 from calendaritzacions.engine.variants.resource_solver.types import (
     ResourceSolverResult,
     SolverContext,
 )
+
+
+LEVEL_ORDER = ["A", "B", "B-C", "C", "Sense nivell"]
 
 
 def write_resource_solver_final_plots(
@@ -41,6 +46,7 @@ def write_resource_solver_final_plots(
         ("resource_excess", _plot_resource_excess(result)),
         ("entity_conflicts", _plot_entity_conflicts(result)),
         ("assigned_numbers_by_modality", _plot_assigned_numbers_by_modality(result, context)),
+        ("level_dispersion_by_modality", _plot_level_dispersion_by_modality(result, context)),
         ("linkage_compliance", _plot_linkage_compliance(result, context)),
         ("status_summary", _plot_status_summary(result, context)),
     ]
@@ -239,6 +245,93 @@ def _plot_assigned_numbers_by_modality(result: ResourceSolverResult, context: So
     fig.suptitle("Assignacio final de numeros per modalitat", fontsize=13)
     fig.tight_layout()
     return fig
+
+
+def _plot_level_dispersion_by_modality(result: ResourceSolverResult, context: SolverContext) -> Any | None:
+    if not result.assignments or not context.teams:
+        return None
+    import matplotlib.pyplot as plt
+
+    team_by_id = {team.team_id: team for team in context.teams}
+    counts: Counter[tuple[str, str, str]] = Counter()
+    totals: Counter[str] = Counter()
+    group_totals: Counter[tuple[str, str]] = Counter()
+    for assignment in result.assignments:
+        team = team_by_id.get(assignment.team_id)
+        if team is None:
+            continue
+        modality = team.modality.strip() or "Sense modalitat"
+        group_id = _display_group_id(assignment.group_id)
+        level = _normalize_level_label(team.level)
+        counts[(modality, group_id, level)] += 1
+        totals[modality] += 1
+        group_totals[(modality, group_id)] += 1
+
+    modalities = [modality for modality, _total in totals.most_common(12)]
+    if not modalities:
+        return None
+
+    cols = min(2, len(modalities))
+    rows = math.ceil(len(modalities) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(6.2 * cols, 4.2 * rows))
+    try:
+        axes = axes.flatten()
+    except AttributeError:
+        axes = [axes]
+
+    colors = {"A": "#4E79A7", "B": "#59A14F", "B-C": "#EDC948", "C": "#E15759", "Sense nivell": "#BAB0AC"}
+    for ax, modality in zip(axes, modalities):
+        groups = sorted(
+            {group for item_modality, group in group_totals if item_modality == modality},
+            key=_group_sort_key,
+        )
+        if not groups:
+            ax.axis("off")
+            continue
+        left = [0] * len(groups)
+        for level in LEVEL_ORDER:
+            values = [counts.get((modality, group, level), 0) for group in groups]
+            if not any(values):
+                continue
+            ax.barh(groups, values, left=left, label=level, color=colors.get(level, "#76B7B2"))
+            left = [current + value for current, value in zip(left, values)]
+        ax.set_title(str(modality), fontsize=10)
+        ax.set_xlabel("Equips assignats")
+        ax.grid(axis="x", alpha=0.25)
+        ax.invert_yaxis()
+    for ax in axes[len(modalities):]:
+        ax.axis("off")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="lower center", ncol=min(len(labels), len(LEVEL_ORDER)))
+    fig.suptitle("Dispersio final de nivells normalitzats per modalitat", fontsize=13)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.96))
+    return fig
+
+
+def _normalize_level_label(value: Any) -> str:
+    if value is None:
+        return "Sense nivell"
+    text = str(value).strip()
+    if not text:
+        return "Sense nivell"
+    key = unicodedata.normalize("NFKD", text.casefold())
+    key = "".join(char for char in key if not unicodedata.combining(char)).upper()
+    if re.search(r"\bB\s*[-/]\s*C\b", key):
+        return "B-C"
+    match = re.search(r"\b([A-E])\b", key)
+    if not match:
+        match = re.search(r"(?:NIVELL\s*)?([A-E])\s*$", key)
+    if not match:
+        return "Sense nivell"
+    return {"A": "A", "B": "B", "C": "B-C", "D": "B-C", "E": "C"}[match.group(1)]
+
+
+def _group_sort_key(value: Any) -> tuple[int, str]:
+    text = str(value)
+    match = re.search(r"(\d+)$", text)
+    return (int(match.group(1)) if match else 999_999, text)
 
 
 def _display_group_id(group_id: str) -> str:
