@@ -6,7 +6,8 @@ from calendaritzacions.engine.variants.resource_solver.capacities import (
     estimate_capacities,
     estimate_capacity_from_demand,
 )
-from calendaritzacions.engine.variants.resource_solver.config import ResourceSolverConfig
+from calendaritzacions.engine.config import EngineConfig
+from calendaritzacions.engine.variants.resource_solver.config import ResourceSolverConfig, coerce_resource_solver_config
 from calendaritzacions.engine.variants.resource_solver.resources import (
     build_base_resources,
     normalize_hour_slot,
@@ -32,6 +33,20 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         self.assertEqual(normalize_hour_slot("19:00"), "19:00")
         self.assertEqual(normalize_hour_slot("19:30"), "19:00")
         self.assertEqual(normalize_hour_slot(0.75), "18:00")
+
+    def test_resource_solver_config_includes_linkage_defaults(self):
+        config = ResourceSolverConfig()
+
+        self.assertEqual(config.linkage_mode, "off")
+        self.assertEqual(config.linkage_violation_weight, 100_000)
+        self.assertEqual(config.linkage_max_group_size, 2)
+
+    def test_linkage_variant_uses_input_linkage_mode(self):
+        config = coerce_resource_solver_config(EngineConfig(name="resource_solver_linkage"))
+        catalan_config = coerce_resource_solver_config(EngineConfig(name="resource_solver_vinculacio"))
+
+        self.assertEqual(config.linkage_mode, "input")
+        self.assertEqual(catalan_config.linkage_mode, "input")
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
     def test_build_team_records_normalizes_resources_and_deduplicates_teams(self):
@@ -82,6 +97,72 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         self.assertEqual(teams[1].time, "(sense hora)")
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
+    def test_build_team_records_reads_linkage_group_and_side_request(self):
+        row = _team_row(0, "Futbol", "Benjami", "Mixt", "Lliga")
+        row["Grup vinculaci\u00f3"] = " V1 "
+        row["Peticio"] = "fora"
+
+        teams = build_team_records(pd.DataFrame([row]))
+
+        self.assertEqual(getattr(teams[0], "linkage_group"), "v1")
+        self.assertEqual(getattr(teams[0], "linkage_side"), "fora")
+        self.assertEqual(getattr(teams[0], "linkage_source"), "input")
+
+    @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
+    def test_context_applies_linkage_modes(self):
+        rows = []
+        for index in range(4):
+            row = _team_row(index, "Futbol", "Benjami", "Mixt", "Lliga")
+            row["Grup vinculacio"] = "INPUT-A" if index < 2 else "INPUT-B"
+            row["Peticio"] = "Casa" if index % 2 == 0 else "Fora"
+            rows.append(row)
+
+        input_context = build_context_from_dataframe(
+            pd.DataFrame(rows),
+            ResourceSolverConfig(linkage_mode="input"),
+        )
+        off_context = build_context_from_dataframe(
+            pd.DataFrame(rows),
+            ResourceSolverConfig(linkage_mode="off"),
+        )
+        simulated_context = build_context_from_dataframe(
+            pd.DataFrame(rows),
+            ResourceSolverConfig(linkage_mode="simulated", linkage_max_group_size=2),
+        )
+
+        self.assertEqual(
+            [getattr(team, "linkage_group") for team in input_context.teams],
+            ["input-a", "input-a", "input-b", "input-b"],
+        )
+        self.assertEqual(
+            [getattr(team, "linkage_side") for team in input_context.teams],
+            ["casa", "fora", "casa", "fora"],
+        )
+        self.assertEqual(
+            [getattr(team, "linkage_group") for team in off_context.teams],
+            ["", "", "", ""],
+        )
+        self.assertEqual(
+            [getattr(team, "linkage_side") for team in off_context.teams],
+            ["", "", "", ""],
+        )
+        self.assertEqual([getattr(team, "linkage_group") for team in simulated_context.teams], ["", "", "", ""])
+
+        simulated_rows = [
+            _team_row(index, "Futbol", "Benjami", "Mixt", "Lliga")
+            for index in range(5)
+        ]
+        simulated_context = build_context_from_dataframe(
+            pd.DataFrame(simulated_rows),
+            ResourceSolverConfig(linkage_mode="simulated", linkage_max_group_size=2),
+        )
+        linked = [team for team in simulated_context.teams if getattr(team, "linkage_group")]
+
+        self.assertEqual(len(linked), 2)
+        self.assertEqual({team.linkage_group for team in linked}, {"link-pavello-divendres-001"})
+        self.assertEqual([team.linkage_side for team in linked], ["casa", "casa"])
+
+    @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
     def test_context_builds_groups_per_modality_category_subcategory(self):
         rows = []
         for index in range(4):
@@ -89,7 +170,7 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         for index in range(4, 21):
             rows.append(_team_row(index, "Futbol", "Alevi", "Mixt", "Lliga compartida"))
 
-        context = build_context_from_dataframe(pd.DataFrame(rows), ResourceSolverConfig())
+        context = build_context_from_dataframe(pd.DataFrame(rows), ResourceSolverConfig(linkage_mode="off"))
         groups_by_team = _candidate_groups_by_team(context)
 
         small_groups = groups_by_team["T0"]
@@ -105,7 +186,7 @@ class ResourceSolverResourcesTests(unittest.TestCase):
             for index in range(9)
         ]
 
-        context = build_context_from_dataframe(pd.DataFrame(rows), ResourceSolverConfig())
+        context = build_context_from_dataframe(pd.DataFrame(rows), ResourceSolverConfig(linkage_mode="off"))
         groups_by_team = _candidate_groups_by_team(context)
 
         self.assertEqual(len(groups_by_team["T0"]), 2)

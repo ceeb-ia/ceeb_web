@@ -15,6 +15,9 @@ from calendaritzacions.engine.variants.resource_solver.constraints.base import (
     ModelVariables,
     ObjectiveTerm,
 )
+from calendaritzacions.engine.variants.resource_solver.constraints.linkage import (
+    fallback_linkage_violations,
+)
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
     candidate_resource_by_round,
     capacity_for_resource,
@@ -49,6 +52,7 @@ class RawSolverResult:
     entity_excess: dict[tuple[str, str], int]
     resource_excess: dict[tuple[str, int], int]
     logs: tuple[str, ...] = ()
+    linkage_violations: dict[tuple[str, str], int] = field(default_factory=dict)
 
 
 def _load_cp_model() -> Any | None:
@@ -158,7 +162,9 @@ def _model_summary(
         + len(variables.occupied)
         + len(variables.real_home)
         + len(variables.entity_excess)
-        + len(variables.resource_excess),
+        + len(variables.resource_excess)
+        + len(variables.linkage_violation),
+        "num_linkage_violation_vars": len(variables.linkage_violation),
         "constraints": dict(audit.constraints),
         "objective_terms": objective_summary(objective_terms),
         "weights": objective_weights(objective_terms),
@@ -214,6 +220,9 @@ def _solve_cp_sat_model(
     resource_excess = {
         key: int(solver.Value(var)) for key, var in built_model.variables.resource_excess.items()
     }
+    linkage_violations = {
+        key: int(solver.Value(var)) for key, var in built_model.variables.linkage_violation.items()
+    }
 
     return RawSolverResult(
         status=status,
@@ -224,6 +233,7 @@ def _solve_cp_sat_model(
         variable_values=variable_values,
         entity_excess=entity_excess,
         resource_excess=resource_excess,
+        linkage_violations=linkage_violations,
     )
 
 
@@ -270,7 +280,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
                 started,
                 logs=(f"fallback search space too large: {search_space}",),
             )
-        objective_value, entity_excess, resource_excess = evaluation
+        objective_value, entity_excess, resource_excess, linkage_violations = evaluation
         status = "OPTIMAL" if objective_value == 0 else "FEASIBLE"
         assignments = tuple(
             sorted(
@@ -290,25 +300,41 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
             variable_values=variable_values,
             entity_excess=entity_excess,
             resource_excess=resource_excess,
+            linkage_violations=linkage_violations,
             logs=(f"deterministic greedy fallback used; search space {search_space}",),
         )
 
-    best: tuple[int, tuple[Candidate, ...], dict[tuple[str, str], int], dict[tuple[str, int], int]] | None = None
+    best: (
+        tuple[
+            int,
+            tuple[Candidate, ...],
+            dict[tuple[str, str], int],
+            dict[tuple[str, int], int],
+            dict[tuple[str, str], int],
+        ]
+        | None
+    ) = None
     for combo in product(*choices):
         evaluation = _evaluate_assignment_combo(context, combo)
         if evaluation is None:
             continue
-        objective_value, entity_excess, resource_excess = evaluation
+        objective_value, entity_excess, resource_excess, linkage_violations = evaluation
         if best is None or objective_value < best[0] or (
             objective_value == best[0]
             and _combo_sort_key(combo) < _combo_sort_key(best[1])
         ):
-            best = (objective_value, combo, entity_excess, resource_excess)
+            best = (
+                objective_value,
+                combo,
+                entity_excess,
+                resource_excess,
+                linkage_violations,
+            )
 
     if best is None:
         return _fallback_result("INFEASIBLE", started)
 
-    objective_value, combo, entity_excess, resource_excess = best
+    objective_value, combo, entity_excess, resource_excess, linkage_violations = best
     assignments = tuple(
         sorted(
             (Assignment(c.team_id, c.group_id, c.number) for c in combo),
@@ -327,6 +353,7 @@ def _solve_fallback_model(built_model: BuiltModel) -> RawSolverResult:
         variable_values=variable_values,
         entity_excess=entity_excess,
         resource_excess=resource_excess,
+        linkage_violations=linkage_violations,
         logs=("deterministic fallback solver used",),
     )
 
@@ -410,7 +437,15 @@ def _construct_greedy_assignment(
 def _evaluate_assignment_combo(
     context: SolverContext,
     combo: tuple[Candidate, ...],
-) -> tuple[int, dict[tuple[str, str], int], dict[tuple[str, int], int]] | None:
+) -> (
+    tuple[
+        int,
+        dict[tuple[str, str], int],
+        dict[tuple[str, int], int],
+        dict[tuple[str, str], int],
+    ]
+    | None
+):
     occupied_slots: set[tuple[str, int]] = set()
     count_by_group: dict[str, int] = defaultdict(int)
     candidate_by_group_number: dict[tuple[str, int], Candidate] = {}
@@ -464,7 +499,12 @@ def _evaluate_assignment_combo(
         getattr(context.config, "resource_excess_weight", 100_000)
     )
 
-    return objective_value, entity_excess, resource_excess
+    linkage_violations = fallback_linkage_violations(context, combo)
+    objective_value += sum(linkage_violations.values()) * int(
+        getattr(context.config, "linkage_violation_weight", 1_000_000)
+    )
+
+    return objective_value, entity_excess, resource_excess, linkage_violations
 
 
 def _fallback_entity_excess(

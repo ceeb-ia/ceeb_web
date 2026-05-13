@@ -98,6 +98,7 @@ class ResourceWorkspaceOverviewView(CalendaritzacionsAccessMixin, DetailView):
                 "assignment_summaries": summary.get("assignment_summaries", []),
                 "venue_round_sheets": _get_workspace_venue_round_sheets(workspace),
                 "calendar_view": _get_workspace_calendar_view(workspace),
+                "linkage_view": _get_workspace_linkage_view(workspace),
                 "plot_galleries": _build_plot_galleries(self.object),
                 "workspace_audits": self.object.available_audits,
             }
@@ -270,6 +271,7 @@ def _get_workspace_services():
         from calendaritzacions.django.services.workspaces import (
             get_or_create_workspace_for_run,
             get_workspace_calendar_view,
+            get_workspace_linkage_view,
             get_workspace_venue_round_sheets,
             get_workspace_incident_detail,
             get_workspace_summary,
@@ -286,11 +288,12 @@ def _get_workspace_services():
         get_workspace_team_detail,
         get_workspace_venue_round_sheets,
         get_workspace_calendar_view,
+        get_workspace_linkage_view,
     )
 
 
 def _get_or_create_workspace_for_run(run: CalendarizationRun):
-    get_or_create_workspace_for_run, _, _, _, _, _ = _get_workspace_services()
+    get_or_create_workspace_for_run, _, _, _, _, _, _ = _get_workspace_services()
     try:
         return get_or_create_workspace_for_run(run)
     except ValueError as exc:
@@ -298,30 +301,36 @@ def _get_or_create_workspace_for_run(run: CalendarizationRun):
 
 
 def _get_workspace_summary(workspace) -> dict[str, object]:
-    _, get_workspace_summary, _, _, _, _ = _get_workspace_services()
+    _, get_workspace_summary, _, _, _, _, _ = _get_workspace_services()
     summary = get_workspace_summary(workspace)
     return summary if isinstance(summary, dict) else {}
 
 
 def _get_workspace_incident_detail(workspace, incident_id: str):
-    _, _, get_workspace_incident_detail, _, _, _ = _get_workspace_services()
+    _, _, get_workspace_incident_detail, _, _, _, _ = _get_workspace_services()
     return get_workspace_incident_detail(workspace, incident_id)
 
 
 def _get_workspace_team_detail(workspace, team_id: str):
-    _, _, _, get_workspace_team_detail, _, _ = _get_workspace_services()
+    _, _, _, get_workspace_team_detail, _, _, _ = _get_workspace_services()
     return get_workspace_team_detail(workspace, team_id)
 
 
 def _get_workspace_venue_round_sheets(workspace) -> dict[str, object]:
-    _, _, _, _, get_workspace_venue_round_sheets, _ = _get_workspace_services()
+    _, _, _, _, get_workspace_venue_round_sheets, _, _ = _get_workspace_services()
     payload = get_workspace_venue_round_sheets(workspace)
     return payload if isinstance(payload, dict) else {"sheets": [], "venues": [], "rounds": []}
 
 
 def _get_workspace_calendar_view(workspace) -> dict[str, object]:
-    _, _, _, _, _, get_workspace_calendar_view = _get_workspace_services()
+    _, _, _, _, _, get_workspace_calendar_view, _ = _get_workspace_services()
     payload = get_workspace_calendar_view(workspace)
+    return payload if isinstance(payload, dict) else {"groups": [], "filters": {}}
+
+
+def _get_workspace_linkage_view(workspace) -> dict[str, object]:
+    _, _, _, _, _, _, get_workspace_linkage_view = _get_workspace_services()
+    payload = get_workspace_linkage_view(workspace)
     return payload if isinstance(payload, dict) else {"groups": [], "filters": {}}
 
 

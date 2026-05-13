@@ -16,7 +16,7 @@
     </div>
     <div>
       <a class="btn btn-sm btn-outline-secondary" href="{% url 'calendaritzacions:run_list' %}">Historic</a>
-      {% if run.engine_name == "resource_solver" and run.status == run.STATUS_SUCCESS %}
+      {% if run.engine_name != "legacy" and run.status == run.STATUS_SUCCESS %}
       <a class="btn btn-sm btn-outline-primary" href="{% url 'calendaritzacions:resource_workspace' run.pk %}">Workspace</a>
       {% endif %}
       <a class="btn btn-sm btn-primary" href="{% url 'calendaritzacions:run_create' %}">Nova execucio</a>
@@ -51,7 +51,7 @@
       <div class="border rounded p-3 h-100">
         <div class="font-weight-bold mb-2">Accions</div>
         <div>
-          {% if run.engine_name == "resource_solver" and run.status == run.STATUS_SUCCESS %}
+          {% if run.engine_name != "legacy" and run.status == run.STATUS_SUCCESS %}
           <a class="btn btn-sm btn-outline-primary mb-2" href="{% url 'calendaritzacions:resource_workspace' run.pk %}">Obrir workspace</a>
           {% endif %}
           {% if run.status == run.STATUS_SUCCESS and run.output_path %}

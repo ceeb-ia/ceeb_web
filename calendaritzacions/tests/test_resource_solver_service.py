@@ -81,6 +81,7 @@ class ResourceSolverServiceTests(unittest.TestCase):
 
     def test_registry_exposes_resource_solver_and_legacy(self):
         self.assertIsInstance(get_engine("resource_solver"), ResourceSolverEngine)
+        self.assertIsInstance(get_engine("resource_solver_linkage"), ResourceSolverEngine)
         self.assertTrue(callable(get_engine("legacy")))
 
     def test_process_calendarization_can_route_to_resource_solver(self):

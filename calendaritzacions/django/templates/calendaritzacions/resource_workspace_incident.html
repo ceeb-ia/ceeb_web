@@ -72,7 +72,7 @@
 
   {% if incident.team_calendars %}
   <div class="workspace-panel mb-3">
-    <div class="font-weight-bold mb-2">Calendaris dels equips en conflicte</div>
+    <div class="font-weight-bold mb-2">Calendaris dels equips implicats</div>
     <div class="row">
       {% for team in incident.team_calendars %}
       <div class="col-12 col-xl-6 mb-3">
@@ -84,7 +84,10 @@
               </div>
               <div class="text-muted small">{{ team.team_id }}</div>
             </div>
-            <span class="badge badge-light">Num. {{ team.number }}</span>
+            <div class="text-right">
+              {% if team.side and team.side != "-" %}<span class="badge badge-light">{{ team.side }}</span>{% endif %}
+              <span class="badge badge-light">Num. {{ team.number }}</span>
+            </div>
           </div>
           <div class="table-responsive">
             <table class="table table-sm workspace-table mb-0">

@@ -18,7 +18,12 @@ from calendaritzacions.django.models import (
 )
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
-HYDRATION_VERSION = 3
+HYDRATION_VERSION = 4
+RESOURCE_WORKSPACE_ENGINES = {
+    CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+    CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
+    CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
+}
 
 
 def get_or_create_workspace_for_run(
@@ -59,6 +64,7 @@ def hydrate_workspace_from_audits(
     assignments = _list(solution.get("assignments"))
     matches = _list(solution.get("real_matches"))
     usage_rows = _list(solution.get("resource_usage"))
+    solver_explanations = payloads.get("solver_explanations") if isinstance(payloads.get("solver_explanations"), dict) else {}
     usage_by_resource = _usage_lookup(usage_rows)
 
     with transaction.atomic():
@@ -70,6 +76,7 @@ def hydrate_workspace_from_audits(
         created_matches = _create_matches(workspace, matches, teams)
         _create_resource_incidents(workspace, usage_rows, created_matches, teams)
         _create_entity_conflict_incidents(workspace, solution, teams)
+        _create_linkage_violation_incidents(workspace, solution, solver_explanations, teams)
         workspace.summary = _build_persisted_summary(workspace)
         workspace.status = AssignmentWorkspace.STATUS_ACTIVE
         workspace.source_artifact = "resource_solution"
@@ -118,6 +125,8 @@ def get_workspace_incident_detail(
 
     if incident.incident_type == WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT:
         return _entity_conflict_incident_detail(workspace, incident)
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION:
+        return _linkage_violation_incident_detail(workspace, incident)
 
     resource_id = incident.resource_id
     matches = WorkspaceResourceMatch.objects.filter(
@@ -250,6 +259,97 @@ def _entity_conflict_incident_detail(
             "Provar moure un dels equips implicats a un altre grup candidat de la mateixa competicio.",
             "Prioritzar canvis que mantinguin mida de grup i no crein exces de recurs.",
             "Comparar els numeros assignats abans de canviar-los: el conflicte principal es de composicio de grup.",
+        ],
+    }
+
+
+def _linkage_violation_incident_detail(
+    workspace: AssignmentWorkspace,
+    incident: WorkspaceResourceIncident,
+) -> dict[str, Any]:
+    payload = incident.payload or {}
+    team_ids = [str(team_id) for team_id in (incident.team_ids or [])]
+    assignments = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(
+            workspace=workspace,
+            team_id__in=team_ids,
+        )
+    }
+    group_ids = {assignment.group_id for assignment in assignments.values() if assignment.group_id}
+    matches = list(
+        WorkspaceResourceMatch.objects.filter(
+            workspace=workspace,
+            group_id__in=group_ids,
+        ).order_by("group_id", "round_index", "id")
+    )
+    team_calendars = []
+    affected_matches = []
+    for team in _list(payload.get("teams")):
+        if not isinstance(team, dict):
+            continue
+        team_id = str(team.get("team_id") or "")
+        if not team_id:
+            continue
+        assignment = assignments.get(team_id)
+        team_matches = []
+        for match in matches:
+            if match.home_team_id != team_id and match.away_team_id != team_id:
+                continue
+            is_home = match.home_team_id == team_id
+            opponent_id = match.away_team_id if is_home else match.home_team_id
+            opponent_name = match.payload.get("away_team_name" if is_home else "home_team_name", "")
+            row = {
+                "id": match.pk,
+                "round": match.round_index,
+                "side": "Casa" if is_home else "Fora",
+                "opponent_id": opponent_id,
+                "opponent": _team_label(opponent_id, opponent_name),
+                "resource": _resource_label(match.home_resource_id) if is_home else "-",
+                "home_team": _team_label(match.home_team_id, match.payload.get("home_team_name", "")),
+                "home_team_id": match.home_team_id,
+                "away_team": _team_label(match.away_team_id, match.payload.get("away_team_name", "")),
+                "away_team_id": match.away_team_id,
+            }
+            team_matches.append(row)
+            affected_matches.append(row)
+        team_calendars.append(
+            {
+                "team_id": team_id,
+                "team_name": str(team.get("team_name") or (assignment.team_name if assignment else team_id)),
+                "number": team.get("assigned_number") or (assignment.assigned_number if assignment else None),
+                "group_id": team.get("group_id") or (assignment.group_id if assignment else ""),
+                "side": team.get("side") or "-",
+                "calendar": team_matches,
+            }
+        )
+
+    unique_matches = {row["id"]: row for row in affected_matches}
+    times = payload.get("times")
+    times_text = ", ".join(str(value) for value in times) if isinstance(times, list) else str(times or "-")
+    return {
+        **_incident_summary(incident),
+        "detail": (
+            "La solucio final incompleix una relacio de linkage entre equips. "
+            "A sota es mostren els equips implicats i el seu calendari materialitzat quan esta disponible."
+        ),
+        "facts": [
+            {"label": "Seu", "value": payload.get("venue") or "-"},
+            {"label": "Dia", "value": payload.get("day") or "-"},
+            {"label": "Hores", "value": times_text},
+            {"label": "Grup linkage", "value": payload.get("linkage_group") or "-"},
+            {"label": "Relacio esperada", "value": payload.get("expected_relation") or "-"},
+            {"label": "Cost violacio", "value": payload.get("violation_cost") or incident.excess},
+        ],
+        "affected_matches": list(unique_matches.values()),
+        "team_calendars": sorted(
+            team_calendars,
+            key=lambda row: (str(row.get("group_id") or ""), row.get("number") or 9999, row.get("team_name") or ""),
+        ),
+        "recommendations": [
+            "Revisar els numeros assignats dels equips en el mateix grup de linkage.",
+            "Comparar els calendaris dels equips implicats abans de canviar grup o numero.",
+            "Si el cost es menor que altres pressions, deixar la incidencia marcada per decisio manual.",
         ],
     }
 
@@ -516,6 +616,206 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
     }
 
 
+def get_workspace_linkage_view(workspace: AssignmentWorkspace) -> dict[str, Any]:
+    """Return linkage groups with assigned teams, context and violations."""
+
+    if not _workspace_is_current(workspace):
+        hydrate_workspace_from_audits(workspace.run, workspace=workspace)
+
+    assignments = list(
+        WorkspaceAssignment.objects.filter(workspace=workspace).order_by(
+            "team_name",
+            "team_id",
+        )
+    )
+    matches_by_team: dict[str, list[WorkspaceResourceMatch]] = defaultdict(list)
+    for match in WorkspaceResourceMatch.objects.filter(workspace=workspace).order_by("round_index", "group_id", "id"):
+        if match.home_team_id:
+            matches_by_team[match.home_team_id].append(match)
+        if match.away_team_id:
+            matches_by_team[match.away_team_id].append(match)
+
+    linkage_incidents = list(
+        WorkspaceResourceIncident.objects.filter(
+            workspace=workspace,
+            incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
+        ).order_by("-severity", "id")
+    )
+
+    buckets: dict[tuple[str, str, str], dict[str, Any]] = {}
+    filter_values: dict[str, set[str]] = {
+        "group": set(),
+        "venue": set(),
+        "source": set(),
+        "status": set(),
+    }
+    for assignment in assignments:
+        team = _assignment_team(assignment)
+        linkage = _assignment_linkage_fields(assignment, team)
+        linkage_group = linkage["group"]
+        if not linkage_group:
+            continue
+
+        venue = _assignment_venue(assignment, team)
+        day = str(team.get("day") or "").strip()
+        time = str(team.get("time") or "").strip()
+        key = (venue, day, linkage_group)
+        bucket = buckets.setdefault(
+            key,
+            {
+                "linkage_group": linkage_group,
+                "venue": venue,
+                "venue_key": _venue_key(venue),
+                "day": day,
+                "times": set(),
+                "sources": set(),
+                "competitions": set(),
+                "modalities": set(),
+                "teams": [],
+                "incident_ids": set(),
+                "filter_text_parts": [],
+            },
+        )
+        if time:
+            bucket["times"].add(time)
+        if linkage["source"]:
+            bucket["sources"].add(linkage["source"])
+        competition = _assignment_competition_label(assignment)
+        if competition:
+            bucket["competitions"].add(competition)
+        modality = str(team.get("modality") or "").strip()
+        if modality:
+            bucket["modalities"].add(modality)
+
+        team_matches = [_linkage_match_row(match, assignment.team_id) for match in matches_by_team.get(assignment.team_id, [])]
+        team_row = {
+            "team_id": assignment.team_id,
+            "team_name": assignment.team_name or assignment.team_id,
+            "entity": assignment.entity,
+            "competition": competition,
+            "modality": modality,
+            "category": str(team.get("category") or "").strip(),
+            "subcategory": str(team.get("subcategory") or "").strip(),
+            "level": str(team.get("level") or "").strip(),
+            "venue": venue,
+            "day": day,
+            "time": time,
+            "group_id": assignment.group_id,
+            "number": assignment.assigned_number,
+            "side": linkage["side"],
+            "side_label": _linkage_side_label(linkage["side"]),
+            "source": linkage["source"],
+            "source_label": _linkage_source_label(linkage["source"]),
+            "matches": team_matches,
+            "match_count": len(team_matches),
+        }
+        bucket["teams"].append(team_row)
+        bucket["filter_text_parts"].extend(
+            [
+                assignment.team_id,
+                assignment.team_name,
+                assignment.entity,
+                competition,
+                modality,
+                team_row["category"],
+                team_row["subcategory"],
+                team_row["level"],
+                venue,
+                day,
+                time,
+                assignment.group_id,
+                assignment.assigned_number,
+                linkage_group,
+                linkage["side"],
+                linkage["source"],
+            ]
+        )
+
+    for incident in linkage_incidents:
+        payload = incident.payload or {}
+        incident_group = str(payload.get("linkage_group") or "").strip()
+        incident_team_ids = {str(team_id) for team_id in (incident.team_ids or [])}
+        for bucket in buckets.values():
+            if incident_group and incident_group != bucket["linkage_group"]:
+                continue
+            bucket_team_ids = {team["team_id"] for team in bucket["teams"]}
+            if bucket_team_ids & incident_team_ids:
+                bucket["incident_ids"].add(incident.pk)
+
+    groups = []
+    for (_venue, _day, linkage_group), bucket in sorted(
+        buckets.items(),
+        key=lambda item: (_text_sort(item[0][0]), _day_order(item[0][1]), _text_sort(item[0][2])),
+    ):
+        incident_ids = sorted(bucket["incident_ids"])
+        status = "violation" if incident_ids else "ok"
+        times = sorted(bucket["times"], key=_time_order)
+        sources = sorted(bucket["sources"], key=_text_sort)
+        teams = sorted(
+            bucket["teams"],
+            key=lambda row: (
+                row["number"] if row["number"] is not None else 9999,
+                _text_sort(row["team_name"]),
+                row["team_id"],
+            ),
+        )
+        for team in teams:
+            team["has_violation"] = team["team_id"] in {
+                str(team_id)
+                for incident in linkage_incidents
+                if incident.pk in incident_ids
+                for team_id in (incident.team_ids or [])
+            }
+
+        filter_values["group"].add(linkage_group)
+        if bucket["venue"]:
+            filter_values["venue"].add(bucket["venue"])
+        for source in sources:
+            filter_values["source"].add(source)
+        filter_values["status"].add(status)
+        filter_text = _calendar_filter_text(bucket["filter_text_parts"])
+        groups.append(
+            {
+                "linkage_group": linkage_group,
+                "group_token": _filter_token(linkage_group),
+                "venue": bucket["venue"],
+                "venue_key": bucket["venue_key"],
+                "venue_token": _filter_token(bucket["venue"]),
+                "day": bucket["day"],
+                "times": times,
+                "times_label": ", ".join(times) if times else "-",
+                "sources": sources,
+                "source_tokens": " ".join(_filter_token(source) for source in sources),
+                "source_label": ", ".join(_linkage_source_label(source) for source in sources) if sources else "-",
+                "competitions": sorted(bucket["competitions"], key=_text_sort),
+                "modalities": sorted(bucket["modalities"], key=_text_sort),
+                "teams": teams,
+                "team_count": len(teams),
+                "incident_ids": incident_ids,
+                "incident_count": len(incident_ids),
+                "status": status,
+                "status_label": "Amb violacio" if status == "violation" else "Correcte",
+                "filter_text": filter_text,
+            }
+        )
+
+    filters = {
+        key: [{"label": value, "token": _filter_token(value)} for value in sorted(values, key=_text_sort)]
+        for key, values in filter_values.items()
+    }
+    filters["statuses"] = [
+        {"label": "Correcte", "token": "ok"},
+        {"label": "Amb violacio", "token": "violation"},
+    ]
+    return {
+        "groups": groups,
+        "filters": filters,
+        "group_count": len(groups),
+        "team_count": sum(group["team_count"] for group in groups),
+        "violation_count": sum(group["incident_count"] for group in groups),
+    }
+
+
 def get_workspace_venue_round_sheets(workspace: AssignmentWorkspace) -> dict[str, Any]:
     """Return visual match sheets grouped by venue and round."""
 
@@ -574,10 +874,13 @@ def get_workspace_venue_round_sheets(workspace: AssignmentWorkspace) -> dict[str
         rows = []
         total_matches = 0
         sheet_modalities = set()
+        sheet_linkage_groups = set()
         for slot in meta.get("slots", []):
             slot_key = _slot_key(slot["day"], slot["hour_slot"])
             matches = list(sheet["slots"].get(slot_key, []))
             sheet_modalities.update(match["modality"] for match in matches if match.get("modality"))
+            for match in matches:
+                sheet_linkage_groups.update(match.get("linkage_groups") or [])
             total_matches += len(matches)
             rows.append(
                 {
@@ -601,16 +904,24 @@ def get_workspace_venue_round_sheets(workspace: AssignmentWorkspace) -> dict[str
                 "match_count": total_matches,
                 "saturation_pct": _pct(total_matches, max(1, len(rows) * max_courts)),
                 "modalities": sorted(sheet_modalities, key=_text_sort),
+                "linkage_groups": sorted(sheet_linkage_groups, key=_text_sort),
+                "linkage_group_count": len(sheet_linkage_groups),
                 "modality_filter": " ".join(sorted({_filter_token(value) for value in sheet_modalities if value})),
+                "linkage_filter": " ".join(sorted({_filter_token(value) for value in sheet_linkage_groups if value})),
             }
         )
 
     modalities = sorted({modality for sheet in sheets for modality in sheet.get("modalities", [])}, key=_text_sort)
+    linkage_groups = sorted(
+        {group for sheet in sheets for group in sheet.get("linkage_groups", [])},
+        key=_text_sort,
+    )
     return {
         "sheets": sheets,
         "venues": sorted(venue_meta.values(), key=lambda item: _text_sort(item["venue"])),
         "rounds": sorted({sheet["round"] for sheet in sheets}),
         "modalities": [{"label": modality, "token": _filter_token(modality)} for modality in modalities],
+        "linkage_groups": [{"label": group, "token": _filter_token(group)} for group in linkage_groups],
     }
 
 
@@ -691,6 +1002,54 @@ def _assignment_calendar_filter_fields(assignment: WorkspaceAssignment) -> dict[
     }
 
 
+def _assignment_linkage_fields(
+    assignment: WorkspaceAssignment,
+    team: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    payload = assignment.payload or {}
+    team = team if isinstance(team, dict) else _assignment_team(assignment)
+    return {
+        "group": str(team.get("linkage_group") or payload.get("linkage_group") or "").strip(),
+        "side": str(team.get("linkage_side") or payload.get("linkage_side") or "").strip(),
+        "source": str(team.get("linkage_source") or payload.get("linkage_source") or "").strip(),
+    }
+
+
+def _linkage_match_row(match: WorkspaceResourceMatch, team_id: str) -> dict[str, Any]:
+    is_home = match.home_team_id == team_id
+    opponent_id = match.away_team_id if is_home else match.home_team_id
+    opponent_name = match.payload.get("away_team_name" if is_home else "home_team_name", "")
+    return {
+        "id": match.pk,
+        "round": match.round_index,
+        "group_id": match.group_id,
+        "side": "Casa" if is_home else "Fora",
+        "opponent_id": opponent_id,
+        "opponent": _team_label(opponent_id, opponent_name),
+        "resource": _resource_label(match.home_resource_id) if is_home else "-",
+    }
+
+
+def _linkage_side_label(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    labels = {
+        "casa": "Casa",
+        "fora": "Fora",
+        "indiferent": "Indiferent",
+    }
+    return labels.get(normalized, value or "-")
+
+
+def _linkage_source_label(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    labels = {
+        "input": "Input",
+        "simulated": "Simulat",
+        "simulated_resource_solver": "Simulat",
+    }
+    return labels.get(normalized, value or "-")
+
+
 def _assignment_team(assignment: WorkspaceAssignment) -> dict[str, Any]:
     team = (assignment.payload or {}).get("team")
     return team if isinstance(team, dict) else {}
@@ -736,8 +1095,8 @@ def _calendar_tokens(values: Any) -> str:
 def _validate_workspace_run(run: CalendarizationRun) -> None:
     if run.status != CalendarizationRun.STATUS_SUCCESS:
         raise ValueError("El workspace nomes es pot crear per runs finalitzats correctament.")
-    if run.engine_name != CalendarizationRun.ENGINE_RESOURCE_SOLVER:
-        raise ValueError("El workspace nomes esta disponible pel motor resource_solver.")
+    if run.engine_name not in RESOURCE_WORKSPACE_ENGINES:
+        raise ValueError("El workspace nomes esta disponible pels motors resource_solver.")
 
 
 def _workspace_is_hydrated(workspace: AssignmentWorkspace) -> bool:
@@ -763,6 +1122,7 @@ def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
         "team_catalog": _read_list(audit_paths.get("team_catalog")),
         "candidate_catalog": _read_list(audit_paths.get("candidate_catalog")),
         "resource_pressure": _read_list(audit_paths.get("resource_pressure")),
+        "solver_explanations": _read_dict(audit_paths.get("solver_explanations")),
     }
 
 
@@ -944,6 +1304,238 @@ def _create_entity_conflict_incidents(
         WorkspaceResourceIncident.objects.bulk_create(rows)
 
 
+def _create_linkage_violation_incidents(
+    workspace: AssignmentWorkspace,
+    solution: dict[str, Any],
+    solver_explanations: dict[str, Any],
+    teams: dict[str, dict[str, Any]],
+) -> None:
+    assignment_numbers = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(workspace=workspace)
+    }
+    rows = []
+    for violation in _linkage_violations_from_audits(solution, solver_explanations):
+        team_rows = _linkage_violation_teams(violation, teams, assignment_numbers)
+        team_ids = [row["team_id"] for row in team_rows]
+        if not team_ids:
+            continue
+        venue = _first_text(violation, ("venue", "site", "facility"))
+        day = _first_text(violation, ("day", "weekday"))
+        times = _linkage_violation_times(violation)
+        linkage_group = _first_text(violation, ("linkage_group", "linkage_group_id", "group", "group_id", "link_id"))
+        expected_relation = _first_text(violation, ("expected_relation", "expected", "relation", "constraint"))
+        violation_cost = _linkage_violation_cost(violation)
+        league_counts = Counter(_competition_label(teams.get(team_id, {})) for team_id in team_ids)
+        resource_id = _linkage_violation_resource_id(venue, day, times, linkage_group)
+        payload = {
+            **violation,
+            "venue": venue,
+            "day": day,
+            "times": times,
+            "linkage_group": linkage_group,
+            "expected_relation": expected_relation,
+            "teams": team_rows,
+            "violation_cost": violation_cost,
+            "league_counts": dict(league_counts),
+        }
+        rows.append(
+            WorkspaceResourceIncident(
+                workspace=workspace,
+                run=workspace.run,
+                incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
+                status=WorkspaceResourceIncident.STATUS_OPEN,
+                severity=max(1, int(math.ceil(violation_cost))),
+                resource_id=resource_id,
+                excess=max(1, int(math.ceil(violation_cost))),
+                locals_count=len(team_ids),
+                capacity=0,
+                team_ids=team_ids,
+                payload=_json_safe(payload),
+            )
+        )
+    if rows:
+        WorkspaceResourceIncident.objects.bulk_create(rows)
+
+
+def _linkage_violations_from_audits(
+    solution: dict[str, Any],
+    solver_explanations: dict[str, Any],
+) -> list[dict[str, Any]]:
+    for container in (solver_explanations, solution):
+        if not isinstance(container, dict):
+            continue
+        for key in ("linkage_violations", "linkage_violation_incidents", "violated_linkages"):
+            rows = container.get(key)
+            if isinstance(rows, list):
+                return [row for row in rows if isinstance(row, dict)]
+        nested = _linkage_violations_from_linkage_audit(container.get("linkage"))
+        if nested:
+            return nested
+    return []
+
+
+def _linkage_violations_from_linkage_audit(linkage: Any) -> list[dict[str, Any]]:
+    if not isinstance(linkage, dict):
+        return []
+    violations = [row for row in _list(linkage.get("violations")) if isinstance(row, dict)]
+    if not violations:
+        return []
+    groups = [row for row in _list(linkage.get("groups")) if isinstance(row, dict)]
+    group_teams: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+    for group in groups:
+        key = (
+            str(group.get("venue") or ""),
+            str(group.get("linkage_group") or ""),
+        )
+        team_rows = {}
+        for team in _list(group.get("teams")):
+            if not isinstance(team, dict):
+                continue
+            team_id = str(team.get("team_id") or "")
+            if team_id:
+                team_rows[team_id] = team
+        group_teams[key] = team_rows
+
+    enriched = []
+    for violation in violations:
+        key = (
+            str(violation.get("venue") or ""),
+            str(violation.get("linkage_group") or ""),
+        )
+        teams = []
+        assigned_numbers = violation.get("assigned_numbers") if isinstance(violation.get("assigned_numbers"), dict) else {}
+        for team_id in [str(value) for value in _list(violation.get("team_ids")) if str(value or "").strip()]:
+            group_team = group_teams.get(key, {}).get(team_id, {})
+            teams.append(
+                {
+                    "team_id": team_id,
+                    "team_name": group_team.get("team_name") or team_id,
+                    "side": group_team.get("linkage_side") or group_team.get("side") or "",
+                    "assigned_number": assigned_numbers.get(team_id) or group_team.get("assigned_number"),
+                    "group_id": group_team.get("assigned_group_id") or group_team.get("group_id") or "",
+                }
+            )
+        enriched.append({**violation, "teams": teams} if teams else violation)
+    return enriched
+
+
+def _linkage_violation_teams(
+    violation: dict[str, Any],
+    teams: dict[str, dict[str, Any]],
+    assignments: dict[str, WorkspaceAssignment],
+) -> list[dict[str, Any]]:
+    raw_teams = violation.get("teams")
+    rows = []
+    if isinstance(raw_teams, list):
+        for item in raw_teams:
+            if isinstance(item, dict):
+                team_id = str(item.get("team_id") or item.get("id") or "")
+                side = str(item.get("side") or item.get("linkage_side") or item.get("role") or "")
+                number = _int_or_none(item.get("assigned_number") or item.get("number"))
+            else:
+                team_id = str(item or "")
+                side = ""
+                number = None
+            if team_id:
+                rows.append(_linkage_team_row(team_id, side, number, teams, assignments))
+
+    if not rows:
+        assigned_numbers = violation.get("assigned_numbers") if isinstance(violation.get("assigned_numbers"), dict) else {}
+        linkage_sides = violation.get("linkage_sides") if isinstance(violation.get("linkage_sides"), dict) else {}
+        for team_id in [str(value) for value in _list(violation.get("team_ids")) if str(value or "").strip()]:
+            rows.append(
+                _linkage_team_row(
+                    team_id,
+                    str(linkage_sides.get(team_id) or ""),
+                    _int_or_none(assigned_numbers.get(team_id)),
+                    teams,
+                    assignments,
+                )
+            )
+
+    if not rows:
+        for key, side in (
+            ("home_team_id", "home"),
+            ("away_team_id", "away"),
+            ("team_a_id", "team_a"),
+            ("team_b_id", "team_b"),
+        ):
+            team_id = str(violation.get(key) or "")
+            if team_id:
+                rows.append(_linkage_team_row(team_id, side, None, teams, assignments))
+
+    seen = set()
+    unique_rows = []
+    for row in rows:
+        key = (row["team_id"], row.get("side") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_rows.append(row)
+    return unique_rows
+
+
+def _linkage_team_row(
+    team_id: str,
+    side: str,
+    number: int | None,
+    teams: dict[str, dict[str, Any]],
+    assignments: dict[str, WorkspaceAssignment],
+) -> dict[str, Any]:
+    assignment = assignments.get(team_id)
+    team = teams.get(team_id, {})
+    assigned_number = number if number is not None else (assignment.assigned_number if assignment else None)
+    return {
+        "team_id": team_id,
+        "team_name": str(team.get("name") or (assignment.team_name if assignment else team_id)),
+        "side": side or "-",
+        "assigned_number": assigned_number,
+        "group_id": assignment.group_id if assignment else str(team.get("group_id") or ""),
+    }
+
+
+def _linkage_violation_times(violation: dict[str, Any]) -> list[str]:
+    for key in ("times", "time_slots", "hours", "hour_slots"):
+        value = violation.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item or "").strip()]
+        if str(value or "").strip():
+            return [str(value)]
+    start = str(violation.get("start_time") or "").strip()
+    end = str(violation.get("end_time") or "").strip()
+    if start and end:
+        return [f"{start}-{end}"]
+    time_value = str(violation.get("time") or violation.get("hour_slot") or "").strip()
+    return [time_value] if time_value else []
+
+
+def _linkage_violation_cost(violation: dict[str, Any]) -> float:
+    for key in ("violation_cost", "cost", "penalty", "weight"):
+        if key in violation:
+            return _number(violation.get(key))
+    return 1.0
+
+
+def _linkage_violation_resource_id(
+    venue: str,
+    day: str,
+    times: list[str],
+    linkage_group: str,
+) -> str:
+    parts = [venue, day, ",".join(times), linkage_group]
+    value = "|".join(part for part in parts if str(part or "").strip())
+    return value[:255] if value else "linkage_violation"
+
+
+def _first_text(payload: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if str(value or "").strip():
+            return str(value)
+    return ""
+
+
 def _entity_conflicts_from_solution(
     solution: dict[str, Any],
     teams: dict[str, dict[str, Any]],
@@ -986,12 +1578,14 @@ def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
     incidents = WorkspaceResourceIncident.objects.filter(workspace=workspace)
     resource_incidents = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS)
     entity_conflicts = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT)
+    linkage_violations = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION)
     return {
         "hydration_version": HYDRATION_VERSION,
         "assignments": WorkspaceAssignment.objects.filter(workspace=workspace).count(),
         "matches": WorkspaceResourceMatch.objects.filter(workspace=workspace).count(),
         "resource_incidents": resource_incidents.count(),
         "entity_conflicts": entity_conflicts.count(),
+        "linkage_violations": linkage_violations.count(),
         "resource_excess_total": sum(incident.excess for incident in resource_incidents),
     }
 
@@ -1007,9 +1601,14 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
         workspace=workspace,
         incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
     )
+    linkage_violations = WorkspaceResourceIncident.objects.filter(
+        workspace=workspace,
+        incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
+    )
     excess_total = sum(incident.excess for incident in resource_incidents)
     resource_count = resource_incidents.count()
     entity_conflict_count = entity_conflicts.count()
+    linkage_violation_count = linkage_violations.count()
     return [
         {"label": "Equips assignats", "value": assignments_count, "status": "neutral"},
         {"label": "Partits", "value": matches_count, "status": "neutral"},
@@ -1023,6 +1622,11 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
             "label": "Conflictes entitat",
             "value": entity_conflict_count,
             "status": "warning" if entity_conflict_count else "success",
+        },
+        {
+            "label": "Linkage violat",
+            "value": linkage_violation_count,
+            "status": "warning" if linkage_violation_count else "success",
         },
         {
             "label": "Lligues",
@@ -1041,6 +1645,7 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
         return {
             "id": incident.pk,
             "incident_id": incident.pk,
+            "type_key": incident.incident_type,
             "type": "Conflicte entitat",
             "title": f"{entity} - {group_id}",
             "summary": f"{len(incident.team_ids or [])} equips de la mateixa entitat al grup",
@@ -1058,9 +1663,44 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
             "team_ids": incident.team_ids or [],
             "payload": payload,
         }
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION:
+        linkage_group = str(payload.get("linkage_group") or "-")
+        expected_relation = str(payload.get("expected_relation") or "-")
+        venue = str(payload.get("venue") or "")
+        day = str(payload.get("day") or "")
+        times = payload.get("times")
+        times_text = ", ".join(str(value) for value in times) if isinstance(times, list) else str(times or "")
+        title_parts = [part for part in (linkage_group, venue, day, times_text) if part and part != "-"]
+        team_labels = [
+            str(team.get("team_name") or team.get("team_id") or "")
+            for team in _list(payload.get("teams"))
+            if isinstance(team, dict)
+        ]
+        return {
+            "id": incident.pk,
+            "incident_id": incident.pk,
+            "type_key": incident.incident_type,
+            "type": "Linkage violation",
+            "title": " - ".join(title_parts) if title_parts else "Linkage violation",
+            "summary": f"{expected_relation} incumplert",
+            "description": f"{expected_relation} incumplert",
+            "impact": f"+{payload.get('violation_cost') or incident.excess}",
+            "count": incident.excess,
+            "severity": incident.severity,
+            "status": incident.get_status_display(),
+            "resource": _resource_label(incident.resource_id),
+            "venue": venue or _resource_label(incident.resource_id),
+            "league": _top_league_label(payload.get("league_counts")),
+            "competition": _top_league_label(payload.get("league_counts")),
+            "team": ", ".join(team_labels) if team_labels else "-",
+            "team_name": ", ".join(team_labels) if team_labels else "-",
+            "team_ids": incident.team_ids or [],
+            "payload": payload,
+        }
     return {
         "id": incident.pk,
         "incident_id": incident.pk,
+        "type_key": incident.incident_type,
         "type": "Exces de recurs",
         "title": _resource_label(incident.resource_id),
         "summary": f"{incident.locals_count}/{incident.capacity} locals assignats",
@@ -1133,6 +1773,12 @@ def _assignment_summaries(workspace: AssignmentWorkspace) -> list[dict[str, Any]
             if isinstance(row, dict)
         )
         competition = _assignment_competition_label(assignment)
+        linkage = _assignment_linkage_fields(assignment, team)
+        linkage_text = " ".join(
+            value
+            for value in (linkage["group"], linkage["side"], linkage["source"])
+            if value
+        )
         rows.append(
             {
                 "team_id": assignment.team_id,
@@ -1150,6 +1796,12 @@ def _assignment_summaries(workspace: AssignmentWorkspace) -> list[dict[str, Any]
                 "group_id": assignment.group_id,
                 "number": assignment.assigned_number,
                 "seed_request_original": assignment.seed_request_original or "",
+                "linkage_group": linkage["group"],
+                "linkage_side": linkage["side"],
+                "linkage_side_label": _linkage_side_label(linkage["side"]),
+                "linkage_source": linkage["source"],
+                "linkage_source_label": _linkage_source_label(linkage["source"]),
+                "has_linkage": bool(linkage["group"]),
                 "home_resources": len(home_resources),
                 "home_resource_labels": resource_labels[:4],
                 "resource_excess": resource_excess,
@@ -1173,6 +1825,7 @@ def _assignment_summaries(workspace: AssignmentWorkspace) -> list[dict[str, Any]
                         str(team.get("time") or ""),
                         assignment.group_id,
                         str(assignment.assigned_number or ""),
+                        linkage_text,
                         resource_text,
                     ]
                 ),
@@ -1267,6 +1920,8 @@ def _venue_sheet_match(
 ) -> dict[str, Any]:
     home_assignment = assignments.get(match.home_team_id)
     away_assignment = assignments.get(match.away_team_id)
+    home_linkage = _assignment_linkage_fields(home_assignment) if home_assignment else {"group": "", "side": "", "source": ""}
+    away_linkage = _assignment_linkage_fields(away_assignment) if away_assignment else {"group": "", "side": "", "source": ""}
     return {
         "id": match.pk,
         "group_id": match.group_id,
@@ -1279,6 +1934,22 @@ def _venue_sheet_match(
         "competition": _assignment_competition_label(home_assignment) if home_assignment else "",
         "modality": _assignment_modality(home_assignment) if home_assignment else "",
         "home_entity": home_assignment.entity if home_assignment else "",
+        "home_number": home_assignment.assigned_number if home_assignment else None,
+        "away_number": away_assignment.assigned_number if away_assignment else None,
+        "home_linkage_group": home_linkage["group"],
+        "home_linkage_side": home_linkage["side"],
+        "home_linkage_side_label": _linkage_side_label(home_linkage["side"]),
+        "away_linkage_group": away_linkage["group"],
+        "away_linkage_side": away_linkage["side"],
+        "away_linkage_side_label": _linkage_side_label(away_linkage["side"]),
+        "linkage_groups": sorted(
+            {
+                group
+                for group in (home_linkage["group"], away_linkage["group"])
+                if group
+            },
+            key=_text_sort,
+        ),
     }
 
 

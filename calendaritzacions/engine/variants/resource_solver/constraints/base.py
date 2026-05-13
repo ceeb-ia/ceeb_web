@@ -25,6 +25,7 @@ class ModelVariables:
     resource_excess: dict[tuple[str, int], Any] = field(default_factory=dict)
     resource_usage_terms: dict[tuple[str, int], list[Any]] = field(default_factory=dict)
     resource_usage_counts: dict[tuple[str, int], Any] = field(default_factory=dict)
+    linkage_violation: dict[tuple[str, str], Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -61,4 +62,3 @@ def linear_sum(items: list[Any]) -> Any:
     if not items:
         return 0
     return sum(items)
-

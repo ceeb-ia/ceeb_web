@@ -22,6 +22,28 @@ SEED_COLUMN_CANDIDATES = (
     "NÃºm. sorteig",
 )
 
+LINKAGE_GROUP_COLUMN_CANDIDATES = (
+    "linkage_group",
+    "Linkage group",
+    "Grup linkage",
+    "Grup vinculacio",
+    "Grup vinculaci\u00f3",
+)
+LINKAGE_SIDE_COLUMN_CANDIDATES = (
+    "linkage_side",
+    "Linkage side",
+    "Costat linkage",
+    "Costat vinculacio",
+    "Costat vinculaci\u00f3",
+)
+LINKAGE_SOURCE_COLUMN_CANDIDATES = (
+    "linkage_source",
+    "Linkage source",
+    "Origen linkage",
+    "Origen vinculacio",
+    "Origen vinculaci\u00f3",
+)
+
 MISSING_VENUE = "(sense pista)"
 MISSING_DAY = "(sense dia)"
 MISSING_TIME = "(sense hora)"
@@ -64,6 +86,10 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         count_col,
     )
     seed_requests_by_modality = _seed_requests_by_modality(prepared, count_col)
+    home_away_distribution = _home_away_distribution(prepared, count_col)
+    linkage_presence = _linkage_presence_distribution(prepared, count_col)
+    home_away_by_linkage = _home_away_by_linkage(prepared, count_col)
+    linkage_side_distribution = _linkage_side_distribution(prepared, count_col)
 
     by_venue_day_time = _sort_slot_frame(by_venue_day_time)
     by_venue_day = _sort_day_frame(by_venue_day)
@@ -94,6 +120,9 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         "files_sense_dia": int(prepared["is_missing_day"].sum()),
         "files_sense_hora": int(prepared["is_missing_time"].sum()),
         "slots_divendres": int(len(friday)),
+        "peticio_casa": _distribution_count(home_away_distribution, "Casa"),
+        "peticio_fora": _distribution_count(home_away_distribution, "Fora"),
+        "peticio_indiferent": _distribution_count(home_away_distribution, "Indiferent"),
     }
 
     missing_fields = _missing_field_records(prepared)
@@ -106,12 +135,19 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         "friday_by_venue_time": friday.to_dict("records"),
         "top_demand_slots": top_slots.to_dict("records"),
         "seed_requests_by_modality": seed_requests_by_modality,
+        "home_away_distribution": home_away_distribution,
+        "linkage_presence": linkage_presence,
+        "home_away_by_linkage": home_away_by_linkage,
+        "linkage_side_distribution": linkage_side_distribution,
         "missing_fields": missing_fields,
         "columns": {
             "venue": VENUE_COLUMN,
             "day": DAY_COLUMN,
             "time": TIME_COLUMN,
             "team_id": TEAM_ID_COLUMN if TEAM_ID_COLUMN in df.columns else None,
+            "linkage_group": _first_existing_column(df, LINKAGE_GROUP_COLUMN_CANDIDATES),
+            "linkage_side": _first_existing_column(df, LINKAGE_SIDE_COLUMN_CANDIDATES),
+            "linkage_source": _first_existing_column(df, LINKAGE_SOURCE_COLUMN_CANDIDATES),
             "optional_segments": [col for col in OPTIONAL_SEGMENT_COLUMNS if col in df.columns],
         },
     }
@@ -146,12 +182,20 @@ def write_input_demand_plots(
     venue_df = pd.DataFrame(analysis.get("by_venue", []))
     top_df = pd.DataFrame(analysis.get("top_demand_slots", []))
     seed_request_df = pd.DataFrame(analysis.get("seed_requests_by_modality", []))
+    home_away_df = pd.DataFrame(analysis.get("home_away_distribution", []))
+    linkage_presence_df = pd.DataFrame(analysis.get("linkage_presence", []))
+    home_away_linkage_df = pd.DataFrame(analysis.get("home_away_by_linkage", []))
+    linkage_side_df = pd.DataFrame(analysis.get("linkage_side_distribution", []))
 
     for plot_id, plotter, frame in [
         ("heatmap", _plot_global_heatmap, slot_df),
         ("by_venue", _plot_by_venue_bar, venue_df),
         ("top_slots", _plot_top_slots_bar, top_df),
         ("seed_requests_by_modality", _plot_seed_requests_by_modality, seed_request_df),
+        ("home_away_distribution", _plot_home_away_distribution, home_away_df),
+        ("linkage_presence", _plot_linkage_presence, linkage_presence_df),
+        ("home_away_by_linkage", _plot_home_away_by_linkage, home_away_linkage_df),
+        ("linkage_side_distribution", _plot_linkage_side_distribution, linkage_side_df),
     ]:
         if frame.empty:
             continue
@@ -190,6 +234,29 @@ def _prepare_demand_frame(df: pd.DataFrame) -> pd.DataFrame:
     )
     seed_column = next((column for column in SEED_COLUMN_CANDIDATES if column in prepared.columns), None)
     prepared["numero_sorteig_peticio"] = prepared[seed_column].map(_seed_request_label) if seed_column else "Sense peticio"
+    prepared["casa_fora_peticio"] = prepared["numero_sorteig_peticio"].map(_home_away_request_label)
+    linkage_group_column = _first_existing_column(prepared, LINKAGE_GROUP_COLUMN_CANDIDATES)
+    linkage_side_column = _first_existing_column(prepared, LINKAGE_SIDE_COLUMN_CANDIDATES)
+    linkage_source_column = _first_existing_column(prepared, LINKAGE_SOURCE_COLUMN_CANDIDATES)
+    prepared["linkage_group"] = (
+        _normalized_text_column(prepared, linkage_group_column, "")
+        if linkage_group_column
+        else pd.Series([""] * len(prepared), index=prepared.index)
+    )
+    prepared["linkage_side"] = (
+        _normalized_text_column(prepared, linkage_side_column, "")
+        if linkage_side_column
+        else pd.Series([""] * len(prepared), index=prepared.index)
+    )
+    prepared["linkage_source"] = (
+        _normalized_text_column(prepared, linkage_source_column, "")
+        if linkage_source_column
+        else pd.Series([""] * len(prepared), index=prepared.index)
+    )
+    prepared["_linkage_available"] = bool(linkage_group_column)
+    prepared["te_linkage"] = prepared["linkage_group"].astype(str).str.strip().ne("") if linkage_group_column else False
+    prepared["linkage_status"] = prepared["te_linkage"].map(lambda value: "Amb linkage" if value else "Sense linkage")
+    prepared["linkage_side_label"] = prepared["linkage_side"].map(_home_away_request_label)
     return prepared
 
 
@@ -270,6 +337,76 @@ def _seed_requests_by_modality(df: pd.DataFrame, count_col: str) -> list[dict[st
     return grouped.to_dict("records")
 
 
+def _home_away_distribution(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    if data.empty:
+        return []
+    grouped = (
+        data.groupby(["casa_fora_peticio"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"casa_fora_peticio": "peticio"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    grouped["_order"] = grouped["peticio"].map(_home_away_order)
+    return grouped.sort_values(["_order", "peticio"], kind="stable").drop(columns=["_order"]).to_dict("records")
+
+
+def _linkage_presence_distribution(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    if not bool(df["_linkage_available"].any()):
+        return []
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    grouped = (
+        data.groupby(["linkage_status"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"linkage_status": "linkage"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    grouped["_order"] = grouped["linkage"].map(lambda value: 0 if value == "Amb linkage" else 1)
+    return grouped.sort_values(["_order", "linkage"], kind="stable").drop(columns=["_order"]).to_dict("records")
+
+
+def _home_away_by_linkage(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    if not bool(df["_linkage_available"].any()):
+        return []
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    grouped = (
+        data.groupby(["linkage_status", "casa_fora_peticio"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"linkage_status": "linkage", "casa_fora_peticio": "peticio"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    grouped["_linkage_order"] = grouped["linkage"].map(lambda value: 0 if value == "Amb linkage" else 1)
+    grouped["_request_order"] = grouped["peticio"].map(_home_away_order)
+    return grouped.sort_values(["_linkage_order", "_request_order", "peticio"], kind="stable").drop(
+        columns=["_linkage_order", "_request_order"]
+    ).to_dict("records")
+
+
+def _linkage_side_distribution(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    if not bool(df["linkage_side"].astype(str).str.strip().ne("").any()):
+        return []
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    grouped = (
+        data.groupby(["linkage_side_label"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"linkage_side_label": "side"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    grouped["_order"] = grouped["side"].map(_home_away_order)
+    return grouped.sort_values(["_order", "side"], kind="stable").drop(columns=["_order"]).to_dict("records")
+
+
+def _distribution_count(rows: list[dict[str, Any]], label: str) -> int:
+    for row in rows:
+        if row.get("peticio") == label or row.get("side") == label:
+            return int(row.get("equips", 0) or 0)
+    return 0
+
+
 def _normalized_text_column(df: pd.DataFrame, column: str, missing_label: str) -> pd.Series:
     if column not in df.columns:
         return pd.Series([missing_label] * len(df), index=df.index)
@@ -285,6 +422,23 @@ def _normalized_time_column(df: pd.DataFrame, column: str) -> pd.Series:
     if column not in df.columns:
         return pd.Series([MISSING_TIME] * len(df), index=df.index)
     return df[column].map(_format_time_value)
+
+
+def _first_existing_column(df: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
+    return next((column for column in candidates if column in df.columns), None)
+
+
+def _home_away_request_label(value: Any) -> str:
+    text = _day_key(value).upper()
+    if text in {"CASA", "HOME", "LOCAL"}:
+        return "Casa"
+    if text in {"FORA", "AWAY", "VISITANT", "VISITOR"}:
+        return "Fora"
+    return "Indiferent"
+
+
+def _home_away_order(value: Any) -> int:
+    return {"Casa": 0, "Fora": 1, "Indiferent": 2}.get(str(value), 3)
 
 
 def _seed_request_label(value: Any) -> str:
@@ -457,6 +611,76 @@ def _plot_seed_requests_by_modality(df: pd.DataFrame):
     for ax in axes[len(modalities):]:
         ax.axis("off")
     fig.suptitle("Peticions de numero de sorteig per modalitat", fontsize=13)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_home_away_distribution(df: pd.DataFrame):
+    if df.empty:
+        return None
+    import matplotlib.pyplot as plt
+
+    ordered = df.sort_values("peticio", key=lambda series: series.map(_home_away_order), kind="stable")
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    ax.bar(ordered["peticio"], ordered["equips"], color=["#4E79A7", "#F28E2B", "#BAB0AC"][: len(ordered)])
+    ax.set_title("Distribucio Casa/Fora/Indiferent")
+    ax.set_ylabel("Equips")
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_linkage_presence(df: pd.DataFrame):
+    if df.empty:
+        return None
+    import matplotlib.pyplot as plt
+
+    ordered = df.sort_values("linkage", kind="stable")
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    ax.bar(ordered["linkage"], ordered["equips"], color=["#59A14F", "#BAB0AC"][: len(ordered)])
+    ax.set_title("Equips amb i sense linkage")
+    ax.set_ylabel("Equips")
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_home_away_by_linkage(df: pd.DataFrame):
+    if df.empty:
+        return None
+    import matplotlib.pyplot as plt
+
+    pivot = df.pivot_table(index="linkage", columns="peticio", values="equips", aggfunc="sum", fill_value=0)
+    if pivot.empty:
+        return None
+    columns = sorted(pivot.columns, key=_home_away_order)
+    pivot = pivot[columns]
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    bottom = [0] * len(pivot.index)
+    colors = {"Casa": "#4E79A7", "Fora": "#F28E2B", "Indiferent": "#BAB0AC"}
+    for column in pivot.columns:
+        values = pivot[column].astype(int).tolist()
+        ax.bar(pivot.index.astype(str), values, bottom=bottom, label=str(column), color=colors.get(str(column), "#76B7B2"))
+        bottom = [left + right for left, right in zip(bottom, values)]
+    ax.set_title("Casa/Fora/Indiferent per linkage")
+    ax.set_ylabel("Equips")
+    ax.legend(loc="upper right")
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_linkage_side_distribution(df: pd.DataFrame):
+    if df.empty:
+        return None
+    import matplotlib.pyplot as plt
+
+    ordered = df.sort_values("side", key=lambda series: series.map(_home_away_order), kind="stable")
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    ax.bar(ordered["side"], ordered["equips"], color=["#4E79A7", "#F28E2B", "#BAB0AC"][: len(ordered)])
+    ax.set_title("Costat de linkage")
+    ax.set_ylabel("Equips")
+    ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()
     return fig
 

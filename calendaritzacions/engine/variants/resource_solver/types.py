@@ -22,6 +22,9 @@ class TeamRecord:
     day: str = ""
     time: str = ""
     seed_request_original: Any = ""
+    linkage_group: str = ""
+    linkage_side: str = ""
+    linkage_source: str = ""
 
 
 @dataclass(frozen=True)
@@ -149,4 +152,3 @@ class ResourceSolverResult:
     entity_excess: dict[tuple[str, str], int]
     audit_payloads: dict[str, Any] = field(default_factory=dict)
     logs: tuple[str, ...] = ()
-

@@ -114,6 +114,42 @@ class InputDemandAnalysisTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["total_equips"], 1)
         self.assertEqual(payload["plots"], {"heatmap": "plot.png"})
 
+    def test_build_input_demand_reports_home_away_and_linkage(self):
+        analysis = build_input_demand_analysis(
+            pd.DataFrame(
+                [
+                    {
+                        "Id": "A",
+                        "Pista joc": "Pista A",
+                        "Dia partit": "Divendres",
+                        "Horari partit": "19:30",
+                        "NÃºm. sorteig": "CASA",
+                        "linkage_group": "L1",
+                        "linkage_side": "Casa",
+                    },
+                    {
+                        "Id": "B",
+                        "Pista joc": "Pista A",
+                        "Dia partit": "Divendres",
+                        "Horari partit": "19:30",
+                        "NÃºm. sorteig": "FORA",
+                        "linkage_group": "",
+                        "linkage_side": "",
+                    },
+                ]
+            )
+        )
+
+        home_away = {row["peticio"]: row["equips"] for row in analysis["home_away_distribution"]}
+        linkage = {row["linkage"]: row["equips"] for row in analysis["linkage_presence"]}
+        side = {row["side"]: row["equips"] for row in analysis["linkage_side_distribution"]}
+
+        self.assertEqual(home_away["Casa"], 1)
+        self.assertEqual(home_away["Fora"], 1)
+        self.assertEqual(linkage["Amb linkage"], 1)
+        self.assertEqual(linkage["Sense linkage"], 1)
+        self.assertEqual(side["Casa"], 1)
+
     @unittest.skipUnless(importlib.util.find_spec("matplotlib"), "matplotlib not installed")
     def test_write_input_demand_plots_creates_pngs(self):
         analysis = build_input_demand_analysis(

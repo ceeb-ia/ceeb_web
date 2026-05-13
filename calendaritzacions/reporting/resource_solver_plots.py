@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from calendaritzacions.engine.variants.resource_solver.audit import build_linkage_audit
 from calendaritzacions.engine.variants.resource_solver.types import (
     ResourceSolverResult,
     SolverContext,
@@ -40,6 +41,7 @@ def write_resource_solver_final_plots(
         ("resource_excess", _plot_resource_excess(result)),
         ("entity_conflicts", _plot_entity_conflicts(result)),
         ("assigned_numbers_by_modality", _plot_assigned_numbers_by_modality(result, context)),
+        ("linkage_compliance", _plot_linkage_compliance(result, context)),
         ("status_summary", _plot_status_summary(result, context)),
     ]
 
@@ -140,6 +142,7 @@ def _plot_entity_conflicts(result: ResourceSolverResult) -> Any | None:
 def _plot_status_summary(result: ResourceSolverResult, context: SolverContext) -> Any | None:
     import matplotlib.pyplot as plt
 
+    linkage_summary = build_linkage_audit(result, context).get("summary", {})
     metrics = {
         "Equips": len(context.teams),
         "Assignats": len(result.assignments),
@@ -148,11 +151,44 @@ def _plot_status_summary(result: ResourceSolverResult, context: SolverContext) -
         "Exces recursos": sum(int(usage.excess) for usage in result.resource_usage),
         "Exces entitats": sum(int(value) for value in result.entity_excess.values()),
     }
+    if int(linkage_summary.get("groups", 0) or 0):
+        metrics["Linkage violations"] = int(linkage_summary.get("violations", 0) or 0)
     fig, ax = plt.subplots(figsize=(9, 4.8))
-    ax.bar(metrics.keys(), metrics.values(), color=["#4E79A7", "#59A14F", "#76B7B2", "#EDC948", "#E15759", "#F28E2B"])
+    colors = ["#4E79A7", "#59A14F", "#76B7B2", "#EDC948", "#E15759", "#F28E2B", "#B07AA1"]
+    ax.bar(metrics.keys(), metrics.values(), color=colors[: len(metrics)])
     ax.set_title(f"Resum final solver: {result.status}")
     ax.set_ylabel("Valor")
     ax.tick_params(axis="x", rotation=30)
+    return fig
+
+
+def _plot_linkage_compliance(result: ResourceSolverResult, context: SolverContext) -> Any | None:
+    linkage = build_linkage_audit(result, context)
+    summary = linkage.get("summary", {})
+    if not int(summary.get("groups", 0) or 0):
+        return None
+    import matplotlib.pyplot as plt
+
+    ok_pairs = int(summary.get("ok_pairs", 0) or 0)
+    violations = int(summary.get("violations", 0) or 0)
+    unchecked = sum(
+        1
+        for group in linkage.get("groups", [])
+        if isinstance(group, dict) and int(group.get("checked_pairs", 0) or 0) == 0
+    )
+    labels = ["OK pairs", "Violations"]
+    values = [ok_pairs, violations]
+    colors = ["#59A14F", "#E15759"]
+    if unchecked:
+        labels.append("Unchecked groups")
+        values.append(unchecked)
+        colors.append("#BAB0AC")
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+    ax.bar(labels, values, color=colors)
+    ax.set_title("Linkage compliance")
+    ax.set_ylabel("Count")
+    ax.grid(axis="y", alpha=0.25)
     return fig
 
 

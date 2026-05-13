@@ -27,6 +27,9 @@
       <a class="nav-link" id="workspace-assignments-tab" data-toggle="tab" href="#workspace-assignments" role="tab" aria-controls="workspace-assignments" aria-selected="false">Assignacions <span class="badge badge-light">{{ assignment_summaries|length }}</span></a>
     </li>
     <li class="nav-item">
+      <a class="nav-link" id="workspace-linkage-tab" data-toggle="tab" href="#workspace-linkage" role="tab" aria-controls="workspace-linkage" aria-selected="false">Linkage <span class="badge badge-light">{{ linkage_view.groups|length }}</span></a>
+    </li>
+    <li class="nav-item">
       <a class="nav-link" id="workspace-calendars-tab" data-toggle="tab" href="#workspace-calendars" role="tab" aria-controls="workspace-calendars" aria-selected="false">Calendaris <span class="badge badge-light">{{ calendar_view.groups|length }}</span></a>
     </li>
     <li class="nav-item">
@@ -177,6 +180,10 @@
                 <input id="workspaceFilterLevel" class="form-control form-control-sm" placeholder="Nivell..." />
               </div>
               <div class="col-12 col-md-4 col-xl-3 mb-3">
+                <div class="filter-panel__label">Linkage group</div>
+                <input id="workspaceFilterLinkage" class="form-control form-control-sm" placeholder="Ex. input-a" />
+              </div>
+              <div class="col-12 col-md-4 col-xl-3 mb-3">
                 <div class="filter-panel__label">Estat recursos</div>
                 <select id="workspaceFilterStatus" class="form-control form-control-sm">
                   <option value="">Tots</option>
@@ -191,6 +198,7 @@
               <label><input type="checkbox" data-column-toggle="level" checked> Nivell</label>
               <label><input type="checkbox" data-column-toggle="venue" checked> Seu</label>
               <label><input type="checkbox" data-column-toggle="request" checked> Peticio</label>
+              <label><input type="checkbox" data-column-toggle="linkage" checked> Linkage</label>
               <label><input type="checkbox" data-column-toggle="resources" checked> Recursos</label>
               <label><input type="checkbox" data-column-toggle="explanation" checked> Explicacio</label>
             </div>
@@ -222,6 +230,7 @@
               <th>Grup</th>
               <th>Num.</th>
               <th class="workspace-col-request">Peticio</th>
+              <th class="workspace-col-linkage">Linkage</th>
               <th class="workspace-col-resources">Recursos locals</th>
               <th>Exces</th>
               <th class="workspace-col-explanation">Explicacio</th>
@@ -236,6 +245,7 @@
                 data-group="{{ assignment.group_id }}"
                 data-number="{{ assignment.number }}"
                 data-level="{{ assignment.level }}"
+                data-linkage="{{ assignment.linkage_group }} {{ assignment.linkage_side }} {{ assignment.linkage_source }}"
                 data-resource="{{ assignment.resource_text }} {{ assignment.venue }} {{ assignment.day }} {{ assignment.time }}"
                 data-has-excess="{% if assignment.has_resource_excess %}1{% else %}0{% endif %}"
                 data-has-shared="{% if assignment.has_shared_resources %}1{% else %}0{% endif %}">
@@ -253,6 +263,14 @@
               <td>{{ assignment.group_id }}</td>
               <td class="font-weight-bold">{{ assignment.number }}</td>
               <td class="workspace-col-request">{{ assignment.seed_request_original }}</td>
+              <td class="workspace-col-linkage">
+                {% if assignment.has_linkage %}
+                <div class="font-weight-bold">{{ assignment.linkage_group }}</div>
+                <div class="text-muted small">{{ assignment.linkage_side_label }} &middot; {{ assignment.linkage_source_label }}</div>
+                {% else %}
+                <span class="text-muted">-</span>
+                {% endif %}
+              </td>
               <td class="workspace-col-resources">
                 <div>{{ assignment.home_resources }} recursos</div>
                 {% if assignment.shared_resources %}<div class="text-warning small">{{ assignment.shared_resources }} compartits</div>{% endif %}
@@ -277,13 +295,169 @@
               </td>
             </tr>
             {% empty %}
-            <tr><td colspan="12" class="text-center text-muted">No hi ha assignacions materialitzades.</td></tr>
+            <tr><td colspan="13" class="text-center text-muted">No hi ha assignacions materialitzades.</td></tr>
             {% endfor %}
             </tbody>
           </table>
         </div>
         <div id="workspaceFiltersEmptyState" class="filter-empty-state d-none">Cap assignacio coincideix amb els filtres actius.</div>
       </div>
+    </div>
+
+    <div class="tab-pane fade" id="workspace-linkage" role="tabpanel" aria-labelledby="workspace-linkage-tab">
+      <div class="filter-panel" id="workspaceLinkageFiltersPanel">
+        <div class="filter-panel__header">
+          <div>
+            <div class="font-weight-bold">Filtres de linkage</div>
+            <div class="filter-panel__summary" id="workspaceLinkageFiltersSummary">Sense filtres actius.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#workspaceLinkageFiltersCollapse" aria-expanded="true" aria-controls="workspaceLinkageFiltersCollapse" id="workspaceLinkageFiltersToggle">Amagar filtres</button>
+        </div>
+        <div class="collapse show" id="workspaceLinkageFiltersCollapse">
+          <div class="filter-panel__body">
+            <div class="form-row">
+              <div class="col-12 col-lg-4 mb-3">
+                <div class="filter-panel__label">Text</div>
+                <input id="workspaceLinkageFilterText" class="form-control form-control-sm" placeholder="Cerca equip, grup, lliga, seu..." />
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Grup linkage</div>
+                <select id="workspaceLinkageFilterGroup" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  {% for value in linkage_view.filters.group %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Seu</div>
+                <select id="workspaceLinkageFilterVenue" class="form-control form-control-sm">
+                  <option value="">Totes</option>
+                  {% for value in linkage_view.filters.venue %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Origen</div>
+                <select id="workspaceLinkageFilterSource" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  {% for value in linkage_view.filters.source %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 mb-3">
+                <div class="filter-panel__label">Estat</div>
+                <select id="workspaceLinkageFilterStatus" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  {% for value in linkage_view.filters.statuses %}
+                  <option value="{{ value.token }}">{{ value.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="filter-panel__footer">
+              <div class="filter-panel__status" id="workspaceLinkageFiltersResultSummary">Mostrant tots els grups de linkage.</div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceLinkageFiltersReset">Netejar filtres</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-venue-summary mb-3">
+        <div>
+          <span class="workspace-venue-summary__label">Linkage groups</span>
+          <strong>{{ linkage_view.group_count }}</strong>
+        </div>
+        <div>
+          <span class="workspace-venue-summary__label">Equips vinculats</span>
+          <strong>{{ linkage_view.team_count }}</strong>
+        </div>
+        <div>
+          <span class="workspace-venue-summary__label">Violacions</span>
+          <strong>{{ linkage_view.violation_count }}</strong>
+        </div>
+      </div>
+
+      {% for group in linkage_view.groups %}
+      <div class="workspace-panel workspace-linkage-group mb-3"
+           data-text="{{ group.filter_text }}"
+           data-group="{{ group.group_token }}"
+           data-venue="{{ group.venue_token }}"
+           data-source="{{ group.source_tokens }}"
+           data-status="{{ group.status }}">
+        <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+          <div>
+            <div class="text-muted small">{{ group.venue|default:"-" }} &middot; {{ group.day|default:"-" }} &middot; {{ group.times_label }}</div>
+            <div class="font-weight-bold h5 mb-0">{{ group.linkage_group }}</div>
+          </div>
+          <div class="workspace-venue-sheet__badges">
+            <span class="badge badge-light">{{ group.team_count }} equips</span>
+            <span class="badge badge-light">{{ group.source_label }}</span>
+            {% if group.incident_count %}
+            <span class="badge badge-danger">{{ group.incident_count }} violacio/ns</span>
+            {% else %}
+            <span class="badge badge-success">Correcte</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if group.competitions %}
+        <div class="text-muted small mb-2">{{ group.competitions|join:" / " }}</div>
+        {% endif %}
+        <div class="table-responsive">
+          <table class="table table-sm workspace-table mb-0">
+            <thead class="thead-light">
+            <tr><th>Equip</th><th>Slot</th><th>Linkage</th><th>Calendari materialitzat</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for team in group.teams %}
+            <tr class="{% if team.has_violation %}workspace-linkage-team-warning{% endif %}">
+              <td>
+                <div class="font-weight-bold">{{ team.team_name }}</div>
+                <div class="text-muted small">{{ team.entity }}</div>
+                <div class="text-muted small">{{ team.competition }}</div>
+              </td>
+              <td>
+                <div>{{ team.group_id }} / {{ team.number }}</div>
+                <div class="text-muted small">{{ team.venue }} {{ team.day }} {{ team.time }}</div>
+              </td>
+              <td>
+                <div>{{ team.side_label }}</div>
+                <div class="text-muted small">{{ team.source_label }}</div>
+              </td>
+              <td>
+                {% if team.matches %}
+                <details class="workspace-row-details">
+                  <summary>{{ team.match_count }} partit/s</summary>
+                  {% for match in team.matches %}
+                  <div class="text-muted small">J{{ match.round }} · {{ match.side }} · {{ match.opponent }} · {{ match.resource }}</div>
+                  {% endfor %}
+                </details>
+                {% else %}
+                <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td class="text-right">
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'calendaritzacions:resource_workspace_team' run.pk team.team_id %}">Detall</a>
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if group.incident_ids %}
+        <div class="mt-2">
+          {% for incident_id in group.incident_ids %}
+          <a class="btn btn-sm btn-outline-danger" href="{% url 'calendaritzacions:resource_workspace_incident' run.pk incident_id %}">Incidencia #{{ incident_id }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% empty %}
+      <div class="workspace-empty">No hi ha linkage groups materialitzats en aquest run.</div>
+      {% endfor %}
+      <div id="workspaceLinkageFiltersEmptyState" class="filter-empty-state d-none">Cap linkage group coincideix amb els filtres actius.</div>
     </div>
 
     <div class="tab-pane fade" id="workspace-calendars" role="tabpanel" aria-labelledby="workspace-calendars-tab">
@@ -442,7 +616,7 @@
         <div class="collapse show" id="workspaceVenueSheetFiltersCollapse">
           <div class="filter-panel__body">
             <div class="form-row">
-              <div class="col-12 col-lg-6 mb-3">
+              <div class="col-12 col-md-6 col-lg-3 mb-3">
                 <div class="filter-panel__label">Seu</div>
                 <select id="workspaceVenueSheetFilterVenue" class="form-control form-control-sm">
                   <option value="">Totes</option>
@@ -451,7 +625,7 @@
                   {% endfor %}
                 </select>
               </div>
-              <div class="col-12 col-lg-3 mb-3">
+              <div class="col-12 col-md-6 col-lg-3 mb-3">
                 <div class="filter-panel__label">Jornada</div>
                 <select id="workspaceVenueSheetFilterRound" class="form-control form-control-sm">
                   <option value="">Totes</option>
@@ -460,12 +634,21 @@
                   {% endfor %}
                 </select>
               </div>
-              <div class="col-12 col-lg-3 mb-3">
+              <div class="col-12 col-md-6 col-lg-3 mb-3">
                 <div class="filter-panel__label">Modalitat</div>
                 <select id="workspaceVenueSheetFilterModality" class="form-control form-control-sm">
                   <option value="">Totes</option>
                   {% for modality in venue_round_sheets.modalities %}
                   <option value="{{ modality.token }}">{{ modality.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-6 col-lg-3 mb-3">
+                <div class="filter-panel__label">Linkage group</div>
+                <select id="workspaceVenueSheetFilterLinkage" class="form-control form-control-sm">
+                  <option value="">Tots</option>
+                  {% for linkage in venue_round_sheets.linkage_groups %}
+                  <option value="{{ linkage.token }}">{{ linkage.label }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -479,7 +662,7 @@
       </div>
 
       {% for sheet in venue_round_sheets.sheets %}
-      <div class="workspace-panel workspace-venue-sheet mb-3" data-venue="{{ sheet.venue_key }}" data-round="{{ sheet.round }}" data-modalities="{{ sheet.modality_filter }}">
+      <div class="workspace-panel workspace-venue-sheet mb-3" data-venue="{{ sheet.venue_key }}" data-round="{{ sheet.round }}" data-modalities="{{ sheet.modality_filter }}" data-linkages="{{ sheet.linkage_filter }}">
         <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
           <div>
             <div class="text-muted small">Fitxa de jornada</div>
@@ -489,6 +672,7 @@
             <span class="badge badge-light">N max pistes: {{ sheet.max_capacity }}</span>
             <span class="badge badge-light">{{ sheet.match_count }} partits</span>
             <span class="badge badge-light">{{ sheet.saturation_pct }}% ocupacio</span>
+            {% if sheet.linkage_group_count %}<span class="badge badge-light">{{ sheet.linkage_group_count }} linkage</span>{% endif %}
             {% for modality in sheet.modalities %}
             <span class="badge badge-light">{{ modality }}</span>
             {% endfor %}
@@ -564,6 +748,13 @@
                   <div class="workspace-match-cell__team">{{ match.home_team_name }}</div>
                   <div class="workspace-match-cell__versus">vs {{ match.away_team_name }}</div>
                   {% if match.competition %}<div class="workspace-match-cell__competition">{{ match.competition }}</div>{% endif %}
+                  {% if match.linkage_groups %}
+                  <div class="workspace-match-cell__linkage">
+                    {% for linkage in match.linkage_groups %}
+                    <span class="badge badge-light">{{ linkage }}</span>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
                   <a class="workspace-match-cell__link" href="{% url 'calendaritzacions:resource_workspace_team' run.pk match.home_team_id %}">Detall</a>
                 </div>
               </td>
@@ -638,8 +829,8 @@
       <div class="workspace-panel">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <div>
-            <div class="font-weight-bold">Incidencies de recursos</div>
-            <div class="text-muted small">La incidencia principal del nou solver és l'exces de capacitat per pista/franja/jornada.</div>
+            <div class="font-weight-bold">Incidencies del solver</div>
+            <div class="text-muted small">Inclou exces de capacitat, conflictes d'entitat i violacions de linkage.</div>
           </div>
           <span class="text-muted small">{{ incident_summaries|length }} visibles</span>
         </div>
@@ -651,7 +842,7 @@
             <tbody>
             {% for incident in incident_summaries %}
             <tr class="workspace-incident-row"
-                data-text="{{ incident.type }} {{ incident.title }} {{ incident.summary }} {{ incident.resource }} {{ incident.team }} {{ incident.team_ids|join:' ' }}"
+                data-text="{{ incident.type_key }} {{ incident.type }} {{ incident.title }} {{ incident.summary }} {{ incident.resource }} {{ incident.team }} {{ incident.team_ids|join:' ' }}"
                 data-league="{{ incident.league }}"
                 data-resource="{{ incident.resource }}"
                 data-excess="{{ incident.count }}">
@@ -701,6 +892,7 @@
     var groupInput = document.getElementById('workspaceFilterGroup');
     var numberSelect = document.getElementById('workspaceFilterNumber');
     var levelInput = document.getElementById('workspaceFilterLevel');
+    var linkageInput = document.getElementById('workspaceFilterLinkage');
     var statusSelect = document.getElementById('workspaceFilterStatus');
     var resetButton = document.getElementById('workspaceFiltersReset');
     var summary = document.getElementById('workspaceFiltersSummary');
@@ -724,6 +916,7 @@
     var venueSheetVenueSelect = document.getElementById('workspaceVenueSheetFilterVenue');
     var venueSheetRoundSelect = document.getElementById('workspaceVenueSheetFilterRound');
     var venueSheetModalitySelect = document.getElementById('workspaceVenueSheetFilterModality');
+    var venueSheetLinkageSelect = document.getElementById('workspaceVenueSheetFilterLinkage');
     var venueSheetResetButton = document.getElementById('workspaceVenueSheetFiltersReset');
     var venueSheetSummary = document.getElementById('workspaceVenueSheetFiltersSummary');
     var venueSheetResultSummary = document.getElementById('workspaceVenueSheetFiltersResultSummary');
@@ -744,6 +937,18 @@
     var calendarEmptyState = document.getElementById('workspaceCalendarFiltersEmptyState');
     var calendarFiltersToggle = document.getElementById('workspaceCalendarFiltersToggle');
     var calendarFiltersCollapse = document.getElementById('workspaceCalendarFiltersCollapse');
+    var linkageGroups = Array.from(document.querySelectorAll('.workspace-linkage-group'));
+    var linkageTextInput = document.getElementById('workspaceLinkageFilterText');
+    var linkageGroupSelect = document.getElementById('workspaceLinkageFilterGroup');
+    var linkageVenueSelect = document.getElementById('workspaceLinkageFilterVenue');
+    var linkageSourceSelect = document.getElementById('workspaceLinkageFilterSource');
+    var linkageStatusSelect = document.getElementById('workspaceLinkageFilterStatus');
+    var linkageResetButton = document.getElementById('workspaceLinkageFiltersReset');
+    var linkageSummary = document.getElementById('workspaceLinkageFiltersSummary');
+    var linkageResultSummary = document.getElementById('workspaceLinkageFiltersResultSummary');
+    var linkageEmptyState = document.getElementById('workspaceLinkageFiltersEmptyState');
+    var linkageFiltersToggle = document.getElementById('workspaceLinkageFiltersToggle');
+    var linkageFiltersCollapse = document.getElementById('workspaceLinkageFiltersCollapse');
 
     function normalize(value){
       return (value || '').toString().toLowerCase().trim();
@@ -786,6 +991,7 @@
         groupInput ? groupInput.value : '',
         numberSelect ? numberSelect.value : '',
         levelInput ? levelInput.value : '',
+        linkageInput ? linkageInput.value : '',
         statusSelect ? statusSelect.value : ''
       ].filter(function(value){ return normalize(value) !== ''; }).length;
     }
@@ -807,6 +1013,7 @@
       var groupQ = normalize(groupInput ? groupInput.value : '');
       var numberQ = normalize(numberSelect ? numberSelect.value : '');
       var levelQ = normalize(levelInput ? levelInput.value : '');
+      var linkageQ = normalize(linkageInput ? linkageInput.value : '');
       var statusQ = normalize(statusSelect ? statusSelect.value : '');
       var visible = 0;
 
@@ -818,6 +1025,7 @@
         ok = ok && (!groupQ || normalize(row.dataset.group).indexOf(groupQ) !== -1);
         ok = ok && (!numberQ || normalize(row.dataset.number) === numberQ);
         ok = ok && (!levelQ || normalize(row.dataset.level).indexOf(levelQ) !== -1);
+        ok = ok && (!linkageQ || normalize(row.dataset.linkage).indexOf(linkageQ) !== -1);
         ok = ok && matchesStatus(row, statusQ);
         row.style.display = ok ? '' : 'none';
         if (ok) visible += 1;
@@ -836,7 +1044,7 @@
     }
 
     function resetFilters(){
-      [teamInput, competitionInput, resourceInput, groupInput, levelInput].forEach(function(input){
+      [teamInput, competitionInput, resourceInput, groupInput, levelInput, linkageInput].forEach(function(input){
         if (input) input.value = '';
       });
       if (numberSelect) numberSelect.value = '';
@@ -921,7 +1129,8 @@
       return [
         venueSheetVenueSelect ? venueSheetVenueSelect.value : '',
         venueSheetRoundSelect ? venueSheetRoundSelect.value : '',
-        venueSheetModalitySelect ? venueSheetModalitySelect.value : ''
+        venueSheetModalitySelect ? venueSheetModalitySelect.value : '',
+        venueSheetLinkageSelect ? venueSheetLinkageSelect.value : ''
       ].filter(function(value){ return normalize(value) !== ''; }).length;
     }
 
@@ -929,6 +1138,7 @@
       var venueQ = normalize(venueSheetVenueSelect ? venueSheetVenueSelect.value : '');
       var roundQ = normalize(venueSheetRoundSelect ? venueSheetRoundSelect.value : '');
       var modalityQ = normalize(venueSheetModalitySelect ? venueSheetModalitySelect.value : '');
+      var linkageQ = normalize(venueSheetLinkageSelect ? venueSheetLinkageSelect.value : '');
       var visible = 0;
 
       venueSheetRows.forEach(function(row){
@@ -936,6 +1146,7 @@
         ok = ok && (!venueQ || normalize(row.dataset.venue) === venueQ);
         ok = ok && (!roundQ || normalize(row.dataset.round) === roundQ);
         ok = ok && (!modalityQ || normalize(row.dataset.modalities).split(/\s+/).indexOf(modalityQ) !== -1);
+        ok = ok && (!linkageQ || normalize(row.dataset.linkages).split(/\s+/).indexOf(linkageQ) !== -1);
         row.style.display = ok ? '' : 'none';
         if (ok) visible += 1;
       });
@@ -956,6 +1167,7 @@
       if (venueSheetVenueSelect) venueSheetVenueSelect.value = '';
       if (venueSheetRoundSelect) venueSheetRoundSelect.value = '';
       if (venueSheetModalitySelect) venueSheetModalitySelect.value = '';
+      if (venueSheetLinkageSelect) venueSheetLinkageSelect.value = '';
       applyVenueSheetFilters();
     }
 
@@ -1033,6 +1245,59 @@
       calendarFiltersToggle.textContent = calendarFiltersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
     }
 
+    function activeLinkageFilterCount(){
+      return [
+        linkageTextInput ? linkageTextInput.value : '',
+        linkageGroupSelect ? linkageGroupSelect.value : '',
+        linkageVenueSelect ? linkageVenueSelect.value : '',
+        linkageSourceSelect ? linkageSourceSelect.value : '',
+        linkageStatusSelect ? linkageStatusSelect.value : ''
+      ].filter(function(value){ return normalize(value) !== ''; }).length;
+    }
+
+    function applyLinkageFilters(){
+      var textQ = normalize(linkageTextInput ? linkageTextInput.value : '');
+      var groupQ = normalize(linkageGroupSelect ? linkageGroupSelect.value : '');
+      var venueQ = normalize(linkageVenueSelect ? linkageVenueSelect.value : '');
+      var sourceQ = normalize(linkageSourceSelect ? linkageSourceSelect.value : '');
+      var statusQ = normalize(linkageStatusSelect ? linkageStatusSelect.value : '');
+      var visible = 0;
+
+      linkageGroups.forEach(function(group){
+        var ok = true;
+        ok = ok && (!textQ || normalize(group.dataset.text).indexOf(textQ) !== -1);
+        ok = ok && hasToken(group.dataset.group, groupQ);
+        ok = ok && hasToken(group.dataset.venue, venueQ);
+        ok = ok && hasToken(group.dataset.source, sourceQ);
+        ok = ok && (!statusQ || normalize(group.dataset.status) === statusQ);
+        group.style.display = ok ? '' : 'none';
+        if (ok) visible += 1;
+      });
+
+      var active = activeLinkageFilterCount();
+      if (linkageSummary) {
+        linkageSummary.textContent = active ? active + ' filtre' + (active === 1 ? '' : 's') + ' actiu' + (active === 1 ? '' : 's') + '.' : 'Sense filtres actius.';
+      }
+      if (linkageResultSummary) {
+        linkageResultSummary.textContent = 'Mostrant ' + visible + ' de ' + linkageGroups.length + ' linkage groups.';
+      }
+      if (linkageEmptyState) {
+        linkageEmptyState.classList.toggle('d-none', visible !== 0 || linkageGroups.length === 0);
+      }
+    }
+
+    function resetLinkageFilters(){
+      [linkageTextInput, linkageGroupSelect, linkageVenueSelect, linkageSourceSelect, linkageStatusSelect].forEach(function(control){
+        if (control) control.value = '';
+      });
+      applyLinkageFilters();
+    }
+
+    function updateLinkageFilterToggleLabel(){
+      if (!linkageFiltersToggle || !linkageFiltersCollapse) return;
+      linkageFiltersToggle.textContent = linkageFiltersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
+    }
+
     function activateTabFromHash(){
       var hash = window.location.hash;
       if (!hash) return;
@@ -1042,7 +1307,7 @@
       }
     }
 
-    [teamInput, competitionInput, resourceInput, groupInput, numberSelect, levelInput, statusSelect].forEach(function(control){
+    [teamInput, competitionInput, resourceInput, groupInput, numberSelect, levelInput, linkageInput, statusSelect].forEach(function(control){
       if (!control) return;
       control.addEventListener('input', applyFilters);
       control.addEventListener('change', applyFilters);
@@ -1073,7 +1338,7 @@
       control.addEventListener('input', applyIncidentFilters);
       control.addEventListener('change', applyIncidentFilters);
     });
-    [venueSheetVenueSelect, venueSheetRoundSelect, venueSheetModalitySelect].forEach(function(control){
+    [venueSheetVenueSelect, venueSheetRoundSelect, venueSheetModalitySelect, venueSheetLinkageSelect].forEach(function(control){
       if (!control) return;
       control.addEventListener('input', applyVenueSheetFilters);
       control.addEventListener('change', applyVenueSheetFilters);
@@ -1083,10 +1348,16 @@
       control.addEventListener('input', applyCalendarFilters);
       control.addEventListener('change', applyCalendarFilters);
     });
+    [linkageTextInput, linkageGroupSelect, linkageVenueSelect, linkageSourceSelect, linkageStatusSelect].forEach(function(control){
+      if (!control) return;
+      control.addEventListener('input', applyLinkageFilters);
+      control.addEventListener('change', applyLinkageFilters);
+    });
     if (resetButton) resetButton.addEventListener('click', resetFilters);
     if (incidentResetButton) incidentResetButton.addEventListener('click', resetIncidentFilters);
     if (venueSheetResetButton) venueSheetResetButton.addEventListener('click', resetVenueSheetFilters);
     if (calendarResetButton) calendarResetButton.addEventListener('click', resetCalendarFilters);
+    if (linkageResetButton) linkageResetButton.addEventListener('click', resetLinkageFilters);
     if (filtersCollapse) {
       filtersCollapse.addEventListener('shown.bs.collapse', updateFilterToggleLabel);
       filtersCollapse.addEventListener('hidden.bs.collapse', updateFilterToggleLabel);
@@ -1103,6 +1374,10 @@
       calendarFiltersCollapse.addEventListener('shown.bs.collapse', updateCalendarFilterToggleLabel);
       calendarFiltersCollapse.addEventListener('hidden.bs.collapse', updateCalendarFilterToggleLabel);
     }
+    if (linkageFiltersCollapse) {
+      linkageFiltersCollapse.addEventListener('shown.bs.collapse', updateLinkageFilterToggleLabel);
+      linkageFiltersCollapse.addEventListener('hidden.bs.collapse', updateLinkageFilterToggleLabel);
+    }
     document.querySelectorAll('.workspace-tabs a[data-toggle="tab"]').forEach(function(tabLink){
       tabLink.addEventListener('shown.bs.tab', function(event){
         if (event.target && event.target.getAttribute('href')) {
@@ -1115,11 +1390,13 @@
     applyIncidentFilters();
     applyVenueSheetFilters();
     applyCalendarFilters();
+    applyLinkageFilters();
     applyColumnVisibility();
     updateFilterToggleLabel();
     updateIncidentFilterToggleLabel();
     updateVenueSheetFilterToggleLabel();
     updateCalendarFilterToggleLabel();
+    updateLinkageFilterToggleLabel();
     activateTabFromHash();
   })();
 </script>

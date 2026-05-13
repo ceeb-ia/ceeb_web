@@ -136,7 +136,7 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
             run = CalendarizationRun.objects.create(
                 input_file="inputs/test.xlsx",
                 input_name="test.xlsx",
-                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
                 phase=CalendarizationRun.PHASE_FIRST,
                 status=CalendarizationRun.STATUS_SUCCESS,
                 audit_paths={
@@ -170,6 +170,197 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(team_detail["home_resources"][0]["incident_status"], "Amb incidencia")
         self.assertEqual(team_detail["home_resources"][0]["sharing_teams"], ["Equip C (C)"])
         self.assertEqual(team_detail["alternatives"][0]["number"], 2)
+
+    def test_workspace_hydrates_linkage_violation_incidents(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun, WorkspaceResourceIncident
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_incident_detail,
+            get_workspace_linkage_view,
+            get_workspace_summary,
+            get_workspace_venue_round_sheets,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            solver_explanations = root / "solver_explanations.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "A", "group_id": "G1", "number": 1},
+                            {"team_id": "B", "group_id": "G1", "number": 2},
+                        ],
+                        "real_matches": [
+                            {
+                                "round_index": 1,
+                                "group_id": "G1",
+                                "home_team_id": "A",
+                                "away_team_id": "B",
+                                "resource_id": "pista-a|divendres|18-00|J1",
+                            }
+                        ],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {
+                            "team_id": "A",
+                            "name": "Equip A",
+                            "entity": "Club A",
+                            "league_name": "Lliga 1",
+                            "venue": "pista-a",
+                            "day": "divendres",
+                            "time": "18-00",
+                            "linkage_group": "LG-1",
+                            "linkage_side": "casa",
+                            "linkage_source": "input",
+                        },
+                        {
+                            "team_id": "B",
+                            "name": "Equip B",
+                            "entity": "Club B",
+                            "league_name": "Lliga 1",
+                            "venue": "pista-a",
+                            "day": "divendres",
+                            "time": "19-00",
+                            "linkage_group": "LG-1",
+                            "linkage_side": "fora",
+                            "linkage_source": "input",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text(
+                json.dumps(
+                    [
+                        {
+                            "team_id": "A",
+                            "group_id": "G1",
+                            "number": 1,
+                            "potential_resources": ["pista-a|divendres|18-00|J1"],
+                            "potential_home_rounds": [1],
+                        },
+                        {
+                            "team_id": "B",
+                            "group_id": "G1",
+                            "number": 2,
+                            "potential_resources": [],
+                            "potential_home_rounds": [],
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            resource_pressure.write_text("[]", encoding="utf-8")
+            solver_explanations.write_text(
+                json.dumps(
+                    {
+                        "linkage": {
+                            "groups": [
+                                {
+                                    "venue": "pista-a",
+                                    "linkage_group": "LG-1",
+                                    "teams": [
+                                        {
+                                            "team_id": "A",
+                                            "team_name": "Equip A",
+                                            "assigned_group_id": "G1",
+                                            "assigned_number": 1,
+                                            "linkage_side": "casa",
+                                        },
+                                        {
+                                            "team_id": "B",
+                                            "team_name": "Equip B",
+                                            "assigned_group_id": "G1",
+                                            "assigned_number": 2,
+                                            "linkage_side": "fora",
+                                        },
+                                    ],
+                                }
+                            ],
+                            "violations": [
+                                {
+                                    "team_ids": ["A", "B"],
+                                    "assigned_numbers": {"A": 1, "B": 2},
+                                    "expected_numbers": {"A": "odd", "B": "odd"},
+                                    "expected_relation": "same_side",
+                                    "linkage_group": "LG-1",
+                                    "venue": "pista-a",
+                                    "day": "divendres",
+                                    "time": "18-00",
+                                    "cost": 7,
+                                    "severity": "violation",
+                                }
+                            ],
+                            "summary": {
+                                "violations": 1,
+                                "cost": 7,
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                    "solver_explanations": str(solver_explanations),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            incident = WorkspaceResourceIncident.objects.get(
+                workspace=workspace,
+                incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
+            )
+            summary = get_workspace_summary(workspace)
+            detail = get_workspace_incident_detail(workspace, incident.pk)
+            linkage_view = get_workspace_linkage_view(workspace)
+            venue_sheets = get_workspace_venue_round_sheets(workspace)
+
+        self.assertEqual(incident.team_ids, ["A", "B"])
+        self.assertEqual(incident.payload["venue"], "pista-a")
+        self.assertEqual(incident.payload["day"], "divendres")
+        self.assertEqual(incident.payload["times"], ["18-00"])
+        self.assertEqual(incident.payload["linkage_group"], "LG-1")
+        self.assertEqual(incident.payload["expected_relation"], "same_side")
+        self.assertEqual(incident.payload["teams"][0]["side"], "casa")
+        self.assertEqual(incident.payload["teams"][0]["assigned_number"], 1)
+        self.assertEqual(incident.payload["violation_cost"], 7.0)
+        self.assertEqual(summary["incident_summaries"][0]["type_key"], "linkage_violation")
+        self.assertEqual(summary["incident_summaries"][0]["type"], "Linkage violation")
+        self.assertIn("same_side", summary["incident_summaries"][0]["summary"])
+        self.assertEqual(detail["facts"][3]["value"], "LG-1")
+        self.assertEqual(len(detail["team_calendars"]), 2)
+        self.assertEqual(detail["team_calendars"][0]["calendar"][0]["side"], "Casa")
+        self.assertEqual(summary["assignment_summaries"][0]["linkage_group"], "LG-1")
+        self.assertEqual(linkage_view["group_count"], 1)
+        self.assertEqual(linkage_view["groups"][0]["status"], "violation")
+        self.assertEqual(linkage_view["groups"][0]["teams"][0]["side_label"], "Casa")
+        self.assertEqual(venue_sheets["sheets"][0]["linkage_groups"], ["LG-1"])
+        self.assertEqual(venue_sheets["sheets"][0]["rows"][0]["matches"][0]["linkage_groups"], ["LG-1"])
 
     def test_venue_round_sheets_use_max_venue_capacity_for_columns(self):
         if not HAS_DJANGO:

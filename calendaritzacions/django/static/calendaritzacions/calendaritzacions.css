@@ -578,11 +578,22 @@
   margin-top: .2rem;
 }
 
+.workspace-match-cell__linkage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  margin-top: .35rem;
+}
+
 .workspace-match-cell__link {
   display: inline-block;
   font-size: .78rem;
   font-weight: 700;
   margin-top: .45rem;
+}
+
+.workspace-linkage-team-warning {
+  background: #fffbfa;
 }
 
 .workspace-list {

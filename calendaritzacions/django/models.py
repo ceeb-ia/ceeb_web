@@ -20,6 +20,8 @@ class CalendarizationRun(models.Model):
 
     ENGINE_LEGACY = "legacy"
     ENGINE_RESOURCE_SOLVER = "resource_solver"
+    ENGINE_RESOURCE_SOLVER_LINKAGE = "resource_solver_linkage"
+    ENGINE_RESOURCE_SOLVER_VINCULACIO = "resource_solver_vinculacio"
 
     PHASE_FIRST = "primera_fase"
     PHASE_SECOND = "segona_fase"
@@ -33,6 +35,8 @@ class CalendarizationRun(models.Model):
     ENGINE_CHOICES = (
         (ENGINE_LEGACY, "Legacy"),
         (ENGINE_RESOURCE_SOLVER, "Resource solver"),
+        (ENGINE_RESOURCE_SOLVER_LINKAGE, "Resource solver + linkage"),
+        (ENGINE_RESOURCE_SOLVER_VINCULACIO, "Resource solver + vinculacio"),
     )
     PHASE_CHOICES = (
         (PHASE_FIRST, "Primera fase"),
@@ -199,6 +203,7 @@ class WorkspaceResourceIncident(models.Model):
     TYPE_RESOURCE_EXCESS = "resource_excess"
     TYPE_SEED_DEVIATION = "seed_deviation"
     TYPE_ASSIGNMENT_CONFLICT = "assignment_conflict"
+    TYPE_LINKAGE_VIOLATION = "linkage_violation"
     TYPE_OTHER = "other"
 
     STATUS_OPEN = "open"
@@ -210,6 +215,7 @@ class WorkspaceResourceIncident(models.Model):
         (TYPE_RESOURCE_EXCESS, "Resource excess"),
         (TYPE_SEED_DEVIATION, "Seed deviation"),
         (TYPE_ASSIGNMENT_CONFLICT, "Assignment conflict"),
+        (TYPE_LINKAGE_VIOLATION, "Linkage violation"),
         (TYPE_OTHER, "Other"),
     )
     STATUS_CHOICES = (

@@ -58,6 +58,8 @@ def _resource_solver_engine() -> CalendarizationEngine:
 
 
 _ENGINES["resource_solver"] = _resource_solver_engine()
+_ENGINES["resource_solver_linkage"] = _resource_solver_engine()
+_ENGINES["resource_solver_vinculacio"] = _resource_solver_engine()
 
 
 def register_engine(name: str, engine: RegisteredEngine) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from calendaritzacions.engine.variants.resource_solver.audit import build_linkage_audit
 from calendaritzacions.engine.variants.resource_solver.types import (
     Assignment,
     ResourceSolverResult,
@@ -48,6 +49,7 @@ def _build_result_tables(
 ) -> list[pd.DataFrame]:
     teams_by_id = {team.team_id: team for team in context.teams}
     assignment_by_group_number = _assignments_by_group_number(result.assignments)
+    linkage_result_by_team = _linkage_result_by_team(result, context)
     grouped_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
     group_ids_by_sheet: dict[str, set[str]] = defaultdict(set)
 
@@ -72,6 +74,7 @@ def _build_result_tables(
                     assignment_by_group_number=assignment_by_group_number,
                     teams_by_id=teams_by_id,
                     sheet_key=sheet_key,
+                    linkage_result=linkage_result_by_team.get(team.team_id, "No linkage"),
                 )
             )
 
@@ -102,6 +105,7 @@ def _team_row(
     assignment_by_group_number: dict[str, dict[int, Assignment]],
     teams_by_id: dict[str, TeamRecord],
     sheet_key: str,
+    linkage_result: str,
 ) -> dict[str, Any]:
     requested_number = _requested_number(team.seed_request_original)
     differences = _round_differences(
@@ -127,6 +131,10 @@ def _team_row(
         "Dia partit": team.day,
         "Horari partit": team.time,
         "Nivell": team.level,
+        "Linkage group": _clean_linkage_value(getattr(team, "linkage_group", "")),
+        "Linkage side": _normalize_linkage_side(getattr(team, "linkage_side", "")),
+        "Linkage source": _clean_linkage_value(getattr(team, "linkage_source", "")),
+        "Linkage result": linkage_result,
         "Núm. sorteig": team.seed_request_original,
         "Núm. esperat resolt": requested_number if requested_number is not None else "",
         "Núm. sorteig assignat": assignment.number,
@@ -152,6 +160,10 @@ def _empty_slot_row(group_id: str, number: int) -> dict[str, Any]:
         "Dia partit": "Descans",
         "Horari partit": "",
         "Nivell": "",
+        "Linkage group": "",
+        "Linkage side": "",
+        "Linkage source": "",
+        "Linkage result": "",
         "Núm. sorteig": "",
         "Núm. esperat resolt": "",
         "Núm. sorteig assignat": number,
@@ -247,6 +259,8 @@ def _build_metrics_pack(
     assigned = len(result.assignments)
     entity_conflicts = sum(int(value) for value in result.entity_excess.values())
     resource_excess = sum(int(usage.excess) for usage in result.resource_usage)
+    linkage = build_linkage_audit(result, context)
+    linkage_summary = linkage.get("summary", {})
     kpi_global = pd.DataFrame(
         [
             {"Metrica": "Equips totals input", "Valor": total_input},
@@ -254,6 +268,8 @@ def _build_metrics_pack(
             {"Metrica": "Estat solver", "Valor": result.status},
             {"Metrica": "Conflictes entitat", "Valor": entity_conflicts},
             {"Metrica": "Exces recursos", "Valor": resource_excess},
+            {"Metrica": "Linkage groups", "Valor": int(linkage_summary.get("groups", 0) or 0)},
+            {"Metrica": "Linkage violations", "Valor": int(linkage_summary.get("violations", 0) or 0)},
         ]
     )
     summary_rows = []
@@ -292,11 +308,55 @@ def _assignments_by_group_number(
     return grouped
 
 
+def _linkage_result_by_team(
+    result: ResourceSolverResult,
+    context: SolverContext,
+) -> dict[str, str]:
+    linkage = build_linkage_audit(result, context)
+    results: dict[str, str] = {}
+    for group in linkage.get("groups", []):
+        if not isinstance(group, dict):
+            continue
+        group_result = str(group.get("result", "OK"))
+        for team in group.get("teams", []):
+            if not isinstance(team, dict):
+                continue
+            team_id = str(team.get("team_id", ""))
+            if team_id:
+                results[team_id] = group_result
+    for violation in linkage.get("violations", []):
+        if not isinstance(violation, dict):
+            continue
+        for team_id in violation.get("team_ids", []):
+            results[str(team_id)] = "Violation"
+    return results
+
+
 def _sheet_key(team: TeamRecord) -> str:
     parts = [team.modality, team.category, team.subcategory]
     if all(str(part).strip() for part in parts):
         return " - ".join(str(part).strip() for part in parts)
     return team.league_name or "Categoria"
+
+
+def _clean_linkage_value(value: Any) -> str:
+    if value is None:
+        return ""
+    text = " ".join(str(value).strip().split())
+    if text.casefold() in {"nan", "none", "null"}:
+        return ""
+    return text
+
+
+def _normalize_linkage_side(value: Any) -> str:
+    text = _clean_linkage_value(value).casefold()
+    if text in {"casa", "home", "local"}:
+        return "Casa"
+    if text in {"fora", "away", "visitant", "visitor"}:
+        return "Fora"
+    if text in {"indiferent", "indifferent", "neutral", "sense preferencia"}:
+        return "Indiferent"
+    return _clean_linkage_value(value)
 
 
 def _requested_number(value: Any) -> int | None:

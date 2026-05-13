@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
@@ -13,6 +14,11 @@ from calendaritzacions.engine.variants.resource_solver.types import (
     ResourceSolverResult,
     SolverContext,
 )
+
+try:
+    from calendaritzacions.engine.variants.resource_solver import linkage as _linkage_helpers
+except Exception:  # pragma: no cover - linkage helpers may be absent in older checkouts.
+    _linkage_helpers = None
 
 
 def build_audit_payloads(
@@ -52,6 +58,7 @@ def build_team_catalog_audit(context: SolverContext) -> list[dict[str, Any]]:
             "day": team.day,
             "time": team.time,
             "seed_request_original": team.seed_request_original,
+            **_linkage_fields(team),
         }
         for team in context.teams
     ]
@@ -76,6 +83,7 @@ def build_resource_pressure_audit(context: SolverContext) -> list[dict[str, Any]
 
 
 def build_candidate_catalog_audit(context: SolverContext) -> list[dict[str, Any]]:
+    teams_by_id = {team.team_id: team for team in context.teams}
     return [
         {
             "candidate_id": candidate.candidate_id,
@@ -89,6 +97,7 @@ def build_candidate_catalog_audit(context: SolverContext) -> list[dict[str, Any]
                 for round_index, opponent in sorted(candidate.opponent_number_by_round.items())
             },
             "potential_resources": list(candidate.potential_resources),
+            **_linkage_fields(candidate, fallback=teams_by_id.get(candidate.team_id)),
         }
         for candidate in context.candidates
     ]
@@ -173,6 +182,7 @@ def build_solver_explanations(
         for summary in result.group_summary
     }
     seed_deviations = _seed_deviations(result, context)
+    linkage = build_linkage_audit(result, context)
 
     return {
         "status": result.status,
@@ -185,7 +195,113 @@ def build_solver_explanations(
         },
         "rests_by_group": rests,
         "seed_request_deviations_informative_only": seed_deviations,
+        "linkage": linkage,
         "notes": _explanation_notes(result),
+    }
+
+
+def build_linkage_audit(
+    result: ResourceSolverResult,
+    context: SolverContext,
+) -> dict[str, Any]:
+    """Summarize linkage compliance from final assignments only."""
+
+    teams_by_id = {team.team_id: team for team in context.teams}
+    assigned_by_team = {assignment.team_id: assignment for assignment in result.assignments}
+    rows_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+
+    for team_id, assignment in sorted(assigned_by_team.items()):
+        team = teams_by_id.get(team_id)
+        if team is None:
+            continue
+        linkage_group = _clean_linkage_value(getattr(team, "linkage_group", ""))
+        if not linkage_group:
+            continue
+        venue = str(getattr(team, "venue", "") or "")
+        key = (venue, linkage_group)
+        rows_by_key.setdefault(key, []).append(
+            {
+                "team_id": team_id,
+                "team_name": getattr(team, "name", team_id),
+                "assigned_group_id": assignment.group_id,
+                "assigned_number": int(assignment.number),
+                "linkage_group": linkage_group,
+                "linkage_side": _normalize_linkage_side(getattr(team, "linkage_side", "")),
+                "linkage_source": _clean_linkage_value(getattr(team, "linkage_source", "")),
+                "venue": venue,
+                "day": str(getattr(team, "day", "") or ""),
+                "time": str(getattr(team, "time", "") or ""),
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    violations: list[dict[str, Any]] = []
+    checked_pairs = 0
+    ok_pairs = 0
+    violation_weight = int(getattr(context.config, "linkage_violation_weight", 100_000) or 100_000)
+
+    for (venue, linkage_group), rows in sorted(rows_by_key.items(), key=lambda item: item[0]):
+        group_checked_pairs = 0
+        group_violations: list[dict[str, Any]] = []
+        sorted_rows = sorted(rows, key=lambda row: (str(row["linkage_side"]), str(row["team_id"])))
+        for left, right in itertools.combinations(sorted_rows, 2):
+            relation = _expected_linkage_relation(left["linkage_side"], right["linkage_side"])
+            if relation is None:
+                continue
+            checked_pairs += 1
+            group_checked_pairs += 1
+            ok, expected_numbers = _linkage_pair_ok(left, right, relation)
+            if ok:
+                ok_pairs += 1
+                continue
+            violation = {
+                "team_ids": [left["team_id"], right["team_id"]],
+                "assigned_numbers": {
+                    left["team_id"]: left["assigned_number"],
+                    right["team_id"]: right["assigned_number"],
+                },
+                "expected_numbers": expected_numbers,
+                "expected_relation": relation,
+                "linkage_group": linkage_group,
+                "venue": venue,
+                "day": _common_value([left["day"], right["day"]]),
+                "time": _common_value([left["time"], right["time"]]),
+                "times": sorted(
+                    {
+                        str(value)
+                        for value in (left["time"], right["time"])
+                        if _clean_linkage_value(value)
+                    }
+                ),
+                "severity": "violation",
+                "cost": violation_weight,
+                "violation_cost": violation_weight,
+            }
+            group_violations.append(violation)
+            violations.append(violation)
+        groups.append(
+            {
+                "venue": venue,
+                "linkage_group": linkage_group,
+                "teams_count": len(sorted_rows),
+                "checked_pairs": group_checked_pairs,
+                "violations_count": len(group_violations),
+                "result": "OK" if not group_violations else "Violation",
+                "teams": sorted_rows,
+            }
+        )
+
+    return {
+        "summary": {
+            "groups": len(groups),
+            "teams": sum(len(group["teams"]) for group in groups),
+            "checked_pairs": checked_pairs,
+            "ok_pairs": ok_pairs,
+            "violations": len(violations),
+            "cost": sum(int(item.get("cost", 0) or 0) for item in violations),
+        },
+        "groups": groups,
+        "violations": violations,
     }
 
 
@@ -269,6 +385,128 @@ def _seed_deviations(
                 }
             )
     return deviations
+
+
+def _linkage_fields(record: Any, fallback: Any | None = None) -> dict[str, Any]:
+    return {
+        "linkage_group": _clean_linkage_value(
+            getattr(record, "linkage_group", getattr(fallback, "linkage_group", ""))
+        ),
+        "linkage_side": _normalize_linkage_side(
+            getattr(record, "linkage_side", getattr(fallback, "linkage_side", ""))
+        ),
+        "linkage_source": _clean_linkage_value(
+            getattr(record, "linkage_source", getattr(fallback, "linkage_source", ""))
+        ),
+    }
+
+
+def _clean_linkage_value(value: Any) -> str:
+    if value is None:
+        return ""
+    text = " ".join(str(value).strip().split())
+    if text.casefold() in {"nan", "none", "null"}:
+        return ""
+    return text
+
+
+def _normalize_linkage_side(value: Any) -> str:
+    text = _clean_linkage_value(value).casefold()
+    if text in {"casa", "home", "local"}:
+        return "Casa"
+    if text in {"fora", "away", "visitant", "visitor"}:
+        return "Fora"
+    if text in {"indiferent", "indifferent", "neutral", "sense preferencia"}:
+        return "Indiferent"
+    return _clean_linkage_value(value)
+
+
+def _expected_linkage_relation(left_side: Any, right_side: Any) -> str | None:
+    left = _normalize_linkage_side(left_side)
+    right = _normalize_linkage_side(right_side)
+    if left in {"", "Indiferent"} or right in {"", "Indiferent"}:
+        return None
+    helper_relation = _helper_linkage_relation(left, right)
+    if helper_relation is not None:
+        return helper_relation
+    if left == right:
+        return "same_number"
+    if {left, right} == {"Casa", "Fora"}:
+        return "opposite_number"
+    return None
+
+
+def _linkage_pair_ok(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    relation: str,
+) -> tuple[bool, dict[str, int]]:
+    left_number = int(left["assigned_number"])
+    right_number = int(right["assigned_number"])
+    if relation == "same_number":
+        expected = {
+            str(left["team_id"]): left_number,
+            str(right["team_id"]): left_number,
+        }
+        return left_number == right_number, expected
+
+    expected_right = _opposite_linkage_number(left_number)
+    expected_left = _opposite_linkage_number(right_number)
+    expected = {
+        str(left["team_id"]): expected_left or left_number,
+        str(right["team_id"]): expected_right or right_number,
+    }
+    return expected_right is not None and right_number == expected_right, expected
+
+
+def _opposite_linkage_number(number: int) -> int | None:
+    helper = getattr(_linkage_helpers, "opposite_number", None)
+    if helper is not None:
+        try:
+            value = helper(number)
+        except Exception:
+            value = None
+        if value is not None:
+            return int(value)
+    opposite_by_number = {
+        1: 5,
+        5: 1,
+        6: 2,
+        2: 6,
+        7: 3,
+        3: 7,
+        8: 4,
+        4: 8,
+    }
+    return opposite_by_number.get(int(number))
+
+
+def _helper_linkage_relation(left_side: Any, right_side: Any) -> str | None:
+    if _linkage_helpers is None:
+        return None
+    sides_match = getattr(_linkage_helpers, "linkage_sides_match", None)
+    if sides_match is not None:
+        try:
+            if bool(sides_match(left_side, right_side)):
+                return "same_number"
+        except Exception:
+            pass
+    sides_are_opposites = getattr(_linkage_helpers, "linkage_sides_are_opposites", None)
+    if sides_are_opposites is not None:
+        try:
+            if bool(sides_are_opposites(left_side, right_side)):
+                return "opposite_number"
+        except Exception:
+            pass
+    return None
+
+
+def _common_value(values: list[Any]) -> str:
+    clean = [_clean_linkage_value(value) for value in values if _clean_linkage_value(value)]
+    if not clean:
+        return ""
+    first = clean[0]
+    return first if all(value == first for value in clean) else ""
 
 
 def _summary_int(built_model: Any | None, summary: dict[str, Any], name: str) -> int:

@@ -37,6 +37,9 @@ class ResourceSolverConfig:
     empty_number_imbalance_weight: int = 1_000
     capacity_estimation_method: str = "floor_half_min_one"
     local_explanation_threshold: int = 50_000
+    linkage_mode: str = "off"
+    linkage_violation_weight: int = 100_000
+    linkage_max_group_size: int = 2
     phase_name: str = "primera_fase"
     max_group_size: int = 8
     min_group_size: int = 6
@@ -47,6 +50,8 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
 
     if isinstance(config, ResourceSolverConfig):
         return config
+    engine_name = str(getattr(config, "name", "") or "")
+    default_linkage_mode = "input" if engine_name in {"resource_solver_linkage", "resource_solver_vinculacio"} else "off"
     return ResourceSolverConfig(
         phase_name=getattr(config, "phase_name", "primera_fase"),
         time_limit_seconds=float(
@@ -63,4 +68,7 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
                 _env_int("CALENDARITZACIONS_SOLVER_NUM_SEARCH_WORKERS", 2),
             )
         ),
+        linkage_mode=str(getattr(config, "linkage_mode", default_linkage_mode) or default_linkage_mode),
+        linkage_violation_weight=int(getattr(config, "linkage_violation_weight", 100_000)),
+        linkage_max_group_size=int(getattr(config, "linkage_max_group_size", 2)),
     )

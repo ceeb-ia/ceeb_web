@@ -100,6 +100,37 @@ class ResourceSolverAuditTests(unittest.TestCase):
         self.assertIn("resource_excess", encoded)
         self.assertEqual(payloads["solver_model_summary"]["objective_terms"], {"resource_excess": 1})
 
+    def test_linkage_fields_and_violations_are_reported(self):
+        base = _context()
+        context = SolverContext(
+            teams=(
+                _linked_team("T1", "Casa"),
+                _linked_team("T2", "Fora"),
+            ),
+            phase=base.phase,
+            phase_name=base.phase_name,
+            base_resources=base.base_resources,
+            capacities=base.capacities,
+            pressure=base.pressure,
+            groups=base.groups,
+            candidates=base.candidates,
+            config=base.config,
+        )
+        raw_result = SimpleNamespace(
+            status="FEASIBLE",
+            assignments=(Assignment("T1", "G1", 1), Assignment("T2", "G1", 2)),
+        )
+        result = build_solution(raw_result, context)
+
+        payloads = build_audit_payloads(result=result, context=context, raw_result=raw_result)
+
+        self.assertEqual(payloads["team_catalog"][0]["linkage_group"], "L1")
+        self.assertEqual(payloads["candidate_catalog"][0]["linkage_side"], "Casa")
+        linkage = payloads["solver_explanations"]["linkage"]
+        self.assertEqual(linkage["summary"]["groups"], 1)
+        self.assertEqual(linkage["summary"]["violations"], 1)
+        self.assertEqual(linkage["violations"][0]["expected_relation"], "opposite_number")
+
 
 def _context(config: ResourceSolverConfig | None = None) -> SolverContext:
     base_resource = BaseResource("Court|Friday|18:00", "Court", "Friday", "18:00")
@@ -136,6 +167,26 @@ def _context(config: ResourceSolverConfig | None = None) -> SolverContext:
             Candidate("T2-G1-2", "T2", "G1", 2, 2, (2,), {1: 1}, (base_resource.resource_id,)),
         ),
         config=config or ResourceSolverConfig(),
+    )
+
+
+def _linked_team(team_id: str, side: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        team_id=team_id,
+        name=f"Team {team_id}",
+        entity=f"Club {team_id}",
+        league_name="League",
+        modality="",
+        category="",
+        subcategory="",
+        level="",
+        venue="Court",
+        day="Friday",
+        time="18:00",
+        seed_request_original="",
+        linkage_group="L1",
+        linkage_side=side,
+        linkage_source="test",
     )
 
 
