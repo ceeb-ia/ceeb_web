@@ -40,6 +40,9 @@ def process_calendarization(
         if hasattr(engine, "run"):
             result = engine.run(input_path=input_path, config=config, progress=progress)
             if return_artifacts:
+                status = getattr(result, "status", None)
+                if isinstance(status, str) and status:
+                    return result
                 return result.output_path, result.logs, result.audit_paths, result.kpis_path or ""
             if return_logs:
                 return result.output_path, result.logs

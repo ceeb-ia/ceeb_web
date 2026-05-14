@@ -124,6 +124,37 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
             {"input_demand": "/tmp/input.json", "resource_solver_final_plots": "/tmp/final.json"},
         )
 
+    def test_execute_run_preserves_componentized_running_status(self):
+        from calendaritzacions.django.services.runs import execute_run
+        from calendaritzacions.engine.base import EngineResult
+
+        run = FakeRun()
+        run.status = ""
+        run.output_path = ""
+        run.kpis_path = ""
+        run.logs = []
+        run.audit_paths = {}
+        run.error_message = ""
+        run.save = Mock()
+        with patch(
+            "calendaritzacions.django.services.runs.process_calendarization",
+            return_value=EngineResult(
+                output_path="/tmp/components/manifest.json",
+                status="running",
+                logs=["componentized"],
+                audit_paths={"component_manifest": "/tmp/components/manifest.json"},
+            ),
+        ):
+            result = execute_run(run)
+
+        self.assertIs(result, run)
+        self.assertEqual(run.status, "running")
+        self.assertEqual(run.output_path, "/tmp/components/manifest.json")
+        self.assertEqual(run.statuses, ["running"])
+        run.save.assert_called_once_with(
+            update_fields=["status", "output_path", "kpis_path", "logs", "audit_paths", "error_message"]
+        )
+
     def test_execute_run_marks_error(self):
         from calendaritzacions.django.services.runs import execute_run
 
