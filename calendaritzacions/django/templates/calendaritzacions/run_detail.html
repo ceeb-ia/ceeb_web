@@ -80,6 +80,54 @@
 
   {% include "calendaritzacions/partials/audit_links.html" with run=run %}
 
+  {% if component_runs %}
+  <div class="border rounded p-3 mb-3" data-component-runs-panel>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="font-weight-bold">Components solver</div>
+      <div class="text-muted small">{{ component_runs|length }} intents</div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered mb-0">
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Estat</th>
+            <th>Intent</th>
+            <th>Equips</th>
+            <th>Candidats</th>
+            <th>Heartbeat</th>
+            <th>Final</th>
+            <th>Logs recents</th>
+          </tr>
+        </thead>
+        <tbody data-component-runs-body>
+          {% for component in component_runs %}
+          <tr>
+            <td class="font-weight-bold">{{ component.component_id }}</td>
+            <td>{{ component.status }}</td>
+            <td>{{ component.attempt }}/{{ component.active_attempt }}</td>
+            <td>{{ component.team_count }}</td>
+            <td>{{ component.candidate_count }}</td>
+            <td class="small">{{ component.heartbeat_at|default:"-" }}</td>
+            <td class="small">{{ component.finished_at|default:"-" }}</td>
+            <td>
+              {% if component.logs_tail %}
+              <pre class="mb-0 calendaritzacions-pre small">{% for line in component.logs_tail %}{{ line }}
+{% endfor %}</pre>
+              {% elif component.error_message %}
+              <pre class="mb-0 calendaritzacions-pre small">{{ component.error_message }}</pre>
+              {% else %}
+              <span class="text-muted small">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
   {% if plot_galleries %}
   <div class="border rounded p-3 mb-3">
     <div class="font-weight-bold mb-2">Plots del run</div>

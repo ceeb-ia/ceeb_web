@@ -9,6 +9,7 @@
   const progressText = document.querySelector("[data-progress-text]");
   const progressBar = document.querySelector("[data-progress-bar]");
   const logsPanel = document.querySelector("[data-logs-panel]");
+  const componentRunsBody = document.querySelector("[data-component-runs-body]");
   const initialAuditCount = parseInt(liveToolbar.dataset.initialAuditCount || "0", 10) || 0;
   const initialPlotCount = parseInt(liveToolbar.dataset.initialPlotCount || "0", 10) || 0;
   let hasReloaded = false;
@@ -40,6 +41,42 @@
     if (logsPanel && Array.isArray(payload.logs) && payload.logs.length) {
       logsPanel.textContent = payload.logs.join("\n");
       logsPanel.scrollTop = logsPanel.scrollHeight;
+    }
+    if (componentRunsBody && Array.isArray(payload.components)) {
+      componentRunsBody.replaceChildren();
+      payload.components.forEach(function (component) {
+        const row = document.createElement("tr");
+        [
+          component.component_id || "",
+          component.status || "",
+          `${component.attempt || ""}/${component.active_attempt || ""}`,
+          component.team_count || 0,
+          component.candidate_count || 0,
+          component.heartbeat_at || "-",
+          component.finished_at || "-",
+        ].forEach(function (value, index) {
+          const cell = document.createElement("td");
+          cell.textContent = String(value);
+          if (index === 0) cell.className = "font-weight-bold";
+          if (index >= 5) cell.className = "small";
+          row.appendChild(cell);
+        });
+        const logsCell = document.createElement("td");
+        const logs = Array.isArray(component.logs_tail) ? component.logs_tail : [];
+        if (logs.length || component.error_message) {
+          const pre = document.createElement("pre");
+          pre.className = "mb-0 calendaritzacions-pre small";
+          pre.textContent = logs.length ? logs.join("\n") : component.error_message;
+          logsCell.appendChild(pre);
+        } else {
+          const empty = document.createElement("span");
+          empty.className = "text-muted small";
+          empty.textContent = "-";
+          logsCell.appendChild(empty);
+        }
+        row.appendChild(logsCell);
+        componentRunsBody.appendChild(row);
+      });
     }
     const auditCount = Array.isArray(payload.audits) ? payload.audits.length : initialAuditCount;
     const plotCount = Array.isArray(payload.plot_galleries)

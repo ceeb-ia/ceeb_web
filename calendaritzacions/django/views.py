@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.views.generic import DetailView, FormView, ListView, View
 
 from calendaritzacions.django.forms import CalendarizationRunForm
-from calendaritzacions.django.models import CalendarizationRun
+from calendaritzacions.django.models import CalendarizationComponentRun, CalendarizationRun
 from calendaritzacions.django.services.audit_presenter import build_audit_presentation
 from calendaritzacions.django.services.audit_reader import read_json_file
 from calendaritzacions.django.services.runs import enqueue_run
@@ -77,6 +77,7 @@ class RunDetailView(CalendaritzacionsAccessMixin, DetailView):
         plot_galleries = _build_plot_galleries(self.object)
         context["plot_galleries"] = plot_galleries
         context["plot_count"] = _plot_count(plot_galleries)
+        context["component_runs"] = _component_runs_view(self.object)
         return context
 
 
@@ -245,6 +246,7 @@ class RunStatusJsonView(CalendaritzacionsAccessMixin, View):
                 ),
                 "audits": run.available_audits,
                 "plot_galleries": _build_plot_galleries(run),
+                "components": _component_runs_view(run),
             }
         )
         response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -268,6 +270,46 @@ def _read_related_audit_payloads(run: CalendarizationRun, *, exclude: str) -> di
         except (FileNotFoundError, ValueError, OSError):
             continue
     return related
+
+
+def _component_runs_view(run: CalendarizationRun) -> list[dict[str, object]]:
+    try:
+        components = list(CalendarizationComponentRun.objects.filter(run=run).order_by("component_id", "attempt"))
+    except Exception:
+        return []
+    rows: list[dict[str, object]] = []
+    for component in components:
+        rows.append(
+            {
+                "component_id": component.component_id,
+                "status": component.status,
+                "attempt": component.attempt,
+                "active_attempt": component.active_attempt,
+                "team_count": component.team_count,
+                "candidate_count": component.candidate_count,
+                "queued_at": component.queued_at.isoformat() if component.queued_at else "",
+                "started_at": component.started_at.isoformat() if component.started_at else "",
+                "heartbeat_at": component.heartbeat_at.isoformat() if component.heartbeat_at else "",
+                "finished_at": component.finished_at.isoformat() if component.finished_at else "",
+                "error_message": component.error_message,
+                "logs_path": component.logs_path,
+                "logs_tail": _read_component_log_tail(component.logs_path),
+            }
+        )
+    return rows
+
+
+def _read_component_log_tail(path_value: str, *, limit: int = 8) -> list[str]:
+    if not path_value:
+        return []
+    path = Path(str(path_value))
+    if not path.exists() or not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return lines[-limit:]
 
 
 def _get_workspace_services():

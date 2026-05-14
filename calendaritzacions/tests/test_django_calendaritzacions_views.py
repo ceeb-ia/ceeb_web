@@ -189,6 +189,51 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         self.assertEqual(payload["audits"], ["resource_solver_decomposition_plots"])
         self.assertEqual(payload["plot_galleries"], [{"title": "Descomposicio", "plots": []}])
 
+    def test_status_view_returns_component_logs(self):
+        from calendaritzacions.django.views import RunStatusJsonView
+
+        run = SimpleNamespace(
+            pk=7,
+            status="running",
+            is_finished=False,
+            logs=[],
+            error_message="",
+            output_path="",
+            available_audits=[],
+        )
+        components = [
+            {
+                "component_id": "C001",
+                "status": "running",
+                "attempt": 1,
+                "active_attempt": 1,
+                "team_count": 69,
+                "candidate_count": 1224,
+                "logs_tail": ['{"event": "solve_started"}'],
+            }
+        ]
+
+        with (
+            patch("calendaritzacions.django.views.get_object_or_404", return_value=run),
+            patch("logs.read_logs_sync", return_value=[]),
+            patch("calendaritzacions.django.views._component_runs_view", return_value=components),
+        ):
+            response = RunStatusJsonView().get(SimpleNamespace(), pk=7)
+
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["components"], components)
+
+    def test_read_component_log_tail_returns_recent_lines(self):
+        from calendaritzacions.django.views import _read_component_log_tail
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "logs.jsonl"
+            path.write_text("\n".join(str(index) for index in range(12)), encoding="utf-8")
+
+            tail = _read_component_log_tail(str(path), limit=3)
+
+        self.assertEqual(tail, ["9", "10", "11"])
+
     def test_plot_view_serves_registered_png_inside_audit_directory(self):
         from calendaritzacions.django.views import RunPlotView
 
