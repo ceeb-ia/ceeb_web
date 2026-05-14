@@ -17,20 +17,49 @@ MEMORY_LOST_MESSAGE = (
 )
 
 
-@shared_task(bind=True, queue="heavy_queue")
+@shared_task(bind=True, queue="heavy_queue", acks_late=False)
 def execute_calendarization_run_task(self, run_id: int) -> int:
+    return _execute_calendarization_run(self, run_id)
+
+
+def _execute_calendarization_run(task, run_id: int) -> int:
     from calendaritzacions.django.models import CalendarizationRun
     from calendaritzacions.django.services.runs import execute_run
 
-    logger.info("calendaritzacions: task rebuda run_id=%s celery_task_id=%s", run_id, self.request.id)
-    _push_run_log(run_id, "Worker heavy ha rebut la tasca.", progress=1, status="running")
+    celery_task_id = str(getattr(getattr(task, "request", None), "id", ""))
+    logger.info("calendaritzacions: task rebuda run_id=%s celery_task_id=%s", run_id, celery_task_id)
 
     run = CalendarizationRun.objects.get(pk=run_id)
     if not run.task_id:
-        run.task_id = str(self.request.id)
+        run.task_id = celery_task_id
         run.save(update_fields=["task_id"])
-    if not run.is_finished:
-        run.mark_running()
+    if run.is_finished:
+        logger.info(
+            "calendaritzacions: ignorant redelivery de run ja finalitzat run_id=%s status=%s celery_task_id=%s",
+            run_id,
+            run.status,
+            celery_task_id,
+        )
+        _append_run_log(run, "Redelivery ignorada: el run ja estava finalitzat.")
+        return run_id
+    if getattr(run, "output_path", ""):
+        logger.info(
+            "calendaritzacions: ignorant redelivery de run amb resultat existent run_id=%s output=%s celery_task_id=%s",
+            run_id,
+            run.output_path,
+            celery_task_id,
+        )
+        run.mark_success(
+            output_path=run.output_path,
+            logs=list(run.logs or []),
+            audit_paths=dict(run.audit_paths or {}),
+            kpis_path=getattr(run, "kpis_path", ""),
+        )
+        _append_run_log(run, "Redelivery ignorada: el run ja tenia resultat generat.")
+        return run_id
+
+    _push_run_log(run_id, "Worker heavy ha rebut la tasca.", progress=1, status="running")
+    run.mark_running()
     _append_run_log(run, "Worker heavy ha rebut la tasca.")
     logger.info(
         "calendaritzacions: iniciant run_id=%s engine=%s phase=%s input=%s",

@@ -131,6 +131,69 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
 
         get.assert_not_called()
 
+    def test_task_ignores_finished_redelivery(self):
+        from calendaritzacions.django import tasks
+
+        run = SimpleNamespace(
+            pk=12,
+            task_id="d1fe9357-f1de-4740-9d7b-6b0651ef64ef",
+            is_finished=True,
+            status="success",
+            logs=[],
+        )
+        run.save = Mock()
+        celery_task = SimpleNamespace(request=SimpleNamespace(id="d1fe9357-f1de-4740-9d7b-6b0651ef64ef"))
+
+        with (
+            patch("calendaritzacions.django.models.CalendarizationRun.objects.get", return_value=run) as get,
+            patch("calendaritzacions.django.services.runs.execute_run") as execute_run,
+            patch.object(tasks, "_push_run_log") as push_run_log,
+        ):
+            result = tasks._execute_calendarization_run(celery_task, 12)
+
+        self.assertEqual(result, 12)
+        get.assert_called_once_with(pk=12)
+        execute_run.assert_not_called()
+        push_run_log.assert_not_called()
+        self.assertEqual(run.logs, ["Redelivery ignorada: el run ja estava finalitzat."])
+        run.save.assert_called_once_with(update_fields=["logs"])
+
+    def test_task_repairs_running_redelivery_with_existing_output(self):
+        from calendaritzacions.django import tasks
+
+        run = SimpleNamespace(
+            pk=12,
+            task_id="d1fe9357-f1de-4740-9d7b-6b0651ef64ef",
+            is_finished=False,
+            status="running",
+            output_path="/data/media/calendaritzacions/assignacions.xlsx",
+            kpis_path="",
+            audit_paths={"resource_solution": "/data/media/calendaritzacions/resource_solution.json"},
+            logs=["abans"],
+        )
+        run.mark_success = Mock()
+        run.save = Mock()
+        celery_task = SimpleNamespace(request=SimpleNamespace(id="d1fe9357-f1de-4740-9d7b-6b0651ef64ef"))
+
+        with (
+            patch("calendaritzacions.django.models.CalendarizationRun.objects.get", return_value=run),
+            patch("calendaritzacions.django.services.runs.execute_run") as execute_run,
+            patch.object(tasks, "_push_run_log") as push_run_log,
+        ):
+            result = tasks._execute_calendarization_run(celery_task, 12)
+
+        self.assertEqual(result, 12)
+        execute_run.assert_not_called()
+        push_run_log.assert_not_called()
+        run.mark_success.assert_called_once_with(
+            output_path="/data/media/calendaritzacions/assignacions.xlsx",
+            logs=["abans"],
+            audit_paths={"resource_solution": "/data/media/calendaritzacions/resource_solution.json"},
+            kpis_path="",
+        )
+        self.assertEqual(run.logs, ["abans", "Redelivery ignorada: el run ja tenia resultat generat."])
+        run.save.assert_called_once_with(update_fields=["logs"])
+
     def test_audit_reader_discovers_and_reads_json(self):
         from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_audit_artifact
 
