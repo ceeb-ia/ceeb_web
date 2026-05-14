@@ -26,19 +26,26 @@
         <small class="form-text text-muted">Formats acceptats: .xlsx, .xls i .csv.</small>
       </div>
 
-      <div class="form-group col-12 col-lg-4">
+      <div class="form-group col-12 col-lg-3">
         <label for="{{ form.engine_name.id_for_label }}">Motor</label>
         {{ form.engine_name }}
         {% if form.engine_name.errors %}<div class="text-danger small">{{ form.engine_name.errors }}</div>{% endif %}
       </div>
 
-      <div class="form-group col-12 col-lg-4">
+      <div class="form-group col-12 col-lg-3">
         <label for="{{ form.phase.id_for_label }}">Fase</label>
         {{ form.phase }}
         {% if form.phase.errors %}<div class="text-danger small">{{ form.phase.errors }}</div>{% endif %}
       </div>
 
-      <div class="form-group col-12 col-lg-4">
+      <div class="form-group col-12 col-lg-3">
+        <label for="{{ form.resource_solver_linkage_mode.id_for_label }}">Linkage</label>
+        {{ form.resource_solver_linkage_mode }}
+        {% if form.resource_solver_linkage_mode.errors %}<div class="text-danger small">{{ form.resource_solver_linkage_mode.errors }}</div>{% endif %}
+        <small class="form-text text-muted">Input Excel usa la columna Grup vinculacio; Simulat genera grups conservadors.</small>
+      </div>
+
+      <div class="form-group col-12 col-lg-3">
         <label for="{{ form.resource_solver_level_constraint_mode.id_for_label }}">Restriccio de nivell</label>
         {{ form.resource_solver_level_constraint_mode }}
         {% if form.resource_solver_level_constraint_mode.errors %}<div class="text-danger small">{{ form.resource_solver_level_constraint_mode.errors }}</div>{% endif %}

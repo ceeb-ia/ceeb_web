@@ -33,11 +33,14 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
             segona_fase_bool=(run.phase == CalendarizationRun.PHASE_SECOND),
             engine_name=run.engine_name,
             resource_solver_level_constraint_mode=run.resource_solver_level_constraint_mode,
+            resource_solver_linkage_mode=run.resource_solver_linkage_mode,
             progress_reporter=DjangoRunProgressReporter(task_id),
         )
         output_path, logs, audit_paths, kpis_path = _split_process_output(output)
         if not audit_paths:
             audit_paths = discover_audit_paths(output_path)
+        partial_audit_paths = _audit_paths_for_task(task_id)
+        audit_paths = {**partial_audit_paths, **audit_paths}
         run.mark_success(output_path=output_path, logs=logs, audit_paths=audit_paths, kpis_path=kpis_path)
     except Exception as exc:
         run.mark_error(str(exc), logs=logs)
@@ -54,6 +57,34 @@ class DjangoRunProgressReporter:
         if not self._task_id:
             return
         _append_progress_log(self._task_id, message, percent)
+
+    def report_artifact(self, name: str, path: str) -> None:
+        if not self._task_id or not name or not path:
+            return
+        _record_audit_path(self._task_id, name, path)
+
+
+def _audit_paths_for_task(task_id: str | None) -> dict[str, str]:
+    if not task_id:
+        return {}
+    try:
+        run = CalendarizationRun.objects.get(pk=int(task_id))
+    except Exception:
+        return {}
+    return dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+
+
+def _record_audit_path(task_id: str, name: str, path: str) -> None:
+    try:
+        run = CalendarizationRun.objects.get(pk=int(task_id))
+    except Exception:
+        return
+    audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+    if audit_paths.get(name) == path:
+        return
+    audit_paths[name] = path
+    run.audit_paths = audit_paths
+    run.save(update_fields=["audit_paths"])
 
 
 def _append_progress_log(task_id: str, message: str, percent: int | None) -> None:

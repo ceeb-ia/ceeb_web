@@ -116,6 +116,7 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         run = SimpleNamespace(pk=7)
         payloads = {
             "input_demand": {"plots": {"heatmap": "/tmp/heatmap.png", "friday": "/tmp/friday.png", "manifest": "/tmp/manifest.json"}},
+            "resource_solver_decomposition_plots": {"plots": {"component_graph_3d": "/tmp/component_graph_3d.html", "resource_excess": "/tmp/resource_excess.png"}},
             "resource_solver_final_plots": {"plots": {"group_sizes": "/tmp/group_sizes.png"}},
         }
 
@@ -129,11 +130,15 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         ):
             galleries = _build_plot_galleries(run)
 
-        self.assertEqual([gallery["title"] for gallery in galleries], ["Plots pre-run", "Plots post-run"])
+        self.assertEqual([gallery["title"] for gallery in galleries], ["Plots pre-run", "Descomposicio", "Plots post-run"])
         self.assertEqual(galleries[0]["plots"][0]["id"], "heatmap")
         self.assertNotIn("friday", [plot["id"] for plot in galleries[0]["plots"]])
         self.assertIn("/runs/7/plots/input_demand/heatmap/", galleries[0]["plots"][0]["url"])
-        self.assertEqual(galleries[1]["plots"][0]["id"], "group_sizes")
+        self.assertEqual(galleries[1]["plots"][0]["id"], "component_graph_3d")
+        self.assertEqual(galleries[1]["plots"][0]["kind"], "html")
+        self.assertEqual(galleries[1]["plots"][1]["id"], "resource_excess")
+        self.assertEqual(galleries[1]["plots"][1]["kind"], "image")
+        self.assertEqual(galleries[2]["plots"][0]["id"], "group_sizes")
 
     def test_status_view_uses_db_progress_logs_when_redis_has_no_progress(self):
         from calendaritzacions.django.views import RunStatusJsonView
@@ -157,6 +162,32 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         payload = json.loads(response.content.decode("utf-8"))
         self.assertEqual(payload["status"], "running")
         self.assertEqual(payload["progress"], 20)
+        self.assertEqual(payload["audits"], [])
+        self.assertEqual(payload["plot_galleries"], [])
+
+    def test_status_view_returns_plot_galleries_when_available(self):
+        from calendaritzacions.django.views import RunStatusJsonView
+
+        run = SimpleNamespace(
+            pk=7,
+            status="running",
+            is_finished=False,
+            logs=[],
+            error_message="",
+            output_path="",
+            available_audits=["resource_solver_decomposition_plots"],
+        )
+
+        with (
+            patch("calendaritzacions.django.views.get_object_or_404", return_value=run),
+            patch("logs.read_logs_sync", return_value=[]),
+            patch("calendaritzacions.django.views._build_plot_galleries", return_value=[{"title": "Descomposicio", "plots": []}]),
+        ):
+            response = RunStatusJsonView().get(SimpleNamespace(), pk=7)
+
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["audits"], ["resource_solver_decomposition_plots"])
+        self.assertEqual(payload["plot_galleries"], [{"title": "Descomposicio", "plots": []}])
 
     def test_plot_view_serves_registered_png_inside_audit_directory(self):
         from calendaritzacions.django.views import RunPlotView
@@ -178,6 +209,33 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], "image/png")
+            response.close()
+
+    def test_plot_view_serves_registered_html_inside_audit_directory(self):
+        from calendaritzacions.django.views import RunPlotView
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plot_path = root / "plots_decomposition" / "component_graph_3d.html"
+            plot_path.parent.mkdir()
+            plot_path.write_text("<!doctype html><html></html>", encoding="utf-8")
+            audit_path = root / "resource_solver_decomposition_plots.json"
+            audit_path.write_text(json.dumps({"plots": {"component_graph_3d": str(plot_path)}}), encoding="utf-8")
+            run = SimpleNamespace()
+
+            with (
+                patch("calendaritzacions.django.views.get_object_or_404", return_value=run),
+                patch("calendaritzacions.django.views.ensure_run_audit_path", return_value=audit_path),
+            ):
+                response = RunPlotView().get(
+                    SimpleNamespace(),
+                    pk=7,
+                    artifact="resource_solver_decomposition_plots",
+                    plot_id="component_graph_3d",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "text/html; charset=utf-8")
             response.close()
 
 

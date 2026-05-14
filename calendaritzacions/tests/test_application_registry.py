@@ -44,7 +44,7 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
         )
         finalize.assert_called_once()
 
-    def test_process_calendarization_passes_resource_solver_level_mode_to_engine_config(self):
+    def test_process_calendarization_passes_resource_solver_modes_to_engine_config(self):
         from calendaritzacions.application.use_cases import process_calendarization
 
         engine = Mock()
@@ -61,11 +61,13 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
                 return_artifacts=True,
                 engine_name="resource_solver",
                 resource_solver_level_constraint_mode="soft",
+                resource_solver_linkage_mode="simulated",
             )
 
         self.assertEqual(result, ("out.xlsx", ["ok"], {}, ""))
         config = engine.run.call_args.kwargs["config"]
         self.assertEqual(config.resource_solver_level_constraint_mode, "soft")
+        self.assertEqual(config.resource_solver_linkage_mode, "simulated")
 
     def test_fastapi_app_uses_application_use_case(self):
         import calendaritzacions.app as app

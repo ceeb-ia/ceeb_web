@@ -28,11 +28,13 @@ class ResourceSolverContractsTests(unittest.TestCase):
                 name="resource_solver",
                 phase_name="segona_fase",
                 resource_solver_level_constraint_mode="soft",
+                resource_solver_linkage_mode="simulated",
             )
         )
 
         self.assertEqual(config.phase_name, "segona_fase")
         self.assertEqual(config.level_constraint_mode, "soft")
+        self.assertEqual(config.linkage_mode, "simulated")
 
     def test_team_and_group_records_are_instantiable(self):
         team = TeamRecord(

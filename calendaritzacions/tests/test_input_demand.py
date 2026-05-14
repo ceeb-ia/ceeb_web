@@ -93,6 +93,14 @@ class InputDemandAnalysisTests(unittest.TestCase):
         self.assertEqual(seed_rows[("Futbol", "2")], 1)
         self.assertEqual(seed_rows[("Futbol", "Sense peticio")], 1)
         self.assertEqual(seed_rows[("Volei", "CASA")], 1)
+        home_away_rows = {
+            (row["modalitat"], row["peticio"]): row["equips"]
+            for row in analysis["home_away_by_modality"]
+        }
+        self.assertEqual(home_away_rows[("Futbol", "Casa")], 1)
+        self.assertEqual(home_away_rows[("Futbol", "Fora")], 1)
+        self.assertEqual(home_away_rows[("Futbol", "Indiferent")], 1)
+        self.assertEqual(home_away_rows[("Volei", "Casa")], 1)
 
     def test_build_input_demand_normalizes_levels_by_modality(self):
         analysis = build_input_demand_analysis(
@@ -164,11 +172,17 @@ class InputDemandAnalysisTests(unittest.TestCase):
         )
 
         home_away = {row["peticio"]: row["equips"] for row in analysis["home_away_distribution"]}
+        home_away_by_modality = {
+            (row["modalitat"], row["peticio"]): row["equips"]
+            for row in analysis["home_away_by_modality"]
+        }
         linkage = {row["linkage"]: row["equips"] for row in analysis["linkage_presence"]}
         side = {row["side"]: row["equips"] for row in analysis["linkage_side_distribution"]}
 
         self.assertEqual(home_away["Casa"], 1)
         self.assertEqual(home_away["Fora"], 1)
+        self.assertEqual(home_away_by_modality[("Sense modalitat", "Casa")], 1)
+        self.assertEqual(home_away_by_modality[("Sense modalitat", "Fora")], 1)
         self.assertEqual(linkage["Amb linkage"], 1)
         self.assertEqual(linkage["Sense linkage"], 1)
         self.assertEqual(side["Casa"], 1)
@@ -191,6 +205,7 @@ class InputDemandAnalysisTests(unittest.TestCase):
             self.assertIn("heatmap", plots)
             self.assertNotIn("friday", plots)
             self.assertIn("seed_requests_by_modality", plots)
+            self.assertIn("home_away_distribution", plots)
             self.assertIn("level_distribution_by_modality", plots)
             self.assertIn("manifest", plots)
             for path in plots.values():

@@ -60,12 +60,13 @@ class ResourceSolverEngine:
             progress=progress,
         )
 
-        raw_result, context, built_model = self._run_solver_or_scaffold(
+        raw_result, context, built_model, early_audit_paths = self._run_solver_or_scaffold(
             input_path=input_path,
             input_df=pre_analysis["input_df"],
             config=solver_config,
             progress=progress,
             logs=logs,
+            output_dir=output_dir,
         )
         logs.extend(_context_log_lines(context))
         result = build_solution(raw_result, context)
@@ -80,6 +81,7 @@ class ResourceSolverEngine:
         audit_payloads.update(pre_analysis["audit_payloads"])
 
         audit_paths = write_audit_payloads(audit_payloads, output_dir)
+        audit_paths.update(early_audit_paths)
         result_json_path = output_dir / "resource_solver_result.json"
         result_json_path.write_text(
             json.dumps(result_to_json_ready(result), ensure_ascii=False, indent=2, sort_keys=True),
@@ -135,11 +137,12 @@ class ResourceSolverEngine:
         config: ResourceSolverConfig,
         progress: Any | None,
         logs: list[str],
-    ) -> tuple[Any, SolverContext, Any | None]:
+        output_dir: Path,
+    ) -> tuple[Any, SolverContext, Any | None, dict[str, str]]:
         """Run the real model when available, otherwise return a safe scaffold."""
 
         try:
-            return self._run_optional_model_pipeline(input_path, input_df, config, progress, logs)
+            return self._run_optional_model_pipeline(input_path, input_df, config, progress, logs, output_dir)
         except (ImportError, NotImplementedError) as exc:
             logs.append(f"resource_solver: model pipeline unavailable ({exc})")
             context = _empty_context(config)
@@ -152,7 +155,7 @@ class ResourceSolverEngine:
                 entity_excess={},
                 logs=("resource_solver scaffold result; CP-SAT model not executed",),
             )
-            return raw_result, context, None
+            return raw_result, context, None, {}
 
     def _run_optional_model_pipeline(
         self,
@@ -161,7 +164,8 @@ class ResourceSolverEngine:
         config: ResourceSolverConfig,
         progress: Any | None,
         logs: list[str],
-    ) -> tuple[Any, SolverContext, Any | None]:
+        output_dir: Path,
+    ) -> tuple[Any, SolverContext, Any | None, dict[str, str]]:
         """Hook for the future RS-01..RS-05 pipeline.
 
         The function intentionally imports lazily. Other agents can provide
@@ -183,6 +187,13 @@ class ResourceSolverEngine:
             f"resources={len(context.base_resources)} candidates={len(context.candidates)}"
         )
         logs.extend(_competition_context_log_lines(context))
+        early_audit_paths = _write_decomposition_audit_only(
+            context=context,
+            output_dir=output_dir,
+            input_path=input_path,
+            progress=progress,
+            logs=logs,
+        )
         _report(progress, "Executant CP-SAT resource_solver...", 50)
         built_model = build_solver_model(context)
         summary = getattr(built_model, "summary", {}) or {}
@@ -194,7 +205,93 @@ class ResourceSolverEngine:
         )
         raw_result = solve_model(built_model, config)
         logs.append("resource_solver: CP-SAT model executed")
-        return raw_result, context, built_model
+        return raw_result, context, built_model, early_audit_paths
+
+
+def _write_decomposition_audit_only(
+    *,
+    context: SolverContext,
+    output_dir: Path,
+    input_path: str,
+    progress: Any | None,
+    logs: list[str],
+) -> dict[str, str]:
+    """Write dependency-decomposition audits before solving, without changing the model."""
+
+    try:
+        from calendaritzacions.engine.variants.resource_solver.decomposition import (
+            build_decomposition_summary,
+            dependency_components_payload,
+            dependency_edges_payload,
+            dependency_summary_payload,
+        )
+    except Exception as exc:
+        logs.append(f"decomposition: no disponible ({exc})")
+        return {}
+
+    try:
+        _report(progress, "Grafitzant dependencies del problema...", 35)
+        summary = build_decomposition_summary(context)
+        summary_payload = dependency_summary_payload(summary)
+        payloads = {
+            "dependency_component_summary": summary_payload,
+            "dependency_components": dependency_components_payload(summary),
+            "dependency_component_edges": dependency_edges_payload(summary),
+        }
+        audit_paths = write_audit_payloads(payloads, output_dir)
+        _report_artifact(progress, "dependency_component_summary", audit_paths.get("dependency_component_summary"))
+        _report_artifact(progress, "dependency_components", audit_paths.get("dependency_components"))
+        _report_artifact(progress, "dependency_component_edges", audit_paths.get("dependency_component_edges"))
+
+        largest = summary_payload.get("largest_component", {}) if isinstance(summary_payload, dict) else {}
+        logs.append(
+            "decomposition: "
+            f"components={summary_payload.get('component_count', 0)} "
+            f"teams={summary_payload.get('total_teams', len(context.teams))} "
+            f"competitions={summary_payload.get('total_competitions', 0)} "
+            f"resources={summary_payload.get('total_resources', 0)}"
+        )
+        logs.append(
+            "decomposition: largest="
+            f"{largest.get('component_id', '-')} "
+            f"teams={largest.get('teams', 0)} "
+            f"competitions={largest.get('competitions', 0)} "
+            f"resources={largest.get('resources', 0)} "
+            f"candidates={largest.get('candidates', 0)}"
+        )
+
+        try:
+            from calendaritzacions.reporting.resource_solver_decomposition_plots import (
+                write_resource_solver_decomposition_plots,
+            )
+
+            plots = write_resource_solver_decomposition_plots(
+                output_dir / "plots_decomposition",
+                summary=summary_payload,
+                context=context,
+                stem=f"resource_solver_decomposition_{Path(input_path).stem}",
+            )
+            manifest_path = plots.get("manifest")
+            if manifest_path:
+                audit_paths["resource_solver_decomposition_plots"] = manifest_path
+                _report_artifact(progress, "resource_solver_decomposition_plots", manifest_path)
+            logs.append(f"decomposition: plots generated={max(0, len(plots) - 1)}")
+        except Exception as exc:
+            logs.append(f"decomposition: plots no generats ({exc})")
+
+        _report(progress, "Graf de dependencies generat.", 40)
+        return audit_paths
+    except Exception as exc:
+        logs.append(f"decomposition: auditoria no generada ({exc})")
+        return {}
+
+
+def _report_artifact(progress: Any | None, name: str, path: str | None) -> None:
+    if progress is None or not path:
+        return
+    report_artifact = getattr(progress, "report_artifact", None)
+    if callable(report_artifact):
+        report_artifact(name, path)
 
 
 def _empty_context(config: ResourceSolverConfig) -> SolverContext:

@@ -1,5 +1,9 @@
 # Pla de grafitzacio i particio segura del resource_solver
 
+Nota de continuacio: la fase de solver persistent, reanudable i executable per
+components queda detallada a
+`calendaritzacions/docs/pla_solver_components_persistents_resource_solver.md`.
+
 ## 0. Objectiu
 
 Aquest document defineix un pla executable per afegir una capa de

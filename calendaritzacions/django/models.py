@@ -23,6 +23,10 @@ class CalendarizationRun(models.Model):
     ENGINE_RESOURCE_SOLVER_LINKAGE = "resource_solver_linkage"
     ENGINE_RESOURCE_SOLVER_VINCULACIO = "resource_solver_vinculacio"
 
+    LINKAGE_MODE_OFF = "off"
+    LINKAGE_MODE_INPUT = "input"
+    LINKAGE_MODE_SIMULATED = "simulated"
+
     LEVEL_CONSTRAINT_OFF = "off"
     LEVEL_CONSTRAINT_SOFT = "soft"
 
@@ -39,7 +43,6 @@ class CalendarizationRun(models.Model):
         (ENGINE_LEGACY, "Legacy"),
         (ENGINE_RESOURCE_SOLVER, "Resource solver"),
         (ENGINE_RESOURCE_SOLVER_LINKAGE, "Resource solver + linkage"),
-        (ENGINE_RESOURCE_SOLVER_VINCULACIO, "Resource solver + vinculacio"),
     )
     PHASE_CHOICES = (
         (PHASE_FIRST, "Primera fase"),
@@ -48,6 +51,11 @@ class CalendarizationRun(models.Model):
     LEVEL_CONSTRAINT_CHOICES = (
         (LEVEL_CONSTRAINT_OFF, "Desactivat"),
         (LEVEL_CONSTRAINT_SOFT, "Suau"),
+    )
+    LINKAGE_MODE_CHOICES = (
+        (LINKAGE_MODE_INPUT, "Input Excel"),
+        (LINKAGE_MODE_SIMULATED, "Simulat"),
+        (LINKAGE_MODE_OFF, "Desactivat"),
     )
 
     input_file = models.FileField(upload_to=input_upload_to)
@@ -58,6 +66,11 @@ class CalendarizationRun(models.Model):
         max_length=16,
         choices=LEVEL_CONSTRAINT_CHOICES,
         default=LEVEL_CONSTRAINT_OFF,
+    )
+    resource_solver_linkage_mode = models.CharField(
+        max_length=16,
+        choices=LINKAGE_MODE_CHOICES,
+        default=LINKAGE_MODE_INPUT,
     )
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING)
     task_id = models.CharField(max_length=255, blank=True)

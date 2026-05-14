@@ -58,6 +58,15 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         return config
     engine_name = str(getattr(config, "name", "") or "")
     default_linkage_mode = "input" if engine_name in {"resource_solver_linkage", "resource_solver_vinculacio"} else "off"
+    explicit_linkage_mode = getattr(
+        config,
+        "resource_solver_linkage_mode",
+        getattr(config, "linkage_mode", "default"),
+    )
+    if str(explicit_linkage_mode or "default").strip().casefold() in {"", "default", "auto"}:
+        linkage_mode = default_linkage_mode
+    else:
+        linkage_mode = str(explicit_linkage_mode)
     level_constraint_mode = getattr(
         config,
         "resource_solver_level_constraint_mode",
@@ -86,7 +95,7 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
                 _env_int("CALENDARITZACIONS_SOLVER_MAX_MEMORY_MB", 0),
             )
         ),
-        linkage_mode=str(getattr(config, "linkage_mode", default_linkage_mode) or default_linkage_mode),
+        linkage_mode=linkage_mode,
         linkage_violation_weight=int(getattr(config, "linkage_violation_weight", 100_000)),
         linkage_max_group_size=int(getattr(config, "linkage_max_group_size", 2)),
         level_constraint_mode=str(level_constraint_mode or "off"),

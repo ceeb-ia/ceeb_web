@@ -61,6 +61,8 @@ OPTIONAL_SEGMENT_COLUMNS = [
 
 LEVEL_COLUMN = "Nivell"
 LEVEL_ORDER = ["A", "B", "B-C", "C", "Sense nivell"]
+HOME_SEED_NUMBERS = frozenset({1, 6, 7, 8})
+AWAY_SEED_NUMBERS = frozenset({2, 3, 4, 5})
 
 DAY_ORDER = {
     "dilluns": 1,
@@ -92,6 +94,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
     )
     seed_requests_by_modality = _seed_requests_by_modality(prepared, count_col)
     home_away_distribution = _home_away_distribution(prepared, count_col)
+    home_away_by_modality = _home_away_by_modality(prepared, count_col)
     linkage_presence = _linkage_presence_distribution(prepared, count_col)
     home_away_by_linkage = _home_away_by_linkage(prepared, count_col)
     linkage_side_distribution = _linkage_side_distribution(prepared, count_col)
@@ -142,6 +145,7 @@ def build_input_demand_analysis(df: pd.DataFrame) -> dict[str, Any]:
         "top_demand_slots": top_slots.to_dict("records"),
         "seed_requests_by_modality": seed_requests_by_modality,
         "home_away_distribution": home_away_distribution,
+        "home_away_by_modality": home_away_by_modality,
         "linkage_presence": linkage_presence,
         "home_away_by_linkage": home_away_by_linkage,
         "linkage_side_distribution": linkage_side_distribution,
@@ -191,6 +195,7 @@ def write_input_demand_plots(
     top_df = pd.DataFrame(analysis.get("top_demand_slots", []))
     seed_request_df = pd.DataFrame(analysis.get("seed_requests_by_modality", []))
     home_away_df = pd.DataFrame(analysis.get("home_away_distribution", []))
+    home_away_modality_df = pd.DataFrame(analysis.get("home_away_by_modality", []))
     linkage_presence_df = pd.DataFrame(analysis.get("linkage_presence", []))
     home_away_linkage_df = pd.DataFrame(analysis.get("home_away_by_linkage", []))
     linkage_side_df = pd.DataFrame(analysis.get("linkage_side_distribution", []))
@@ -201,7 +206,7 @@ def write_input_demand_plots(
         ("by_venue", _plot_by_venue_bar, venue_df),
         ("top_slots", _plot_top_slots_bar, top_df),
         ("seed_requests_by_modality", _plot_seed_requests_by_modality, seed_request_df),
-        ("home_away_distribution", _plot_home_away_distribution, home_away_df),
+        ("home_away_distribution", _plot_home_away_distribution, home_away_modality_df if not home_away_modality_df.empty else home_away_df),
         ("linkage_presence", _plot_linkage_presence, linkage_presence_df),
         ("home_away_by_linkage", _plot_home_away_by_linkage, home_away_linkage_df),
         ("linkage_side_distribution", _plot_linkage_side_distribution, linkage_side_df),
@@ -381,6 +386,22 @@ def _home_away_distribution(df: pd.DataFrame, count_col: str) -> list[dict[str, 
     return grouped.sort_values(["_order", "peticio"], kind="stable").drop(columns=["_order"]).to_dict("records")
 
 
+def _home_away_by_modality(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
+    data = df.drop_duplicates(subset=[count_col]).copy()
+    if data.empty:
+        return []
+    grouped = (
+        data.groupby(["modalitat_peticio", "casa_fora_peticio"], dropna=False)
+        .agg(equips=(count_col, "nunique"))
+        .reset_index()
+        .rename(columns={"modalitat_peticio": "modalitat", "casa_fora_peticio": "peticio"})
+    )
+    grouped["equips"] = grouped["equips"].astype(int)
+    grouped["_request_order"] = grouped["peticio"].map(_home_away_order)
+    grouped = grouped.sort_values(["modalitat", "_request_order", "peticio"], kind="stable").drop(columns=["_request_order"])
+    return grouped.to_dict("records")
+
+
 def _linkage_presence_distribution(df: pd.DataFrame, count_col: str) -> list[dict[str, Any]]:
     if not bool(df["_linkage_available"].any()):
         return []
@@ -476,12 +497,34 @@ def _first_existing_column(df: pd.DataFrame, candidates: tuple[str, ...]) -> str
 
 
 def _home_away_request_label(value: Any) -> str:
+    number = _coerce_seed_number(value)
+    if number in HOME_SEED_NUMBERS:
+        return "Casa"
+    if number in AWAY_SEED_NUMBERS:
+        return "Fora"
     text = _day_key(value).upper()
     if text in {"CASA", "HOME", "LOCAL"}:
         return "Casa"
     if text in {"FORA", "AWAY", "VISITANT", "VISITOR"}:
         return "Fora"
     return "Indiferent"
+
+
+def _coerce_seed_number(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value) or not value.is_integer():
+            return None
+        return int(value)
+    text = str(value).strip().replace(",", ".")
+    if re.fullmatch(r"\d+", text):
+        return int(text)
+    if re.fullmatch(r"\d+\.0+", text):
+        return int(float(text))
+    return None
 
 
 def _home_away_order(value: Any) -> int:
@@ -690,15 +733,48 @@ def _plot_home_away_distribution(df: pd.DataFrame):
         return None
     import matplotlib.pyplot as plt
 
-    ordered = df.sort_values("peticio", key=lambda series: series.map(_home_away_order), kind="stable")
-    fig, ax = plt.subplots(figsize=(7, 4.2))
-    ax.bar(ordered["peticio"], ordered["equips"], color=["#4E79A7", "#F28E2B", "#BAB0AC"][: len(ordered)])
-    ax.set_title("Distribucio Casa/Fora/Indiferent")
-    ax.set_ylabel("Equips")
-    ax.grid(axis="y", alpha=0.25)
+    if "modalitat" not in df.columns:
+        ordered = df.sort_values("peticio", key=lambda series: series.map(_home_away_order), kind="stable")
+        fig, ax = plt.subplots(figsize=(7, 4.2))
+        ax.bar(ordered["peticio"], ordered["equips"], color=["#4E79A7", "#F28E2B", "#BAB0AC"][: len(ordered)])
+        ax.set_title("Distribucio Casa/Fora/Indiferent")
+        ax.set_ylabel("Equips")
+        ax.grid(axis="y", alpha=0.25)
+        fig.tight_layout()
+        return fig
+
+    totals = df.groupby("modalitat", dropna=False)["equips"].sum().sort_values(ascending=False)
+    modalities = list(totals.head(12).index)
+    if not modalities:
+        return None
+
+    cols = min(3, len(modalities))
+    rows = math.ceil(len(modalities) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.6 * cols, 3.8 * rows))
+    try:
+        axes = axes.flatten()
+    except AttributeError:
+        axes = [axes]
+
+    colors = {"Casa": "#4E79A7", "Fora": "#F28E2B", "Indiferent": "#BAB0AC"}
+    for ax, modality in zip(axes, modalities):
+        subset = df[df["modalitat"] == modality].sort_values("peticio", key=lambda series: series.map(_home_away_order), kind="stable")
+        values = subset["equips"].astype(int).tolist()
+        labels = subset["peticio"].astype(str).tolist()
+        ax.pie(
+            values,
+            labels=labels,
+            autopct="%1.0f%%",
+            startangle=90,
+            colors=[colors.get(label, "#76B7B2") for label in labels],
+            textprops={"fontsize": 8},
+        )
+        ax.set_title(str(modality), fontsize=10)
+    for ax in axes[len(modalities):]:
+        ax.axis("off")
+    fig.suptitle("Distribucio Casa/Fora/Indiferent per modalitat", fontsize=13)
     fig.tight_layout()
     return fig
-
 
 def _plot_linkage_presence(df: pd.DataFrame):
     if df.empty:

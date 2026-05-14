@@ -9,6 +9,8 @@
     class="d-flex justify-content-between align-items-center mb-3"
     data-calendaritzacions-live="{% if not run.is_finished %}1{% else %}0{% endif %}"
     data-status-url="{% url 'calendaritzacions:run_status' run.pk %}"
+    data-initial-audit-count="{{ run.available_audits|length }}"
+    data-initial-plot-count="{{ plot_count|default:0 }}"
   >
     <div>
       <h2 class="mb-0">Execucio #{{ run.id }}</h2>
@@ -40,6 +42,7 @@
           <dt class="col-sm-3">Fitxer</dt><dd class="col-sm-9">{{ run.input_name }}</dd>
           <dt class="col-sm-3">Motor</dt><dd class="col-sm-9">{{ run.engine_name }}</dd>
           <dt class="col-sm-3">Fase</dt><dd class="col-sm-9">{{ run.phase }}</dd>
+          <dt class="col-sm-3">Linkage</dt><dd class="col-sm-9">{{ run.resource_solver_linkage_mode|default:"-" }}</dd>
           <dt class="col-sm-3">Creat</dt><dd class="col-sm-9">{% if run.created_at %}{{ run.created_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
           <dt class="col-sm-3">Inici</dt><dd class="col-sm-9">{% if run.started_at %}{{ run.started_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
           <dt class="col-sm-3">Final</dt><dd class="col-sm-9">{% if run.finished_at %}{{ run.finished_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
@@ -75,6 +78,34 @@
 
 
   {% include "calendaritzacions/partials/audit_links.html" with run=run %}
+
+  {% if plot_galleries %}
+  <div class="border rounded p-3 mb-3">
+    <div class="font-weight-bold mb-2">Plots del run</div>
+    {% for gallery in plot_galleries %}
+    <div class="mb-3">
+      <div class="text-muted small font-weight-bold mb-2">{{ gallery.title }}</div>
+      <div class="row">
+        {% for plot in gallery.plots %}
+        <div class="col-12 col-xl-6 mb-3">
+          <a href="{{ plot.url }}" target="_blank" rel="noopener">
+            <div class="small font-weight-bold mb-2">{{ plot.label }}</div>
+            {% if plot.kind == "html" %}
+            <div class="border rounded p-3 bg-light">
+              <span class="btn btn-sm btn-outline-primary">Obrir graf interactiu</span>
+            </div>
+            {% else %}
+            <img class="img-fluid border rounded" src="{{ plot.url }}" alt="{{ plot.label }}">
+            {% endif %}
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% include "calendaritzacions/partials/logs_panel.html" with logs=run.logs %}
 
   {% if run.error_message %}

@@ -9,6 +9,8 @@
   const progressText = document.querySelector("[data-progress-text]");
   const progressBar = document.querySelector("[data-progress-bar]");
   const logsPanel = document.querySelector("[data-logs-panel]");
+  const initialAuditCount = parseInt(liveToolbar.dataset.initialAuditCount || "0", 10) || 0;
+  const initialPlotCount = parseInt(liveToolbar.dataset.initialPlotCount || "0", 10) || 0;
   let hasReloaded = false;
 
   function statusPollUrl() {
@@ -39,7 +41,13 @@
       logsPanel.textContent = payload.logs.join("\n");
       logsPanel.scrollTop = logsPanel.scrollHeight;
     }
-    if (payload.is_finished && !hasReloaded) {
+    const auditCount = Array.isArray(payload.audits) ? payload.audits.length : initialAuditCount;
+    const plotCount = Array.isArray(payload.plot_galleries)
+      ? payload.plot_galleries.reduce(function (count, gallery) {
+          return count + (Array.isArray(gallery.plots) ? gallery.plots.length : 0);
+        }, 0)
+      : initialPlotCount;
+    if ((payload.is_finished || auditCount > initialAuditCount || plotCount > initialPlotCount) && !hasReloaded) {
       hasReloaded = true;
       window.setTimeout(function () {
         window.location.reload();

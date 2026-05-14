@@ -74,7 +74,9 @@ class RunDetailView(CalendaritzacionsAccessMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["plot_galleries"] = _build_plot_galleries(self.object)
+        plot_galleries = _build_plot_galleries(self.object)
+        context["plot_galleries"] = plot_galleries
+        context["plot_count"] = _plot_count(plot_galleries)
         return context
 
 
@@ -166,7 +168,8 @@ class RunPlotView(CalendaritzacionsAccessMixin, View):
             artifact=kwargs["artifact"],
             plot_id=kwargs["plot_id"],
         )
-        return FileResponse(path.open("rb"), content_type="image/png")
+        content_type = "text/html; charset=utf-8" if path.suffix.lower() == ".html" else "image/png"
+        return FileResponse(path.open("rb"), content_type=content_type)
 
 
 class AuditDetailView(CalendaritzacionsAccessMixin, DetailView):
@@ -241,6 +244,7 @@ class RunStatusJsonView(CalendaritzacionsAccessMixin, View):
                     else ""
                 ),
                 "audits": run.available_audits,
+                "plot_galleries": _build_plot_galleries(run),
             }
         )
         response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -368,6 +372,7 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
     galleries: list[dict[str, object]] = []
     for artifact, title in [
         ("input_demand", "Plots pre-run"),
+        ("resource_solver_decomposition_plots", "Descomposicio"),
         ("resource_solver_final_plots", "Plots post-run"),
     ]:
         plots = _plot_ids_for_artifact(run, artifact)
@@ -381,6 +386,7 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
                     {
                         "id": plot_id,
                         "label": _plot_label(plot_id),
+                        "kind": _plot_kind(plot_id, run, artifact),
                         "url": reverse(
                             "calendaritzacions:run_plot",
                             kwargs={"pk": run.pk, "artifact": artifact, "plot_id": plot_id},
@@ -391,6 +397,10 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
             }
         )
     return galleries
+
+
+def _plot_count(plot_galleries: list[dict[str, object]]) -> int:
+    return sum(len(gallery.get("plots", [])) for gallery in plot_galleries)
 
 
 def _progress_from_log_lines(log_lines: list[object]) -> int | None:
@@ -408,7 +418,7 @@ def _progress_from_log_lines(log_lines: list[object]) -> int | None:
 def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
     try:
         payload = read_json_file(str(ensure_run_audit_path(run, artifact)))
-    except (FileNotFoundError, ValueError, OSError, Http404):
+    except (AttributeError, FileNotFoundError, ValueError, OSError, Http404):
         return []
     plots = payload.get("plots") if isinstance(payload, dict) else None
     if not isinstance(plots, dict):
@@ -416,8 +426,20 @@ def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
     return sorted(
         plot_id
         for plot_id, path in plots.items()
-        if plot_id not in {"manifest", "friday"} and path and str(path).lower().endswith(".png")
+        if plot_id not in {"manifest", "friday"} and path and Path(str(path)).suffix.lower() in {".png", ".html"}
     )
+
+
+def _plot_kind(plot_id: str, run: CalendarizationRun, artifact: str) -> str:
+    try:
+        payload = read_json_file(str(ensure_run_audit_path(run, artifact)))
+    except (AttributeError, FileNotFoundError, ValueError, OSError, Http404):
+        return "image"
+    plots = payload.get("plots") if isinstance(payload, dict) else None
+    if not isinstance(plots, dict):
+        return "image"
+    suffix = Path(str(plots.get(plot_id, ""))).suffix.lower()
+    return "html" if suffix == ".html" else "image"
 
 
 def _ensure_run_plot_path(run: CalendarizationRun, *, artifact: str, plot_id: str) -> Path:
@@ -431,21 +453,33 @@ def _ensure_run_plot_path(run: CalendarizationRun, *, artifact: str, plot_id: st
     root = artifact_path.parent.resolve()
     if root not in (resolved, *resolved.parents):
         raise Http404("Plot path is outside the audit directory.")
-    if resolved.suffix.lower() != ".png" or not resolved.exists() or not resolved.is_file():
+    if resolved.suffix.lower() not in {".png", ".html"} or not resolved.exists() or not resolved.is_file():
         raise Http404("Plot file does not exist.")
     return resolved
 
 
 def _plot_label(plot_id: str) -> str:
+    if plot_id.startswith("component_network_"):
+        return f"Xarxa {plot_id.removeprefix('component_network_')}"
+    if plot_id.startswith("component_bridge_network_"):
+        return f"Ponts {plot_id.removeprefix('component_bridge_network_')}"
     labels = {
         "heatmap": "Mapa demanda",
         "by_venue": "Per pista",
         "seed_requests_by_modality": "Peticions per modalitat",
+        "home_away_distribution": "Casa/Fora per modalitat",
         "assigned_numbers_by_modality": "Assignacions per modalitat",
         "top_slots": "Slots crítics",
         "group_sizes": "Mida grups",
         "resource_excess": "Pressió recursos",
         "entity_conflicts": "Conflictes entitat",
         "status_summary": "Resum final",
+        "component_team_count_histogram": "Mida components",
+        "top_components_by_teams": "Components principals",
+        "components_resources_vs_competitions": "Recursos vs competicions",
+        "candidate_pareto_by_component": "Pareto candidats",
+        "top_component_competition_resource_heatmap": "Mapa competicio-recurs",
+        "top_component_network": "Xarxa component",
+        "component_graph_3d": "Graf 3D interactiu",
     }
     return labels.get(plot_id, plot_id.replace("_", " ").title())

@@ -16,6 +16,9 @@ KNOWN_AUDIT_FILENAMES = (
     "solver_model_summary.json",
     "solver_explanations.json",
     "local_combinations.json",
+    "dependency_component_summary.json",
+    "dependency_components.json",
+    "dependency_component_edges.json",
     "kpis.json",
 )
 

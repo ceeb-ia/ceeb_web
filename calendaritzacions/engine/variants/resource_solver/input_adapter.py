@@ -164,19 +164,27 @@ def _teams_by_competition(
 ) -> tuple[tuple[tuple[str, ...], tuple[TeamRecord, ...]], ...]:
     buckets: dict[tuple[str, ...], list[TeamRecord]] = defaultdict(list)
     for team in teams:
-        buckets[_competition_key(team)].append(team)
+        buckets[competition_key_for_team(team)].append(team)
     return tuple(
         (key, tuple(sorted(items, key=lambda item: item.team_id)))
         for key, items in sorted(buckets.items())
     )
 
 
-def _competition_key(team: TeamRecord) -> tuple[str, ...]:
+def competition_key_for_team(team: TeamRecord) -> tuple[str, ...]:
+    """Return the stable competition key used to generate resource-solver groups."""
+
     parts = (team.modality.strip(), team.category.strip(), team.subcategory.strip())
     if all(parts):
         return ("fields", *parts)
     league_name = team.league_name.strip() or "Sense lliga"
     return ("league", league_name)
+
+
+def competition_node_key(team: TeamRecord) -> str:
+    """Return a JSON/path-friendly competition node key for decomposition audits."""
+
+    return "|".join(competition_key_for_team(team))
 
 
 def _first_existing(row: pd.Series, columns: tuple[str, ...]) -> Any:
@@ -379,4 +387,13 @@ def _text(value: Any, default: str) -> str:
     return text if text else default
 
 
-__all__ = ["build_context_from_dataframe", "build_context_from_input", "build_team_records"]
+_competition_key = competition_key_for_team
+
+
+__all__ = [
+    "build_context_from_dataframe",
+    "build_context_from_input",
+    "build_team_records",
+    "competition_key_for_team",
+    "competition_node_key",
+]

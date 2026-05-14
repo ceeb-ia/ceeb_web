@@ -39,6 +39,7 @@ class DjangoCalendarizationRunModelTests(unittest.TestCase):
         self.assertEqual(run.engine_name, CalendarizationRun.ENGINE_RESOURCE_SOLVER)
         self.assertEqual(run.phase, CalendarizationRun.PHASE_FIRST)
         self.assertEqual(run.resource_solver_level_constraint_mode, CalendarizationRun.LEVEL_CONSTRAINT_OFF)
+        self.assertEqual(run.resource_solver_linkage_mode, CalendarizationRun.LINKAGE_MODE_INPUT)
         self.assertFalse(run.is_finished)
         self.assertEqual(run.available_audits, ["resource_solution"])
 

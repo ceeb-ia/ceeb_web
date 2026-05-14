@@ -44,9 +44,16 @@ class ResourceSolverResourcesTests(unittest.TestCase):
     def test_linkage_variant_uses_input_linkage_mode(self):
         config = coerce_resource_solver_config(EngineConfig(name="resource_solver_linkage"))
         catalan_config = coerce_resource_solver_config(EngineConfig(name="resource_solver_vinculacio"))
+        explicit_config = coerce_resource_solver_config(
+            EngineConfig(
+                name="resource_solver",
+                resource_solver_linkage_mode="simulated",
+            )
+        )
 
         self.assertEqual(config.linkage_mode, "input")
         self.assertEqual(catalan_config.linkage_mode, "input")
+        self.assertEqual(explicit_config.linkage_mode, "simulated")
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
     def test_build_team_records_normalizes_resources_and_deduplicates_teams(self):

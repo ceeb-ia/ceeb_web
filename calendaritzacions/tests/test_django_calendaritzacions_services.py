@@ -36,6 +36,7 @@ class FakeRun:
         self.phase = "segona_fase"
         self.engine_name = "resource_solver"
         self.resource_solver_level_constraint_mode = "soft"
+        self.resource_solver_linkage_mode = "simulated"
         self.statuses = []
 
     def mark_running(self):
@@ -77,11 +78,49 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
             segona_fase_bool=True,
             engine_name="resource_solver",
             resource_solver_level_constraint_mode="soft",
+            resource_solver_linkage_mode="simulated",
             progress_reporter=ANY,
         )
         self.assertEqual(run.statuses, ["running", "success"])
         self.assertEqual(run.success_kwargs["output_path"], "/tmp/output.xlsx")
         self.assertEqual(run.success_kwargs["logs"], ["log"])
+
+    def test_progress_reporter_records_partial_audit_artifact(self):
+        from calendaritzacions.django.services.runs import DjangoRunProgressReporter
+
+        run = SimpleNamespace(audit_paths={"input_demand": "/tmp/input.json"})
+        run.save = Mock()
+
+        with patch("calendaritzacions.django.services.runs.CalendarizationRun.objects.get", return_value=run):
+            DjangoRunProgressReporter("12").report_artifact("resource_solver_decomposition_plots", "/tmp/decomposition.json")
+
+        self.assertEqual(
+            run.audit_paths,
+            {
+                "input_demand": "/tmp/input.json",
+                "resource_solver_decomposition_plots": "/tmp/decomposition.json",
+            },
+        )
+        run.save.assert_called_once_with(update_fields=["audit_paths"])
+
+    def test_execute_run_preserves_partial_audit_artifacts(self):
+        from calendaritzacions.django.services.runs import execute_run
+
+        run = FakeRun()
+        persisted_run = SimpleNamespace(audit_paths={"input_demand": "/tmp/input.json"})
+        with (
+            patch(
+                "calendaritzacions.django.services.runs.process_calendarization",
+                return_value=("/tmp/output.xlsx", ["log"], {"resource_solver_final_plots": "/tmp/final.json"}),
+            ),
+            patch("calendaritzacions.django.services.runs.CalendarizationRun.objects.get", return_value=persisted_run),
+        ):
+            execute_run(run)
+
+        self.assertEqual(
+            run.success_kwargs["audit_paths"],
+            {"input_demand": "/tmp/input.json", "resource_solver_final_plots": "/tmp/final.json"},
+        )
 
     def test_execute_run_marks_error(self):
         from calendaritzacions.django.services.runs import execute_run

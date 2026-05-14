@@ -39,6 +39,7 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
             data={
                 "engine_name": CalendarizationRun.ENGINE_LEGACY,
                 "phase": CalendarizationRun.PHASE_SECOND,
+                "resource_solver_linkage_mode": CalendarizationRun.LINKAGE_MODE_SIMULATED,
                 "resource_solver_level_constraint_mode": CalendarizationRun.LEVEL_CONSTRAINT_SOFT,
             },
             files={"input_file": SimpleUploadedFile("input.xlsx", b"data")},
@@ -49,6 +50,14 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
             form.cleaned_data["resource_solver_level_constraint_mode"],
             CalendarizationRun.LEVEL_CONSTRAINT_SOFT,
         )
+        self.assertEqual(
+            form.cleaned_data["resource_solver_linkage_mode"],
+            CalendarizationRun.LINKAGE_MODE_SIMULATED,
+        )
+        self.assertNotIn(
+            CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
+            dict(form.fields["engine_name"].choices),
+        )
 
     def test_form_rejects_unsupported_file_extension(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
@@ -57,7 +66,11 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
         from calendaritzacions.django.models import CalendarizationRun
 
         form = CalendarizationRunForm(
-            data={"engine_name": CalendarizationRun.ENGINE_RESOURCE_SOLVER, "phase": CalendarizationRun.PHASE_FIRST},
+            data={
+                "engine_name": CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                "phase": CalendarizationRun.PHASE_FIRST,
+                "resource_solver_linkage_mode": CalendarizationRun.LINKAGE_MODE_INPUT,
+            },
             files={"input_file": SimpleUploadedFile("input.txt", b"data")},
         )
 
