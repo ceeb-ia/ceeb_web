@@ -48,12 +48,14 @@ class ResourceSolverResourcesTests(unittest.TestCase):
             EngineConfig(
                 name="resource_solver",
                 resource_solver_linkage_mode="simulated",
+                resource_solver_decomposition_mode="persist_components",
             )
         )
 
         self.assertEqual(config.linkage_mode, "input")
         self.assertEqual(catalan_config.linkage_mode, "input")
         self.assertEqual(explicit_config.linkage_mode, "simulated")
+        self.assertEqual(explicit_config.decomposition_mode, "persist_components")
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
     def test_build_team_records_normalizes_resources_and_deduplicates_teams(self):

@@ -62,12 +62,14 @@ class ApplicationRegistryCompatibilityTests(unittest.TestCase):
                 engine_name="resource_solver",
                 resource_solver_level_constraint_mode="soft",
                 resource_solver_linkage_mode="simulated",
+                resource_solver_decomposition_mode="persist_components",
             )
 
         self.assertEqual(result, ("out.xlsx", ["ok"], {}, ""))
         config = engine.run.call_args.kwargs["config"]
         self.assertEqual(config.resource_solver_level_constraint_mode, "soft")
         self.assertEqual(config.resource_solver_linkage_mode, "simulated")
+        self.assertEqual(config.resource_solver_decomposition_mode, "persist_components")
 
     def test_fastapi_app_uses_application_use_case(self):
         import calendaritzacions.app as app

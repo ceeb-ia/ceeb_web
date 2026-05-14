@@ -69,6 +69,27 @@ class ResourceSolverEngine:
             output_dir=output_dir,
         )
         logs.extend(_context_log_lines(context))
+        if getattr(raw_result, "componentized_without_global_solve", False):
+            audit_paths = dict(pre_analysis["audit_payloads"])
+            audit_paths = write_audit_payloads(audit_paths, output_dir)
+            audit_paths.update(early_audit_paths)
+            manifest_path = getattr(raw_result, "manifest_path", "")
+            if manifest_path:
+                audit_paths["component_manifest"] = str(manifest_path)
+            split_validation_path = getattr(raw_result, "split_validation_path", "")
+            if split_validation_path:
+                audit_paths["component_split_validation"] = str(split_validation_path)
+            logs.extend(str(item) for item in getattr(raw_result, "logs", ()) or ())
+            logs.append(f"resource_solver: status={getattr(raw_result, 'status', 'UNKNOWN')}")
+            _report(progress, "Components resource_solver persistits.", 90)
+            final_output_path = getattr(raw_result, "final_output_path", "") or ""
+            run_status = getattr(raw_result, "status", "")
+            return EngineResult(
+                output_path=str(final_output_path or manifest_path or ""),
+                status="running" if run_status == "RUNNING" else None,
+                audit_paths=audit_paths,
+                logs=logs,
+            )
         result = build_solution(raw_result, context)
         local_explanations = build_local_explanations(result, context)
         audit_payloads = build_audit_payloads(
@@ -174,10 +195,6 @@ class ResourceSolverEngine:
         """
 
         from calendaritzacions.engine.variants.resource_solver.input_adapter import build_context_from_dataframe  # type: ignore
-        from calendaritzacions.engine.variants.resource_solver.model import (  # type: ignore
-            build_solver_model,
-            solve_model,
-        )
 
         _report(progress, "Construint context resource_solver...", 20)
         context = build_context_from_dataframe(input_df, config=config)
@@ -187,13 +204,109 @@ class ResourceSolverEngine:
             f"resources={len(context.base_resources)} candidates={len(context.candidates)}"
         )
         logs.extend(_competition_context_log_lines(context))
-        early_audit_paths = _write_decomposition_audit_only(
-            context=context,
-            output_dir=output_dir,
-            input_path=input_path,
-            progress=progress,
-            logs=logs,
+        early_audit_paths = {}
+        if str(config.decomposition_mode) != "off":
+            early_audit_paths = _write_decomposition_audit_only(
+                context=context,
+                output_dir=output_dir,
+                input_path=input_path,
+                progress=progress,
+                logs=logs,
+            )
+        if str(config.decomposition_mode) in {"persist_components", "solve_components"}:
+            from calendaritzacions.engine.variants.resource_solver.component_persistence import (
+                persist_component_subcontexts,
+            )
+            from calendaritzacions.engine.variants.resource_solver.decomposition import (
+                build_decomposition_summary,
+            )
+
+            _report(progress, "Persistint components resource_solver...", 45)
+            summary = build_decomposition_summary(context)
+            run = _calendarization_run_from_progress(progress)
+            persistence = persist_component_subcontexts(
+                run=run,
+                output_dir=output_dir,
+                context=context,
+                summary=summary,
+                mode=str(config.decomposition_mode),
+            )
+            early_audit_paths["component_manifest"] = str(persistence["manifest_path"])
+            early_audit_paths["component_split_validation"] = str(persistence["split_validation_path"])
+            _report_artifact(progress, "component_manifest", early_audit_paths["component_manifest"])
+            _report_artifact(progress, "component_split_validation", early_audit_paths["component_split_validation"])
+            logs.append(
+                "components: "
+                f"split={persistence['status']} "
+                f"components={persistence['component_count']} "
+                f"manifest={Path(persistence['manifest_path']).name}"
+            )
+            if run is None:
+                logs.append("components: CalendarizationRun no disponible; DB component_runs no actualitzat")
+            if str(config.decomposition_mode) == "solve_components":
+                if persistence["status"] == "valid" and run is not None:
+                    from calendaritzacions.django.models import CalendarizationComponentRun, CalendarizationRun
+                    from calendaritzacions.django.services.component_tasks import enqueue_component
+
+                    components = list(
+                        CalendarizationComponentRun.objects.filter(
+                            run=run,
+                            attempt=1,
+                            active_attempt=1,
+                        ).order_by("component_id")
+                    )
+                    for component_run in components:
+                        enqueue_component(component_run)
+                    run.refresh_from_db()
+                    logs.append(f"components: enqueued={len(components)} queue=heavy_queue")
+                    if run.status == CalendarizationRun.STATUS_SUCCESS and run.output_path:
+                        logs.append("components: merge completat en backend sync")
+                        return (
+                            SimpleNamespace(
+                                status=getattr(run, "status", "success"),
+                                objective_value=None,
+                                best_bound=None,
+                                wall_time=0.0,
+                                assignments=(),
+                                entity_excess={},
+                                logs=tuple(logs),
+                                componentized_without_global_solve=True,
+                                manifest_path=str(persistence["manifest_path"]),
+                                split_validation_path=str(persistence["split_validation_path"]),
+                                final_output_path=run.output_path,
+                            ),
+                            context,
+                            None,
+                            early_audit_paths,
+                        )
+                elif persistence["status"] == "valid":
+                    logs.append("components: solve_components requereix CalendarizationRun per encolar")
+            status = "COMPONENTS_PERSISTED" if persistence["status"] == "valid" else "COMPONENT_SPLIT_INVALID"
+            if str(config.decomposition_mode) == "solve_components" and persistence["status"] == "valid" and run is not None:
+                status = "RUNNING"
+            return (
+                SimpleNamespace(
+                    status=status,
+                    objective_value=None,
+                    best_bound=None,
+                    wall_time=0.0,
+                    assignments=(),
+                    entity_excess={},
+                    logs=("resource_solver componentitzat; CP-SAT global no executat",),
+                    componentized_without_global_solve=True,
+                    manifest_path=str(persistence["manifest_path"]),
+                    split_validation_path=str(persistence["split_validation_path"]),
+                    final_output_path="",
+                ),
+                context,
+                None,
+                early_audit_paths,
+            )
+        from calendaritzacions.engine.variants.resource_solver.model import (  # type: ignore
+            build_solver_model,
+            solve_model,
         )
+
         _report(progress, "Executant CP-SAT resource_solver...", 50)
         built_model = build_solver_model(context)
         summary = getattr(built_model, "summary", {}) or {}
@@ -292,6 +405,23 @@ def _report_artifact(progress: Any | None, name: str, path: str | None) -> None:
     report_artifact = getattr(progress, "report_artifact", None)
     if callable(report_artifact):
         report_artifact(name, path)
+
+
+def _calendarization_run_from_progress(progress: Any | None) -> Any | None:
+    if progress is None:
+        return None
+    run = getattr(progress, "run", None)
+    if run is not None:
+        return run
+    task_id = getattr(progress, "_task_id", None)
+    if not task_id:
+        return None
+    try:
+        from calendaritzacions.django.models import CalendarizationRun
+
+        return CalendarizationRun.objects.get(pk=int(task_id))
+    except Exception:
+        return None
 
 
 def _empty_context(config: ResourceSolverConfig) -> SolverContext:

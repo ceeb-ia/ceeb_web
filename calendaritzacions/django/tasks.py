@@ -22,6 +22,21 @@ def execute_calendarization_run_task(self, run_id: int) -> int:
     return _execute_calendarization_run(self, run_id)
 
 
+@shared_task(bind=True, queue="heavy_queue", acks_late=False)
+def solve_resource_component_task(self, run_id: int, component_id: str, attempt: int) -> str:
+    from calendaritzacions.django.services.component_tasks import _solve_resource_component
+
+    celery_task_id = str(getattr(getattr(self, "request", None), "id", ""))
+    logger.info(
+        "calendaritzacions: task component rebuda run_id=%s component_id=%s attempt=%s celery_task_id=%s",
+        run_id,
+        component_id,
+        attempt,
+        celery_task_id,
+    )
+    return _solve_resource_component(run_id, component_id, attempt)
+
+
 def _execute_calendarization_run(task, run_id: int) -> int:
     from calendaritzacions.django.models import CalendarizationRun
     from calendaritzacions.django.services.runs import execute_run

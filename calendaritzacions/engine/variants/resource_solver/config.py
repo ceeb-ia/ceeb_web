@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+DECOMPOSITION_MODES = frozenset({"off", "audit_only", "persist_components", "solve_components"})
+
 
 def _env_float(name: str, default: float) -> float:
     try:
@@ -46,6 +48,7 @@ class ResourceSolverConfig:
     level_constraint_mode: str = "off"
     level_a_mismatch_weight: int = 1_000_000
     level_band_mismatch_weight: int = 200_000
+    decomposition_mode: str = "audit_only"
     phase_name: str = "primera_fase"
     max_group_size: int = 8
     min_group_size: int = 6
@@ -72,6 +75,17 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         "resource_solver_level_constraint_mode",
         getattr(config, "level_constraint_mode", "off"),
     )
+    decomposition_mode = getattr(
+        config,
+        "resource_solver_decomposition_mode",
+        getattr(config, "decomposition_mode", "audit_only"),
+    )
+    decomposition_mode = str(decomposition_mode or "audit_only").strip()
+    if decomposition_mode not in DECOMPOSITION_MODES:
+        raise ValueError(
+            "Invalid resource_solver decomposition_mode "
+            f"{decomposition_mode!r}; expected one of {sorted(DECOMPOSITION_MODES)}"
+        )
     return ResourceSolverConfig(
         phase_name=getattr(config, "phase_name", "primera_fase"),
         time_limit_seconds=float(
@@ -101,4 +115,5 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         level_constraint_mode=str(level_constraint_mode or "off"),
         level_a_mismatch_weight=int(getattr(config, "level_a_mismatch_weight", 1_000_000)),
         level_band_mismatch_weight=int(getattr(config, "level_band_mismatch_weight", 200_000)),
+        decomposition_mode=decomposition_mode,
     )

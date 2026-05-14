@@ -34,6 +34,7 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
             engine_name=run.engine_name,
             resource_solver_level_constraint_mode=run.resource_solver_level_constraint_mode,
             resource_solver_linkage_mode=run.resource_solver_linkage_mode,
+            resource_solver_decomposition_mode=getattr(run, "resource_solver_decomposition_mode", "audit_only"),
             progress_reporter=DjangoRunProgressReporter(task_id),
         )
         output_path, logs, audit_paths, kpis_path = _split_process_output(output)
@@ -41,6 +42,16 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
             audit_paths = discover_audit_paths(output_path)
         partial_audit_paths = _audit_paths_for_task(task_id)
         audit_paths = {**partial_audit_paths, **audit_paths}
+        result_status = getattr(output, "status", None) if not isinstance(output, tuple) else None
+        if result_status == CalendarizationRun.STATUS_RUNNING:
+            run.status = CalendarizationRun.STATUS_RUNNING
+            run.output_path = output_path
+            run.kpis_path = kpis_path
+            run.logs = logs
+            run.audit_paths = audit_paths
+            run.error_message = ""
+            run.save(update_fields=["status", "output_path", "kpis_path", "logs", "audit_paths", "error_message"])
+            return run
         run.mark_success(output_path=output_path, logs=logs, audit_paths=audit_paths, kpis_path=kpis_path)
     except Exception as exc:
         run.mark_error(str(exc), logs=logs)

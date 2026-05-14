@@ -14,6 +14,7 @@ class EngineResult:
 
     output_path: str
     kpis_path: str | None = None
+    status: str | None = None
     audit_paths: dict[str, str] = field(default_factory=dict)
     logs: list[str] = field(default_factory=list)
 

@@ -52,6 +52,16 @@ class CalendarizationRun(models.Model):
         (LEVEL_CONSTRAINT_OFF, "Desactivat"),
         (LEVEL_CONSTRAINT_SOFT, "Suau"),
     )
+    RESOURCE_SOLVER_DECOMPOSITION_OFF = "off"
+    RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY = "audit_only"
+    RESOURCE_SOLVER_DECOMPOSITION_PERSIST_COMPONENTS = "persist_components"
+    RESOURCE_SOLVER_DECOMPOSITION_SOLVE_COMPONENTS = "solve_components"
+    RESOURCE_SOLVER_DECOMPOSITION_CHOICES = (
+        (RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY, "Auditoria"),
+        (RESOURCE_SOLVER_DECOMPOSITION_OFF, "Desactivat"),
+        (RESOURCE_SOLVER_DECOMPOSITION_PERSIST_COMPONENTS, "Persistir components"),
+        (RESOURCE_SOLVER_DECOMPOSITION_SOLVE_COMPONENTS, "Resoldre components"),
+    )
     LINKAGE_MODE_CHOICES = (
         (LINKAGE_MODE_INPUT, "Input Excel"),
         (LINKAGE_MODE_SIMULATED, "Simulat"),
@@ -71,6 +81,11 @@ class CalendarizationRun(models.Model):
         max_length=16,
         choices=LINKAGE_MODE_CHOICES,
         default=LINKAGE_MODE_INPUT,
+    )
+    resource_solver_decomposition_mode = models.CharField(
+        max_length=32,
+        choices=RESOURCE_SOLVER_DECOMPOSITION_CHOICES,
+        default=RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY,
     )
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING)
     task_id = models.CharField(max_length=255, blank=True)
@@ -158,6 +173,87 @@ class CalendarizationRun(models.Model):
         self.error_message = message
         self.finished_at = timezone.now()
         self._save_status_fields(["status", "logs", "error_message", "finished_at"])
+
+
+class CalendarizationComponentRun(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_SUCCESS = "success"
+    STATUS_ERROR = "error"
+    STATUS_STALE = "stale"
+    STATUS_SKIPPED = "skipped"
+    STATUS_MERGED = "merged"
+    STATUS_SUPERSEDED = "superseded"
+
+    STATUS_CHOICES = (
+        (STATUS_PENDING, "Pending"),
+        (STATUS_QUEUED, "Queued"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_SUCCESS, "Success"),
+        (STATUS_ERROR, "Error"),
+        (STATUS_STALE, "Stale"),
+        (STATUS_SKIPPED, "Skipped"),
+        (STATUS_MERGED, "Merged"),
+        (STATUS_SUPERSEDED, "Superseded"),
+    )
+
+    TERMINAL_STATUSES = frozenset(
+        {
+            STATUS_SUCCESS,
+            STATUS_ERROR,
+            STATUS_STALE,
+            STATUS_SKIPPED,
+            STATUS_MERGED,
+            STATUS_SUPERSEDED,
+        }
+    )
+
+    run = models.ForeignKey(CalendarizationRun, on_delete=models.CASCADE, related_name="component_runs")
+    component_id = models.CharField(max_length=32)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    attempt = models.PositiveIntegerField(default=1)
+    active_attempt = models.PositiveIntegerField(default=1)
+
+    team_count = models.PositiveIntegerField(default=0)
+    candidate_count = models.PositiveIntegerField(default=0)
+    competition_count = models.PositiveIntegerField(default=0)
+    resource_count = models.PositiveIntegerField(default=0)
+    linkage_count = models.PositiveIntegerField(default=0)
+
+    queued_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    heartbeat_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    context_path = models.TextField(blank=True, default="")
+    validation_path = models.TextField(blank=True, default="")
+    model_summary_path = models.TextField(blank=True, default="")
+    raw_result_path = models.TextField(blank=True, default="")
+    solution_path = models.TextField(blank=True, default="")
+    logs_path = models.TextField(blank=True, default="")
+    error_path = models.TextField(blank=True, default="")
+    error_message = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ("run_id", "component_id", "attempt")
+        constraints = (
+            models.UniqueConstraint(
+                fields=("run", "component_id", "attempt"),
+                name="cal_component_run_attempt_uniq",
+            ),
+        )
+        indexes = (
+            models.Index(fields=("run", "status"), name="cal_comp_run_status_idx"),
+            models.Index(fields=("run", "component_id", "active_attempt"), name="cal_comp_run_active_idx"),
+        )
+
+    def __str__(self) -> str:
+        return f"Run {self.run_id} component {self.component_id} attempt {self.attempt} ({self.status})"
+
+    @property
+    def is_active_attempt(self) -> bool:
+        return self.attempt == self.active_attempt
 
 
 class AssignmentWorkspace(models.Model):

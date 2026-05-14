@@ -18,6 +18,7 @@ class CalendarizationRunForm(forms.ModelForm):
             "phase",
             "resource_solver_linkage_mode",
             "resource_solver_level_constraint_mode",
+            "resource_solver_decomposition_mode",
         ]
 
     def __init__(self, *args, **kwargs):
