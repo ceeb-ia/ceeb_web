@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from calendaritzacions.reporting.resource_solver_decomposition_plots import (
+    _limit_interactive_graph,
     write_resource_solver_decomposition_plots,
 )
 
@@ -126,6 +127,27 @@ class ResourceSolverDecompositionPlotTests(unittest.TestCase):
             self.assertIn("top_components_by_teams", plots)
             self.assertIn("components_resources_vs_competitions", plots)
             self.assertEqual(manifest["artifact_type"], "resource_solver_decomposition_plots")
+
+    def test_interactive_graph_limit_keeps_team_sample(self):
+        nodes = {}
+        edges = []
+        for index in range(30):
+            nodes[f"competition:C{index}"] = {"kind": "competition", "key": f"C{index}", "label": f"Competition {index}"}
+            nodes[f"resource:R{index}"] = {"kind": "resource", "key": f"R{index}", "label": f"Resource {index}"}
+            edges.append((f"competition:C{index}", f"resource:R{index}", "resource"))
+        for index in range(100):
+            nodes[f"team:T{index}"] = {"kind": "team", "key": f"T{index}", "label": f"Team {index}"}
+            edges.append((f"team:T{index}", f"competition:C{index % 30}", "competition"))
+            edges.append((f"team:T{index}", f"resource:R{index % 30}", "resource"))
+
+        limited, omitted = _limit_interactive_graph({"nodes": nodes, "edges": edges}, 40)
+
+        kinds = [node["kind"] for node in limited["nodes"].values()]
+        self.assertEqual(len(limited["nodes"]), 40)
+        self.assertGreater(omitted, 0)
+        self.assertGreaterEqual(kinds.count("team"), 14)
+        self.assertGreater(kinds.count("competition"), 0)
+        self.assertGreater(kinds.count("resource"), 0)
 
 
 if __name__ == "__main__":

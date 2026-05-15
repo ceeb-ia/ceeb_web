@@ -16,6 +16,7 @@ MAX_FULL_NETWORK_NODES = 120
 MAX_FULL_NETWORK_LABELS = 45
 MAX_INTERACTIVE_COMPONENTS = 12
 MAX_INTERACTIVE_GRAPH_NODES = 700
+INTERACTIVE_TEAM_NODE_SHARE = 0.35
 
 
 def write_resource_solver_decomposition_plots(
@@ -457,17 +458,7 @@ def _limit_interactive_graph(graph: dict[str, Any], max_nodes: int) -> tuple[dic
         degrees[left] += 1
         degrees[right] += 1
 
-    ordered_nodes = sorted(
-        nodes,
-        key=lambda node_id: (
-            nodes[node_id]["kind"] == "team",
-            -degrees[node_id],
-            nodes[node_id]["kind"],
-            nodes[node_id]["label"],
-            node_id,
-        ),
-    )
-    selected = set(ordered_nodes[:max_nodes])
+    selected = _balanced_interactive_node_sample(nodes, degrees, max_nodes)
     return (
         {
             "nodes": {node_id: nodes[node_id] for node_id in sorted(selected)},
@@ -479,6 +470,62 @@ def _limit_interactive_graph(graph: dict[str, Any], max_nodes: int) -> tuple[dic
         },
         len(nodes) - len(selected),
     )
+
+
+def _balanced_interactive_node_sample(
+    nodes: dict[str, dict[str, str]],
+    degrees: Counter[str],
+    max_nodes: int,
+) -> set[str]:
+    by_kind: dict[str, list[str]] = defaultdict(list)
+    for node_id, node in nodes.items():
+        by_kind[str(node.get("kind") or "")].append(node_id)
+
+    def ordered(node_ids: list[str]) -> list[str]:
+        return sorted(
+            node_ids,
+            key=lambda node_id: (
+                -degrees[node_id],
+                str(nodes[node_id].get("label") or ""),
+                node_id,
+            ),
+        )
+
+    selected: set[str] = set()
+    team_quota = min(len(by_kind.get("team", ())), max(1, int(max_nodes * INTERACTIVE_TEAM_NODE_SHARE)))
+    for node_id in ordered(by_kind.get("team", []))[:team_quota]:
+        selected.add(node_id)
+
+    other_kinds = ["competition", "resource", "linkage"]
+    remaining = max_nodes - len(selected)
+    non_empty_kinds = [kind for kind in other_kinds if by_kind.get(kind)]
+    if non_empty_kinds and remaining > 0:
+        base_quota = max(1, remaining // len(non_empty_kinds))
+        for kind in non_empty_kinds:
+            for node_id in ordered(by_kind[kind])[:base_quota]:
+                if len(selected) >= max_nodes:
+                    break
+                selected.add(node_id)
+
+    remaining_nodes = [
+        node_id
+        for node_id in nodes
+        if node_id not in selected
+    ]
+    for node_id in sorted(
+        remaining_nodes,
+        key=lambda item: (
+            -degrees[item],
+            str(nodes[item].get("kind") or ""),
+            str(nodes[item].get("label") or ""),
+            item,
+        ),
+    ):
+        if len(selected) >= max_nodes:
+            break
+        selected.add(node_id)
+
+    return selected
 
 
 def _interactive_nodes_payload(
