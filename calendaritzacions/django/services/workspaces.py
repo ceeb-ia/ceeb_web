@@ -20,7 +20,7 @@ from calendaritzacions.django.models import (
 )
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
-HYDRATION_VERSION = 5
+HYDRATION_VERSION = 6
 MAX_POSITIVE_SMALLINT = 32767
 RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
@@ -1224,17 +1224,22 @@ def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
         if not audit_paths.get("team_catalog")
         or not audit_paths.get("candidate_catalog")
         or not audit_paths.get("resource_pressure")
+        or not audit_paths.get("solver_explanations")
         else {}
     )
     team_catalog = _read_list(audit_paths.get("team_catalog")) or _list_dicts(component_context_payloads.get("team_catalog"))
     candidate_catalog = _read_list(audit_paths.get("candidate_catalog")) or _list_dicts(component_context_payloads.get("candidate_catalog"))
     resource_pressure = _read_list(audit_paths.get("resource_pressure")) or _list_dicts(component_context_payloads.get("resource_pressure"))
+    solution = _read_dict(resource_solution_path)
+    solver_explanations = _read_dict(audit_paths.get("solver_explanations")) or _dict_value(
+        component_context_payloads.get("solver_explanations")
+    )
     return {
-        "resource_solution": _read_dict(resource_solution_path),
+        "resource_solution": solution,
         "team_catalog": team_catalog,
         "candidate_catalog": candidate_catalog,
         "resource_pressure": resource_pressure,
-        "solver_explanations": _read_dict(audit_paths.get("solver_explanations")),
+        "solver_explanations": solver_explanations,
     }
 
 
@@ -1248,20 +1253,43 @@ def _component_context_audit_payloads(run: CalendarizationRun) -> dict[str, Any]
         return {}
     try:
         from calendaritzacions.django.services.component_tasks import _combined_context_from_components
+        from calendaritzacions.django.services.component_tasks import _resource_solver_result_from_payload
         from calendaritzacions.engine.variants.resource_solver.audit import (
             build_candidate_catalog_audit,
             build_resource_pressure_audit,
+            build_solver_explanations,
             build_team_catalog_audit,
         )
 
         context = _combined_context_from_components(components)
-        return {
+        payloads = {
             "team_catalog": build_team_catalog_audit(context),
             "candidate_catalog": build_candidate_catalog_audit(context),
             "resource_pressure": build_resource_pressure_audit(context),
         }
+        solution_path = _component_merged_solution_path(run)
+        if solution_path:
+            solution = _read_dict(solution_path)
+            if solution:
+                payloads["solver_explanations"] = build_solver_explanations(
+                    _resource_solver_result_from_payload(solution),
+                    context,
+                )
+        return payloads
     except Exception:
         return {}
+
+
+def _component_merged_solution_path(run: CalendarizationRun) -> str:
+    audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+    path = audit_paths.get("resource_solution") or audit_paths.get("component_merged_solution")
+    if path:
+        return str(path)
+    if run.output_path:
+        candidate = Path(run.output_path).parent / "merged" / "merged_solution.json"
+        if candidate.exists():
+            return str(candidate)
+    return ""
 
 
 def _read_dict(path: str | None) -> dict[str, Any]:
@@ -1282,6 +1310,10 @@ def _read_list(path: str | None) -> list[dict[str, Any]]:
 
 def _list_dicts(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _dict_value(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _create_assignments(

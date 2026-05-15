@@ -299,6 +299,109 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(assignment.payload["team"]["league_name"], "Lliga 1")
         self.assertEqual(assignment.payload["team"]["linkage_group"], "L1")
 
+    def test_workspace_rebuilds_linkage_violations_from_component_contexts(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import (
+            CalendarizationComponentRun,
+            CalendarizationRun,
+            WorkspaceResourceIncident,
+        )
+        from calendaritzacions.django.services.workspaces import get_or_create_workspace_for_run
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            merged_solution = root / "merged" / "merged_solution.json"
+            context_path = root / "components" / "C001" / "attempt_001" / "context.json"
+            merged_solution.parent.mkdir(parents=True)
+            context_path.parent.mkdir(parents=True)
+            merged_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "A", "group_id": "G1", "number": 1},
+                            {"team_id": "B", "group_id": "G2", "number": 2},
+                        ],
+                        "real_matches": [],
+                        "resource_usage": [],
+                        "group_summary": [],
+                        "entity_excess": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            context_path.write_text(
+                json.dumps(
+                    {
+                        "context": {
+                            "phase_name": "primera_fase",
+                            "config": {"linkage_violation_weight": 100000},
+                            "teams": [
+                                {
+                                    "team_id": "A",
+                                    "name": "Equip A",
+                                    "entity": "Club A",
+                                    "league_name": "Lliga 1",
+                                    "venue": "Pista 1",
+                                    "day": "Dissabte",
+                                    "time": "10:00",
+                                    "linkage_group": "L1",
+                                    "linkage_side": "Casa",
+                                    "linkage_source": "simulated",
+                                },
+                                {
+                                    "team_id": "B",
+                                    "name": "Equip B",
+                                    "entity": "Club B",
+                                    "league_name": "Lliga 1",
+                                    "venue": "Pista 1",
+                                    "day": "Dissabte",
+                                    "time": "10:00",
+                                    "linkage_group": "L1",
+                                    "linkage_side": "Fora",
+                                    "linkage_source": "simulated",
+                                },
+                            ],
+                            "base_resources": {},
+                            "capacities": {},
+                            "pressure": [],
+                            "groups": [],
+                            "candidates": [],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={"component_merged_solution": str(merged_solution)},
+            )
+            CalendarizationComponentRun.objects.create(
+                run=run,
+                component_id="C001",
+                status=CalendarizationComponentRun.STATUS_MERGED,
+                attempt=1,
+                active_attempt=1,
+                context_path=str(context_path),
+                team_count=2,
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+
+        incident = WorkspaceResourceIncident.objects.get(
+            workspace=workspace,
+            incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
+        )
+        self.assertEqual(incident.team_ids, ["A", "B"])
+        self.assertEqual(incident.payload["linkage_group"], "L1")
+        self.assertEqual(incident.payload["expected_relation"], "opposite_number")
+
     def test_workspace_hydrates_linkage_violation_incidents(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")
