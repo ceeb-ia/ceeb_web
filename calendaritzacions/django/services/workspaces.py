@@ -1206,13 +1206,20 @@ def _workspace_is_current(workspace: AssignmentWorkspace) -> bool:
 
 
 def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
-    audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+    stored_audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+    audit_paths = dict(stored_audit_paths)
     if run.output_path:
         discovered = discover_audit_paths(run.output_path)
-        audit_paths = {**discovered, **audit_paths}
+        audit_paths = {**discovered, **stored_audit_paths}
 
+    resource_solution_path = (
+        stored_audit_paths.get("resource_solution")
+        or stored_audit_paths.get("component_merged_solution")
+        or audit_paths.get("resource_solution")
+        or audit_paths.get("component_merged_solution")
+    )
     return {
-        "resource_solution": _read_dict(audit_paths.get("resource_solution")),
+        "resource_solution": _read_dict(resource_solution_path),
         "team_catalog": _read_list(audit_paths.get("team_catalog")),
         "candidate_catalog": _read_list(audit_paths.get("candidate_catalog")),
         "resource_pressure": _read_list(audit_paths.get("resource_pressure")),

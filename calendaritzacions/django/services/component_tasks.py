@@ -336,11 +336,14 @@ def _finalize_run_if_components_complete(run_id: int) -> bool:
 
     audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
     merged_root = _merged_root_for_components(active_components)
+    merged_solution_path = merged_root / "merged_solution.json"
     audit_paths.update(
         {
             "component_merge_validation": str(merged_root / "component_merge_validation.json"),
             "component_merged_raw_result": str(merged_root / "merged_raw_result.json"),
-            "component_merged_solution": str(merged_root / "merged_solution.json"),
+            "component_merged_solution": str(merged_solution_path),
+            "resource_solution": str(merged_solution_path),
+            "resource_solver_result": str(merged_solution_path),
         }
     )
     logs = list(run.logs or [])

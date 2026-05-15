@@ -217,6 +217,58 @@ class ResourceSolverComponentTaskTests(unittest.TestCase):
         solve.assert_called_once_with(12, "C001", 1)
         self.assertEqual(result, "success")
 
+    def test_finalize_components_aliases_merged_solution_for_workspace(self):
+        from calendaritzacions.django.models import CalendarizationComponentRun, CalendarizationRun
+        from calendaritzacions.django.services.component_tasks import _finalize_run_if_components_complete
+
+        run = self.create_run()
+        run.engine_name = CalendarizationRun.ENGINE_RESOURCE_SOLVER
+        run.input_name = "input.xlsx"
+        run.audit_paths = {"team_catalog": str(self.root / "team_catalog.json")}
+        run.save(update_fields=["engine_name", "input_name", "audit_paths"])
+
+        for component_id in ("C001", "C002"):
+            attempt_dir = self.root / "components" / component_id / "attempt_001"
+            attempt_dir.mkdir(parents=True)
+            context_path = attempt_dir / "context.json"
+            context_path.write_text(json.dumps({"context": {}}), encoding="utf-8")
+            CalendarizationComponentRun.objects.create(
+                run=run,
+                component_id=component_id,
+                attempt=1,
+                active_attempt=1,
+                status=CalendarizationComponentRun.STATUS_SUCCESS,
+                context_path=str(context_path),
+            )
+
+        payload = {
+            "solution": {
+                "status": "FEASIBLE",
+                "assignments": [{"team_id": "A", "group_id": "G1", "number": 1}],
+                "real_matches": [],
+                "resource_usage": [],
+                "group_summary": [],
+                "entity_excess": {},
+                "logs": ["merged"],
+            }
+        }
+        result = SimpleNamespace(status="FEASIBLE", logs=("merged",))
+
+        with (
+            patch("calendaritzacions.django.services.component_tasks._merge_active_components", return_value=payload),
+            patch("calendaritzacions.django.services.component_tasks._resource_solver_result_from_payload", return_value=result),
+            patch("calendaritzacions.django.services.component_tasks._combined_context_from_components", return_value=SimpleNamespace()),
+            patch("calendaritzacions.reporting.resource_solver_excel_adapter.write_resource_solver_workbook"),
+        ):
+            finalized = _finalize_run_if_components_complete(run.pk)
+
+        run.refresh_from_db()
+        merged_solution = str(self.root / "merged" / "merged_solution.json")
+        self.assertTrue(finalized)
+        self.assertEqual(run.audit_paths["component_merged_solution"], merged_solution)
+        self.assertEqual(run.audit_paths["resource_solution"], merged_solution)
+        self.assertEqual(run.audit_paths["resource_solver_result"], merged_solution)
+
 
 def _write_success_artifacts(_context_path, output_dir, *, component_id=None):
     output_path = Path(output_dir)

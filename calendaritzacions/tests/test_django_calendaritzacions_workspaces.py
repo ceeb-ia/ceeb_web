@@ -171,6 +171,51 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(team_detail["home_resources"][0]["sharing_teams"], ["Equip C (C)"])
         self.assertEqual(team_detail["alternatives"][0]["number"], 2)
 
+    def test_workspace_hydrates_component_merged_solution_without_resource_solution_alias(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun, WorkspaceAssignment
+        from calendaritzacions.django.services.workspaces import get_or_create_workspace_for_run
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            merged_solution = root / "merged_solution.json"
+            team_catalog = root / "team_catalog.json"
+            merged_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [{"team_id": "A", "group_id": "G1", "number": 1}],
+                        "real_matches": [],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps([{"team_id": "A", "name": "Equip A", "entity": "Club"}]),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "component_merged_solution": str(merged_solution),
+                    "team_catalog": str(team_catalog),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+
+        assignment = WorkspaceAssignment.objects.get(workspace=workspace, team_id="A")
+        self.assertEqual(assignment.team_name, "Equip A")
+        self.assertEqual(assignment.group_id, "G1")
+        self.assertEqual(assignment.assigned_number, 1)
+
     def test_workspace_hydrates_linkage_violation_incidents(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")
