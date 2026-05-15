@@ -42,6 +42,10 @@ class DjangoCalendarizationRunModelTests(unittest.TestCase):
         self.assertEqual(run.resource_solver_linkage_mode, CalendarizationRun.LINKAGE_MODE_INPUT)
         self.assertFalse(run.is_finished)
         self.assertEqual(run.available_audits, ["resource_solution"])
+        self.assertIn(
+            (CalendarizationRun.LEVEL_CONSTRAINT_AGGREGATE, "Suau agregat"),
+            CalendarizationRun.LEVEL_CONSTRAINT_CHOICES,
+        )
 
     def test_mark_methods_update_state_without_requiring_db_in_unit_test(self):
         from calendaritzacions.django.models import CalendarizationRun

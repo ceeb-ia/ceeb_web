@@ -12,6 +12,7 @@ from typing import Any
 from calendaritzacions.engine.variants.resource_solver.solution import result_to_json_ready
 from calendaritzacions.engine.variants.resource_solver.constraints.level_band import (
     level_constraint_enabled,
+    level_constraint_mode,
     level_mismatch_family,
     level_mismatch_weight,
     normalize_level,
@@ -243,10 +244,11 @@ def build_level_band_audit(
         normalized_teams.append(row)
         rows_by_group.setdefault(assignment.group_id, []).append(row)
 
+    mode = level_constraint_mode(context)
     if not enabled:
         return {
             "enabled": False,
-            "mode": str(getattr(context.config, "level_constraint_mode", "off") or "off"),
+            "mode": mode,
             "summary": {
                 "groups": len(rows_by_group),
                 "teams": len(normalized_teams),
@@ -259,6 +261,8 @@ def build_level_band_audit(
             "groups": [],
             "violations": [],
         }
+    if mode == "aggregate":
+        return _build_aggregate_level_band_audit(context, rows_by_group, normalized_teams)
 
     groups: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
@@ -310,7 +314,7 @@ def build_level_band_audit(
 
     return {
         "enabled": enabled,
-        "mode": str(getattr(context.config, "level_constraint_mode", "off") or "off"),
+        "mode": mode,
         "summary": {
             "groups": len(groups),
             "teams": len(normalized_teams),
@@ -322,6 +326,100 @@ def build_level_band_audit(
         "normalized_teams": normalized_teams,
         "groups": groups,
         "violations": violations,
+    }
+
+
+def _build_aggregate_level_band_audit(
+    context: SolverContext,
+    rows_by_group: dict[str, list[dict[str, Any]]],
+    normalized_teams: list[dict[str, Any]],
+) -> dict[str, Any]:
+    groups: list[dict[str, Any]] = []
+    violations: list[dict[str, Any]] = []
+
+    for group_id, rows in sorted(rows_by_group.items()):
+        sorted_rows = sorted(rows, key=lambda row: str(row["team_id"]))
+        group_violations: list[dict[str, Any]] = []
+        levels = {str(row.get("normalized_level") or "") for row in sorted_rows}
+
+        if "A" in levels and any(level != "A" for level in levels):
+            violation = _aggregate_level_violation(
+                context,
+                group_id,
+                sorted_rows,
+                family="level_a_mismatch",
+                expected_relation="A separated from non-A",
+            )
+            group_violations.append(violation)
+            violations.append(violation)
+
+        if "B" in levels and "C" in levels:
+            affected = [row for row in sorted_rows if row.get("normalized_level") in {"B", "C"}]
+            violation = _aggregate_level_violation(
+                context,
+                group_id,
+                affected,
+                family="level_band_mismatch",
+                expected_relation="B separated from C",
+            )
+            group_violations.append(violation)
+            violations.append(violation)
+
+        groups.append(
+            {
+                "group_id": group_id,
+                "teams_count": len(sorted_rows),
+                "checked_pairs": 0,
+                "violations_count": len(group_violations),
+                "cost": sum(int(item.get("cost", 0) or 0) for item in group_violations),
+                "result": "OK" if not group_violations else "Violation",
+                "teams": sorted_rows,
+                "violations": group_violations,
+            }
+        )
+
+    return {
+        "enabled": True,
+        "mode": "aggregate",
+        "summary": {
+            "groups": len(groups),
+            "teams": len(normalized_teams),
+            "checked_pairs": 0,
+            "ok_pairs": 0,
+            "violations": len(violations),
+            "cost": sum(int(item.get("cost", 0) or 0) for item in violations),
+        },
+        "normalized_teams": normalized_teams,
+        "groups": groups,
+        "violations": violations,
+    }
+
+
+def _aggregate_level_violation(
+    context: SolverContext,
+    group_id: str,
+    rows: list[dict[str, Any]],
+    *,
+    family: str,
+    expected_relation: str,
+) -> dict[str, Any]:
+    return {
+        "group_id": group_id,
+        "team_ids": [str(row["team_id"]) for row in rows],
+        "team_levels": {
+            str(row["team_id"]): str(row.get("normalized_level") or "")
+            for row in rows
+        },
+        "raw_levels": {
+            str(row["team_id"]): str(row.get("raw_level") or "")
+            for row in rows
+        },
+        "family": family,
+        "severity": "violation",
+        "cost": level_mismatch_weight(context, family),
+        "violation_cost": level_mismatch_weight(context, family),
+        "expected_relation": expected_relation,
+        "mode": "aggregate",
     }
 
 

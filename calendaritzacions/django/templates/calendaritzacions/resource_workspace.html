@@ -261,7 +261,9 @@
               </td>
               <td>{{ assignment.league_name }}</td>
               <td>{{ assignment.modality }} {{ assignment.category }} {{ assignment.subcategory }}</td>
-              <td class="workspace-col-level">{{ assignment.level }}</td>
+              <td class="workspace-col-level">
+                <span class="workspace-level-badge workspace-level-{{ assignment.level_class }}">{{ assignment.level_label }}</span>
+              </td>
               <td class="workspace-col-venue">
                 <div>{{ assignment.venue }}</div>
                 <div class="text-muted small">{{ assignment.day }} {{ assignment.time }}</div>
@@ -562,6 +564,10 @@
           </div>
           <div class="workspace-venue-sheet__badges">
             <span class="badge badge-light">{{ group.team_count }} equips</span>
+            {% for level in group.level_summary %}
+            <span class="workspace-level-badge workspace-level-{{ level.class }}">{{ level.label }}: {{ level.count }}</span>
+            {% endfor %}
+            {% if group.has_level_dispersion %}<span class="badge badge-warning">Nivells dispersos</span>{% endif %}
             {% if group.has_entity_conflict %}<span class="badge badge-warning">Conflicte entitat</span>{% endif %}
             {% if group.has_resource_excess %}<span class="badge badge-danger">Exces recurs</span>{% endif %}
           </div>
@@ -580,7 +586,10 @@
             {% for row in group.rows %}
             <tr class="{% if row.has_entity_conflict %}workspace-calendar-row-warning{% endif %}">
               <th>
-                <div class="font-weight-bold">{{ row.number }}. {{ row.team_name }}</div>
+                <div class="workspace-calendar-team-line">
+                  <span class="font-weight-bold">{{ row.number }}. {{ row.team_name }}</span>
+                  <span class="workspace-level-badge workspace-level-{{ row.level_class }}">{{ row.level_label }}</span>
+                </div>
                 <div class="text-muted small">{{ row.entity }}</div>
               </th>
               {% for cell in row.cells %}

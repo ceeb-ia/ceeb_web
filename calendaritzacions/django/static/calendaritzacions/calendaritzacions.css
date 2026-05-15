@@ -367,6 +367,48 @@
   min-width: 260px;
 }
 
+.workspace-level-badge {
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: .72rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: .22rem .42rem;
+  white-space: nowrap;
+}
+
+.workspace-level-level-a {
+  background: #eff8ff;
+  border-color: #b2ddff;
+  color: #175cd3;
+}
+
+.workspace-level-level-b {
+  background: #ecfdf3;
+  border-color: #abefc6;
+  color: #067647;
+}
+
+.workspace-level-level-bc {
+  background: #fffaeb;
+  border-color: #fedf89;
+  color: #b54708;
+}
+
+.workspace-level-level-c {
+  background: #fef3f2;
+  border-color: #fecdca;
+  color: #b42318;
+}
+
+.workspace-level-level-none,
+.workspace-level-level-other {
+  background: #f2f4f7;
+  border-color: #d0d5dd;
+  color: #475467;
+}
+
 .workspace-column-controls {
   align-items: center;
   display: flex;
@@ -427,6 +469,13 @@
 
 .workspace-calendar-row-warning > th {
   background: #fffcf5;
+}
+
+.workspace-calendar-team-line {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
 }
 
 .workspace-calendar-cell {

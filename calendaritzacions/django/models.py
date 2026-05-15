@@ -29,6 +29,7 @@ class CalendarizationRun(models.Model):
 
     LEVEL_CONSTRAINT_OFF = "off"
     LEVEL_CONSTRAINT_SOFT = "soft"
+    LEVEL_CONSTRAINT_AGGREGATE = "aggregate"
 
     PHASE_FIRST = "primera_fase"
     PHASE_SECOND = "segona_fase"
@@ -50,7 +51,8 @@ class CalendarizationRun(models.Model):
     )
     LEVEL_CONSTRAINT_CHOICES = (
         (LEVEL_CONSTRAINT_OFF, "Desactivat"),
-        (LEVEL_CONSTRAINT_SOFT, "Suau"),
+        (LEVEL_CONSTRAINT_SOFT, "Suau per parelles"),
+        (LEVEL_CONSTRAINT_AGGREGATE, "Suau agregat"),
     )
     RESOURCE_SOLVER_DECOMPOSITION_OFF = "off"
     RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY = "audit_only"

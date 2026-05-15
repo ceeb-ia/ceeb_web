@@ -634,6 +634,8 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
                     "group_id": assignment.group_id,
                     "has_entity_conflict": has_entity_conflict,
                     "has_resource_excess": has_resource_excess,
+                    "level_label": _workspace_level_label(fields.get("level", "")),
+                    "level_class": _workspace_level_class(fields.get("level", "")),
                     **fields,
                     "filter_text": _calendar_filter_text(
                         [
@@ -652,6 +654,7 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
         group_fields = _group_calendar_fields(row_filter_fields)
         has_entity_conflict = any(row["has_entity_conflict"] for row in rows)
         has_resource_excess = any(row["has_resource_excess"] for row in rows)
+        level_summary = _calendar_level_summary(rows)
         group_filter_text = _calendar_filter_text(
             [
                 group_id,
@@ -680,6 +683,8 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
                 "rows": rows,
                 "team_count": len(rows),
                 "match_count": len(matches_by_group.get(group_id, [])),
+                "level_summary": level_summary,
+                "has_level_dispersion": len([item for item in level_summary if item["token"] != "sense-nivell"]) > 1,
                 "has_entity_conflict": has_entity_conflict,
                 "has_resource_excess": has_resource_excess,
                 "filter_text": group_filter_text,
@@ -1091,7 +1096,8 @@ def _assignment_calendar_filter_fields(assignment: WorkspaceAssignment) -> dict[
         "modality": str(team.get("modality") or "").strip(),
         "category": str(team.get("category") or "").strip(),
         "subcategory": str(team.get("subcategory") or "").strip(),
-        "level": str(team.get("level") or "").strip(),
+        "level": _workspace_level_label(team.get("level")),
+        "level_raw": str(team.get("level") or "").strip(),
         "entity": assignment.entity.strip(),
         "venue": _assignment_venue(assignment, team),
     }
@@ -1170,8 +1176,23 @@ def _assignment_venue(assignment: WorkspaceAssignment, team: dict[str, Any]) -> 
 
 
 def _group_calendar_fields(rows: list[dict[str, str]]) -> dict[str, str]:
-    keys = ("competition", "league", "modality", "category", "subcategory", "level", "entity", "venue")
+    keys = ("competition", "league", "modality", "category", "subcategory", "level", "level_raw", "entity", "venue")
     return {key: _common_text(row.get(key, "") for row in rows) for key in keys}
+
+
+def _calendar_level_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    counts = Counter(_workspace_level_label(row.get("level") or row.get("level_raw")) for row in rows)
+    order = {"A": 0, "B": 1, "B/C": 2, "C": 3, "Sense nivell": 4}
+    return [
+        {
+            "label": label,
+            "count": count,
+            "token": _filter_token(label),
+            "class": _workspace_level_class(label),
+        }
+        for label, count in sorted(counts.items(), key=lambda item: (order.get(item[0], 99), item[0]))
+        if count
+    ]
 
 
 def _common_text(values: Any) -> str:
@@ -2083,6 +2104,8 @@ def _assignment_summaries(workspace: AssignmentWorkspace) -> list[dict[str, Any]
                 "category": str(team.get("category") or ""),
                 "subcategory": str(team.get("subcategory") or ""),
                 "level": str(team.get("level") or ""),
+                "level_label": _workspace_level_label(team.get("level")),
+                "level_class": _workspace_level_class(team.get("level")),
                 "venue": str(team.get("venue") or ""),
                 "day": str(team.get("day") or ""),
                 "time": str(team.get("time") or ""),
@@ -2468,6 +2491,32 @@ def _level_pair_label(value: Any) -> str:
         if team_name:
             labels.append(f"{team_name}: {raw}->{normalized}")
     return " / ".join(labels) if labels else "-"
+
+
+def _workspace_level_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "Sense nivell"
+    folded = text.casefold()
+    if "b-c" in folded or "b/c" in folded:
+        return "B/C"
+    match = re.search(r"\b([A-E])\b", text.upper())
+    if not match:
+        match = re.search(r"(?:NIVELL\s*)?([A-E])\s*$", text.upper())
+    if not match:
+        return text
+    return {"A": "A", "B": "B", "C": "B/C", "D": "B/C", "E": "C"}[match.group(1)]
+
+
+def _workspace_level_class(value: Any) -> str:
+    label = _workspace_level_label(value)
+    return {
+        "A": "level-a",
+        "B": "level-b",
+        "B/C": "level-bc",
+        "C": "level-c",
+        "Sense nivell": "level-none",
+    }.get(label, "level-other")
 
 
 def _resource_label(resource_id: str) -> str:

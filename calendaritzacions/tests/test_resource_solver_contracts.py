@@ -36,6 +36,18 @@ class ResourceSolverContractsTests(unittest.TestCase):
         self.assertEqual(config.level_constraint_mode, "soft")
         self.assertEqual(config.linkage_mode, "simulated")
 
+    def test_coerces_aggregate_level_constraint_mode_from_engine_config(self):
+        from calendaritzacions.engine.config import EngineConfig
+
+        config = coerce_resource_solver_config(
+            EngineConfig(
+                name="resource_solver",
+                resource_solver_level_constraint_mode="aggregate",
+            )
+        )
+
+        self.assertEqual(config.level_constraint_mode, "aggregate")
+
     def test_team_and_group_records_are_instantiable(self):
         team = TeamRecord(
             team_id="T1",

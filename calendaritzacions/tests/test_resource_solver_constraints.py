@@ -1,3 +1,4 @@
+import importlib.util
 import unittest
 from types import SimpleNamespace
 
@@ -7,7 +8,7 @@ from calendaritzacions.engine.variants.resource_solver.constraints.level_band im
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
     candidate_resource_by_round,
 )
-from calendaritzacions.engine.variants.resource_solver.model import solve_context
+from calendaritzacions.engine.variants.resource_solver.model import build_solver_model, solve_context
 from calendaritzacions.engine.variants.resource_solver.types import (
     BaseResource,
     Candidate,
@@ -205,6 +206,75 @@ class ResourceSolverConstraintTests(unittest.TestCase):
             by_group.setdefault(assignment.group_id, set()).add(assignment.team_id)
         self.assertIn({"B1", "U1"}, by_group.values())
         self.assertEqual(result.objective_value, 0.0)
+
+    def test_aggregate_level_band_fallback_penalizes_group_presence_once(self):
+        teams = [_level_team("A1", "A"), _level_team("A2", "A"), _level_team("B1", "B")]
+        groups = [GroupSpec("G1", 1, 3, 3, "primera_fase", numbers=(1, 2, 3))]
+        candidates = [
+            _candidate(team.team_id, "G1", number)
+            for team in teams
+            for number in groups[0].numbers
+        ]
+        config = SimpleNamespace(
+            level_constraint_mode="aggregate",
+            level_a_mismatch_weight=1000,
+            level_band_mismatch_weight=100,
+        )
+
+        result = solve_context(_context(teams, groups, candidates, config=config), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        self.assertEqual(result.objective_value, 1000.0)
+        self.assertEqual(
+            result.level_band_violations,
+            {("__aggregate_a_non_a__", "G1", "A"): "level_a_mismatch"},
+        )
+
+    @unittest.skipUnless(importlib.util.find_spec("ortools") is not None, "ortools not installed")
+    def test_aggregate_level_band_builds_fewer_implications_than_pairwise(self):
+        teams = [
+            *[_level_team(f"A{index}", "A") for index in range(1, 7)],
+            *[_level_team(f"B{index}", "B") for index in range(1, 7)],
+            *[_level_team(f"C{index}", "E") for index in range(1, 7)],
+        ]
+        groups = [GroupSpec("G1", 1, 18, 18, "primera_fase", numbers=tuple(range(1, 19)))]
+        candidates = [
+            _candidate(team.team_id, "G1", number)
+            for team in teams
+            for number in groups[0].numbers
+        ]
+        pairwise = build_solver_model(
+            _context(
+                teams,
+                groups,
+                candidates,
+                config=SimpleNamespace(
+                    level_constraint_mode="soft",
+                    level_a_mismatch_weight=1000,
+                    level_band_mismatch_weight=100,
+                ),
+            )
+        )
+        aggregate = build_solver_model(
+            _context(
+                teams,
+                groups,
+                candidates,
+                config=SimpleNamespace(
+                    level_constraint_mode="aggregate",
+                    level_a_mismatch_weight=1000,
+                    level_band_mismatch_weight=100,
+                ),
+            )
+        )
+
+        self.assertGreater(pairwise.summary["constraints"].get("level_band_violation_implication", 0), 0)
+        self.assertEqual(aggregate.summary["constraints"].get("level_band_violation_implication", 0), 0)
+        self.assertLess(
+            aggregate.summary["constraints"].get("aggregate_level_presence", 0)
+            + aggregate.summary["constraints"].get("aggregate_level_band_violation", 0),
+            pairwise.summary["constraints"]["level_band_violation_implication"],
+        )
 
 
 if __name__ == "__main__":
