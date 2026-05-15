@@ -330,11 +330,35 @@ def _finalize_run_if_components_complete(run_id: int) -> bool:
     context = _combined_context_from_components(active_components)
     output_path = _componentized_output_path(run, active_components)
 
+    audit_root = _merged_root_for_components(active_components).parent
+    from calendaritzacions.engine.variants.resource_solver.audit import build_audit_payloads, write_audit_payloads
+    from calendaritzacions.engine.variants.resource_solver.local_explanations import build_local_explanations
+    from calendaritzacions.engine.variants.resource_solver.solution import result_to_json_ready
+
+    local_explanations = build_local_explanations(result, context)
+    standard_audit_paths = write_audit_payloads(
+        build_audit_payloads(
+            result=result,
+            context=context,
+            raw_result=None,
+            built_model=None,
+            local_explanations=local_explanations,
+        ),
+        audit_root,
+    )
+    result_json_path = audit_root / "resource_solver_result.json"
+    result_json_path.write_text(
+        json.dumps(result_to_json_ready(result), ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    standard_audit_paths["resource_solver_result"] = str(result_json_path)
+
     from calendaritzacions.reporting.resource_solver_excel_adapter import write_resource_solver_workbook
 
     write_resource_solver_workbook(str(output_path), result=result, context=context)
 
     audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+    audit_paths.update(standard_audit_paths)
     merged_root = _merged_root_for_components(active_components)
     merged_solution_path = merged_root / "merged_solution.json"
     audit_paths.update(
@@ -342,8 +366,6 @@ def _finalize_run_if_components_complete(run_id: int) -> bool:
             "component_merge_validation": str(merged_root / "component_merge_validation.json"),
             "component_merged_raw_result": str(merged_root / "merged_raw_result.json"),
             "component_merged_solution": str(merged_solution_path),
-            "resource_solution": str(merged_solution_path),
-            "resource_solver_result": str(merged_solution_path),
         }
     )
     logs = list(run.logs or [])

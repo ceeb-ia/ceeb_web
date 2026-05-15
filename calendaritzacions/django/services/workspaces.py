@@ -12,6 +12,7 @@ from django.db import transaction
 
 from calendaritzacions.django.models import (
     AssignmentWorkspace,
+    CalendarizationComponentRun,
     CalendarizationRun,
     WorkspaceAssignment,
     WorkspaceResourceIncident,
@@ -19,7 +20,7 @@ from calendaritzacions.django.models import (
 )
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
-HYDRATION_VERSION = 4
+HYDRATION_VERSION = 5
 MAX_POSITIVE_SMALLINT = 32767
 RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
@@ -1218,13 +1219,49 @@ def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
         or audit_paths.get("resource_solution")
         or audit_paths.get("component_merged_solution")
     )
+    component_context_payloads = (
+        _component_context_audit_payloads(run)
+        if not audit_paths.get("team_catalog")
+        or not audit_paths.get("candidate_catalog")
+        or not audit_paths.get("resource_pressure")
+        else {}
+    )
+    team_catalog = _read_list(audit_paths.get("team_catalog")) or _list_dicts(component_context_payloads.get("team_catalog"))
+    candidate_catalog = _read_list(audit_paths.get("candidate_catalog")) or _list_dicts(component_context_payloads.get("candidate_catalog"))
+    resource_pressure = _read_list(audit_paths.get("resource_pressure")) or _list_dicts(component_context_payloads.get("resource_pressure"))
     return {
         "resource_solution": _read_dict(resource_solution_path),
-        "team_catalog": _read_list(audit_paths.get("team_catalog")),
-        "candidate_catalog": _read_list(audit_paths.get("candidate_catalog")),
-        "resource_pressure": _read_list(audit_paths.get("resource_pressure")),
+        "team_catalog": team_catalog,
+        "candidate_catalog": candidate_catalog,
+        "resource_pressure": resource_pressure,
         "solver_explanations": _read_dict(audit_paths.get("solver_explanations")),
     }
+
+
+def _component_context_audit_payloads(run: CalendarizationRun) -> dict[str, Any]:
+    components = [
+        component
+        for component in CalendarizationComponentRun.objects.filter(run=run).order_by("component_id", "attempt")
+        if int(component.attempt) == int(component.active_attempt)
+    ]
+    if not components:
+        return {}
+    try:
+        from calendaritzacions.django.services.component_tasks import _combined_context_from_components
+        from calendaritzacions.engine.variants.resource_solver.audit import (
+            build_candidate_catalog_audit,
+            build_resource_pressure_audit,
+            build_team_catalog_audit,
+        )
+
+        context = _combined_context_from_components(components)
+        return {
+            "team_catalog": build_team_catalog_audit(context),
+            "candidate_catalog": build_candidate_catalog_audit(context),
+            "resource_pressure": build_resource_pressure_audit(context),
+        }
+    except Exception:
+        return {}
 
 
 def _read_dict(path: str | None) -> dict[str, Any]:
@@ -1241,6 +1278,10 @@ def _read_list(path: str | None) -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
+
+
+def _list_dicts(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
 def _create_assignments(

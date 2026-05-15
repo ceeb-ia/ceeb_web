@@ -252,22 +252,47 @@ class ResourceSolverComponentTaskTests(unittest.TestCase):
                 "logs": ["merged"],
             }
         }
-        result = SimpleNamespace(status="FEASIBLE", logs=("merged",))
+        context = SimpleNamespace(
+            teams=(
+                SimpleNamespace(
+                    team_id="A",
+                    name="Equip A",
+                    entity="Club",
+                    league_name="Lliga 1",
+                    modality="Futbol",
+                    category="Cadet",
+                    subcategory="",
+                    level="A",
+                    venue="Pista 1",
+                    day="Dissabte",
+                    time="10:00",
+                    seed_request_original="",
+                    linkage_group="L1",
+                    linkage_side="Casa",
+                    linkage_source="simulated",
+                ),
+            ),
+            pressure=(),
+            candidates=(),
+            groups=(),
+            config=SimpleNamespace(level_constraint_mode="off"),
+        )
 
         with (
             patch("calendaritzacions.django.services.component_tasks._merge_active_components", return_value=payload),
-            patch("calendaritzacions.django.services.component_tasks._resource_solver_result_from_payload", return_value=result),
-            patch("calendaritzacions.django.services.component_tasks._combined_context_from_components", return_value=SimpleNamespace()),
+            patch("calendaritzacions.django.services.component_tasks._combined_context_from_components", return_value=context),
             patch("calendaritzacions.reporting.resource_solver_excel_adapter.write_resource_solver_workbook"),
         ):
             finalized = _finalize_run_if_components_complete(run.pk)
 
         run.refresh_from_db()
+        resource_solution = str(self.root / "resource_solution.json")
         merged_solution = str(self.root / "merged" / "merged_solution.json")
         self.assertTrue(finalized)
         self.assertEqual(run.audit_paths["component_merged_solution"], merged_solution)
-        self.assertEqual(run.audit_paths["resource_solution"], merged_solution)
-        self.assertEqual(run.audit_paths["resource_solver_result"], merged_solution)
+        self.assertEqual(run.audit_paths["resource_solution"], resource_solution)
+        self.assertEqual(run.audit_paths["resource_solver_result"], str(self.root / "resource_solver_result.json"))
+        self.assertEqual(run.audit_paths["team_catalog"], str(self.root / "team_catalog.json"))
 
 
 def _write_success_artifacts(_context_path, output_dir, *, component_id=None):

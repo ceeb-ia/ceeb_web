@@ -216,6 +216,89 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(assignment.group_id, "G1")
         self.assertEqual(assignment.assigned_number, 1)
 
+    def test_workspace_rebuilds_component_catalogs_from_contexts(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import (
+            CalendarizationComponentRun,
+            CalendarizationRun,
+            WorkspaceAssignment,
+        )
+        from calendaritzacions.django.services.workspaces import get_or_create_workspace_for_run
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            merged_solution = root / "merged" / "merged_solution.json"
+            context_path = root / "components" / "C001" / "attempt_001" / "context.json"
+            merged_solution.parent.mkdir(parents=True)
+            context_path.parent.mkdir(parents=True)
+            merged_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [{"team_id": "A", "group_id": "G1", "number": 1}],
+                        "real_matches": [],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            context_path.write_text(
+                json.dumps(
+                    {
+                        "context": {
+                            "phase_name": "primera_fase",
+                            "config": {},
+                            "teams": [
+                                {
+                                    "team_id": "A",
+                                    "name": "Equip A",
+                                    "entity": "Club",
+                                    "league_name": "Lliga 1",
+                                    "modality": "Futbol",
+                                    "category": "Cadet",
+                                    "level": "A",
+                                    "linkage_group": "L1",
+                                    "linkage_side": "Casa",
+                                    "linkage_source": "simulated",
+                                }
+                            ],
+                            "base_resources": {},
+                            "capacities": {},
+                            "pressure": [],
+                            "groups": [],
+                            "candidates": [],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={"component_merged_solution": str(merged_solution)},
+            )
+            CalendarizationComponentRun.objects.create(
+                run=run,
+                component_id="C001",
+                status=CalendarizationComponentRun.STATUS_MERGED,
+                attempt=1,
+                active_attempt=1,
+                context_path=str(context_path),
+                team_count=1,
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+
+        assignment = WorkspaceAssignment.objects.get(workspace=workspace, team_id="A")
+        self.assertEqual(assignment.team_name, "Equip A")
+        self.assertEqual(assignment.payload["team"]["league_name"], "Lliga 1")
+        self.assertEqual(assignment.payload["team"]["linkage_group"], "L1")
+
     def test_workspace_hydrates_linkage_violation_incidents(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")
