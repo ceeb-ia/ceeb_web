@@ -1,0 +1,243 @@
+    .groups-auto-context-fold {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    #btn-groups-auto-context-toggle {
+      align-self: flex-start;
+      border-color: var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      font-weight: 760;
+    }
+
+    #btn-groups-auto-context-toggle:hover,
+    #btn-groups-auto-context-toggle:focus {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+    }
+
+    #groups-auto-context-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--insc-soft-border, #b8eee7);
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    }
+
+    #groups-auto-context-panel.d-none {
+      display: none !important;
+    }
+
+    .groups-auto-context-meta {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+      min-width: 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .groups-auto-context-meta-item,
+    .groups-auto-context-active-criteria {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .groups-auto-context-meta-item:not(:first-child)::before {
+      content: "";
+      width: 4px;
+      height: 4px;
+      margin-right: 1px;
+      border-radius: 999px;
+      background: #94a3b8;
+    }
+
+    .groups-auto-context-meta-label {
+      color: var(--insc-text, #134e4a);
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .groups-auto-context-chipline {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .groups-auto-context-chipline .badge {
+      border: 1px solid var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      font-weight: 720;
+    }
+
+    .groups-auto-context-criteria {
+      display: grid;
+      grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+      align-items: center;
+      gap: 8px 12px;
+    }
+
+    .groups-auto-context-native {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .groups-auto-context-popover {
+      min-width: 0;
+    }
+
+    .groups-auto-context-popover .groups-filter-trigger {
+      width: 100%;
+      max-width: none;
+    }
+
+    .groups-auto-context-active-criteria {
+      padding: 5px 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 9px;
+      background: #ffffff;
+    }
+
+    .groups-auto-context-buckets-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 2px;
+    }
+
+    .groups-auto-context-buckets-title {
+      color: var(--insc-text, #134e4a);
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .groups-auto-context-buckets-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .groups-auto-context-buckets-actions .btn {
+      border-color: var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      font-weight: 720;
+    }
+
+    .groups-auto-context-buckets-actions .btn-primary {
+      border-color: var(--insc-base, #0f766e);
+      background: var(--insc-base, #0f766e);
+      color: #ffffff;
+      box-shadow: 0 6px 14px rgba(15, 118, 110, 0.14);
+    }
+
+    .groups-auto-context-buckets-actions .btn-outline-primary {
+      border-color: var(--insc-base, #0f766e);
+      color: var(--insc-base, #0f766e);
+    }
+
+    .groups-auto-context-buckets-actions .btn:hover,
+    .groups-auto-context-buckets-actions .btn:focus {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+    }
+
+    .groups-auto-context-buckets-actions .btn-primary:hover,
+    .groups-auto-context-buckets-actions .btn-primary:focus {
+      border-color: var(--insc-text, #134e4a);
+      background: var(--insc-text, #134e4a);
+      color: #ffffff;
+    }
+
+    .groups-auto-context-hidden-status {
+      display: none;
+    }
+
+    .groups-auto-buckets-filter-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.3fr) repeat(3, minmax(128px, 0.75fr));
+      gap: 8px;
+      align-items: end;
+    }
+
+    .groups-auto-buckets-filter-grid .form-control {
+      border-color: var(--insc-soft-border, #b8eee7);
+    }
+
+    .groups-auto-buckets-filter-grid .form-control:focus {
+      border-color: var(--insc-base, #0f766e);
+      box-shadow: 0 0 0 0.14rem rgba(15, 118, 110, 0.14);
+    }
+
+    .groups-auto-buckets-scroll {
+      max-height: min(330px, 38vh);
+      overflow: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+    }
+
+    .groups-auto-buckets-scroll #groups-buckets-grid {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      max-height: none;
+      margin-bottom: 0 !important;
+    }
+
+    .groups-auto-buckets-scroll .tab-select-item {
+      border-color: var(--insc-soft-border, #b8eee7);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .groups-auto-buckets-scroll .tab-select-item:has(input:checked) {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      box-shadow: inset 3px 0 0 var(--insc-base, #0f766e);
+    }
+
+    #groups-buckets-empty,
+    #groups-buckets-selection-note {
+      margin: 0;
+      padding: 6px 2px 0;
+    }
+
+    @media (max-width: 991.98px) {
+      .groups-auto-context-criteria,
+      .groups-auto-buckets-filter-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .groups-auto-context-buckets-actions {
+        width: 100%;
+      }
+
+      .groups-auto-context-buckets-actions .btn {
+        flex: 1 1 auto;
+      }
+    }

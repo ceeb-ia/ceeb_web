@@ -294,6 +294,135 @@ window.initGroupsWorkspace = async function () {
     );
     const stateSelect = document.getElementById('groups-filter-group-state');
     if (stateSelect) stateSelect.value = String(data.group_state || 'all');
+    renderGroupsFilterPopovers();
+  }
+
+  function filterSummaryLabel(selectEl) {
+    if (!selectEl) return 'Qualsevol';
+    if (!selectEl.multiple) {
+      const option = selectEl.selectedOptions?.[0];
+      return option?.textContent?.trim() || 'Totes';
+    }
+    const selected = Array.from(selectEl.selectedOptions || []);
+    if (!selected.length) return 'Qualsevol';
+    if (selected.length === 1) return selected[0].textContent?.trim() || '1 opcio';
+    return `${selected.length} seleccionades`;
+  }
+
+  function renderGroupsFilterActiveChips() {
+    const wrap = document.getElementById('groups-filter-active-chips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const filters = [
+      { id: 'groups-filter-categoria', label: 'Categoria' },
+      { id: 'groups-filter-subcategoria', label: 'Subcategoria' },
+      { id: 'groups-filter-entitat', label: 'Entitat' },
+      { id: 'groups-filter-group-state', label: 'Estat' },
+      { id: 'groups-filter-group-id', label: 'Grup' },
+    ];
+    const frag = document.createDocumentFragment();
+    let activeCount = 0;
+    filters.forEach((filter) => {
+      const selectEl = document.getElementById(filter.id);
+      if (!selectEl) return;
+      const selected = selectEl.multiple
+        ? Array.from(selectEl.selectedOptions || [])
+        : Array.from(selectEl.selectedOptions || []).filter((option) => String(option.value || '') && String(option.value || '') !== 'all');
+      selected.forEach((option) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'groups-filter-chip';
+        chip.setAttribute('data-groups-filter-chip-select', filter.id);
+        chip.setAttribute('data-groups-filter-chip-value', String(option.value || ''));
+        chip.textContent = `${filter.label}: ${option.textContent?.trim() || option.value} x`;
+        frag.appendChild(chip);
+        activeCount += 1;
+      });
+    });
+    if (activeCount) {
+      const clearAll = document.createElement('button');
+      clearAll.type = 'button';
+      clearAll.className = 'groups-filter-chip groups-filter-chip-clear-all';
+      clearAll.setAttribute('data-groups-filter-clear-all', '1');
+      clearAll.textContent = 'Netejar filtres';
+      frag.appendChild(clearAll);
+    }
+    wrap.classList.toggle('is-empty', activeCount === 0);
+    wrap.appendChild(frag);
+  }
+
+  function renderGroupsFilterPopovers() {
+    document.querySelectorAll('[data-groups-filter-popover]').forEach((popover) => {
+      const selectId = String(popover.getAttribute('data-select-id') || '').trim();
+      const selectEl = document.getElementById(selectId);
+      if (!selectEl) return;
+      const summary = popover.querySelector('[data-filter-summary]');
+      if (summary) summary.textContent = filterSummaryLabel(selectEl);
+      popover.classList.toggle('is-active', selectEl.multiple ? selectedOptionValues(selectEl).length > 0 : !['', 'all'].includes(String(selectEl.value || '')));
+      const optionsWrap = popover.querySelector(`[data-filter-options-for="${selectId}"]`);
+      if (!optionsWrap) return;
+      optionsWrap.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      Array.from(selectEl.options || []).forEach((option) => {
+        const optionValue = String(option.value || '');
+        if (!selectEl.multiple && optionValue === '') return;
+        const label = document.createElement('label');
+        label.className = 'groups-filter-option';
+        const input = document.createElement('input');
+        input.type = selectEl.multiple ? 'checkbox' : 'radio';
+        input.className = 'js-groups-filter-choice';
+        input.name = `groups-filter-choice-${selectId}`;
+        input.value = optionValue;
+        input.checked = !!option.selected;
+        input.setAttribute('data-select-id', selectId);
+        const textSpan = document.createElement('span');
+        textSpan.textContent = option.textContent || optionValue;
+        label.appendChild(input);
+        label.appendChild(textSpan);
+        frag.appendChild(label);
+      });
+      if (!frag.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'groups-filter-empty';
+        empty.textContent = 'Sense opcions disponibles';
+        frag.appendChild(empty);
+      }
+      optionsWrap.appendChild(frag);
+    });
+    renderGroupsFilterActiveChips();
+  }
+
+  function setUniverseFilterValue(selectId, value, checked) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (String(option.value || '') === String(value || '')) option.selected = !!checked;
+      });
+    } else {
+      selectEl.value = String(value || 'all');
+    }
+    renderGroupsFilterPopovers();
+  }
+
+  function clearUniverseFilter(selectId, value = null) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (value === null || String(option.value || '') === String(value || '')) option.selected = false;
+      });
+    } else {
+      selectEl.value = 'all';
+    }
+    renderGroupsFilterPopovers();
+  }
+
+  function clearAllUniverseFilters() {
+    const q = document.getElementById('groups-filter-q');
+    if (q) q.value = '';
+    ['groups-filter-categoria', 'groups-filter-subcategoria', 'groups-filter-entitat', 'groups-filter-group-state', 'groups-filter-group-id']
+      .forEach((id) => clearUniverseFilter(id));
   }
 
   function readBoardFilters() {
@@ -579,56 +708,91 @@ window.initGroupsWorkspace = async function () {
     if (!options.skipSave) saveWorkspaceState();
   }
 
+  function groupAccentForCandidate(item) {
+    const groupId = String(item?.group_id || '').trim();
+    if (!groupId) return '#94a3b8';
+    const palette = ['#9f1239', '#0f766e', '#d97706', '#2563eb'];
+    const groups = Array.isArray(state.workspace?.groups) ? state.workspace.groups : [];
+    const index = groups.findIndex((group) => String(group?.id || '').trim() === groupId);
+    if (index >= 0) return palette[index % palette.length];
+    const numericId = Number.parseInt(groupId, 10);
+    return palette[(Number.isFinite(numericId) ? numericId : 0) % palette.length];
+  }
+
+  function initialsForLabel(label) {
+    const parts = String(label || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (!parts.length) return '?';
+    return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('');
+  }
+
   function candidateRow(item) {
     const id = String(item?.id || '').trim();
+    const groupAccent = groupAccentForCandidate(item);
     const row = document.createElement('div');
     row.className = `team-candidate-row${state.selectedIds.has(id) ? ' is-selected' : ''}${dndEnabled() ? ' can-drag' : ''}`;
     row.dataset.candidateId = id;
     row.dataset.inscripcioId = id;
+    row.style.setProperty('--candidate-group-accent', groupAccent);
 
+    const checkboxWrap = document.createElement('div');
+    checkboxWrap.className = 'custom-control custom-checkbox groups-candidate-check-wrap';
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.className = 'js-groups-workspace-candidate-check';
+    checkbox.id = `groups-candidate-check-${id}`;
+    checkbox.className = 'custom-control-input js-groups-workspace-candidate-check';
     checkbox.value = id;
     checkbox.checked = state.selectedIds.has(id);
     checkbox.addEventListener('click', (event) => event.stopPropagation());
-    row.appendChild(checkbox);
+    const checkboxLabel = document.createElement('label');
+    checkboxLabel.className = 'custom-control-label';
+    checkboxLabel.setAttribute('for', checkbox.id);
+    checkboxLabel.setAttribute('aria-label', `Seleccionar ${String(item?.label || `Inscripcio ${id}`)}`);
+    checkboxWrap.appendChild(checkbox);
+    checkboxWrap.appendChild(checkboxLabel);
+    row.appendChild(checkboxWrap);
+
+    const avatar = document.createElement('span');
+    avatar.className = 'team-candidate-avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = initialsForLabel(item?.label || id);
+    row.appendChild(avatar);
 
     const main = document.createElement('div');
     main.className = 'team-candidate-main';
     const head = document.createElement('div');
-    head.className = 'd-flex align-items-start justify-content-between';
+    head.className = 'team-candidate-head';
     head.style.gap = '10px';
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'team-candidate-title-wrap';
     const title = document.createElement('div');
     title.className = 'team-candidate-title';
     title.textContent = String(item?.label || `Inscripcio ${id}`);
-    head.appendChild(title);
+    titleWrap.appendChild(title);
 
-    if (dndEnabled()) {
-      const handle = document.createElement('button');
-      handle.type = 'button';
-      handle.className = 'btn btn-sm btn-outline-secondary team-candidate-drag-handle';
-      handle.textContent = 'Moure';
-      handle.title = "Arrossega aquesta inscripcio cap a un grup o cap a Sense grup";
-      handle.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      });
-      head.appendChild(handle);
-    }
+    const groupDetails = document.createElement('details');
+    groupDetails.className = `team-candidate-group-details${item?.group_id ? ' has-group' : ' is-unassigned'}`;
+    const groupSummary = document.createElement('summary');
+    groupSummary.innerHTML = `<span class="team-candidate-group-dot" aria-hidden="true"></span><span>${item?.group_id ? 'Grup' : 'Sense grup'}</span>`;
+    const groupText = document.createElement('span');
+    groupText.className = 'team-candidate-group-full';
+    groupText.textContent = String(item?.group_label || 'Sense grup');
+    groupDetails.appendChild(groupSummary);
+    groupDetails.appendChild(groupText);
+    titleWrap.appendChild(groupDetails);
+    head.appendChild(titleWrap);
+
     main.appendChild(head);
 
     const meta = document.createElement('div');
     meta.className = 'team-candidate-meta';
-    meta.textContent = [item?.secondary_label, item?.group_label, item?.ordre_competicio ? `Ordre ${item.ordre_competicio}` : '']
+    meta.textContent = [item?.secondary_label, item?.categoria, item?.subcategoria]
       .filter(Boolean)
       .join(' | ') || 'Sense metadades';
     main.appendChild(meta);
 
-    const badges = document.createElement('div');
-    badges.className = 'team-candidate-teams';
-    badges.appendChild(createGroupPreviewBadge(item?.group_label || 'Sense grup', item?.group_id ? 'neutral' : 'incoming'));
-    main.appendChild(badges);
     row.appendChild(main);
     return row;
   }
@@ -648,7 +812,6 @@ window.initGroupsWorkspace = async function () {
     list.innerHTML = '';
     list.setAttribute('data-groups-candidate-source', '1');
     items.forEach((item) => list.appendChild(candidateRow(item)));
-    if (status) status.textContent = total ? `${total} inscripcions candidates segons els filtres del workspace.` : "Cap inscripcio candidata amb aquests filtres.";
     if (badge) badge.textContent = `${total} candidates`;
     if (pageLabel) pageLabel.textContent = `Pagina ${page} de ${pages}`;
     if (prev) prev.disabled = page <= 1;
@@ -2230,8 +2393,52 @@ window.initGroupsWorkspace = async function () {
     ['groups-filter-categoria', 'groups-filter-subcategoria', 'groups-filter-entitat', 'groups-filter-group-state', 'groups-filter-group-id']
       .forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('change', () => scheduleFilterRefresh(true));
+        if (el) el.addEventListener('change', () => {
+          renderGroupsFilterPopovers();
+          scheduleFilterRefresh(true);
+        });
       });
+
+    groupsWorkspaceShell.addEventListener('change', (event) => {
+      const choice = event.target.closest('.js-groups-filter-choice');
+      if (!choice) return;
+      const selectId = String(choice.getAttribute('data-select-id') || '').trim();
+      setUniverseFilterValue(selectId, choice.value, choice.checked);
+      scheduleFilterRefresh(true);
+    });
+
+    groupsWorkspaceShell.addEventListener('click', (event) => {
+      const clearBtn = event.target.closest('[data-groups-filter-clear]');
+      if (clearBtn) {
+        event.preventDefault();
+        clearUniverseFilter(String(clearBtn.getAttribute('data-groups-filter-clear') || '').trim());
+        scheduleFilterRefresh(true);
+        return;
+      }
+      const chip = event.target.closest('[data-groups-filter-chip-select]');
+      if (chip) {
+        event.preventDefault();
+        clearUniverseFilter(
+          String(chip.getAttribute('data-groups-filter-chip-select') || '').trim(),
+          String(chip.getAttribute('data-groups-filter-chip-value') || '').trim()
+        );
+        scheduleFilterRefresh(true);
+        return;
+      }
+      const clearAll = event.target.closest('[data-groups-filter-clear-all]');
+      if (clearAll) {
+        event.preventDefault();
+        clearAllUniverseFilters();
+        scheduleFilterRefresh(true);
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('[data-groups-filter-popover]')) return;
+      document.querySelectorAll('[data-groups-filter-popover] details[open]').forEach((details) => {
+        details.removeAttribute('open');
+      });
+    });
 
     const boardQ = document.getElementById('groups-board-filter-q');
     if (boardQ) boardQ.addEventListener('input', applyBoardFilterChange);
@@ -2294,7 +2501,7 @@ window.initGroupsWorkspace = async function () {
     groupsWorkspaceShell.addEventListener('click', async (event) => {
       const row = event.target.closest('.team-candidate-row');
       if (!row) return;
-      if (event.target.closest('input,button,a,label,select,textarea')) return;
+      if (event.target.closest('input,button,a,label,select,textarea,summary,details')) return;
       const checkbox = row.querySelector('.js-groups-workspace-candidate-check');
       if (!checkbox) return;
       checkbox.checked = !checkbox.checked;

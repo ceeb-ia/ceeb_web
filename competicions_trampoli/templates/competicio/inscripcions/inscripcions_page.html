@@ -28,10 +28,12 @@
       aria-expanded="false"
       aria-label="Mostrar accions"
       title="Mostrar accions">
-      <span class="inscripcions-drawer-toggle-icon inscripcions-drawer-toggle-icon-closed" aria-hidden="true">&#8249;</span>
-      <span class="inscripcions-drawer-toggle-icon inscripcions-drawer-toggle-icon-open" aria-hidden="true">&times;</span>
-      <span class="inscripcions-drawer-toggle-label-open">Tancar</span>
-      <span class="inscripcions-drawer-toggle-label-closed">Accions</span>
+      <span class="inscripcions-drawer-toggle-icon inscripcions-drawer-toggle-icon-closed" aria-hidden="true">
+        <img src="{% static 'inscripcions/accions/open.png' %}" alt="">
+      </span>
+      <span class="inscripcions-drawer-toggle-icon inscripcions-drawer-toggle-icon-open" aria-hidden="true">
+        <img src="{% static 'inscripcions/accions/close.png' %}" alt="">
+      </span>
     </button>
 
     <button

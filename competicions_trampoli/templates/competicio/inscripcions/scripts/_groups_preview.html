@@ -107,6 +107,43 @@
     return selectedOptionValues(document.getElementById('groups-workspace-bucket-fields'));
   }
 
+  function updateWorkspaceBucketFieldsPickerUi() {
+    const select = document.getElementById('groups-workspace-bucket-fields');
+    const summary = document.getElementById('groups-workspace-bucket-fields-summary');
+    if (!select) return;
+    const selected = Array.from(select.selectedOptions || []);
+    const selectedValues = new Set(selected.map((option) => String(option.value || '').trim()));
+    document.querySelectorAll('.js-groups-workspace-bucket-choice').forEach((choice) => {
+      choice.checked = selectedValues.has(String(choice.value || '').trim());
+    });
+    if (summary) {
+      if (!selected.length) summary.textContent = 'Qualsevol';
+      else if (selected.length <= 2) summary.textContent = selected.map((option) => String(option.textContent || option.value || '').trim()).join(', ');
+      else summary.textContent = `${selected.length} criteris`;
+    }
+  }
+
+  function setWorkspaceBucketFieldValue(value, checked) {
+    const select = document.getElementById('groups-workspace-bucket-fields');
+    if (!select) return;
+    const cleanValue = String(value || '').trim();
+    Array.from(select.options || []).forEach((option) => {
+      if (String(option.value || '').trim() === cleanValue) option.selected = !!checked;
+    });
+    updateWorkspaceBucketFieldsPickerUi();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function clearWorkspaceBucketFields() {
+    const select = document.getElementById('groups-workspace-bucket-fields');
+    if (!select) return;
+    Array.from(select.options || []).forEach((option) => {
+      option.selected = false;
+    });
+    updateWorkspaceBucketFieldsPickerUi();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function groupsBucketUiStorageKey() {
     if (typeof getUiStateKey !== 'function') return '';
     return `${getUiStateKey()}:groups-bucket-ui`;
@@ -139,6 +176,7 @@
         option.selected = selectedFields.has(String(option.value || '').trim());
       });
     }
+    updateWorkspaceBucketFieldsPickerUi();
     groupBucketViewFilters = normalizeGroupBucketViewFilters(saved.bucket_view_filters);
     const q = document.getElementById('groups-buckets-filter-q');
     if (q) q.value = String(groupBucketViewFilters.q || '');
@@ -1100,19 +1138,30 @@
     const workspaceBucketFields = document.getElementById('groups-workspace-bucket-fields');
     if (workspaceBucketFields) {
       workspaceBucketFields.addEventListener('change', async () => {
+        updateWorkspaceBucketFieldsPickerUi();
         markGroupPreviewDirty();
         saveGroupsBucketUiState();
         await refreshGroupsAutoContext();
       });
     }
 
-    const fallback = document.getElementById('groups-fallback');
-    if (fallback) {
-      fallback.addEventListener('change', async () => {
-        markGroupPreviewDirty();
-        await refreshGroupsAutoContext();
+    document.querySelectorAll('.js-groups-workspace-bucket-choice').forEach((choice) => {
+      choice.addEventListener('change', () => {
+        setWorkspaceBucketFieldValue(choice.value, choice.checked);
       });
-    }
+    });
+
+    document.getElementById('btn-groups-workspace-bucket-fields-clear')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      clearWorkspaceBucketFields();
+    });
+
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('[data-groups-auto-context-criteria]')) return;
+      document.querySelectorAll('[data-groups-auto-context-criteria] details[open]').forEach((details) => {
+        details.removeAttribute('open');
+      });
+    });
 
     document.addEventListener('inscripcions:group-creation-context-changed', async () => {
       await refreshGroupsAutoContext();
@@ -1226,6 +1275,7 @@
     ], 'input');
 
     restoreGroupsBucketUiState();
+    updateWorkspaceBucketFieldsPickerUi();
     clearGroupPreview();
     updateGroupsStrategyButtonsState(null);
     refreshGroupsAutoContext();
