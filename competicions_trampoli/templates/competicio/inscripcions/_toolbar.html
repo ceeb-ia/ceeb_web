@@ -1,5 +1,5 @@
 <div id="inscripcions-toolbar-fragment">
-<div class="search-bar-card mb-3">
+<div class="search-bar-card inscripcions-control-panel mb-3">
   <div class="search-bar-main">
     <div class="search-input-wrap">
       <span class="search-input-icon">&#128269;</span>
@@ -17,39 +17,19 @@
     </div>
   </div>
 
-  <div class="small text-muted search-bar-meta">
-    <span>Mostrant <span class="fw-semibold">{{ inscrits_filtered_count }}</span> participants</span>
-    {% if inscrits_filtered_count != inscrits_total_count %}
-      <span>de {{ inscrits_total_count }}</span>
-    {% endif %}
-    <span class="search-meta-sep">-</span>
-    <span>Cerca en temps real per nom, cognoms, DNI o entitat</span>
-    {% if request.GET.q %}
-      <span class="badge badge-primary ml-1">Filtrant: "{{ request.GET.q }}"</span>
-    {% endif %}
-  </div>
-</div>
-
-<div class="mb-3 border rounded px-3 py-2 bg-white">
-  <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap:10px;">
-    <label class="mb-0 d-flex align-items-center" for="competition-order-tail-toggle" title="Aplica l'ordre de competicio com a criteri final sobre les ordenacions actives">
-      <input
-        type="checkbox"
-        id="competition-order-tail-toggle"
-        class="mr-2"
-        {% if column_sort_competition_tail_active %}checked{% endif %}
-        {% if not can_edit_inscripcions or not column_sort_has_stack %}disabled{% endif %}>
-      <span class="fw-semibold">Ordre de competicio</span>
-    </label>
-    <div class="small text-muted">
-      S'afegeix com a ultim criteri de les ordenacions actives i persisteix el resultat a l'ordre de sortida.
-      {% if not column_sort_has_stack %}
-        Activa primer almenys una ordenacio.
+  <div class="inscripcions-control-footer">
+    <div class="small text-muted search-bar-meta">
+      <span>Mostrant <span class="fw-semibold">{{ inscrits_filtered_count }}</span> participants</span>
+      {% if inscrits_filtered_count != inscrits_total_count %}
+        <span>de {{ inscrits_total_count }}</span>
+      {% endif %}
+      <span class="search-meta-sep">-</span>
+      <span>Cerca en temps real per nom, cognoms, DNI o entitat</span>
+      {% if request.GET.q %}
+        <span class="badge badge-primary ml-1">Filtrant: "{{ request.GET.q }}"</span>
       {% endif %}
     </div>
-    {% if column_sort_competition_tail_active %}
-      <span class="badge badge-info">Criteri final actiu</span>
-    {% endif %}
+
   </div>
 </div>
 </div>

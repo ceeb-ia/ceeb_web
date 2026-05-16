@@ -11,8 +11,8 @@
         <div class="text-muted small">Selecciona una competició per gestionar inscripcions o entrar al directe.</div>
       </div>
       <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}">Aparells globals</a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacio_template_global_list' %}">Plantilles classificacio</a>
+        <a class="btn btn-sm section-btn section-btn--fases" href="{% url 'aparells_list' %}">Aparells globals</a>
+        <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacio_template_global_list' %}">Plantilles classificacio</a>
         <a class="btn btn-sm btn-primary" href="{% url 'create' %}">+ Nova competició</a>
       </div>
     </div>
@@ -35,13 +35,13 @@
             <td class="text-end">
               <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
                 {% if a and a.can_view_inscripcions %}
-                <a class="btn btn-sm btn-outline-success" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
+                <a class="btn btn-sm section-btn section-btn--inscripcions" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
                 {% endif %}
                 {% if a and a.can_view_rotacions %}
-                <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' c.id %}">Rotacions</a>
+                <a class="btn btn-sm section-btn section-btn--rotacions" href="{% url 'rotacions_planner' c.id %}">Rotacions</a>
                 {% endif %}
                 {% if c.te_notes and a and a.can_view_notes %}
-                  <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
+                  <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'notes_home' c.id %}">Notes</a>
                   {% if a.can_view_trampoli_config %}
                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' c.id %}">Configuració</a>
                   {% endif %}

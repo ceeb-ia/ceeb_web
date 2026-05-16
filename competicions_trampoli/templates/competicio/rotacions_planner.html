@@ -669,8 +669,8 @@
       </div>
       <div class="header-actions">
         <button type="button" class="btn btn-sm btn-outline-info rot-help-trigger" data-rot-help-key="global_overview" aria-label="Obrir manual de rotacions">Ajuda</button>
-        <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-primary">Inscripcions</a>
-        <a class="btn btn-sm btn-primary" href="{% url 'notes_home' competicio.id %}">Notes</a>
+        <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm section-btn section-btn--inscripcions">Inscripcions</a>
+        <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'notes_home' competicio.id %}">Notes</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">Configuració</a>
         </div>
       </div>

@@ -62,20 +62,32 @@
         </div>
       </td>
       {% for col in selected_table_columns %}
-        <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
+        <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap insc-col-actions{% endif %}{% if col.code == 'grup' %} insc-col-grup{% elif col.code == 'equip' %} insc-col-equip{% elif col.code == '__aparells__' %} insc-col-aparells{% endif %}">
           {% if col.code == "__actions__" %}
             <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ inscripcions_return_url|urlencode }}">Editar</a>
             <a class="btn btn-sm btn-outline-danger" href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">Eliminar</a>
           {% elif col.code == "nom_i_cognoms" %}
             {{ r.nom_i_cognoms|default:"-" }}
           {% elif col.code == "equip" %}
-            {% if r.base_equip_id %}
-              <span class="equip-badge">
-                {% if r.base_equip_name %}{{ r.base_equip_name }}{% else %}Equip {{ r.base_equip_id }}{% endif %}
+            <div class="team-context-cell" title="{{ r.team_context_tooltip|default:'' }}">
+            {% if r.context_equip_id %}
+              <span class="team-context-badge">
+                <span class="team-context-name">
+                  {% if r.context_equip_name %}{{ r.context_equip_name }}{% else %}Equip {{ r.context_equip_id }}{% endif %}
+                </span>
+                <span class="team-context-label">Context: {{ r.team_context_label|default:team_context_selected_label|default:"Base" }}</span>
               </span>
+              {% if r.other_team_contexts_count %}
+                <span class="team-context-more">+{{ r.other_team_contexts_count }} contextos</span>
+              {% endif %}
             {% else %}
-              -
+              <span class="team-context-empty">Sense equip</span>
+              <span class="team-context-label">Context: {{ r.team_context_label|default:team_context_selected_label|default:"Base" }}</span>
+              {% if r.other_team_contexts_count %}
+                <span class="team-context-more">+{{ r.other_team_contexts_count }} contextos</span>
+              {% endif %}
             {% endif %}
+            </div>
           {% elif col.code == "grup" %}
             {% if r.grup %}
               {% with gkey=r.grup|stringformat:"s" %}
@@ -94,24 +106,29 @@
             {% with rid=r.id|stringformat:"s" %}
               {% with ex_ids=table_runtime.inscripcio_aparells_excluded_map|get_item:rid %}
                 <div class="aparells-select-wrap">
-                  <select
-                    class="form-control form-control-sm aparells-select js-aparells-select"
-                    data-ins-id="{{ r.id }}"
-                    multiple
-                    size="3"
-                    title="Per defecte competeix a tots els aparells individuals. Desmarca nomes exclusions."
-                    aria-label="Aparells de la inscripcio {{ r.nom_i_cognoms }}"
-                    {% if not can_edit_inscripcions %}disabled{% endif %}>
-                    {% for app in inscripcio_aparells_cfg %}
-                      <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.display_nom }}</option>
-                    {% empty %}
-                      <option value="" disabled>(Sense aparells actius)</option>
-                    {% endfor %}
-                  </select>
-                  <div class="aparells-select-meta">
-                    <div class="small font-weight-semibold aparells-select-summary js-aparells-select-summary" data-ins-id="{{ r.id }}"></div>
-                    <div class="small text-muted aparells-select-status js-aparells-select-status" data-ins-id="{{ r.id }}" aria-live="polite"></div>
-                  </div>
+                  <details class="aparells-select-disclosure">
+                    <summary class="aparells-select-trigger">
+                      <span class="small font-weight-semibold aparells-select-summary js-aparells-select-summary" data-ins-id="{{ r.id }}"></span>
+                      <span class="aparells-select-caret" aria-hidden="true">&#8964;</span>
+                    </summary>
+                    <div class="aparells-select-panel">
+                      <select
+                        class="form-control form-control-sm aparells-select js-aparells-select"
+                        data-ins-id="{{ r.id }}"
+                        multiple
+                        size="4"
+                        title="Per defecte competeix a tots els aparells individuals. Desmarca nomes exclusions."
+                        aria-label="Aparells de la inscripcio {{ r.nom_i_cognoms }}"
+                        {% if not can_edit_inscripcions %}disabled{% endif %}>
+                        {% for app in inscripcio_aparells_cfg %}
+                          <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.display_nom }}</option>
+                        {% empty %}
+                          <option value="" disabled>(Sense aparells actius)</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </details>
+                  <div class="small text-muted aparells-select-status js-aparells-select-status" data-ins-id="{{ r.id }}" aria-live="polite"></div>
                 </div>
               {% endwith %}
             {% endwith %}

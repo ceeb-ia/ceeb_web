@@ -629,7 +629,11 @@
     const isOpen = !!open;
 
     root.classList.toggle('is-drawer-open', isOpen);
-    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggleBtn.setAttribute('title', isOpen ? 'Amagar accions' : 'Mostrar accions');
+      toggleBtn.setAttribute('aria-label', isOpen ? 'Amagar accions' : 'Mostrar accions');
+    }
     if (backdrop) backdrop.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
     if (sidebar) sidebar.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
 

@@ -7,6 +7,205 @@ body {
   background-color: #ffffff;
 }
 
+body.competicions-app {
+  font-family: var(--competicio-font-family);
+}
+
+body.competicions-app button,
+body.competicions-app input,
+body.competicions-app select,
+body.competicions-app textarea,
+body.competicions-app .btn,
+body.competicions-app .form-control,
+body.competicions-app .dropdown-menu,
+body.competicions-app .modal,
+body.competicions-app .popover,
+body.competicions-app .tooltip {
+  font-family: var(--competicio-font-family);
+}
+
+body.competicions-app .live-font-scope {
+  font-family: var(--competicio-font-family);
+}
+
+body.competicions-app.has-competition-dock main {
+  padding-bottom: 108px;
+}
+
+body.competicions-app .competition-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 1035;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 40px);
+  padding: 9px 11px;
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  transform: translateX(-50%);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+body.competicions-app .competition-dock::-webkit-scrollbar {
+  display: none;
+}
+
+body.competicions-app .competition-dock-item {
+  --dock-color: #334155;
+  --dock-bg: #f8fafc;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 118px;
+  min-width: 118px;
+  height: 66px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #475569;
+  text-decoration: none;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease, transform .14s ease, box-shadow .14s ease;
+}
+
+body.competicions-app .competition-dock-item::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+body.competicions-app .competition-dock-item:hover,
+body.competicions-app .competition-dock-item:focus {
+  border-color: rgba(148, 163, 184, 0.36);
+  background: #ffffff;
+  color: #0f172a;
+  text-decoration: none;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
+}
+
+body.competicions-app .competition-dock-item.is-active {
+  border-color: rgba(148, 163, 184, 0.34);
+  background: var(--dock-bg);
+  color: var(--dock-color);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68);
+}
+
+body.competicions-app .competition-dock-item.is-active::before {
+  background: var(--dock-color);
+}
+
+body.competicions-app .competition-dock-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  margin-top: 6px;
+  border-radius: 10px;
+  line-height: 1;
+  color: currentColor;
+}
+
+body.competicions-app .competition-dock-icon img {
+  display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+body.competicions-app .competition-dock-label {
+  display: block;
+  max-width: 104px;
+  min-height: 1.05em;
+  overflow: visible;
+  color: currentColor;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.05;
+  text-align: center;
+  white-space: normal;
+}
+
+body.competicions-app .competition-dock-item--home,
+body.competicions-app .competition-dock-item--config {
+  --dock-color: #334155;
+  --dock-bg: #f8fafc;
+}
+
+body.competicions-app .competition-dock-item--inscripcions {
+  --dock-color: #0f766e;
+  --dock-bg: #e6fffb;
+}
+
+body.competicions-app .competition-dock-item--fases {
+  --dock-color: #2563eb;
+  --dock-bg: #eff6ff;
+}
+
+body.competicions-app .competition-dock-item--rotacions {
+  --dock-color: #b45309;
+  --dock-bg: #fff7ed;
+}
+
+body.competicions-app .competition-dock-item--classificacions {
+  --dock-color: #9f1239;
+  --dock-bg: #fff1f2;
+}
+
+body.competicions-app .competition-dock-item--notes {
+  --dock-color: #a16207;
+  --dock-bg: #fffbeb;
+}
+
+body.competicions-app.has-competition-dock .inscripcions-back-to-top {
+  --inscripcions-back-to-top-bottom: 98px;
+}
+
+@media (max-width: 767.98px) {
+  body.competicions-app.has-competition-dock main {
+    padding-bottom: 100px;
+  }
+
+  body.competicions-app .competition-dock {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    max-width: none;
+    transform: none;
+    justify-content: flex-start;
+    border-radius: 16px;
+  }
+
+  body.competicions-app .competition-dock-item {
+    width: 104px;
+    min-width: 104px;
+    height: 62px;
+  }
+
+  body.competicions-app .competition-dock-label {
+    max-width: 92px;
+    font-size: 0.61rem;
+  }
+
+  body.competicions-app.has-competition-dock .inscripcions-back-to-top {
+    --inscripcions-back-to-top-bottom: 84px;
+  }
+}
+
 /* Background container (full-screen, behind everything) */
 .background-container {
   position: fixed;
@@ -409,6 +608,284 @@ a:focus {
 .card-surface .header-controls > .btn,
 .card-surface .header-controls > a.btn {
   margin-left: 0.5rem;
+}
+
+/* Thematic navigation buttons for the competition workflow sections. */
+body.competicions-app .section-btn {
+  --section-color: #334155;
+  --section-bg: #f8fafc;
+  --section-border: #e2e8f0;
+  --section-text: #0f172a;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 34px;
+  padding: 0.38rem 0.7rem 0.38rem 0.62rem;
+  border: 1px solid var(--section-border);
+  border-left: 4px solid var(--section-color);
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--section-text);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  white-space: normal;
+}
+
+body.competicions-app .section-btn.btn-sm {
+  min-height: 32px;
+  padding: 0.32rem 0.62rem 0.32rem 0.54rem;
+  font-size: 0.86rem;
+}
+
+body.competicions-app .section-btn:hover,
+body.competicions-app .section-btn:focus {
+  border-color: var(--section-border);
+  border-left-color: var(--section-color);
+  background: #ffffff;
+  color: var(--section-text);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+body.competicions-app .section-btn:active,
+body.competicions-app .section-btn.active {
+  background: var(--section-bg);
+  color: var(--section-text);
+}
+
+body.competicions-app .section-btn--inscripcions {
+  --section-color: #0f766e;
+  --section-bg: #e6fffb;
+  --section-border: #99f6e4;
+  --section-text: #134e4a;
+}
+
+body.competicions-app .section-btn--fases {
+  --section-color: #2563eb;
+  --section-bg: #eff6ff;
+  --section-border: #bfdbfe;
+  --section-text: #1e3a8a;
+}
+
+body.competicions-app .section-btn--rotacions {
+  --section-color: #b45309;
+  --section-bg: #fff7ed;
+  --section-border: #fed7aa;
+  --section-text: #7c2d12;
+}
+
+body.competicions-app .section-btn--classificacions {
+  --section-color: #9f1239;
+  --section-bg: #fff1f2;
+  --section-border: #fecdd3;
+  --section-text: #881337;
+}
+
+body.competicions-app .section-btn--notes {
+  --section-color: #a16207;
+  --section-bg: #fffbeb;
+  --section-border: #fde68a;
+  --section-text: #78350f;
+}
+
+/* Operational buttons inside internal app surfaces. */
+body.competicions-app .card-surface .btn:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn:not(.section-btn),
+body.competicions-app .board .btn:not(.section-btn),
+body.competicions-app .prep-shell .btn:not(.section-btn) {
+  --op-bg: #ffffff;
+  --op-border: #cbd5e1;
+  --op-text: #334155;
+  --op-hover-bg: #f8fafc;
+  --op-hover-border: #94a3b8;
+  --op-hover-text: #0f172a;
+
+  min-height: 34px;
+  border-color: var(--op-border);
+  border-radius: 8px;
+  border-width: 1px;
+  background: var(--op-bg);
+  color: var(--op-text);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  box-shadow: none;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+body.competicions-app .card-surface .btn-sm:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-sm:not(.section-btn),
+body.competicions-app .board .btn-sm:not(.section-btn),
+body.competicions-app .prep-shell .btn-sm:not(.section-btn) {
+  min-height: 32px;
+  padding: 0.32rem 0.62rem;
+  font-size: 0.86rem;
+}
+
+body.competicions-app .card-surface .btn:not(.section-btn):hover,
+body.competicions-app .card-surface .btn:not(.section-btn):focus,
+body.competicions-app .phase-dashboard-shell .btn:not(.section-btn):hover,
+body.competicions-app .phase-dashboard-shell .btn:not(.section-btn):focus,
+body.competicions-app .board .btn:not(.section-btn):hover,
+body.competicions-app .board .btn:not(.section-btn):focus,
+body.competicions-app .prep-shell .btn:not(.section-btn):hover,
+body.competicions-app .prep-shell .btn:not(.section-btn):focus {
+  border-color: var(--op-hover-border);
+  background: var(--op-hover-bg);
+  color: var(--op-hover-text);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+body.competicions-app .card-surface .btn-primary:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-primary:not(.section-btn),
+body.competicions-app .board .btn-primary:not(.section-btn),
+body.competicions-app .prep-shell .btn-primary:not(.section-btn) {
+  --op-bg: #1d4ed8;
+  --op-border: #1d4ed8;
+  --op-text: #ffffff;
+  --op-hover-bg: #1e40af;
+  --op-hover-border: #1e40af;
+  --op-hover-text: #ffffff;
+}
+
+body.competicions-app .card-surface .btn-outline-primary:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-outline-primary:not(.section-btn),
+body.competicions-app .board .btn-outline-primary:not(.section-btn),
+body.competicions-app .prep-shell .btn-outline-primary:not(.section-btn) {
+  --op-border: #bfdbfe;
+  --op-text: #1d4ed8;
+  --op-hover-bg: #eff6ff;
+  --op-hover-border: #93c5fd;
+  --op-hover-text: #1e3a8a;
+}
+
+body.competicions-app .card-surface .btn-success:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-success:not(.section-btn),
+body.competicions-app .board .btn-success:not(.section-btn),
+body.competicions-app .prep-shell .btn-success:not(.section-btn) {
+  --op-bg: #15803d;
+  --op-border: #15803d;
+  --op-text: #ffffff;
+  --op-hover-bg: #166534;
+  --op-hover-border: #166534;
+  --op-hover-text: #ffffff;
+}
+
+body.competicions-app .card-surface .btn-outline-success:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-outline-success:not(.section-btn),
+body.competicions-app .board .btn-outline-success:not(.section-btn),
+body.competicions-app .prep-shell .btn-outline-success:not(.section-btn) {
+  --op-border: #bbf7d0;
+  --op-text: #166534;
+  --op-hover-bg: #f0fdf4;
+  --op-hover-border: #86efac;
+  --op-hover-text: #14532d;
+}
+
+body.competicions-app .card-surface .btn-info:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-info:not(.section-btn),
+body.competicions-app .board .btn-info:not(.section-btn),
+body.competicions-app .prep-shell .btn-info:not(.section-btn) {
+  --op-bg: #0e7490;
+  --op-border: #0e7490;
+  --op-text: #ffffff;
+  --op-hover-bg: #155e75;
+  --op-hover-border: #155e75;
+  --op-hover-text: #ffffff;
+}
+
+body.competicions-app .card-surface .btn-outline-info:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-outline-info:not(.section-btn),
+body.competicions-app .board .btn-outline-info:not(.section-btn),
+body.competicions-app .prep-shell .btn-outline-info:not(.section-btn) {
+  --op-border: #a5f3fc;
+  --op-text: #155e75;
+  --op-hover-bg: #ecfeff;
+  --op-hover-border: #67e8f9;
+  --op-hover-text: #164e63;
+}
+
+body.competicions-app .card-surface .btn-warning:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-warning:not(.section-btn),
+body.competicions-app .board .btn-warning:not(.section-btn),
+body.competicions-app .prep-shell .btn-warning:not(.section-btn) {
+  --op-bg: #b45309;
+  --op-border: #b45309;
+  --op-text: #ffffff;
+  --op-hover-bg: #92400e;
+  --op-hover-border: #92400e;
+  --op-hover-text: #ffffff;
+}
+
+body.competicions-app .card-surface .btn-outline-warning:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-outline-warning:not(.section-btn),
+body.competicions-app .board .btn-outline-warning:not(.section-btn),
+body.competicions-app .prep-shell .btn-outline-warning:not(.section-btn) {
+  --op-border: #fed7aa;
+  --op-text: #92400e;
+  --op-hover-bg: #fff7ed;
+  --op-hover-border: #fdba74;
+  --op-hover-text: #7c2d12;
+}
+
+body.competicions-app .card-surface .btn-danger:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-danger:not(.section-btn),
+body.competicions-app .board .btn-danger:not(.section-btn),
+body.competicions-app .prep-shell .btn-danger:not(.section-btn) {
+  --op-bg: #b91c1c;
+  --op-border: #b91c1c;
+  --op-text: #ffffff;
+  --op-hover-bg: #991b1b;
+  --op-hover-border: #991b1b;
+  --op-hover-text: #ffffff;
+}
+
+body.competicions-app .card-surface .btn-outline-danger:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-outline-danger:not(.section-btn),
+body.competicions-app .board .btn-outline-danger:not(.section-btn),
+body.competicions-app .prep-shell .btn-outline-danger:not(.section-btn) {
+  --op-border: #fecaca;
+  --op-text: #991b1b;
+  --op-hover-bg: #fef2f2;
+  --op-hover-border: #fca5a5;
+  --op-hover-text: #7f1d1d;
+}
+
+body.competicions-app .card-surface .btn-dark:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-dark:not(.section-btn),
+body.competicions-app .board .btn-dark:not(.section-btn),
+body.competicions-app .prep-shell .btn-dark:not(.section-btn) {
+  --op-bg: #334155;
+  --op-border: #334155;
+  --op-text: #ffffff;
+  --op-hover-bg: #1e293b;
+  --op-hover-border: #1e293b;
+  --op-hover-text: #ffffff;
+}
+
+body.competicions-app .card-surface .btn-outline-dark:not(.section-btn),
+body.competicions-app .phase-dashboard-shell .btn-outline-dark:not(.section-btn),
+body.competicions-app .board .btn-outline-dark:not(.section-btn),
+body.competicions-app .prep-shell .btn-outline-dark:not(.section-btn) {
+  --op-border: #cbd5e1;
+  --op-text: #1e293b;
+  --op-hover-bg: #f8fafc;
+  --op-hover-border: #64748b;
+  --op-hover-text: #0f172a;
+}
+
+body.competicions-app .card-surface .btn:disabled,
+body.competicions-app .card-surface .btn.disabled,
+body.competicions-app .phase-dashboard-shell .btn:disabled,
+body.competicions-app .phase-dashboard-shell .btn.disabled,
+body.competicions-app .board .btn:disabled,
+body.competicions-app .board .btn.disabled,
+body.competicions-app .prep-shell .btn:disabled,
+body.competicions-app .prep-shell .btn.disabled {
+  opacity: 0.55;
+  box-shadow: none;
 }
 
 .slider_section .carousel_btn-container .carousel-control-prev {

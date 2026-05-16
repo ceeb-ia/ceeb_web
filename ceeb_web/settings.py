@@ -167,6 +167,15 @@ STATIC_URL = '/static/'  # URL per accedir als fitxers estàtics
 STATICFILES_DIRS = [BASE_DIR / 'static']  # Ruta al directori 'static'
 STATIC_ROOT = os.getenv("STATIC_ROOT", "/data/static")
 
+# Visual settings scoped to the competitions app.
+# Defaults to Inter without loading a bundled font. To serve a local family, place
+# files under competicions_trampoli/static/fonts/<folder>/ and configure:
+# COMPETICIONS_APP_FONT_FOLDER=manrope
+# COMPETICIONS_APP_FONT_FAMILY=Manrope
+COMPETICIONS_APP_FONT_FAMILY = _env_str("COMPETICIONS_APP_FONT_FAMILY", "")
+COMPETICIONS_APP_FONT_FOLDER = _env_str("COMPETICIONS_APP_FONT_FOLDER", "")
+COMPETICIONS_APP_FONT_FILES = None
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

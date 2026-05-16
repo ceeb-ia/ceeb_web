@@ -1,0 +1,18 @@
+{% load static %}
+{% if competition_dock_items %}
+<nav class="competition-dock" aria-label="Navegacio de competicions">
+  {% for item in competition_dock_items %}
+    <a
+      class="competition-dock-item competition-dock-item--{{ item.section }}{% if item.active %} is-active{% endif %}"
+      href="{{ item.url }}"
+      title="{{ item.label }}"
+      aria-label="{{ item.label }}"
+      {% if item.active %}aria-current="page"{% endif %}>
+      <span class="competition-dock-icon" aria-hidden="true">
+        <img src="{% static item.icon_path %}" alt="">
+      </span>
+      <span class="competition-dock-label">{{ item.label }}</span>
+    </a>
+  {% endfor %}
+</nav>
+{% endif %}

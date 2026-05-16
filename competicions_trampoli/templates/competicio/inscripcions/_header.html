@@ -1,23 +1,21 @@
 {% load competicio_extras %}
 
 <div id="inscripcions-header-fragment">
-<div class="d-flex flex-wrap justify-content-between align-items-start mb-3" style="gap:12px;">
-  <div>
-    <h1 class="h2 mb-1"><strong>Inscripcions</strong></h1>
-    <div class="text-muted">
-      <strong>{{ competicio.nom }}</strong>
-    </div>
-    <div class="mt-2 d-flex flex-wrap" style="gap:8px;">
-      <span class="badge badge-primary">{{ inscrits_filtered_count }} visibles</span>
-      <span class="badge badge-light">{{ inscrits_total_count }} totals</span>
-      <span class="badge badge-light">{{ existing_groups_count|default:0 }} grups</span>
+<div class="inscripcions-page-header">
+  <div class="inscripcions-title-block">
+    <h1 class="inscripcions-page-title">Inscripcions</h1>
+    <div class="inscripcions-context-line">
+      <span class="inscripcions-context-main">{{ competicio.nom }}</span>
+      <span>{{ inscrits_filtered_count }} visibles</span>
+      <span>{{ inscrits_total_count }} totals</span>
+      <span>{{ existing_groups_count|default:0 }} grups</span>
       {% if selected_group_fields %}
-        <span class="badge badge-info">
+        <span class="inscripcions-grouping-label">
           Agrupat per:
           {% for field in allowed_group_fields %}
             {% if field.code in selected_group_fields %}
-              {% if not forloop.first %}{% endif %}
-              <span>{{ field.label|default:field.code }}</span>{% if not forloop.last %}{% endif %}
+              {% if not forloop.first %}<span class="inscripcions-grouping-sep">&gt;</span>{% endif %}
+              <span>{{ field.label|default:field.code }}</span>
             {% endif %}
           {% endfor %}
         </span>
@@ -25,33 +23,15 @@
     </div>
   </div>
 
-  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+  <div class="inscripcions-header-actions">
     {% if can_edit_inscripcions %}
       <a class="btn btn-sm btn-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ inscripcions_return_url|urlencode }}">
-        + Afegir inscripció manual
+        + Nova inscripcio
       </a>
     {% endif %}
     <a class="btn btn-sm btn-outline-success" href="{% url 'import' competicio.id %}">
-      + Importar Excel
-    </a>
-    <a class="btn btn-sm btn-outline-warning" href="{% url 'scoring_notes_home' competicio.id %}">
-      Notes
-    </a>
-    <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' competicio.id %}" target="_blank" rel="noopener">
-      Rotacions
-    </a>
-    <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}" target="_blank" rel="noopener">
-      Configuració
+      Importar Excel
     </a>
   </div>
-  
-  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-    <a class="btn btn-sm btn-outline-secondary" href="{% url 'created' %}" rel="noopener">
-      Tornar a competicions
-    </a>
-
-
-  </div>
-
 </div>
 </div>

@@ -333,9 +333,9 @@
           <button type="button" class="btn btn-sm btn-outline-success" id="btnExportActiveCfg">
             Excel (pestanya)
           </button>
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
+          <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
+          <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
+          <a class="btn btn-sm section-btn section-btn--inscripcions" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
         </div>
       {% endif %}
     </div>

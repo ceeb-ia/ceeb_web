@@ -78,7 +78,7 @@
       order: orderedTokens,
       preserve_missing_context: true,
     }));
-    if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre custom.");
+    if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre personalitzat.");
     closeCustomSortModal();
     await API.refreshLightMutation({
       includeActivePanel: API.getActiveActionsPanelKey() === 'altres',
@@ -104,7 +104,49 @@
     document.querySelectorAll('[data-col-sort-menu]').forEach((menu) => {
       if (exceptMenu && menu === exceptMenu) return;
       menu.classList.add('d-none');
+      resetMenuPosition(menu);
     });
+  }
+
+  function resetMenuPosition(menu) {
+    if (!menu) return;
+    ['top', 'right', 'left', 'width', 'maxHeight', 'visibility'].forEach((prop) => {
+      menu.style.removeProperty(prop);
+    });
+  }
+
+  function positionColumnMenu(menu, toggle) {
+    if (!menu || !toggle) return;
+    const margin = 12;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const toggleRect = toggle.getBoundingClientRect();
+
+    menu.style.visibility = 'hidden';
+    menu.style.width = `${Math.min(280, Math.max(220, viewportWidth - (margin * 2)))}px`;
+
+    const menuRect = menu.getBoundingClientRect();
+    const menuWidth = menuRect.width || 280;
+    const preferredBelow = toggleRect.bottom + 6;
+    const belowSpace = viewportHeight - preferredBelow - margin;
+    const estimatedHeight = Math.min(menu.scrollHeight || 420, 520);
+    const shouldOpenAbove = belowSpace < 220 && toggleRect.top > belowSpace;
+    const top = shouldOpenAbove
+      ? Math.max(margin, toggleRect.top - estimatedHeight - 6)
+      : preferredBelow;
+    const left = Math.min(
+      Math.max(margin, toggleRect.right - menuWidth),
+      Math.max(margin, viewportWidth - menuWidth - margin)
+    );
+    const availableHeight = shouldOpenAbove
+      ? Math.max(220, toggleRect.top - margin - 6)
+      : Math.max(220, viewportHeight - top - margin);
+
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+    menu.style.right = 'auto';
+    menu.style.maxHeight = `${Math.min(520, availableHeight)}px`;
+    menu.style.visibility = '';
   }
 
   function closeCustomSortModal() {
@@ -159,7 +201,7 @@
   async function openCustomSortEditor(sortKey) {
     const els = getModalEls();
     modalState.sortKey = sortKey;
-    if (els.title) els.title.textContent = `Ordre custom · ${sortKey}`;
+    if (els.title) els.title.textContent = `Ordre personalitzat - ${sortKey}`;
     if (els.subtitle) els.subtitle.textContent = "Reordena els valors detectats per aquest camp.";
     if (els.status) els.status.textContent = 'Carregant valors...';
     if (els.list) els.list.innerHTML = '<div class="custom-sort-modal-empty">Carregant valors...</div>';
@@ -265,7 +307,12 @@
         const willOpen = menu.classList.contains('d-none');
         closeMenus(willOpen ? menu : null);
         menu.classList.toggle('d-none', !willOpen);
-        updateMenuScopeUi(menu);
+        if (willOpen) {
+          updateMenuScopeUi(menu);
+          positionColumnMenu(menu, toggle);
+        } else {
+          resetMenuPosition(menu);
+        }
         return;
       }
 
@@ -391,6 +438,13 @@
       }
       if (event.key === 'Escape') closeMenus();
     });
+
+    window.addEventListener('resize', () => closeMenus());
+    window.addEventListener('scroll', (event) => {
+      const scrollTarget = event.target;
+      if (scrollTarget && scrollTarget.closest && scrollTarget.closest('[data-col-sort-menu]')) return;
+      closeMenus();
+    }, true);
 
     document.addEventListener('change', async (event) => {
       const tailToggle = event.target.closest('#competition-order-tail-toggle');

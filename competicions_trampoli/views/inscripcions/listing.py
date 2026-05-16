@@ -11,7 +11,7 @@ from django.views.decorators.http import require_POST
 
 from ...access import user_has_competicio_capability
 from .base import InscripcionsListView
-from ...models import Competicio, Inscripcio, InscripcioMedia
+from ...models import Competicio, Inscripcio, InscripcioEquipAssignacio, InscripcioMedia
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...services.shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
@@ -23,6 +23,8 @@ from ...services.shared.birth_year_ranges import (
 from ...services.shared.competition_groups import get_group_for_display_num, get_group_maps, sync_competicio_group_names_view
 from ...services.teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
+    BASE_EQUIP_CONTEXT_NAME,
+    get_contextual_assignment_map,
     get_equip_context,
     get_equip_context_summary,
     normalize_equip_context_code,
@@ -340,13 +342,13 @@ class InscripcionsListNewView(InscripcionsListView):
                     continue
                 sort_label_by_code[code] = item.get("ui_label") or item.get("label") or code
 
-            dir_to_symbol = {"asc": "\u2191", "desc": "\u2193", "arrow_asc": "\u2195\u2191", "arrow_desc": "\u2195\u2193", "custom": "C"}
+            dir_to_symbol = {"asc": "\u2191", "desc": "\u2193", "arrow_asc": "\u2195\u2191", "arrow_desc": "\u2195\u2193", "custom": "P"}
             dir_to_label = {
                 "asc": "Ascendent",
                 "desc": "Descendent",
                 "arrow_asc": "Fletxa ascendent",
                 "arrow_desc": "Fletxa descendent",
-                "custom": "Custom",
+                "custom": "Personalitzat",
             }
 
             sort_entries = []
@@ -494,11 +496,13 @@ class InscripcionsListNewView(InscripcionsListView):
 
         with inscripcions_timing_section(self.request, "listing.media_maps"):
             visible_ins_ids = set()
+            visible_rows = []
             table_runtime = {}
             records_grouped = ctx.get("records_grouped")
             if records_grouped:
                 for _label, rows, _group_key in records_grouped:
                     for row in rows:
+                        visible_rows.append(row)
                         base_equip_id = getattr(row, "_base_equip_id_cache", None)
                         base_equip_name = getattr(row, "_base_equip_name_cache", "")
                         setattr(row, "base_equip_id", base_equip_id)
@@ -507,12 +511,113 @@ class InscripcionsListNewView(InscripcionsListView):
                             visible_ins_ids.add(row.id)
             else:
                 for row in (ctx.get("records") or []):
+                    visible_rows.append(row)
                     base_equip_id = getattr(row, "_base_equip_id_cache", None)
                     base_equip_name = getattr(row, "_base_equip_name_cache", "")
                     setattr(row, "base_equip_id", base_equip_id)
                     setattr(row, "base_equip_name", base_equip_name)
                     if getattr(row, "id", None):
                         visible_ins_ids.add(row.id)
+
+            if "equip" in selected_table_column_codes:
+                legacy_team_by_ins_id = {}
+                if visible_ins_ids:
+                    legacy_rows = (
+                        Inscripcio.objects
+                        .filter(id__in=visible_ins_ids)
+                        .select_related("equip")
+                        .values("id", "equip_id", "equip__nom")
+                    )
+                    for item in legacy_rows:
+                        equip_id = item.get("equip_id")
+                        if not equip_id:
+                            continue
+                        legacy_team_by_ins_id[int(item["id"])] = {
+                            "id": equip_id,
+                            "name": str(item.get("equip__nom") or "").strip(),
+                        }
+                selected_assignment_map = (
+                    get_contextual_assignment_map(self.competicio, visible_ins_ids, team_context_code)
+                    if visible_ins_ids
+                    else {}
+                )
+                assignments_by_ins_id = {}
+                if visible_ins_ids:
+                    assignment_rows = (
+                        InscripcioEquipAssignacio.objects
+                        .filter(competicio=self.competicio, inscripcio_id__in=visible_ins_ids)
+                        .select_related("context", "equip")
+                        .order_by("context__nom", "equip__nom", "id")
+                    )
+                    for assignment in assignment_rows:
+                        context = getattr(assignment, "context", None)
+                        equip = getattr(assignment, "equip", None)
+                        context_code = str(getattr(context, "code", "") or "").strip()
+                        context_label = (
+                            BASE_EQUIP_CONTEXT_NAME
+                            if context_code == NATIVE_EQUIP_CONTEXT_CODE
+                            else str(getattr(context, "nom", "") or "").strip()
+                        ) or context_code
+                        equip_name = str(getattr(equip, "nom", "") or "").strip()
+                        if not context_label or not equip_name:
+                            continue
+                        assignments_by_ins_id.setdefault(int(assignment.inscripcio_id), []).append(
+                            {
+                                "context_code": context_code,
+                                "context_label": context_label,
+                                "equip_name": equip_name,
+                            }
+                        )
+                for ins_id, legacy_team in legacy_team_by_ins_id.items():
+                    existing_native = any(
+                        item.get("context_code") == NATIVE_EQUIP_CONTEXT_CODE
+                        for item in assignments_by_ins_id.get(ins_id, [])
+                    )
+                    if existing_native:
+                        continue
+                    assignments_by_ins_id.setdefault(ins_id, []).append(
+                        {
+                            "context_code": NATIVE_EQUIP_CONTEXT_CODE,
+                            "context_label": BASE_EQUIP_CONTEXT_NAME,
+                            "equip_name": legacy_team.get("name") or f"Equip {legacy_team.get('id')}",
+                        }
+                    )
+                selected_context_label = str(ctx.get("team_context_selected_label") or team_context_code).strip()
+                for row in visible_rows:
+                    row_id = getattr(row, "id", None)
+                    selected_assignment = selected_assignment_map.get(row_id)
+                    selected_equip = getattr(selected_assignment, "equip", None) if selected_assignment is not None else None
+                    if selected_equip is None and team_context_code == NATIVE_EQUIP_CONTEXT_CODE:
+                        legacy_team = legacy_team_by_ins_id.get(int(row_id or 0), {})
+                        selected_equip_id = getattr(row, "base_equip_id", None) or legacy_team.get("id")
+                        selected_equip_name = getattr(row, "base_equip_name", "") or legacy_team.get("name") or ""
+                    else:
+                        selected_equip_id = getattr(selected_equip, "id", None)
+                        selected_equip_name = str(getattr(selected_equip, "nom", "") or "").strip()
+                    all_assignments = assignments_by_ins_id.get(int(row_id or 0), [])
+                    other_assignments = [
+                        item
+                        for item in all_assignments
+                        if item.get("context_code") != team_context_code
+                    ]
+                    tooltip_lines = [f"Context actual: {selected_context_label}"]
+                    if selected_equip_name:
+                        tooltip_lines.append(f"Equip actual: {selected_equip_name}")
+                    else:
+                        tooltip_lines.append("Sense equip en aquest context")
+                    if other_assignments:
+                        tooltip_lines.append("Altres contextos:")
+                        tooltip_lines.extend(
+                            f"{item['context_label']}: {item['equip_name']}"
+                            for item in other_assignments[:6]
+                        )
+                        if len(other_assignments) > 6:
+                            tooltip_lines.append(f"+{len(other_assignments) - 6} contextos mes")
+                    setattr(row, "context_equip_id", selected_equip_id)
+                    setattr(row, "context_equip_name", selected_equip_name)
+                    setattr(row, "team_context_label", selected_context_label)
+                    setattr(row, "other_team_contexts_count", len(other_assignments))
+                    setattr(row, "team_context_tooltip", "\n".join(tooltip_lines))
 
             if "__aparells__" in selected_table_column_codes:
                 excluded_map = {}

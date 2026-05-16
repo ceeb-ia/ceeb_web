@@ -14,11 +14,11 @@
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
-        <a class="btn btn-sm btn-outline-secondary"
+        <a class="btn btn-sm section-btn section-btn--fases"
            href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">Aparells globals</a>
         <a class="btn btn-sm btn-outline-primary"
            href="{% url 'trampoli_aparell_create' competicio.id %}">Afegir aparell</a>
-        <a class="btn btn-sm btn-info"
+        <a class="btn btn-sm section-btn section-btn--notes"
            href="{% url 'scoring_notes_home' competicio.id %}">Anar a notes</a>
       </div>
     </div>
@@ -67,7 +67,7 @@
                 {% endif %}
               </td>
               <td class="text-right">
-                <a class="btn btn-sm btn-outline-primary"
+                <a class="btn btn-sm section-btn section-btn--fases"
                    href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ ca.id }}">Fases</a>
                 <a class="btn btn-sm btn-outline-secondary"
                    href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
