@@ -107,6 +107,16 @@ def extra_item(d, key):
     return None
 
 
+@register.filter
+def initials(value):
+    words = [part for part in str(value or "").replace("-", " ").split() if part]
+    if not words:
+        return "?"
+    if len(words) == 1:
+        return words[0][:1].upper()
+    return f"{words[0][:1]}{words[-1][:1]}".upper()
+
+
 @register.simple_tag(takes_context=True)
 def competicio_background_url(context):
     request = context.get("request") if hasattr(context, "get") else None

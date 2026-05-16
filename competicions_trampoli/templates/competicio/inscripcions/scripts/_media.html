@@ -646,8 +646,11 @@
           </div>
         </div>
         ${API.app.canEdit ? `<div class="media-upload-row mt-2">
-          <input type="file" class="form-control form-control-sm js-media-upload-input" data-ins-id="${escapeHtml(row.inscripcio_id)}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
-          <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="${escapeHtml(row.inscripcio_id)}">Pujar</button>
+          <label class="media-file-trigger">
+            <span>Tria fitxer</span>
+            <input type="file" class="form-control form-control-sm js-media-upload-input media-upload-native" data-ins-id="${escapeHtml(row.inscripcio_id)}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+          </label>
+          <button type="button" class="btn btn-sm btn-outline-secondary js-media-upload-btn media-upload-btn" data-ins-id="${escapeHtml(row.inscripcio_id)}">Pujar</button>
         </div>` : ''}
         <div class="media-assignment-items">
           ${row.media_items.length ? row.media_items.map((item) => `<div class="media-item" data-media-id="${escapeHtml(item.media_id)}">
@@ -1126,7 +1129,7 @@
       const uploadBtn = target.closest('.js-media-upload-btn');
       if (uploadBtn) {
         const insId = Math.floor(toNumber(uploadBtn.getAttribute('data-ins-id') || '0', 0));
-        const scope = uploadBtn.closest('.media-assignment-card, .media-cell, .media-upload-row, .team-pane-card, .panel-body, .action-panel-body') || document;
+        const scope = uploadBtn.closest('.media-assignment-card, .media-cell, .row-actions-popover, .media-upload-row, .team-pane-card, .panel-body, .action-panel-body') || document;
         const input = scope.querySelector(`.js-media-upload-input[data-ins-id="${safeSelector(String(insId))}"]`) || document.querySelector(`.js-media-upload-input[data-ins-id="${safeSelector(String(insId))}"]`);
         const file = input?.files?.[0];
         if (!file) {

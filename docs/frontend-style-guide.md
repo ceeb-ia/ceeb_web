@@ -26,8 +26,10 @@ Aquest document defineix criteris senzills per donar coherencia visual al progra
 --app-bg: #F8FAFC;
 --surface: #FFFFFF;
 --border: #E2E8F0;
+--border-soft: #CBD5E1;
 --text: #0F172A;
 --muted: #64748B;
+--text-muted: #94A3B8;
 ```
 
 ## Tipografia
@@ -143,18 +145,21 @@ Regles:
 La taula d'inscripcions es una data grid funcional amb molt JavaScript associat. Les millores visuals han de respectar el DOM i els selectors existents:
 
 - La capcalera d'Inscripcions ha de contenir context i accions propies de la pantalla, no navegacio cap a Notes, Rotacions, Configuracio o llista de competicions. Aquesta navegacio queda al dock.
-- Inscripcions ha de tenir una identitat teal reconeixible com Notes la te groga: variables locals (`--insc-base`, `--insc-bg`, `--insc-border`, `--insc-text`) aplicades al shell, capcalera, panell de cerca, focus de controls, tabs i taula.
+- Inscripcions ha de tenir una identitat teal reconeixible, pero el teal ha de funcionar com a accent: titol, boto primari, focus, pestanya activa, badges puntuals i barres de grup. Evitar superficies grans tenyides.
+- El layout base d'Inscripcions ha de ser neutre: fons `#F8FAFC`, superficies `#FFFFFF`, borders `#E2E8F0`, text principal `#0F172A` i text secundari `#64748B`.
 - El panell de cerca pot agrupar cercador, estat de resultats i opcions de treball com l'ordre de competicio, sempre mantenint ids funcionals (`search-btn`, `clear-search-btn`, `competition-order-tail-toggle`).
 - No canviar ids, `data-*`, classes funcionals ni estructura de files/cel.les sense revisar els scripts.
-- Mantenir les classes `group-band-0` a `group-band-7`; el color de fons per grup es una ajuda d'orientacio important.
-- Les pestanyes de grup poden tenir una pell compacta, pero han de mantenir `nav-tabs`, `nav-link`, ids, `aria-*` i lazy loading intactes.
-- Les files de grup han de llegir-se com capcaleres de seccio: fons suau, franja d'accent i recompte discret.
-- La taula ha de prioritzar lectura de dades: capcalera sticky, separadors fins, hover subtil i menys sensacio de quadricula.
+- Mantenir les classes `group-band-0` a `group-band-7`; els colors de grup s'han d'aplicar al header de grup i a la barra lateral, no a totes les files internes.
+- Les pestanyes de grup han de ser netes: activa amb text i linia inferior teal, inactives en gris, comptadors com badges neutres. Han de mantenir `nav-tabs`, `nav-link`, ids, `aria-*` i lazy loading intactes.
+- Les files de grup han de llegir-se com capcaleres de seccio: fons molt suau, franja d'accent, nom complet, recompte discret i menu de tres punts.
+- La taula ha de prioritzar lectura de dades: capcalera sticky, files blanques, separadors fins, hover `#F8FAFC` i menys sensacio de quadricula.
 - Les columnes `Grup` i `Aparells` han de ser compactes: `Grup` pot tallar-se dins la columna, pero la capcalera de grup sempre ha de mostrar el nom complet.
 - A `Aparells`, el resum `Competeix...` ha de quedar visible sencer i el selector multiple ha de quedar dins un desplegable per usar-lo nomes quan calgui editar.
 - La columna `Equip` s'ha de llegir com `Equip actiu`: mostra l'equip del context seleccionat, el context a sota i un indicador discret quan la inscripcio tambe te equip en altres contextos.
+- La columna `Fitxers` no ha de mostrar el control natiu de fitxer com a element principal. Cal mantenir `.js-media-upload-input` i `.js-media-upload-btn`, pero presentar-los amb controls compactes i discrets.
+- Les accions de fila han de mostrar nomes una accio principal discreta i un menu `...` per accions secundaries o destructives.
 - El panell lateral d'accions d'Inscripcions s'ha d'obrir amb una nansa lateral compacta, no amb un boto flotant llarg. La nansa ha de conservar `id`, `aria-controls` i `aria-expanded`.
-- Els controls de fila, drag handles, filtres, ordenacio, media i aparells es poden polir visualment, pero no s'han de moure ni amagar en una passada CSS-only.
+- Els controls de fila, drag handles, filtres, ordenacio, media i aparells es poden polir visualment, pero s'han de conservar els selectors funcionals (`js-*`, `data-*`) i els elements interactius que consumeix el JavaScript.
 
 ## Coses a evitar
 

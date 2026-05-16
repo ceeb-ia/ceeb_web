@@ -1,9 +1,15 @@
 {% load competicio_extras %}
+{% load static %}
 
 <div id="inscripcions-header-fragment">
 <div class="inscripcions-page-header">
   <div class="inscripcions-title-block">
-    <h1 class="inscripcions-page-title">Inscripcions</h1>
+    <h1 class="inscripcions-page-title">
+      <span class="inscripcions-title-logo" aria-hidden="true">
+        <img src="{% static 'dock/inscripcions.png' %}" alt="">
+      </span>
+      <span>Inscripcions</span>
+    </h1>
     <div class="inscripcions-context-line">
       <span class="inscripcions-context-main">{{ competicio.nom }}</span>
       <span>{{ inscrits_filtered_count }} visibles</span>
@@ -25,12 +31,18 @@
 
   <div class="inscripcions-header-actions">
     {% if can_edit_inscripcions %}
-      <a class="btn btn-sm btn-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ inscripcions_return_url|urlencode }}">
-        + Nova inscripcio
+      <a class="btn btn-sm inscripcions-action-btn inscripcions-action-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ inscripcions_return_url|urlencode }}">
+        <span class="inscripcions-action-icon" aria-hidden="true">+</span>
+        <span>Nova inscripci&oacute;</span>
       </a>
     {% endif %}
-    <a class="btn btn-sm btn-outline-success" href="{% url 'import' competicio.id %}">
-      Importar Excel
+    <a class="btn btn-sm inscripcions-action-btn inscripcions-action-outline" href="{% url 'import' competicio.id %}">
+      <svg class="inscripcions-action-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <path d="M5 2.5h6.4L16 7.1v10.4H5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M11.3 2.8v4.5h4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M10 8.9v5.3M7.9 12.1 10 14.3l2.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Importar Excel</span>
     </a>
   </div>
 </div>
