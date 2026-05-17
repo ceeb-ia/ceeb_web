@@ -8,6 +8,14 @@ window.initGroupsWorkspace = async function () {
   window.__groupsWorkspaceInitialized = true;
   window.__groupsWorkspaceRoot = groupsWorkspaceShell;
   const appApi = window.InscripcionsApp || {};
+  const groupParticipantsIcon = String(groupsWorkspaceShell.dataset.groupsParticipantsIcon || '').trim();
+  const groupDetailIcon = String(groupsWorkspaceShell.dataset.groupsDetailIcon || '').trim();
+  const transformIcons = {
+    merge: String(groupsWorkspaceShell.dataset.groupsTransformMergeIcon || '').trim(),
+    split: String(groupsWorkspaceShell.dataset.groupsTransformSplitIcon || '').trim(),
+    balance: String(groupsWorkspaceShell.dataset.groupsTransformBalanceIcon || '').trim(),
+    bucket: String(groupsWorkspaceShell.dataset.groupsTransformBucketIcon || '').trim(),
+  };
 
   const groupsWorkspaceUrl = "{% url 'groups_workspace' competicio.id %}";
   const groupsDetailUrl = "{% url 'groups_detail' competicio.id %}";
@@ -53,11 +61,17 @@ window.initGroupsWorkspace = async function () {
     transformPreview: null,
     transformPayload: null,
     transformBusy: false,
+    activeTransformOperation: '',
     bulkGroupOrderPreview: null,
     bulkGroupOrderPayload: null,
     bulkGroupOrderBusy: false,
     transformActionsExpanded: false,
     transformTargetQuery: '',
+    detailMemberFilters: {
+      q: '',
+      entitats: [],
+      order_state: 'all',
+    },
     autoContextExpanded: false,
     filterTimer: null,
     workspace: null,
@@ -392,6 +406,287 @@ window.initGroupsWorkspace = async function () {
     renderGroupsFilterActiveChips();
   }
 
+  function boardSizeSummaryLabel(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    if (current.min_size !== null && current.max_size !== null) {
+      return current.min_size === current.max_size ? String(current.min_size) : `${current.min_size}-${current.max_size}`;
+    }
+    if (current.min_size !== null) return `>= ${current.min_size}`;
+    if (current.max_size !== null) return `<= ${current.max_size}`;
+    return 'Qualsevol';
+  }
+
+  function renderBoardFilterActiveChips() {
+    const wrap = document.getElementById('groups-board-filter-active-chips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const filters = [
+      { id: 'groups-board-filter-categoria', label: 'Categoria' },
+      { id: 'groups-board-filter-subcategoria', label: 'Subcategoria' },
+      { id: 'groups-board-filter-entitat', label: 'Entitat' },
+      { id: 'groups-board-filter-members-state', label: 'Estat' },
+      { id: 'groups-board-filter-program-state', label: 'Programa' },
+    ];
+    const frag = document.createDocumentFragment();
+    let activeCount = 0;
+    if (state.boardFilters.q) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-groups-board-filter-search-clear', '1');
+      chip.textContent = `Cerca: ${state.boardFilters.q} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    }
+    filters.forEach((filter) => {
+      const selectEl = document.getElementById(filter.id);
+      if (!selectEl) return;
+      const selected = selectEl.multiple
+        ? Array.from(selectEl.selectedOptions || [])
+        : Array.from(selectEl.selectedOptions || []).filter((option) => String(option.value || '') !== 'all');
+      selected.forEach((option) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'groups-filter-chip';
+        chip.setAttribute('data-groups-board-filter-chip-select', filter.id);
+        chip.setAttribute('data-groups-board-filter-chip-value', String(option.value || ''));
+        chip.textContent = `${filter.label}: ${option.textContent?.trim() || option.value} x`;
+        frag.appendChild(chip);
+        activeCount += 1;
+      });
+    });
+    if (state.boardFilters.min_size !== null || state.boardFilters.max_size !== null) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-groups-board-size-clear', '1');
+      chip.textContent = `Mida: ${boardSizeSummaryLabel()} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    }
+    wrap.classList.toggle('is-empty', activeCount === 0);
+    wrap.appendChild(frag);
+  }
+
+  function renderBoardFilterPopovers() {
+    document.querySelectorAll('[data-groups-board-filter-popover]').forEach((popover) => {
+      const selectId = String(popover.getAttribute('data-select-id') || '').trim();
+      const selectEl = document.getElementById(selectId);
+      if (!selectEl) return;
+      const summary = popover.querySelector('[data-filter-summary]');
+      if (summary) summary.textContent = filterSummaryLabel(selectEl);
+      popover.classList.toggle('is-active', selectEl.multiple ? selectedOptionValues(selectEl).length > 0 : String(selectEl.value || 'all') !== 'all');
+      const optionsWrap = popover.querySelector(`[data-filter-options-for="${selectId}"]`);
+      if (!optionsWrap) return;
+      optionsWrap.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      Array.from(selectEl.options || []).forEach((option) => {
+        const optionValue = String(option.value || '');
+        const label = document.createElement('label');
+        label.className = 'groups-filter-option';
+        const input = document.createElement('input');
+        input.type = selectEl.multiple ? 'checkbox' : 'radio';
+        input.className = 'js-groups-board-filter-choice';
+        input.name = `groups-board-filter-choice-${selectId}`;
+        input.value = optionValue;
+        input.checked = !!option.selected;
+        input.setAttribute('data-select-id', selectId);
+        const textSpan = document.createElement('span');
+        textSpan.textContent = option.textContent || optionValue;
+        label.appendChild(input);
+        label.appendChild(textSpan);
+        frag.appendChild(label);
+      });
+      if (!frag.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'groups-filter-empty';
+        empty.textContent = 'Sense opcions disponibles';
+        frag.appendChild(empty);
+      }
+      optionsWrap.appendChild(frag);
+    });
+    const sizeSummary = document.getElementById('groups-board-size-summary');
+    if (sizeSummary) sizeSummary.textContent = boardSizeSummaryLabel();
+    const sizePopover = document.querySelector('[data-groups-board-size-popover]');
+    if (sizePopover) sizePopover.classList.toggle('is-active', state.boardFilters.min_size !== null || state.boardFilters.max_size !== null);
+    renderBoardFilterActiveChips();
+  }
+
+  function normalizeDetailMemberFilters(raw) {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const orderState = String(data.order_state || 'all').trim();
+    return {
+      q: String(data.q || '').trim(),
+      entitats: Array.isArray(data.entitats) ? data.entitats.map(String).filter(Boolean) : [],
+      order_state: ['all', 'with_order', 'without_order'].includes(orderState) ? orderState : 'all',
+    };
+  }
+
+  function setDetailMemberFilters(nextFilters) {
+    state.detailMemberFilters = normalizeDetailMemberFilters(Object.assign({}, state.detailMemberFilters, nextFilters || {}));
+  }
+
+  function renderDetailFilterActiveChips() {
+    const wrap = document.getElementById('groups-detail-filter-active-chips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    let activeCount = 0;
+    const filters = normalizeDetailMemberFilters(state.detailMemberFilters);
+    if (filters.q) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-groups-detail-filter-search-clear', '1');
+      chip.textContent = `Cerca: ${filters.q} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    }
+    [
+      { id: 'groups-detail-filter-entitat', label: 'Entitat' },
+      { id: 'groups-detail-filter-order-state', label: 'Ordre' },
+    ].forEach((filter) => {
+      const selectEl = document.getElementById(filter.id);
+      if (!selectEl) return;
+      const selected = selectEl.multiple
+        ? Array.from(selectEl.selectedOptions || [])
+        : Array.from(selectEl.selectedOptions || []).filter((option) => String(option.value || '') !== 'all');
+      selected.forEach((option) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'groups-filter-chip';
+        chip.setAttribute('data-groups-detail-filter-chip-select', filter.id);
+        chip.setAttribute('data-groups-detail-filter-chip-value', String(option.value || ''));
+        chip.textContent = `${filter.label}: ${option.textContent?.trim() || option.value} x`;
+        frag.appendChild(chip);
+        activeCount += 1;
+      });
+    });
+    wrap.classList.toggle('is-empty', activeCount === 0);
+    wrap.appendChild(frag);
+  }
+
+  function renderDetailFilterPopovers() {
+    document.querySelectorAll('[data-groups-detail-filter-popover]').forEach((popover) => {
+      const selectId = String(popover.getAttribute('data-select-id') || '').trim();
+      const selectEl = document.getElementById(selectId);
+      if (!selectEl) return;
+      const summary = popover.querySelector('[data-filter-summary]');
+      if (summary) summary.textContent = filterSummaryLabel(selectEl);
+      popover.classList.toggle('is-active', selectEl.multiple ? selectedOptionValues(selectEl).length > 0 : String(selectEl.value || 'all') !== 'all');
+      const optionsWrap = popover.querySelector(`[data-filter-options-for="${selectId}"]`);
+      if (!optionsWrap) return;
+      optionsWrap.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      Array.from(selectEl.options || []).forEach((option) => {
+        const optionValue = String(option.value || '');
+        const label = document.createElement('label');
+        label.className = 'groups-filter-option';
+        const input = document.createElement('input');
+        input.type = selectEl.multiple ? 'checkbox' : 'radio';
+        input.className = 'js-groups-detail-filter-choice';
+        input.name = `groups-detail-filter-choice-${selectId}`;
+        input.value = optionValue;
+        input.checked = !!option.selected;
+        input.setAttribute('data-select-id', selectId);
+        const textSpan = document.createElement('span');
+        textSpan.textContent = option.textContent || optionValue;
+        label.appendChild(input);
+        label.appendChild(textSpan);
+        frag.appendChild(label);
+      });
+      if (!frag.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'groups-filter-empty';
+        empty.textContent = 'Sense opcions disponibles';
+        frag.appendChild(empty);
+      }
+      optionsWrap.appendChild(frag);
+    });
+    renderDetailFilterActiveChips();
+  }
+
+  function populateDetailMemberFilters(members) {
+    const filters = normalizeDetailMemberFilters(state.detailMemberFilters);
+    const qInput = document.getElementById('groups-detail-member-q');
+    if (qInput) qInput.value = filters.q;
+    const entitatSelect = document.getElementById('groups-detail-filter-entitat');
+    if (entitatSelect) {
+      const entitats = uniqueSortedStrings((Array.isArray(members) ? members : []).map((member) => member?.entitat || member?.secondary_label));
+      fillSelect(entitatSelect, entitats, filters.entitats, 'Qualsevol', (value) => ({ value, label: value }));
+    }
+    const orderSelect = document.getElementById('groups-detail-filter-order-state');
+    if (orderSelect) orderSelect.value = filters.order_state;
+    renderDetailFilterPopovers();
+  }
+
+  function applyDetailMemberFilters() {
+    const filters = normalizeDetailMemberFilters(state.detailMemberFilters);
+    const q = normalizeSearchText(filters.q);
+    const entitats = new Set(filters.entitats.map(String));
+    let visibleCount = 0;
+    let totalCount = 0;
+    document.querySelectorAll('#groups-detail-members-list .team-context-member-row').forEach((row) => {
+      totalCount += 1;
+      const matchesQ = !q || String(row.dataset.searchText || '').includes(q);
+      const matchesEntitat = !entitats.size || entitats.has(String(row.dataset.entitat || ''));
+      const matchesOrder = filters.order_state === 'all' || String(row.dataset.orderState || '') === filters.order_state;
+      const visible = matchesQ && matchesEntitat && matchesOrder;
+      row.classList.toggle('d-none', !visible);
+      if (visible) visibleCount += 1;
+    });
+    const count = document.getElementById('groups-detail-filter-count');
+    if (count) count.textContent = totalCount ? `${visibleCount} de ${totalCount} visibles` : '0 participants';
+    renderDetailFilterActiveChips();
+  }
+
+  function setDetailMemberFilterValue(selectId, value, checked) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    const valueText = String(value || '');
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (String(option.value || '') === valueText) option.selected = !!checked;
+      });
+    } else {
+      selectEl.value = valueText;
+    }
+    setDetailMemberFilters({
+      entitats: selectedOptionValues(document.getElementById('groups-detail-filter-entitat')),
+      order_state: String(document.getElementById('groups-detail-filter-order-state')?.value || 'all'),
+    });
+    renderDetailFilterPopovers();
+    applyDetailMemberFilters();
+  }
+
+  function clearDetailMemberFilter(selectId, value = null) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (value === null || String(option.value || '') === String(value || '')) option.selected = false;
+      });
+    } else {
+      selectEl.value = 'all';
+    }
+    setDetailMemberFilters({
+      entitats: selectedOptionValues(document.getElementById('groups-detail-filter-entitat')),
+      order_state: String(document.getElementById('groups-detail-filter-order-state')?.value || 'all'),
+    });
+    renderDetailFilterPopovers();
+    applyDetailMemberFilters();
+  }
+
+  function clearAllDetailMemberFilters() {
+    const q = document.getElementById('groups-detail-member-q');
+    if (q) q.value = '';
+    clearDetailMemberFilter('groups-detail-filter-entitat');
+    clearDetailMemberFilter('groups-detail-filter-order-state');
+    setDetailMemberFilters({ q: '', entitats: [], order_state: 'all' });
+    renderDetailFilterPopovers();
+    applyDetailMemberFilters();
+  }
+
   function setUniverseFilterValue(selectId, value, checked) {
     const selectEl = document.getElementById(selectId);
     if (!selectEl) return;
@@ -425,6 +720,48 @@ window.initGroupsWorkspace = async function () {
       .forEach((id) => clearUniverseFilter(id));
   }
 
+  function setBoardFilterValue(selectId, value, checked) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (String(option.value || '') === String(value || '')) option.selected = !!checked;
+      });
+    } else {
+      selectEl.value = String(value || 'all');
+    }
+    renderBoardFilterPopovers();
+  }
+
+  function clearBoardFilter(selectId, value = null) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (value === null || String(option.value || '') === String(value || '')) option.selected = false;
+      });
+    } else {
+      selectEl.value = 'all';
+    }
+    renderBoardFilterPopovers();
+  }
+
+  function clearBoardSizeFilters() {
+    const minSize = document.getElementById('groups-board-filter-min-size');
+    const maxSize = document.getElementById('groups-board-filter-max-size');
+    if (minSize) minSize.value = '';
+    if (maxSize) maxSize.value = '';
+    renderBoardFilterPopovers();
+  }
+
+  function clearAllBoardFilters() {
+    const q = document.getElementById('groups-board-filter-q');
+    if (q) q.value = '';
+    ['groups-board-filter-categoria', 'groups-board-filter-subcategoria', 'groups-board-filter-entitat', 'groups-board-filter-members-state', 'groups-board-filter-program-state']
+      .forEach((id) => clearBoardFilter(id));
+    clearBoardSizeFilters();
+  }
+
   function readBoardFilters() {
     return normalizeBoardFilters({
       q: document.getElementById('groups-board-filter-q')?.value || '',
@@ -454,6 +791,7 @@ window.initGroupsWorkspace = async function () {
     if (minSize) minSize.value = data.min_size === null ? '' : String(data.min_size);
     const maxSize = document.getElementById('groups-board-filter-max-size');
     if (maxSize) maxSize.value = data.max_size === null ? '' : String(data.max_size);
+    renderBoardFilterPopovers();
   }
 
   function buildBoardFilterOptions(groups) {
@@ -528,6 +866,7 @@ window.initGroupsWorkspace = async function () {
       toggle.textContent = state.boardFiltersExpanded ? 'Amagar filtres del board' : 'Veure filtres del board';
     }
     if (summary) summary.textContent = boardFilterSummaryText();
+    renderBoardFilterPopovers();
     if (!options.skipSave) saveWorkspaceState();
   }
 
@@ -619,7 +958,7 @@ window.initGroupsWorkspace = async function () {
     if (panel) panel.classList.toggle('d-none', !state.autoContextExpanded);
     if (toggle) {
       toggle.setAttribute('aria-expanded', state.autoContextExpanded ? 'true' : 'false');
-      toggle.textContent = state.autoContextExpanded ? 'Amagar context automatic' : 'Veure context automatic';
+      toggle.textContent = state.autoContextExpanded ? 'Amagar estratègies de creacio massiva' : 'Veure estratègies de creacio massiva';
     }
     if (!options.skipSave) saveWorkspaceState();
   }
@@ -708,15 +1047,47 @@ window.initGroupsWorkspace = async function () {
     if (!options.skipSave) saveWorkspaceState();
   }
 
-  function groupAccentForCandidate(item) {
+  const groupBandPalette = [
+    { accent: '#2563eb', bg: '#dbeafe' },
+    { accent: '#0f766e', bg: '#ccfbf1' },
+    { accent: '#b45309', bg: '#ffedd5' },
+    { accent: '#be123c', bg: '#ffe4e6' },
+    { accent: '#7c3aed', bg: '#ede9fe' },
+    { accent: '#0e7490', bg: '#cffafe' },
+    { accent: '#b91c1c', bg: '#fee2e2' },
+    { accent: '#4d7c0f', bg: '#ecfccb' },
+  ];
+
+  function groupBandIndexFromDisplayNum(displayNum) {
+    const clean = Number.parseInt(displayNum, 10);
+    return Number.isFinite(clean) ? clean % 8 : null;
+  }
+
+  function groupDisplayNumForCandidate(item) {
+    const ownGroupNum = groupBandIndexFromDisplayNum(item?.group_num);
+    if (ownGroupNum !== null) return Number.parseInt(item?.group_num, 10);
     const groupId = String(item?.group_id || '').trim();
-    if (!groupId) return '#94a3b8';
-    const palette = ['#9f1239', '#0f766e', '#d97706', '#2563eb'];
+    if (!groupId) return null;
     const groups = Array.isArray(state.workspace?.groups) ? state.workspace.groups : [];
-    const index = groups.findIndex((group) => String(group?.id || '').trim() === groupId);
-    if (index >= 0) return palette[index % palette.length];
-    const numericId = Number.parseInt(groupId, 10);
-    return palette[(Number.isFinite(numericId) ? numericId : 0) % palette.length];
+    const group = groups.find((row) => String(row?.id || '').trim() === groupId);
+    const displayNum = Number.parseInt(group?.display_num, 10);
+    return Number.isFinite(displayNum) ? displayNum : null;
+  }
+
+  function groupPaletteForCandidate(item) {
+    const displayNum = groupDisplayNumForCandidate(item);
+    const bandIndex = groupBandIndexFromDisplayNum(displayNum);
+    return bandIndex === null ? { accent: '#94a3b8', bg: '#f1f5f9' } : groupBandPalette[bandIndex];
+  }
+
+  function groupBandClass(group) {
+    const bandIndex = groupBandIndexFromDisplayNum(group?.display_num);
+    return bandIndex === null ? '' : ` group-band-${bandIndex}`;
+  }
+
+  function groupPaletteForGroup(group) {
+    const bandIndex = groupBandIndexFromDisplayNum(group?.display_num);
+    return bandIndex === null ? { accent: '#0f766e', bg: '#ccfbf1' } : groupBandPalette[bandIndex];
   }
 
   function initialsForLabel(label) {
@@ -730,12 +1101,13 @@ window.initGroupsWorkspace = async function () {
 
   function candidateRow(item) {
     const id = String(item?.id || '').trim();
-    const groupAccent = groupAccentForCandidate(item);
+    const groupPalette = groupPaletteForCandidate(item);
     const row = document.createElement('div');
     row.className = `team-candidate-row${state.selectedIds.has(id) ? ' is-selected' : ''}${dndEnabled() ? ' can-drag' : ''}`;
     row.dataset.candidateId = id;
     row.dataset.inscripcioId = id;
-    row.style.setProperty('--candidate-group-accent', groupAccent);
+    row.style.setProperty('--candidate-group-accent', groupPalette.accent);
+    row.style.setProperty('--candidate-group-bg', groupPalette.bg);
 
     const checkboxWrap = document.createElement('div');
     checkboxWrap.className = 'custom-control custom-checkbox groups-candidate-check-wrap';
@@ -845,9 +1217,22 @@ window.initGroupsWorkspace = async function () {
 
   function groupMemberRow(member, groupId) {
     const id = String(member?.id || '').trim();
+    const sourceGroup = getGroupDetail(groupId)
+      || (Array.isArray(state.workspace?.groups) ? state.workspace.groups : []).find((group) => String(group?.id || '').trim() === String(groupId || '').trim());
+    const sourceBlocked = !!sourceGroup?.is_programmed;
     const row = document.createElement('div');
-    row.className = `team-context-member-row${dndEnabled() ? ' can-drag' : ''}`;
+    row.className = `team-context-member-row${dndEnabled() && !sourceBlocked ? ' can-drag' : ''}`;
     row.dataset.inscripcioId = id;
+    row.dataset.entitat = String(member?.entitat || member?.secondary_label || '').trim();
+    row.dataset.orderState = member?.order_competicio ? 'with_order' : 'without_order';
+    row.dataset.searchText = normalizeSearchText([
+      member?.nom,
+      member?.label,
+      member?.name,
+      member?.entitat,
+      member?.secondary_label,
+      member?.order_competicio ? `ordre ${member.order_competicio}` : '',
+    ].filter(Boolean).join(' '));
 
     const main = document.createElement('div');
     main.className = 'team-context-member-main';
@@ -864,7 +1249,7 @@ window.initGroupsWorkspace = async function () {
     main.appendChild(meta);
     row.appendChild(main);
 
-    if (dndEnabled()) {
+    if (dndEnabled() && !sourceBlocked) {
       const drag = document.createElement('button');
       drag.type = 'button';
       drag.className = 'btn btn-sm btn-outline-secondary team-member-drag-handle';
@@ -876,16 +1261,18 @@ window.initGroupsWorkspace = async function () {
       row.appendChild(drag);
     }
 
-    if (editable()) {
+    if (editable() || sourceBlocked) {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'btn btn-sm btn-outline-warning js-group-member-unassign';
       remove.dataset.inscripcioId = id;
       remove.dataset.groupId = String(groupId || '');
       remove.textContent = 'Treure';
+      remove.disabled = !editable() || sourceBlocked;
       remove.addEventListener('click', async (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (remove.disabled) return;
         await unassignSingleMember(id);
       });
       row.appendChild(remove);
@@ -1056,146 +1443,161 @@ window.initGroupsWorkspace = async function () {
     }
 
     const blocked = !editable() || !!detailGroup?.is_programmed;
-    const card = document.createElement('div');
-    card.className = 'card groups-transform-card';
-    root.appendChild(card);
+    const operations = [
+      { op: 'merge_into_current', title: 'Unir', copy: 'Fusiona altres grups amb aquest.', button: 'Configurar', icon: transformIcons.merge, needsTargets: true },
+      { op: 'split_count', title: 'Dividir en N', copy: 'Reparteix aquest grup en N grups.', button: 'Configurar', icon: transformIcons.split, needsCount: true },
+      { op: 'split_size', title: 'Dividir per mida', copy: 'Crea grups amb una mida fixa.', button: 'Configurar', icon: transformIcons.split, needsSize: true },
+      { op: 'split_bucket', title: 'Dividir per criteri', copy: 'Separa per camps de classificacio.', button: 'Configurar', icon: transformIcons.bucket, needsBuckets: true },
+      { op: 'extract_selection', title: 'Extreure seleccio', copy: 'Mou la seleccio a un grup nou.', button: 'Previsualitzar', icon: transformIcons.split },
+      { op: 'rebalance', title: 'Reequilibrar', copy: 'Compensa aquest grup amb altres.', button: 'Configurar', icon: transformIcons.balance, needsTargets: true, needsCount: true },
+    ];
+    if (!operations.some((row) => row.op === state.activeTransformOperation)) {
+      state.activeTransformOperation = '';
+    }
 
-    const header = document.createElement('div');
-    header.className = 'card-header py-2 d-flex align-items-center justify-content-between flex-wrap';
-    header.style.gap = '8px';
-    card.appendChild(header);
+    const shell = document.createElement('details');
+    shell.className = 'groups-transform-shell';
+    shell.open = !!state.transformActionsExpanded;
+    root.appendChild(shell);
 
-    const headText = document.createElement('div');
+    const header = document.createElement('summary');
+    header.className = 'groups-transform-head';
+    header.setAttribute('data-group-transform-accordion', '1');
+    const headCopy = document.createElement('div');
     const title = document.createElement('div');
-    title.className = 'fw-semibold';
-    title.textContent = 'Accions rapides';
-    headText.appendChild(title);
+    title.className = 'groups-transform-title';
+    title.textContent = 'Accions';
+    headCopy.appendChild(title);
     const subtitle = document.createElement('div');
     subtitle.className = 'small text-muted';
     subtitle.textContent = blocked
-      ? 'Transformacions bloquejades per aquest grup.'
-      : 'Unir, dividir, extreure o reequilibrar.';
-    headText.appendChild(subtitle);
-    header.appendChild(headText);
-
-    const headerActions = document.createElement('div');
-    headerActions.className = 'd-flex align-items-center flex-wrap';
-    headerActions.style.gap = '8px';
+      ? (detailGroup?.is_programmed ? 'Aquest grup esta programat: les accions es mostren desactivades.' : 'Accions disponibles nomes en mode edicio.')
+      : 'Tria una accio i configura nomes els camps necessaris.';
+    headCopy.appendChild(subtitle);
+    header.appendChild(headCopy);
     if (detailGroup?.is_programmed) {
       const badge = document.createElement('span');
-      badge.className = 'badge badge-warning';
+      badge.className = 'badge badge-warning groups-transform-programmed-badge';
       badge.textContent = 'Programat';
-      headerActions.appendChild(badge);
+      header.appendChild(badge);
     }
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'btn btn-sm btn-outline-secondary';
-    toggle.setAttribute('data-group-transform-toggle', '1');
-    toggle.setAttribute('aria-expanded', state.transformActionsExpanded ? 'true' : 'false');
-    toggle.textContent = state.transformActionsExpanded ? 'Amagar' : 'Mostrar';
-    headerActions.appendChild(toggle);
-    header.appendChild(headerActions);
+    shell.appendChild(header);
 
     const body = document.createElement('div');
-    body.className = `card-body py-2${state.transformActionsExpanded ? '' : ' d-none'}`;
-    card.appendChild(body);
-
-    if (blocked) {
-      const note = document.createElement('div');
-      note.className = 'small text-muted';
-      note.textContent = detailGroup?.is_programmed
-        ? 'Aquest grup esta programat a rotacions i no admet transformacions estructurals.'
-        : 'Accions rapides disponibles nomes en mode edicio.';
-      body.appendChild(note);
-      renderGroupTransformPreview(state.transformPreview);
-      return;
-    }
+    body.className = 'groups-transform-body';
+    shell.appendChild(body);
 
     const grid = document.createElement('div');
-    grid.className = 'team-filters-grid groups-transform-grid';
-
-    const targets = document.createElement('select');
-    targets.id = 'groups-transform-target-groups';
-    targets.className = 'form-control form-control-sm';
-    targets.multiple = true;
-    targets.size = 4;
-    populateGroupTransformTargets(targets, groupId);
-    const targetWrap = document.createElement('div');
-    const targetSearch = document.createElement('input');
-    targetSearch.type = 'search';
-    targetSearch.id = 'groups-transform-target-search';
-    targetSearch.className = 'form-control form-control-sm mb-1';
-    targetSearch.placeholder = 'Cerca grup...';
-    targetSearch.value = String(state.transformTargetQuery || '');
-    targetWrap.appendChild(targetSearch);
-    targetWrap.appendChild(targets);
-    appendGroupTransformField(grid, 'Altres grups', targetWrap, { wide: true });
-    applyGroupTransformTargetSearch();
-
-    const countInput = document.createElement('input');
-    countInput.type = 'number';
-    countInput.id = 'groups-transform-count';
-    countInput.className = 'form-control form-control-sm';
-    countInput.min = '2';
-    countInput.step = '1';
-    countInput.placeholder = 'Nombre de grups';
-    appendGroupTransformField(grid, 'Dividir / reequilibrar en N', countInput);
-
-    const sizeInput = document.createElement('input');
-    sizeInput.type = 'number';
-    sizeInput.id = 'groups-transform-size';
-    sizeInput.className = 'form-control form-control-sm';
-    sizeInput.min = '1';
-    sizeInput.step = '1';
-    sizeInput.placeholder = 'Mida fixa';
-    appendGroupTransformField(grid, 'Mida fixa', sizeInput);
-
-    const rangeWrap = document.createElement('div');
-    rangeWrap.className = 'd-flex align-items-center';
-    rangeWrap.style.gap = '6px';
-    const minInput = document.createElement('input');
-    minInput.type = 'number';
-    minInput.id = 'groups-transform-min-size';
-    minInput.className = 'form-control form-control-sm';
-    minInput.min = '1';
-    minInput.step = '1';
-    minInput.placeholder = 'Min';
-    const maxInput = document.createElement('input');
-    maxInput.type = 'number';
-    maxInput.id = 'groups-transform-max-size';
-    maxInput.className = 'form-control form-control-sm';
-    maxInput.min = '1';
-    maxInput.step = '1';
-    maxInput.placeholder = 'Max';
-    rangeWrap.appendChild(minInput);
-    rangeWrap.appendChild(maxInput);
-    appendGroupTransformField(grid, 'Forquilla de mida', rangeWrap);
-
-    const bucketFields = document.createElement('select');
-    bucketFields.id = 'groups-transform-bucket-fields';
-    bucketFields.className = 'form-control form-control-sm';
-    bucketFields.multiple = true;
-    bucketFields.size = 4;
-    populateGroupTransformBucketFields(bucketFields);
-    appendGroupTransformField(grid, 'Criteris per dividir', bucketFields, { wide: true });
-
+    grid.className = 'groups-transform-action-grid';
+    operations.forEach((operation) => {
+      const card = document.createElement('div');
+      card.className = `groups-transform-action-card${state.activeTransformOperation === operation.op ? ' is-active' : ''}${blocked ? ' is-disabled' : ''}`;
+      const cardHead = document.createElement('div');
+      cardHead.className = 'groups-transform-action-card-head';
+      if (operation.icon) {
+        const icon = document.createElement('img');
+        icon.src = operation.icon;
+        icon.alt = '';
+        icon.loading = 'lazy';
+        cardHead.appendChild(icon);
+      }
+      const cardTitle = document.createElement('div');
+      cardTitle.className = 'groups-transform-action-title';
+      cardTitle.textContent = operation.title;
+      cardHead.appendChild(cardTitle);
+      card.appendChild(cardHead);
+      const cardCopy = document.createElement('div');
+      cardCopy.className = 'groups-transform-action-copy';
+      cardCopy.textContent = operation.copy;
+      card.appendChild(cardCopy);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-sm btn-outline-primary groups-transform-config-btn';
+      button.setAttribute(operation.op === 'extract_selection' ? 'data-group-transform-preview' : 'data-group-transform-config', operation.op);
+      button.textContent = operation.button;
+      button.disabled = blocked;
+      card.appendChild(button);
+      grid.appendChild(card);
+    });
     body.appendChild(grid);
 
-    const buttons = document.createElement('div');
-    buttons.className = 'd-flex align-items-center flex-wrap mt-2';
-    buttons.style.gap = '8px';
-    buttons.appendChild(createGroupTransformButton('Unir amb seleccionats', 'merge_into_current', 'outline-primary'));
-    buttons.appendChild(createGroupTransformButton('Dividir en N', 'split_count'));
-    buttons.appendChild(createGroupTransformButton('Dividir per mida', 'split_size'));
-    buttons.appendChild(createGroupTransformButton('Dividir per criteri', 'split_bucket'));
-    buttons.appendChild(createGroupTransformButton('Extreure seleccio', 'extract_selection', 'outline-primary'));
-    buttons.appendChild(createGroupTransformButton('Reequilibrar amb seleccionats', 'rebalance', 'outline-info'));
-    body.appendChild(buttons);
+    const activeOperation = operations.find((row) => row.op === state.activeTransformOperation);
+    if (activeOperation && !blocked) {
+      const config = document.createElement('div');
+      config.className = 'groups-transform-config-panel';
+      const configTitle = document.createElement('div');
+      configTitle.className = 'groups-transform-config-title';
+      configTitle.textContent = activeOperation.title;
+      config.appendChild(configTitle);
 
-    const note = document.createElement('div');
-    note.className = 'small text-muted mt-2';
-    note.textContent = 'Les transformacions es previsualitzen abans de confirmar i no poden tocar grups programats a rotacions.';
-    body.appendChild(note);
+      const fields = document.createElement('div');
+      fields.className = 'team-filters-grid groups-transform-grid';
+
+      if (activeOperation.needsTargets) {
+        const targets = document.createElement('select');
+        targets.id = 'groups-transform-target-groups';
+        targets.className = 'form-control form-control-sm';
+        targets.multiple = true;
+        targets.size = 4;
+        populateGroupTransformTargets(targets, groupId);
+        const targetWrap = document.createElement('div');
+        const targetSearch = document.createElement('input');
+        targetSearch.type = 'search';
+        targetSearch.id = 'groups-transform-target-search';
+        targetSearch.className = 'form-control form-control-sm mb-1';
+        targetSearch.placeholder = 'Cerca grup...';
+        targetSearch.value = String(state.transformTargetQuery || '');
+        targetWrap.appendChild(targetSearch);
+        targetWrap.appendChild(targets);
+        appendGroupTransformField(fields, 'Altres grups', targetWrap, { wide: true });
+        applyGroupTransformTargetSearch();
+      }
+
+      if (activeOperation.needsCount) {
+        const countInput = document.createElement('input');
+        countInput.type = 'number';
+        countInput.id = 'groups-transform-count';
+        countInput.className = 'form-control form-control-sm';
+        countInput.min = '2';
+        countInput.step = '1';
+        countInput.placeholder = activeOperation.op === 'rebalance' ? 'Opcional' : 'Nombre de grups';
+        appendGroupTransformField(fields, activeOperation.op === 'rebalance' ? 'Nombre final opcional' : 'Nombre de grups', countInput);
+      }
+
+      if (activeOperation.needsSize) {
+        const sizeInput = document.createElement('input');
+        sizeInput.type = 'number';
+        sizeInput.id = 'groups-transform-size';
+        sizeInput.className = 'form-control form-control-sm';
+        sizeInput.min = '1';
+        sizeInput.step = '1';
+        sizeInput.placeholder = 'Mida fixa';
+        appendGroupTransformField(fields, 'Mida fixa', sizeInput);
+      }
+
+      if (activeOperation.needsBuckets) {
+        const bucketFields = document.createElement('select');
+        bucketFields.id = 'groups-transform-bucket-fields';
+        bucketFields.className = 'form-control form-control-sm';
+        bucketFields.multiple = true;
+        bucketFields.size = 4;
+        populateGroupTransformBucketFields(bucketFields);
+        appendGroupTransformField(fields, 'Criteris per dividir', bucketFields, { wide: true });
+      }
+
+      config.appendChild(fields);
+      const actions = document.createElement('div');
+      actions.className = 'groups-transform-config-actions';
+      actions.appendChild(createGroupTransformButton('Previsualitzar', activeOperation.op, 'primary'));
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'btn btn-sm btn-outline-secondary';
+      close.setAttribute('data-group-transform-config', '');
+      close.textContent = 'Tancar';
+      actions.appendChild(close);
+      config.appendChild(actions);
+      body.appendChild(config);
+    }
     renderGroupTransformPreview(state.transformPreview);
   }
 
@@ -1220,6 +1622,9 @@ window.initGroupsWorkspace = async function () {
 
   async function previewGroupTransform(operation) {
     if (!editable()) return;
+    const currentGroup = state.selectedGroupDetail || getCurrentSelectedGroupSummary();
+    if (currentGroup?.is_programmed) return;
+    state.transformActionsExpanded = true;
     const payload = readGroupTransformPayload(operation);
     try {
       state.transformBusy = true;
@@ -1278,6 +1683,7 @@ window.initGroupsWorkspace = async function () {
     const membersList = document.getElementById('groups-detail-members-list');
     const pager = document.getElementById('groups-detail-members-pager');
     if (!empty || !panel || !title || !meta || !summary || !actions || !editor || !nameNote || !membersList || !pager) return;
+    const membersToolbar = document.getElementById('groups-detail-members-toolbar');
 
     const group = getCurrentSelectedGroupSummary();
     const groupId = String(group?.id || state.selectedGroupId || '').trim();
@@ -1293,13 +1699,16 @@ window.initGroupsWorkspace = async function () {
       panel.classList.add('d-none');
       empty.textContent = "Selecciona un grup de la board per veure'n el detall sense deformar la graella.";
       membersList.innerHTML = '';
+      if (membersToolbar) membersToolbar.classList.add('d-none');
       pager.innerHTML = '';
       pager.classList.add('d-none');
       state.selectedGroupDetail = null;
       state.transformPreview = null;
       state.transformPayload = null;
       state.transformActionsExpanded = false;
+      state.activeTransformOperation = '';
       state.transformTargetQuery = '';
+      setDetailMemberFilters({ q: '', entitats: [], order_state: 'all' });
       renderGroupTransformQuickActions(null, '');
       return;
     }
@@ -1307,21 +1716,49 @@ window.initGroupsWorkspace = async function () {
     empty.classList.add('d-none');
     panel.classList.remove('d-none');
     state.selectedGroupDetail = detail || null;
+    const palette = groupPaletteForGroup(detailGroup);
+    panel.style.setProperty('--group-accent', palette.accent);
+    panel.style.setProperty('--group-bg', palette.bg);
 
     title.textContent = String(detailGroup?.label || `Grup ${detailGroup?.display_num || '?'}`);
-    meta.textContent = [
-      `${Number(detailGroup?.members_total ?? detailGroup?.members_count ?? group?.members_count ?? 0)} participants`,
-      detailGroup?.is_programmed ? 'Programat' : '',
-      detailGroup?.is_out_of_program ? 'Fora de programa' : '',
-      canDelete ? 'Es pot desactivar' : '',
-    ].filter(Boolean).join(' | ') || 'Sense dades';
+    const membersTotal = Number(detailGroup?.members_total ?? detailGroup?.members_count ?? group?.members_count ?? 0);
+    const entitatsTotal = uniqueSortedStrings([...(detailGroup?.entitats || []), ...(group?.entitats || [])]).length;
+    const categoriesTotal = uniqueSortedStrings([...(detailGroup?.categories || []), ...(group?.categories || [])]).length;
+    meta.textContent = detailGroup?.name
+      ? `Nom intern: ${detailGroup.name}`
+      : (group?.name ? `Nom intern: ${group.name}` : 'Resum del grup seleccionat');
 
     summary.innerHTML = '';
-    summary.appendChild(createGroupPreviewBadge(`${Number(detailGroup?.members_total ?? detailGroup?.members_count ?? 0)} membres`));
-    summary.appendChild(createGroupPreviewBadge(detailGroup?.is_programmed ? 'Programat' : 'No programat'));
-    if (detailGroup?.is_out_of_program) summary.appendChild(createGroupPreviewBadge('Fora programa', 'reduced'));
-    if (canDelete) summary.appendChild(createGroupPreviewBadge('Es pot desactivar'));
-    if (loading) summary.appendChild(createGroupPreviewBadge('Carregant detall'));
+    const addMetric = (label, value, options = {}) => {
+      const item = document.createElement('div');
+      item.className = `groups-detail-metric${options.status ? ' groups-detail-metric-status' : ''}`;
+      if (options.icon) {
+        const icon = document.createElement('img');
+        icon.src = options.icon;
+        icon.alt = '';
+        icon.loading = 'lazy';
+        item.appendChild(icon);
+      }
+      const copy = document.createElement('div');
+      const valueNode = document.createElement('span');
+      valueNode.className = 'groups-detail-metric-value';
+      valueNode.textContent = String(value);
+      const labelNode = document.createElement('span');
+      labelNode.className = 'groups-detail-metric-label';
+      labelNode.textContent = label;
+      copy.appendChild(valueNode);
+      copy.appendChild(labelNode);
+      item.appendChild(copy);
+      summary.appendChild(item);
+      return item;
+    };
+    addMetric('participants', membersTotal, { icon: groupParticipantsIcon });
+    addMetric('entitats', entitatsTotal);
+    addMetric('categories', categoriesTotal);
+    addMetric('estat', detailGroup?.is_programmed ? 'Programat' : 'No programat', { status: true });
+    if (detailGroup?.is_out_of_program) addMetric('programa', 'Fora de programa', { status: true });
+    if (canDelete) addMetric('manteniment', 'Desactivable', { status: true });
+    if (loading) addMetric('detall', 'Carregant', { icon: groupDetailIcon, status: true });
 
     actions.innerHTML = '';
     const detailBtn = document.createElement('button');
@@ -1331,38 +1768,50 @@ window.initGroupsWorkspace = async function () {
     detailBtn.textContent = loading ? 'Carregant...' : 'Refrescar detall';
     actions.appendChild(detailBtn);
 
+    const actionsMenu = document.createElement('details');
+    actionsMenu.className = 'groups-existing-actions-menu groups-detail-actions-menu';
+    const menuTrigger = document.createElement('summary');
+    menuTrigger.className = 'groups-existing-actions-trigger';
+    menuTrigger.setAttribute('aria-label', 'Accions del grup');
+    menuTrigger.textContent = '...';
+    actionsMenu.appendChild(menuTrigger);
+    const popover = document.createElement('div');
+    popover.className = 'groups-existing-actions-popover groups-detail-actions-popover';
+    actionsMenu.appendChild(popover);
+    actions.appendChild(actionsMenu);
+    const actionDisabled = !editable() || !!detailGroup?.is_programmed;
+
     const assign = document.createElement('button');
     assign.type = 'button';
-    assign.className = 'btn btn-sm btn-outline-primary';
+    assign.className = 'groups-existing-action-item';
     assign.setAttribute('data-group-assign-to', groupId);
     assign.textContent = 'Assignar seleccio';
-    assign.disabled = !editable();
-    actions.appendChild(assign);
+    assign.disabled = actionDisabled;
+    popover.appendChild(assign);
 
     const order = document.createElement('button');
     order.type = 'button';
-    order.className = 'btn btn-sm btn-outline-info';
+    order.className = 'groups-existing-action-item';
     order.setAttribute('data-group-order', String(detailGroup?.display_num || group?.display_num || ''));
     order.textContent = 'Ordre competicio';
-    actions.appendChild(order);
+    order.disabled = actionDisabled;
+    popover.appendChild(order);
 
     const rename = document.createElement('button');
     rename.type = 'button';
-    rename.className = 'btn btn-sm btn-outline-secondary';
+    rename.className = 'groups-existing-action-item';
     rename.setAttribute('data-group-rename', groupId);
     rename.textContent = 'Renombrar';
-    rename.disabled = !editable();
-    actions.appendChild(rename);
+    rename.disabled = actionDisabled;
+    popover.appendChild(rename);
 
-    if (!Number(detailGroup?.members_total ?? detailGroup?.members_count ?? group?.members_count ?? 0) || canDelete) {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'btn btn-sm btn-outline-danger';
-      remove.setAttribute('data-group-delete', groupId);
-      remove.textContent = 'Desactivar';
-      remove.disabled = !editable() || !canDelete;
-      actions.appendChild(remove);
-    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'groups-existing-action-item groups-existing-action-danger';
+    remove.setAttribute('data-group-delete', groupId);
+    remove.textContent = 'Eliminar grup';
+    remove.disabled = actionDisabled || !canDelete;
+    popover.appendChild(remove);
 
     editor.innerHTML = '';
     editor.classList.toggle('d-none', !editing);
@@ -1393,9 +1842,9 @@ window.initGroupsWorkspace = async function () {
       editor.appendChild(cancel);
     }
 
-    nameNote.textContent = detailGroup?.name
-      ? `Nom: ${detailGroup.name}`
-      : (group?.name ? `Nom: ${group.name}` : 'Sense observacions');
+    nameNote.textContent = detailGroup?.is_programmed
+      ? 'Aquest grup esta programat i les accions de modificacio queden bloquejades.'
+      : 'Grup editable: pots revisar participants, filtrar la llista i preparar accions.';
     renderGroupTransformQuickActions(detailGroup, groupId);
 
     membersList.innerHTML = '';
@@ -1424,9 +1873,14 @@ window.initGroupsWorkspace = async function () {
       membersList.appendChild(emptyState);
     }
 
+    if (membersToolbar) membersToolbar.classList.toggle('d-none', !detail);
+    if (detail) {
+      populateDetailMemberFilters(Array.isArray(detail?.members) ? detail.members : []);
+      applyDetailMemberFilters();
+    }
+
     const currentPage = Number(detail?.members_page || state.selectedGroupMembersPage || 1);
     const totalPages = Number(detail?.members_total_pages || 1);
-    const membersTotal = Number(detail?.members_total ?? detail?.members_count ?? group?.members_count ?? 0);
     const pageSize = Number(detail?.members_page_size || 10);
     pager.innerHTML = '';
     pager.classList.toggle('d-none', totalPages <= 1);
@@ -1473,9 +1927,10 @@ window.initGroupsWorkspace = async function () {
     const loading = state.loadingGroupIds.has(groupId);
     const canDelete = detail ? !!detail.can_delete : !Number(group?.members_count || 0);
     const isCurrent = String(state.selectedGroupId || '') === groupId;
+    const actionDisabled = !editable() || !!group?.is_programmed;
 
     const wrap = document.createElement('div');
-    wrap.className = `team-context-team-card team-context-drop-target${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${isCurrent ? ' is-current' : ''}${group?.is_programmed ? ' is-programmed' : ''}${group?.is_out_of_program ? ' is-out-of-program' : ''}`;
+    wrap.className = `team-context-team-card team-context-drop-target${groupBandClass(group)}${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${isCurrent ? ' is-current' : ''}${group?.is_programmed ? ' is-programmed' : ''}${group?.is_out_of_program ? ' is-out-of-program' : ''}`;
     wrap.dataset.groupId = groupId;
     wrap.dataset.groupCardId = groupId;
     wrap.setAttribute('data-group-card-id', groupId);
@@ -1489,19 +1944,41 @@ window.initGroupsWorkspace = async function () {
     title.textContent = String(group?.label || `Grup ${group?.display_num || '?'}`);
     titleWrap.appendChild(title);
     const meta = document.createElement('div');
-    meta.className = 'team-context-team-meta';
-    meta.textContent = [
-      `${Number(group?.members_count || 0)} participants`,
+    meta.className = 'team-context-team-meta groups-existing-card-meta';
+    const participants = document.createElement('span');
+    participants.className = 'groups-existing-participants';
+    if (groupParticipantsIcon) {
+      const icon = document.createElement('img');
+      icon.src = groupParticipantsIcon;
+      icon.alt = '';
+      icon.loading = 'lazy';
+      participants.appendChild(icon);
+    }
+    const participantsText = document.createElement('span');
+    participantsText.textContent = `${Number(group?.members_count || 0)} participants`;
+    participants.appendChild(participantsText);
+    meta.appendChild(participants);
+    const statuses = document.createElement('span');
+    statuses.className = 'groups-existing-status-pills';
+    [
       group?.is_programmed ? 'Programat' : '',
       group?.is_out_of_program ? 'Fora de programa' : '',
       canDelete ? 'Es pot desactivar' : '',
       loading ? 'Carregant detall' : '',
-    ].filter(Boolean).join(' | ') || 'Sense dades';
+    ].filter(Boolean).forEach((label) => {
+      const pill = document.createElement('span');
+      pill.className = 'groups-existing-status-pill';
+      pill.textContent = label;
+      statuses.appendChild(pill);
+    });
+    if (statuses.childNodes.length) meta.appendChild(statuses);
     titleWrap.appendChild(meta);
     if (Array.isArray(group?.member_names_preview) && group.member_names_preview.length) {
       const preview = document.createElement('div');
       preview.className = 'small text-muted mt-1 team-context-team-preview';
-      preview.textContent = group.member_names_preview.join(', ');
+      const shownNames = group.member_names_preview.slice(0, 3);
+      const remaining = Math.max(0, Number(group?.members_count || 0) - shownNames.length);
+      preview.textContent = `${shownNames.join(', ')}${remaining ? ` +${remaining} participants` : ''}`;
       titleWrap.appendChild(preview);
     }
     head.appendChild(titleWrap);
@@ -1514,7 +1991,7 @@ window.initGroupsWorkspace = async function () {
     assign.className = 'btn btn-sm btn-outline-primary';
     assign.setAttribute('data-group-assign-to', groupId);
     assign.textContent = 'Assignar seleccio';
-    assign.disabled = !editable();
+    assign.disabled = actionDisabled;
     actions.appendChild(assign);
 
     const rename = document.createElement('button');
@@ -1522,7 +1999,7 @@ window.initGroupsWorkspace = async function () {
     rename.className = 'btn btn-sm btn-outline-secondary';
     rename.setAttribute('data-group-rename', groupId);
     rename.textContent = 'Renombrar';
-    rename.disabled = !editable();
+    rename.disabled = actionDisabled;
     actions.appendChild(rename);
 
     if (!Number(group?.members_count || 0) || canDelete) {
@@ -1531,21 +2008,24 @@ window.initGroupsWorkspace = async function () {
       remove.className = 'btn btn-sm btn-outline-danger';
       remove.setAttribute('data-group-delete', groupId);
       remove.textContent = 'Desactivar';
-      remove.disabled = !editable() || !canDelete;
+      remove.disabled = actionDisabled || !canDelete;
       actions.appendChild(remove);
     }
     head.appendChild(actions);
     wrap.appendChild(head);
 
     const dropSurface = document.createElement('div');
-    dropSurface.className = 'team-context-team-drop-surface';
+    dropSurface.className = `team-context-team-drop-surface${group?.is_programmed ? ' is-drop-disabled' : ''}`;
     dropSurface.dataset.groupId = groupId;
-    dropSurface.dataset.dropKind = 'group';
+    dropSurface.dataset.dropKind = group?.is_programmed ? 'blocked' : 'group';
+    if (group?.is_programmed) dropSurface.dataset.dropDisabled = '1';
     const dropHint = document.createElement('div');
     dropHint.className = 'team-context-team-drop-hint';
-    dropHint.textContent = editable()
-      ? "Deixa aqui una inscripcio per afegir-la a aquest grup. No cal desplegar-lo."
-      : 'Aquest grup es mostra en mode lectura.';
+    dropHint.textContent = group?.is_programmed
+      ? 'Grup programat: modificacions bloquejades.'
+      : (editable()
+      ? "Deixa aqui una inscripcio per afegir-la a aquest grup."
+      : 'Aquest grup es mostra en mode lectura.');
     dropSurface.appendChild(dropHint);
     wrap.appendChild(dropSurface);
     return wrap;
@@ -1910,7 +2390,9 @@ window.initGroupsWorkspace = async function () {
       state.transformPreview = null;
       state.transformPayload = null;
       state.transformActionsExpanded = false;
+      state.activeTransformOperation = '';
       state.transformTargetQuery = '';
+      setDetailMemberFilters({ q: '', entitats: [], order_state: 'all' });
     }
     state.selectedGroupId = cleanId;
     state.selectedGroupDetail = state.groupDetailCache[cleanId] || null;
@@ -1968,7 +2450,9 @@ window.initGroupsWorkspace = async function () {
         state.transformPreview = null;
         state.transformPayload = null;
         state.transformActionsExpanded = false;
+        state.activeTransformOperation = '';
         state.transformTargetQuery = '';
+        setDetailMemberFilters({ q: '', entitats: [], order_state: 'all' });
       }
 
       setFiltersToDom(state.filters, workspace.filter_options || {});
@@ -2152,7 +2636,7 @@ window.initGroupsWorkspace = async function () {
             ? 'Enviar la seleccio activa al grup seleccionat?'
             : action === 'unassign'
               ? 'Deixar la seleccio activa sense grup?'
-              : 'Desactivar aquest grup buit?'
+              : 'Eliminar aquest grup buit?'
       );
       if (!ok) return;
     }
@@ -2192,7 +2676,7 @@ window.initGroupsWorkspace = async function () {
         const updated = Number(data?.updated || 0);
         alertBox(updated > 0 ? `${updated} inscripcio(ns) ha(n) quedat sense grup.` : "Cap inscripcio ha canviat de grup.");
       } else if (action === 'delete') {
-        alertBox('Grup desactivat.');
+        alertBox('Grup eliminat.');
       }
     } catch (err) {
       const prefix = action === 'create'
@@ -2309,7 +2793,7 @@ window.initGroupsWorkspace = async function () {
       }));
     });
 
-    document.querySelectorAll('.team-context-team-drop-surface,#groups-context-unassigned-dropzone').forEach((target) => {
+    document.querySelectorAll('.team-context-team-drop-surface:not([data-drop-disabled="1"]),#groups-context-unassigned-dropzone').forEach((target) => {
       state.sortables.push(Sortable.create(target, {
         group: { name: groupName, pull: false, put: true },
         sort: false,
@@ -2383,6 +2867,7 @@ window.initGroupsWorkspace = async function () {
       if (boardFiltersAreActive()) state.boardFiltersExpanded = true;
       saveWorkspaceState();
       setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+      renderBoardFilterPopovers();
       renderCards(state.workspace);
       setupDnd();
     };
@@ -2405,6 +2890,21 @@ window.initGroupsWorkspace = async function () {
       const selectId = String(choice.getAttribute('data-select-id') || '').trim();
       setUniverseFilterValue(selectId, choice.value, choice.checked);
       scheduleFilterRefresh(true);
+    });
+
+    groupsWorkspaceShell.addEventListener('change', (event) => {
+      const choice = event.target.closest('.js-groups-board-filter-choice');
+      if (!choice) return;
+      const selectId = String(choice.getAttribute('data-select-id') || '').trim();
+      setBoardFilterValue(selectId, choice.value, choice.checked);
+      applyBoardFilterChange();
+    });
+
+    groupsWorkspaceShell.addEventListener('change', (event) => {
+      const choice = event.target.closest('.js-groups-detail-filter-choice');
+      if (!choice) return;
+      const selectId = String(choice.getAttribute('data-select-id') || '').trim();
+      setDetailMemberFilterValue(selectId, choice.value, choice.checked);
     });
 
     groupsWorkspaceShell.addEventListener('click', (event) => {
@@ -2433,9 +2933,71 @@ window.initGroupsWorkspace = async function () {
       }
     });
 
+    groupsWorkspaceShell.addEventListener('click', (event) => {
+      const clearBtn = event.target.closest('[data-groups-board-filter-clear]');
+      if (clearBtn) {
+        event.preventDefault();
+        clearBoardFilter(String(clearBtn.getAttribute('data-groups-board-filter-clear') || '').trim());
+        applyBoardFilterChange();
+        return;
+      }
+      const chip = event.target.closest('[data-groups-board-filter-chip-select]');
+      if (chip) {
+        event.preventDefault();
+        clearBoardFilter(
+          String(chip.getAttribute('data-groups-board-filter-chip-select') || '').trim(),
+          String(chip.getAttribute('data-groups-board-filter-chip-value') || '').trim()
+        );
+        applyBoardFilterChange();
+        return;
+      }
+      if (event.target.closest('[data-groups-board-size-clear]')) {
+        event.preventDefault();
+        clearBoardSizeFilters();
+        applyBoardFilterChange();
+        return;
+      }
+      if (event.target.closest('[data-groups-board-filter-search-clear]')) {
+        event.preventDefault();
+        const q = document.getElementById('groups-board-filter-q');
+        if (q) q.value = '';
+        applyBoardFilterChange();
+      }
+    });
+
+    groupsWorkspaceShell.addEventListener('click', (event) => {
+      const clearBtn = event.target.closest('[data-groups-detail-filter-clear]');
+      if (clearBtn) {
+        event.preventDefault();
+        clearDetailMemberFilter(String(clearBtn.getAttribute('data-groups-detail-filter-clear') || '').trim());
+        return;
+      }
+      const chip = event.target.closest('[data-groups-detail-filter-chip-select]');
+      if (chip) {
+        event.preventDefault();
+        clearDetailMemberFilter(
+          String(chip.getAttribute('data-groups-detail-filter-chip-select') || '').trim(),
+          String(chip.getAttribute('data-groups-detail-filter-chip-value') || '').trim()
+        );
+        return;
+      }
+      if (event.target.closest('[data-groups-detail-filter-search-clear]')) {
+        event.preventDefault();
+        const q = document.getElementById('groups-detail-member-q');
+        if (q) q.value = '';
+        setDetailMemberFilters({ q: '' });
+        applyDetailMemberFilters();
+      }
+    });
+
     document.addEventListener('click', (event) => {
-      if (event.target.closest('[data-groups-filter-popover]')) return;
-      document.querySelectorAll('[data-groups-filter-popover] details[open]').forEach((details) => {
+      if (!event.target.closest('.groups-existing-actions-menu')) {
+        document.querySelectorAll('.groups-existing-actions-menu[open]').forEach((details) => {
+          details.removeAttribute('open');
+        });
+      }
+      if (event.target.closest('[data-groups-filter-popover], [data-groups-board-filter-popover], [data-groups-board-size-popover], [data-groups-detail-filter-popover]')) return;
+      document.querySelectorAll('[data-groups-filter-popover] details[open], [data-groups-board-filter-popover] details[open], [data-groups-board-size-popover] details[open], [data-groups-detail-filter-popover] details[open]').forEach((details) => {
         details.removeAttribute('open');
       });
     });
@@ -2456,7 +3018,8 @@ window.initGroupsWorkspace = async function () {
         }
       });
     document.getElementById('btn-groups-board-filters-clear')?.addEventListener('click', () => {
-      state.boardFilters = normalizeBoardFilters();
+      clearAllBoardFilters();
+      state.boardFilters = readBoardFilters();
       setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions(Array.isArray(state.workspace?.groups) ? state.workspace.groups : []));
       setBoardFiltersExpanded(false, { skipSave: true });
       saveWorkspaceState();
@@ -2466,6 +3029,27 @@ window.initGroupsWorkspace = async function () {
     document.getElementById('btn-groups-board-filters-toggle')?.addEventListener('click', () => {
       setBoardFiltersExpanded(!state.boardFiltersExpanded);
     });
+    const detailQ = document.getElementById('groups-detail-member-q');
+    if (detailQ) {
+      detailQ.addEventListener('input', () => {
+        setDetailMemberFilters({ q: detailQ.value });
+        applyDetailMemberFilters();
+      });
+    }
+    ['groups-detail-filter-entitat', 'groups-detail-filter-order-state'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', () => {
+          setDetailMemberFilters({
+            entitats: selectedOptionValues(document.getElementById('groups-detail-filter-entitat')),
+            order_state: String(document.getElementById('groups-detail-filter-order-state')?.value || 'all'),
+          });
+          renderDetailFilterPopovers();
+          applyDetailMemberFilters();
+        });
+      }
+    });
+    document.getElementById('btn-groups-detail-filters-clear')?.addEventListener('click', clearAllDetailMemberFilters);
 
     const prev = document.getElementById('btn-groups-candidates-prev');
     if (prev) {
@@ -2538,6 +3122,24 @@ window.initGroupsWorkspace = async function () {
       if (transformToggleBtn) {
         event.preventDefault();
         state.transformActionsExpanded = !state.transformActionsExpanded;
+        renderDetailPane();
+        return;
+      }
+
+      const transformAccordion = event.target.closest('[data-group-transform-accordion]');
+      if (transformAccordion) {
+        const details = transformAccordion.closest('.groups-transform-shell');
+        state.transformActionsExpanded = !details?.open;
+        return;
+      }
+
+      const transformConfigBtn = event.target.closest('[data-group-transform-config]');
+      if (transformConfigBtn) {
+        event.preventDefault();
+        state.transformActionsExpanded = true;
+        state.activeTransformOperation = String(transformConfigBtn.getAttribute('data-group-transform-config') || '').trim();
+        state.transformPreview = null;
+        state.transformPayload = null;
         renderDetailPane();
         return;
       }

@@ -75,7 +75,16 @@
         <div class="team-compact-summary-metrics" id="groups-compact-list"></div>
       </div>
 
-      <div class="team-workspace-shell groups-workspace-shell is-board-mode" id="groups-workspace-shell">
+      <div
+        class="team-workspace-shell groups-workspace-shell is-board-mode"
+        id="groups-workspace-shell"
+        data-groups-participants-icon="{% static 'inscripcions/grups/participants.png' %}"
+        data-groups-detail-icon="{% static 'inscripcions/grups/detall.png' %}"
+        data-groups-transform-merge-icon="{% static 'inscripcions/grups/unir.png' %}"
+        data-groups-transform-split-icon="{% static 'inscripcions/grups/dividir.png' %}"
+        data-groups-transform-balance-icon="{% static 'inscripcions/grups/equilibrar.png' %}"
+        data-groups-transform-bucket-icon="{% static 'inscripcions/grups/bucket.png' %}"
+      >
         <div class="team-workspace-header groups-workspace-header-compact">
           <div class="team-workspace-header-bar">
             <div class="team-workspace-header-main">
@@ -271,7 +280,6 @@
                         <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
                         <div class="fw-semibold small text-uppercase text-muted">Estratègies de creacio</div>
                       </div>
-                      <div class="small text-muted" id="groups-auto-scope-note">Aquestes accions reparteixen la seleccio activa segons una estrategia.</div>
                     </div>
 
                     <div class="groups-strategy-list mt-2">
@@ -360,7 +368,7 @@
                     </div>
                     <div class="groups-auto-context-fold mt-2">
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-auto-context-toggle" aria-expanded="false">
-                        Veure context automatic
+                        Veure estratègies de creació massiva
                       </button>
                       <div class="groups-auto-context-panel d-none" id="groups-auto-context-panel">
                         <div class="groups-auto-context-meta">
@@ -485,92 +493,159 @@
           <section class="groups-workspace-row groups-workspace-row-impact">
             <section class="team-workspace-pane groups-pane groups-pane-board">
               <div class="team-pane-card groups-pane-card groups-pane-card-board">
-                <div class="team-pane-head">
-                  <div>
-                    <div class="groups-pane-step">3. Revisa l'impacte</div>
-                    <div class="fw-semibold">Grups actuals</div>
-                    <div class="small text-muted">Vista global en format board per revisar d'un cop grups actius, buits i l'espai sense grup.</div>
+                <div class="team-pane-head groups-existing-head">
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">
+                    <div>
+                      <div class="fw-semibold">3. Grups actuals</div>
+                      <div class="small text-muted">Board de revisio per consultar grups actius, buits i accions de manteniment.</div>
+                    </div>
                   </div>
-                  <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <div class="groups-existing-head-actions">
                     <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-bulk-order" {% if not can_edit_inscripcions %}disabled{% endif %}>Reordenar ordre de competicio</button>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-groups-delete-empty" data-group-action="delete-empty">Desactivar buits</button>
-                    <button type="button" class="btn btn-sm btn-danger" id="btn-groups-delete-all" data-group-action="delete-all">Esborrar tots els no programats</button>
+                    <details class="groups-existing-actions-menu">
+                      <summary class="groups-existing-actions-trigger" aria-label="Accions de grups">...</summary>
+                      <div class="groups-existing-actions-popover">
+                        <button type="button" class="groups-existing-action-item" id="btn-groups-bulk-order" {% if not can_edit_inscripcions %}disabled{% endif %}>Reordenar ordre de competicio</button>
+                        <button type="button" class="groups-existing-action-item groups-existing-action-danger" id="btn-groups-delete-empty" data-group-action="delete-empty">Desactivar grups buits</button>
+                        <button type="button" class="groups-existing-action-item groups-existing-action-danger-strong" id="btn-groups-delete-all" data-group-action="delete-all">Esborrar tots els no programats</button>
+                      </div>
+                    </details>
                   </div>
                 </div>
-                <div class="team-action-note">Esborrat massiu: es desactivaran tots els grups no programats i les seves inscripcions quedaran sense grup. Els grups dins del programa no s'esborraran.</div>
 
-                <div class="team-context-teams-status small text-muted" id="groups-existing-status">Sense dades encara.</div>
-                <div class="team-manual-banner mt-3">
-                  <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:10px;">
-                    <div>
-                      <div class="fw-semibold">Filtres del board</div>
-                      <div class="small text-muted" id="groups-board-filters-summary">Nom del grup, participants i facetes agregades del board actual.</div>
-                    </div>
-                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                      <span class="badge badge-light border" id="groups-board-filter-count">0 de 0 grups</span>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-board-filters-clear">Netejar</button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-board-filters-toggle" aria-expanded="false">Veure filtres del board</button>
-                    </div>
-                  </div>
-                  <div class="groups-auto-context-panel d-none mt-3" id="groups-board-filters-panel">
-                    <div class="team-filters-grid">
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-q">Cerca al board</label>
+                <div class="groups-existing-toolbar">
+                  <div class="groups-universe-filterbar groups-existing-filterbar">
+                    <div class="groups-filter-search">
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-q">Cerca</label>
                       <input type="text" class="form-control form-control-sm" id="groups-board-filter-q" placeholder="Nom del grup, participant o entitat...">
                     </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-categoria">Categories</label>
-                      <select id="groups-board-filter-categoria" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-subcategoria">Subcategories</label>
-                      <select id="groups-board-filter-subcategoria" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-entitat">Entitats</label>
-                      <select id="groups-board-filter-entitat" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-members-state">Estat del grup</label>
-                      <select id="groups-board-filter-members-state" class="form-control form-control-sm">
-                        <option value="all">Tots</option>
-                        <option value="with_members">Amb participants</option>
-                        <option value="empty">Buits</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-program-state">Programa</label>
-                      <select id="groups-board-filter-program-state" class="form-control form-control-sm">
-                        <option value="all">Tots</option>
-                        <option value="programmed">Programats</option>
-                        <option value="out_of_program">Fora de programa</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-min-size">Mida minima</label>
-                      <input type="number" class="form-control form-control-sm" id="groups-board-filter-min-size" min="1" step="1" inputmode="numeric" placeholder="Sense minim">
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-max-size">Mida maxima</label>
-                      <input type="number" class="form-control form-control-sm" id="groups-board-filter-max-size" min="0" step="1" inputmode="numeric" placeholder="Sense maxim">
+                    <div class="groups-filter-buttons" aria-label="Filtres de grups actuals">
+                      <div class="groups-filter-popover" data-groups-board-filter-popover data-select-id="groups-board-filter-categoria" data-filter-label="Categoria">
+                        <select id="groups-board-filter-categoria" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Categoria</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Categoria</span>
+                              <button type="button" class="groups-filter-clear" data-groups-board-filter-clear="groups-board-filter-categoria">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="groups-board-filter-categoria"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-groups-board-filter-popover data-select-id="groups-board-filter-subcategoria" data-filter-label="Subcategoria">
+                        <select id="groups-board-filter-subcategoria" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Subcategoria</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Subcategoria</span>
+                              <button type="button" class="groups-filter-clear" data-groups-board-filter-clear="groups-board-filter-subcategoria">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="groups-board-filter-subcategoria"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-groups-board-filter-popover data-select-id="groups-board-filter-entitat" data-filter-label="Entitat">
+                        <select id="groups-board-filter-entitat" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Entitat</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel groups-filter-panel-wide">
+                            <div class="groups-filter-panel-head">
+                              <span>Entitat</span>
+                              <button type="button" class="groups-filter-clear" data-groups-board-filter-clear="groups-board-filter-entitat">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="groups-board-filter-entitat"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-groups-board-filter-popover data-select-id="groups-board-filter-members-state" data-filter-label="Estat">
+                        <select id="groups-board-filter-members-state" class="form-control form-control-sm groups-filter-native">
+                          <option value="all">Tots</option>
+                          <option value="with_members">Amb participants</option>
+                          <option value="empty">Buits</option>
+                        </select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Estat</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Estat</span>
+                              <button type="button" class="groups-filter-clear" data-groups-board-filter-clear="groups-board-filter-members-state">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="groups-board-filter-members-state"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-groups-board-filter-popover data-select-id="groups-board-filter-program-state" data-filter-label="Programa">
+                        <select id="groups-board-filter-program-state" class="form-control form-control-sm groups-filter-native">
+                          <option value="all">Tots</option>
+                          <option value="programmed">Programats</option>
+                          <option value="out_of_program">Fora de programa</option>
+                        </select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Programa</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Programa</span>
+                              <button type="button" class="groups-filter-clear" data-groups-board-filter-clear="groups-board-filter-program-state">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="groups-board-filter-program-state"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover groups-board-size-popover" data-groups-board-size-popover>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Mida</span>
+                            <span class="groups-filter-trigger-summary" id="groups-board-size-summary">Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel groups-filter-panel-wide">
+                            <div class="groups-filter-panel-head">
+                              <span>Mida del grup</span>
+                              <button type="button" class="groups-filter-clear" data-groups-board-size-clear="1">Netejar</button>
+                            </div>
+                            <div class="groups-board-size-fields">
+                              <div>
+                                <label class="small text-muted mb-1 d-block" for="groups-board-filter-min-size">Minima</label>
+                                <input type="number" class="form-control form-control-sm" id="groups-board-filter-min-size" min="1" step="1" inputmode="numeric" placeholder="Sense minim">
+                              </div>
+                              <div>
+                                <label class="small text-muted mb-1 d-block" for="groups-board-filter-max-size">Maxima</label>
+                                <input type="number" class="form-control form-control-sm" id="groups-board-filter-max-size" min="0" step="1" inputmode="numeric" placeholder="Sense maxim">
+                              </div>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
                     </div>
                   </div>
-                  <div class="small text-muted mt-2">
-                    Dins del mateix camp s'aplica qualsevol coincidencia; entre camps, totes alhora. La zona Sense grup es manté visible.
-                  </div>
+                  <div class="groups-existing-toolbar-meta">
+                    <div class="groups-filter-active-chips" id="groups-board-filter-active-chips" aria-live="polite"></div>
+                    <div class="groups-existing-toolbar-count">
+                      <span class="badge badge-light border" id="groups-board-filter-count">0 de 0 grups</span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-board-filters-clear">Netejar</button>
+                    </div>
                   </div>
                 </div>
 
+                <div class="team-context-teams-status small text-muted" id="groups-existing-status">Sense dades encara.</div>
                 <div class="groups-board">
-                  <div class="groups-board-section">
-                    <div class="groups-board-section-head">
-                      <div class="fw-semibold">Sense grup</div>
-                      <div class="small text-muted">Punt d'entrada i sortida rapida per deixar participants sense grup.</div>
-                    </div>
-                    <div class="team-context-unassigned-dropzone" id="groups-context-unassigned-dropzone"></div>
-                  </div>
-
                   <div class="groups-board-section">
                     <div class="groups-board-section-head">
                       <div class="fw-semibold">Grups amb participants</div>
@@ -592,11 +667,14 @@
 
             <aside class="team-workspace-pane groups-pane groups-pane-preview">
               <div class="team-pane-card groups-pane-card groups-pane-card-preview" id="groups-right-pane-card">
-                <div class="team-pane-head">
-                  <div>
-                    <div class="groups-pane-step">Inspector lateral</div>
-                    <div class="fw-semibold">Detall i previsualitzacio</div>
-                    <div class="small text-muted">Selecciona un grup per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
+                <div class="team-pane-head groups-inspector-head">
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+                    <div>
+                      <div class="groups-pane-step">Inspector lateral</div>
+                      <div class="fw-semibold">Detall i previsualitzacio</div>
+                      <div class="small text-muted">Selecciona un grup per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
+                    </div>
                   </div>
                   <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
                 </div>
@@ -627,7 +705,10 @@
                   <div class="groups-detail-panel d-none" id="groups-detail-panel">
                     <div class="groups-detail-head">
                       <div class="groups-detail-head-main">
-                        <div class="groups-detail-title" id="groups-detail-title">Grup</div>
+                        <div class="groups-detail-title-row">
+                          <img class="groups-detail-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+                          <div class="groups-detail-title" id="groups-detail-title">Grup</div>
+                        </div>
                         <div class="small text-muted" id="groups-detail-meta">Sense dades</div>
                       </div>
                       <div class="groups-detail-actions" id="groups-detail-actions"></div>
@@ -635,16 +716,72 @@
                     <div class="groups-detail-summary" id="groups-detail-summary"></div>
                     <div class="groups-detail-editor d-none" id="groups-detail-editor"></div>
                     <div class="small text-muted" id="groups-detail-name-note">Sense observacions</div>
-                    <div class="groups-detail-quick-actions mt-3" id="groups-detail-quick-actions"></div>
-                    <div class="groups-detail-transform-preview mt-2 d-none" id="groups-detail-transform-preview"></div>
                     <div class="groups-detail-members">
+                      <div class="groups-detail-members-toolbar d-none" id="groups-detail-members-toolbar">
+                        <div class="groups-universe-filterbar groups-detail-filterbar">
+                          <div class="groups-filter-search">
+                            <label class="small text-muted mb-1 d-block" for="groups-detail-member-q">Cerca</label>
+                            <input type="text" class="form-control form-control-sm" id="groups-detail-member-q" placeholder="Nom, entitat o ordre...">
+                          </div>
+                          <div class="groups-filter-buttons" aria-label="Filtres de participants del grup">
+                            <div class="groups-filter-popover" data-groups-detail-filter-popover data-select-id="groups-detail-filter-entitat" data-filter-label="Entitat">
+                              <select id="groups-detail-filter-entitat" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                              <details class="groups-filter-menu">
+                                <summary class="groups-filter-trigger">
+                                  <span class="groups-filter-trigger-label">Entitat</span>
+                                  <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                                </summary>
+                                <div class="groups-filter-panel groups-filter-panel-wide">
+                                  <div class="groups-filter-panel-head">
+                                    <span>Entitat</span>
+                                    <button type="button" class="groups-filter-clear" data-groups-detail-filter-clear="groups-detail-filter-entitat">Netejar</button>
+                                  </div>
+                                  <div class="groups-filter-options" data-filter-options-for="groups-detail-filter-entitat"></div>
+                                </div>
+                              </details>
+                            </div>
+                            <div class="groups-filter-popover" data-groups-detail-filter-popover data-select-id="groups-detail-filter-order-state" data-filter-label="Ordre">
+                              <select id="groups-detail-filter-order-state" class="form-control form-control-sm groups-filter-native">
+                                <option value="all">Tots</option>
+                                <option value="with_order">Amb ordre</option>
+                                <option value="without_order">Sense ordre</option>
+                              </select>
+                              <details class="groups-filter-menu">
+                                <summary class="groups-filter-trigger">
+                                  <span class="groups-filter-trigger-label">Ordre</span>
+                                  <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                                </summary>
+                                <div class="groups-filter-panel">
+                                  <div class="groups-filter-panel-head">
+                                    <span>Ordre</span>
+                                    <button type="button" class="groups-filter-clear" data-groups-detail-filter-clear="groups-detail-filter-order-state">Netejar</button>
+                                  </div>
+                                  <div class="groups-filter-options" data-filter-options-for="groups-detail-filter-order-state"></div>
+                                </div>
+                              </details>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="groups-existing-toolbar-meta groups-detail-filter-meta">
+                          <div class="groups-filter-active-chips" id="groups-detail-filter-active-chips" aria-live="polite"></div>
+                          <div class="groups-existing-toolbar-count">
+                            <span class="badge badge-light border" id="groups-detail-filter-count">0 participants</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-detail-filters-clear">Netejar</button>
+                          </div>
+                        </div>
+                      </div>
                       <div class="team-context-member-list" id="groups-detail-members-list" data-group-member-source="1"></div>
                       <div class="groups-detail-members-pager d-none" id="groups-detail-members-pager"></div>
                     </div>
+                    <div class="groups-detail-quick-actions" id="groups-detail-quick-actions"></div>
+                    <div class="groups-detail-transform-preview d-none" id="groups-detail-transform-preview"></div>
                   </div>
                 </div>
                 <div class="groups-right-pane-view d-none" id="groups-right-pane-preview">
-                <div class="small text-muted groups-preview-note">La preview es reutilitza per a totes les accions del workspace i es manté visible mentre explores els grups.</div>
+                <div class="groups-preview-note groups-title-with-logo">
+                  <img class="groups-title-logo" src="{% static 'inscripcions/grups/previsualitzar.png' %}" alt="">
+                  <div class="small text-muted">La preview es reutilitza per a totes les accions del workspace i es manté visible mentre explores els grups.</div>
+                </div>
                 <div class="group-preview-panel" id="groups-preview" data-has-preview="0">
                   <div class="group-preview-toolbar">
                     <div>
