@@ -1,0 +1,29 @@
+{% for phase in phases %}
+  <li class="phase-tree-li">
+    <a class="phase-tree-node {% if phase.ui_is_selected %}is-selected{% endif %}"
+       href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}&phase={{ phase.id }}">
+      <span class="phase-tree-node-main">
+        <span class="phase-tree-node-title">{{ phase.nom }}</span>
+        <span class="phase-tree-node-meta">
+          {{ phase.codi }} · {{ phase.estat }} · {{ phase.ui_unit_count }} unitats
+        </span>
+      </span>
+      <span class="phase-tree-node-badges">
+        {% if phase.ui_qualification_stale %}
+          <span class="badge badge-danger">Font canviada</span>
+        {% elif phase.ui_generation_mode == "classification" %}
+          <span class="badge badge-success">Tall aplicat</span>
+        {% elif phase.ui_generation_mode == "manual" %}
+          <span class="badge badge-warning">Manual</span>
+        {% else %}
+          <span class="badge badge-light border">Sense unitats</span>
+        {% endif %}
+      </span>
+    </a>
+    {% if phase.ui_children %}
+      <ol class="phase-tree-children">
+        {% include "competicio/fases/_phase_tree_branch.html" with phases=phase.ui_children %}
+      </ol>
+    {% endif %}
+  </li>
+{% endfor %}

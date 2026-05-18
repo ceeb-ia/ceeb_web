@@ -704,6 +704,10 @@ class CompeticioAparellFaseForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             parent_qs = parent_qs.exclude(pk=self.instance.pk)
         self.fields["parent"].queryset = parent_qs
+        self.fields["parent"].empty_label = "Preliminar implícita"
+        self.fields["parent"].help_text = (
+            "Deixa Preliminar implícita si aquesta fase surt del flux inicial sense fase persistent."
+        )
 
     def clean_codi(self):
         return str(self.cleaned_data.get("codi") or "").strip().upper()
@@ -719,7 +723,7 @@ class CompeticioAparellFaseForm(forms.ModelForm):
             "estat": forms.Select(attrs={"class": "form-select"}),
         }
         labels = {
-            "parent": "Fase pare",
+            "parent": "Penja de",
             "nom": "Nom",
             "codi": "Codi",
             "ordre": "Ordre",
@@ -731,24 +735,29 @@ class PhaseSourceCutForm(forms.Form):
     CUT_MODE_TOP_N = "top_n"
     PARTITION_GLOBAL = "global"
     PARTITION_SOURCE = "source_partitions"
+    TIE_CLASSIFICATION_ORDER = "classification_order"
+    TIE_INCLUDE_ALL_AT_CUT = "include_all_at_cut"
+    TIE_MANUAL_DECISION = "manual_decision"
 
     classificacio = forms.ModelChoiceField(
-        label="Classificacio origen",
+        label="Classificació origen",
         queryset=ClassificacioConfig.objects.none(),
         widget=forms.Select(attrs={"class": "form-select"}),
-        help_text="Classificacio calculada de la qual sortiran els participants d'aquesta fase.",
+        help_text="Classificació ja calculada d'on sortiran els classificats per omplir la fase destí.",
     )
     cut_mode = forms.ChoiceField(
         label="Regla de tall",
-        choices=[(CUT_MODE_TOP_N, "Top N per ordre de la classificacio")],
+        choices=[(CUT_MODE_TOP_N, "Top N segons l'ordre de la classificació")],
         initial=CUT_MODE_TOP_N,
         widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="De moment només es pot agafar un top N de la classificació origen.",
     )
     qualifiers_count = forms.IntegerField(
         label="Classificats",
         min_value=1,
         max_value=500,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 500}),
+        help_text="Nombre de places competitives. Si el tall és per partició, s'aplica a cada partició.",
     )
     reserve_count = forms.IntegerField(
         label="Reserves",
@@ -756,30 +765,44 @@ class PhaseSourceCutForm(forms.Form):
         max_value=200,
         initial=0,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 0, "max": 200}),
+        help_text="Places de reserva afegides al final del tall. Si el tall és per partició, s'aplica a cada partició.",
     )
     partition_mode = forms.ChoiceField(
-        label="Com aplicar el tall",
+        label="Abast del tall",
         choices=[
-            (PARTITION_GLOBAL, "Global: una llista unica"),
-            (PARTITION_SOURCE, "Per particio de la classificacio"),
+            (PARTITION_GLOBAL, "Global: una única llista"),
+            (PARTITION_SOURCE, "Per partició: mateix tall a cada categoria/grup"),
         ],
         initial=PARTITION_GLOBAL,
         widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="Global fa un sol top N. Per partició repeteix el tall dins cada bloc de la classificació origen.",
+    )
+    tie_policy = forms.ChoiceField(
+        label="Empats al tall",
+        choices=[
+            (TIE_CLASSIFICATION_ORDER, "Respectar l'ordre de la classificació"),
+            (TIE_INCLUDE_ALL_AT_CUT, "Incloure tots els empatats al tall"),
+            (TIE_MANUAL_DECISION, "Deixar empatats pendents de decisió"),
+        ],
+        initial=TIE_CLASSIFICATION_ORDER,
+        widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="Defineix què passa si hi ha empat just a la frontera de classificació.",
     )
     unit_capacity = forms.IntegerField(
-        label="Places per unitat",
+        label="Màxim de places per unitat",
         min_value=1,
         max_value=200,
         initial=8,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
-        help_text="Serveix per partir els classificats en una o mes unitats quan es generin.",
+        help_text="No canvia quants classifiquen; només reparteix el tall en una o més unitats programables quan s'apliqui.",
     )
     unit_name_template = forms.CharField(
-        label="Plantilla de nom",
+        label="Nom automàtic de les unitats",
         max_length=180,
         required=False,
         initial="{fase} - {particio}",
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "{fase} - {particio}"}),
+        help_text="Pots usar {fase}, {particio}, {index} i {total}. Si queda buit, s'usarà '{fase} - {particio}'.",
     )
 
     def __init__(self, *args, **kwargs):
@@ -813,10 +836,11 @@ class ProgramUnitManualForm(forms.Form):
         widget=forms.Select(attrs={"class": "form-select"}),
     )
     partition_key = forms.CharField(
-        label="Particio / criteri manual",
+        label="Partició / criteri manual",
         max_length=255,
         required=False,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
+        help_text="Opcional. Serveix per identificar una categoria/grup quan crees una unitat manual.",
     )
 
 

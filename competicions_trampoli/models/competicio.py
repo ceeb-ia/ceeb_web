@@ -387,6 +387,118 @@ class ProgramUnitSlot(models.Model):
         return f"{self.unit} / slot {self.slot_index} / {subject}"
 
 
+class QualificationRun(models.Model):
+    class Status(models.TextChoices):
+        PREVIEWED = "previewed", "Previsualitzada"
+        APPLIED = "applied", "Aplicada"
+        STALE = "stale", "Obsoleta"
+
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.CASCADE,
+        related_name="qualification_runs",
+    )
+    source_classificacio = models.ForeignKey(
+        "competicions_trampoli.ClassificacioConfig",
+        on_delete=models.PROTECT,
+        related_name="qualification_runs",
+    )
+    source_phase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="qualification_source_runs",
+    )
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.PREVIEWED)
+    snapshot_hash = models.CharField(max_length=64, db_index=True)
+    summary = models.JSONField(default=dict, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["fase", "status"], name="qualification_fase_status_idx"),
+            models.Index(fields=["source_classificacio", "status"], name="qualification_src_status_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.fase_id and self.source_classificacio_id:
+            if self.source_classificacio.competicio_id != self.fase.competicio_id:
+                errors["source_classificacio"] = "La classificacio font no pertany a la mateixa competicio."
+        if self.source_phase_id:
+            if self.source_phase.competicio_id != self.fase.competicio_id:
+                errors["source_phase"] = "La fase origen no pertany a la mateixa competicio."
+        if not isinstance(self.summary, dict):
+            errors["summary"] = "El resum ha de ser un objecte JSON."
+        if not isinstance(self.warnings, list):
+            errors["warnings"] = "Els avisos han de ser una llista JSON."
+        if not isinstance(self.payload, dict):
+            errors["payload"] = "El payload ha de ser un objecte JSON."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.fase} / {self.status} / {self.snapshot_hash[:8]}"
+
+
+class FasePartitionState(models.Model):
+    class Status(models.TextChoices):
+        GENERATED = "generated", "Generada"
+        CONFIRMED = "confirmed", "Confirmada"
+        STALE = "stale", "Obsoleta"
+
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.CASCADE,
+        related_name="partition_states",
+    )
+    partition_key = models.CharField(max_length=255)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.GENERATED)
+    qualification_run = models.ForeignKey(
+        QualificationRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="partition_states",
+    )
+    source_snapshot_hash = models.CharField(max_length=64, blank=True, default="")
+    warnings = models.JSONField(default=list, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fase_id", "partition_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["fase", "partition_key"], name="uniq_fase_partition_state"),
+        ]
+        indexes = [
+            models.Index(fields=["fase", "status"], name="fasepart_fase_status_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.partition_key = str(self.partition_key or "").strip() or "global"
+        self.source_snapshot_hash = str(self.source_snapshot_hash or "").strip()
+        if not isinstance(self.warnings, list):
+            raise ValidationError({"warnings": "Els avisos han de ser una llista JSON."})
+
+    def save(self, *args, **kwargs):
+        self.partition_key = str(self.partition_key or "").strip() or "global"
+        self.source_snapshot_hash = str(self.source_snapshot_hash or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.fase} / {self.partition_key} / {self.status}"
+
+
 class CompeticioAparellEquipContextSource(models.Model):
     competicio = models.ForeignKey(
         Competicio,

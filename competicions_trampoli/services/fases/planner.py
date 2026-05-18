@@ -97,6 +97,7 @@ def configure_phase_source_cut(fase: CompeticioAparellFase, form) -> CompeticioA
         "qualifiers_count": int(form.cleaned_data["qualifiers_count"]),
         "reserve_count": int(form.cleaned_data.get("reserve_count") or 0),
         "partition_mode": form.cleaned_data["partition_mode"],
+        "tie_policy": form.cleaned_data["tie_policy"],
         "unit_capacity": int(form.cleaned_data["unit_capacity"]),
         "unit_name_template": form.cleaned_data["unit_name_template"],
     }

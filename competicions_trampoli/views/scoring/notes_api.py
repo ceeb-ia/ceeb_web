@@ -165,6 +165,8 @@ def _unit_context_payload(context, unit):
         "unit_key": str(unit.get("key") or ""),
         "unit_identity": _unit_identity(unit),
         "unit_label": unit.get("label") or str(unit.get("key") or ""),
+        "fase_id": unit.get("phase_id"),
+        "phase_id": unit.get("phase_id"),
         "is_out_of_program": bool(unit.get("is_out_of_program")),
         "exercicis": exercicis,
         "label": " - ".join(str(part) for part in label_parts if part),

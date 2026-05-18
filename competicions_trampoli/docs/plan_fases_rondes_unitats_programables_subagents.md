@@ -1194,6 +1194,127 @@
   - confirmacio parcial
   - deteccio de stale/snapshot.
 
+### Tancament inicial implementat
+- Estat: implementacio inicial del tall congelat completada.
+- Decisio funcional aplicada:
+  - La classificacio es continua calculant al motor de classificacions.
+  - La fase desti no queda dependent en viu de la classificacio font.
+  - En aplicar el tall, el resultat queda congelat dins `ProgramUnit` i `ProgramUnitSlot`.
+  - Canvis posteriors a la classificacio o a les notes d'origen no reescriuen automaticament la fase desti.
+- Implementacio feta:
+  - Afegit servei:
+    - `services/fases/qualification.py`
+  - Afegides operacions:
+    - `preview_qualification(fase)`
+    - `apply_qualification(fase)`
+    - `qualification_is_stale(fase)`
+  - El servei llegeix el contracte existent dins `phase.config`:
+    - `source.classificacio_id`
+    - `cut.mode`
+    - `cut.qualifiers_count`
+    - `cut.reserve_count`
+    - `cut.partition_mode`
+    - `cut.unit_capacity`
+    - `cut.unit_name_template`
+  - Suport inicial implementat:
+    - tall `top_n`
+    - mode global
+    - mode per particions de la classificacio font
+    - reserves
+    - avis si hi ha menys participants que places
+    - avis d'empat real a la zona de tall
+  - En aplicar el tall:
+    - es creen `ProgramUnit` en estat `generated`
+    - s'omplen `ProgramUnitSlot` amb estat `filled` o `reserve`
+    - es desa `source_classificacio`
+    - es desa `source_particio_key`
+    - es desa `source_position`
+    - es desa `source_score`
+    - es desa `source_row`
+    - es desa `qualification.snapshot_hash` dins `fase.config`
+    - la fase desti passa a estat `generated`
+  - Si la classificacio font esta scoped a una fase persistent, `apply_qualification` exigeix que la fase origen estigui:
+    - `confirmed`
+    - o `closed`
+  - La preliminar implicita continua sense fase persistent i pot actuar com a font legacy.
+  - Si la fase desti ja te unitats, l'aplicacio queda bloquejada per defecte per evitar sobreescriptures accidentals.
+  - S'ha deixat un cami intern `replace_existing` protegit contra slots manuals o bloquejats.
+- UI i planner:
+  - Afegides accions al planner de fases:
+    - `preview_qualification`
+    - `apply_qualification`
+  - Afegida seccio `Qualificacio congelada` a la pantalla comuna de fases.
+  - El preview mostra resum de participants/reserves, places, unitats i warnings.
+- Guardrails respectats:
+  - No s'ha creat cap fase default persistent.
+  - No s'ha convertit `ClassificacioConfig` en propietaria de la fase.
+  - No es recalculen ni reescriuen slots automaticament quan canvia la font.
+  - No s'ha canviat encara el portal de jutges.
+  - No s'ha implementat confirmacio parcial persistent per particio.
+- Tests afegits/ajustats:
+  - `competicions_trampoli.tests.fases.test_qualification`
+  - Ajustos al contracte basic del planner de fases.
+  - Cobertura de:
+    - preview i aplicacio del tall
+    - congelacio de participants/reserves en slots
+    - bloqueig si la fase origen persistent no esta confirmada/tancada
+    - deteccio `stale` sense reescriure slots
+    - exposicio d'accions al planner
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.fases.test_qualification competicions_trampoli.tests.fases.test_basic_planner_contract --verbosity 1`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.fases competicions_trampoli.tests.classificacions.test_phase_scope competicions_trampoli.tests.rotacions.test_program_unit_assignments competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1`
+- Pendent identificat a la iteracio inicial:
+  - Resolts en el tancament complet: `QualificationRun`, `FasePartitionState`, confirmacio parcial, politica configurable d'empats i controls de regeneracio.
+  - Es mante fora de Fase 6 el flux complet per equips derivats quan una classificacio individual classifica un equip complet.
+
+### Tancament complet de Fase 6
+- Estat: Fase 6 tancada a nivell intern de planner, sense entrar encara a portal ni publicacio a jutges.
+- Persistencia d'execucions:
+  - Afegits i connectats `QualificationRun` i `FasePartitionState`.
+  - El preview del planner desa un run `previewed`.
+  - Cada `apply_qualification` crea un run `applied` amb fase desti, classificacio font, hash, resum, warnings i payload.
+- Confirmacio per particio:
+  - En aplicar el tall, cada particio queda en `FasePartitionState.status=generated`.
+  - `confirm_qualification_partition(fase, partition_key)` confirma nomes aquella particio.
+  - Si totes les particions estan confirmades, la fase passa a `confirmed`; si nomes una part esta confirmada, passa a `partially_confirmed`.
+  - Les unitats de la particio confirmada passen a `ProgramUnit.status=confirmed`.
+- Stale i regeneracio:
+  - `qualification_is_stale(fase)` compara el hash congelat amb un preview recalculat.
+  - El planner mostra indicador de font canviada quan la classificacio font ja no coincideix amb el hash congelat.
+  - `mark_qualification_stale_if_needed(fase)` marca run aplicat, particions i fase com `stale`.
+  - La regeneracio nomes substitueix la proposta amb confirmacio explicita.
+  - Si hi ha slots manuals o bloquejats, el servei requereix confirmacio especifica (`allow_replace_protected=True`).
+  - No hi ha reescriptura automatica de slots per canvis de la font.
+- Empats:
+  - `classification_order`: respecta l'ordre calculat per la classificacio.
+  - `include_all_at_cut`: inclou tots els empatats al tall com a `filled`.
+  - `manual_decision`: deixa tots els empatats al tall com a `pending_decision`.
+  - La politica es desa a `phase.config.cut.tie_policy` des del planner.
+- UI minima del planner:
+  - Accio `Previsualitzar tall`.
+  - Accio `Aplicar tall` per generar unitats, slots, run i particions `generated`.
+  - Llista de particions generades dins cada fase.
+  - Boto `Confirmar particio` per particio generada.
+  - Indicador `Font canviada` / `Stale` quan la font ha canviat.
+- Guardrails mantinguts:
+  - No es publica res automaticament als jutges.
+  - No es crea cap fase default persistent.
+  - No es toca el portal de jutges.
+  - No es reescriuen unitats existents sense accio explicita de l'usuari.
+- Tests afegits/ajustats:
+  - Runs persistits i particions generades.
+  - Confirmacio de particio.
+  - Empats `manual_decision` i `include_all_at_cut`.
+  - Regeneracio protegida amb slots bloquejats/manuals.
+  - Contracte del planner amb apply, confirmacio de particio i regeneracio.
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.fases.test_qualification competicions_trampoli.tests.fases.test_basic_planner_contract --verbosity 1`
+- Fora de Fase 6:
+  - Publicacio al portal de jutges.
+  - Flux complet per equips derivats quan una classificacio individual classifica un equip complet.
+
 ## Fase 7. Rotacions Sobre Unitats Programables
 
 ### Objectiu
@@ -1299,8 +1420,8 @@
 - Panell de notes nomes mostra slots publicats.
 - Slots pendents no son puntuables.
 
-### Tancament Parcial Implementat
-- Estat: base de model, runtime legacy i panell central de Notes completats per fase.
+### Tancament Implementat
+- Estat: completada per al panell central de Notes i runtime administratiu; el portal de jutges scoped per fase queda a Fase 9.
 - Implementacio feta:
   - `ScoreEntry` te camp opcional `fase`.
   - `TeamScoreEntry` te camp opcional `fase`.
@@ -1320,20 +1441,26 @@
   - Les taules lazy de Notes carreguen participants de slots `filled` o `manual`.
   - Les claus locals de Notes i el guardat inclouen `fase_id` quan toca.
   - Els avisos de Notes respecten la fase seleccionada.
+  - S'ha afegit un servei central d'elegibilitat de fase:
+    - `fase = null` continua sent preliminar/legacy i es considera puntuable.
+    - una fase avancada es puntuable si la fase esta `published` o si la `ProgramUnit` concreta esta `published`.
+    - nomes els slots `filled` i `manual` son puntuables.
+    - slots `pending_decision`, `reserve`, `empty` i equivalents no entren a Notes ni accepten guardat.
+  - El manifest i les taules de Notes amaguen fases/unitats que encara no son puntuables.
+  - `scoring_save` i `scoring_save_partial` rebutgen amb `403` subjectes que no formen part d'un slot publicat/puntuable de la fase demanada.
+  - El context multimedia del panell central de Notes accepta `fase_id` i carrega el video de jutge del score d'aquella fase, no el legacy.
+  - Els payloads de cerca/context de Notes propaguen `fase_id`/`phase_id` per mantenir els deep links interns i el playback dins la mateixa fase.
 - Migracio:
   - `0063_score_entries_phase_scope.py`.
 - Guardrails respectats:
   - No s'ha creat cap fase default persistent.
   - Les notes existents queden com a legacy amb `fase = null`.
-  - No s'ha canviat encara el portal de jutges cap a home de fases.
-  - No s'ha fet que una `ProgramUnit` sigui puntuable nomes per estar publicada o programada.
-- Abast pendent dins Fase 8:
-  - Deep links i estat visual mes fi per fase al panell de Notes.
-  - Regla estricta de publicacio:
-    - ara Notes usa slots `filled` o `manual`
-    - encara no bloqueja per estat `published` de fase/unitat.
+  - Els endpoints legacy sense `fase_id` continuen filtrant `fase is null`.
+  - No s'ha canviat encara el portal de jutges cap a home de fases; aquest tall queda a Fase 9.
+- Fora d'abast i traslladat a Fase 9:
   - Deep links i tokens de jutge scoped per fase.
-  - Separacio/gestio de video per fase mes enlla de la FK del score.
+  - Home del portal de jutges amb selector de fases disponibles.
+  - Publicacio cap a jutges i control d'acces per token de fase.
 - Nota important:
   - El portal de jutges continua puntuant preliminar/legacy si no rep `fase_id`.
   - La home de fases per jutges queda dins Fase 9.
@@ -1343,6 +1470,7 @@
   - `docker compose exec -T web python manage.py check`.
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases competicions_trampoli.tests.classificacions.test_phase_scope --verbosity 1 --keepdb`.
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1 --keepdb`.
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.notes.test_phase_eligibility competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1 --noinput`.
 
 ## Fase 9. Portal De Jutges Amb Home De Fases
 

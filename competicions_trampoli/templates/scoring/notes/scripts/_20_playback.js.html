@@ -16,23 +16,25 @@
     };
   }
 
-  function judgePresenceForKey(insId, exercici, appId){
-    const k = keyFor(insId, exercici, appId);
+  function judgePresenceForKey(insId, exercici, appId, faseId){
+    const k = keyFor(insId, exercici, appId, faseId);
     return Number(JUDGE_VIDEO_PRESENCE_BY_KEY[k] || 0) ? 1 : 0;
   }
 
-  function playbackBadgeText(insId, exercici, appId){
+  function playbackBadgeText(insId, exercici, appId, faseId){
     const c = mediaCountsForIns(insId);
-    const j = judgePresenceForKey(insId, exercici, appId);
+    const j = judgePresenceForKey(insId, exercici, appId, faseId);
     const sep = " \u00B7 ";
     return `A:${c.audio}${sep}V:${c.video}${sep}J:${j}`;
   }
 
-  function refreshPlaybackBadges(insId, exercici, appId){
+  function refreshPlaybackBadges(insId, exercici, appId, faseId){
     if(!insId || !exercici || !appId) return;
+    const phase = normalizeScorePhaseId(faseId);
     const sel = `.js-playback-media-badge[data-ins-id="${CSS.escape(String(insId))}"][data-exercici="${CSS.escape(String(exercici))}"][data-comp-aparell-id="${CSS.escape(String(appId))}"]`;
     document.querySelectorAll(sel).forEach((elBadge)=>{
-      elBadge.textContent = playbackBadgeText(insId, exercici, appId);
+      if(normalizeScorePhaseId(elBadge.dataset.faseId || "") !== phase) return;
+      elBadge.textContent = playbackBadgeText(insId, exercici, appId, phase);
     });
   }
 
@@ -239,6 +241,9 @@
   async function loadPlaybackContext(insId, exercici, appId, opts={}){
     if(!insId) return;
     const openDrawer = !!opts.openDrawer;
+    const phaseId = normalizeScorePhaseId(
+      opts.faseId ?? opts.fase_id ?? opts.phaseId ?? opts.phase_id ?? currentScorePhaseId()
+    );
 
     PLAYBACK_STATE.insId = String(insId);
     PLAYBACK_STATE.exercici = exercici ? String(exercici) : null;
@@ -254,6 +259,7 @@
     url.searchParams.set("subject_id", String(subject.subject_id || insId));
     if(exercici) url.searchParams.set("exercici", String(exercici));
     if(appId) url.searchParams.set("comp_aparell_id", String(appId));
+    if(phaseId) url.searchParams.set("fase_id", String(phaseId));
 
     try{
       const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
@@ -264,9 +270,9 @@
       PLAYBACK_STATE.payload = payload;
       PLAYBACK_STATE.error = "";
       if(PLAYBACK_STATE.insId && PLAYBACK_STATE.exercici && PLAYBACK_STATE.appId){
-        const k = keyFor(PLAYBACK_STATE.insId, PLAYBACK_STATE.exercici, PLAYBACK_STATE.appId);
+        const k = keyFor(PLAYBACK_STATE.insId, PLAYBACK_STATE.exercici, PLAYBACK_STATE.appId, phaseId);
         JUDGE_VIDEO_PRESENCE_BY_KEY[k] = payload.judge_video ? 1 : 0;
-        refreshPlaybackBadges(PLAYBACK_STATE.insId, PLAYBACK_STATE.exercici, PLAYBACK_STATE.appId);
+        refreshPlaybackBadges(PLAYBACK_STATE.insId, PLAYBACK_STATE.exercici, PLAYBACK_STATE.appId, phaseId);
       }
       renderPlaybackPanel();
       highlightPlaybackRows();
@@ -298,6 +304,6 @@
       btn.dataset.insId,
       btn.dataset.exercici,
       btn.dataset.compAparellId,
-      {openDrawer: false}
+      {openDrawer: false, faseId: btn.dataset.faseId || currentScorePhaseId()}
     );
   }

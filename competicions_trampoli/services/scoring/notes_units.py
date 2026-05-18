@@ -19,6 +19,10 @@ from ...services.rotacions.rotacions_ordering import (
     rotation_unit_label,
 )
 from ...services.shared.competition_groups import get_group_maps, group_label
+from ...services.scoring.phase_eligibility import (
+    is_program_unit_scoreable,
+    scoreable_slot_statuses,
+)
 from ...services.scoring.team_scoring import is_team_context_app
 from ...services.scoring.team_subject_contract import build_team_subject_registry
 from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
@@ -322,6 +326,7 @@ def build_notes_units_context(competicio):
                 "program_units",
                 queryset=(
                     ProgramUnit.objects
+                    .select_related("fase")
                     .prefetch_related(
                         Prefetch(
                             "slots",
@@ -336,20 +341,25 @@ def build_notes_units_context(competicio):
     )
     phases_by_app = defaultdict(list)
     phase_units = []
-    filled_statuses = {ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL}
+    filled_statuses = scoreable_slot_statuses()
     for phase in phases:
         app_id = int(phase.comp_aparell_id)
         comp_aparell = apps_by_id.get(app_id)
         if comp_aparell is None:
             continue
-        phases_by_app[app_id].append(phase)
         subject_kind = "team_unit" if app_id in team_app_ids else "inscripcio"
+        phase_has_scoreable_unit = False
         for program_unit in phase.program_units.all():
+            if not is_program_unit_scoreable(program_unit):
+                continue
             slots = [
                 slot
                 for slot in program_unit.slots.all()
                 if slot.status in filled_statuses and slot.subject_id and str(slot.subject_kind or "").strip().lower() == subject_kind
             ]
+            if not slots:
+                continue
+            phase_has_scoreable_unit = True
             subject_refs = [f"{subject_kind}:{int(slot.subject_id)}" for slot in slots]
             unit_key = f"phase:{phase.id}:unit:{program_unit.id}"
             unit = {
@@ -376,6 +386,8 @@ def build_notes_units_context(competicio):
             phase_units.append(unit)
             unit_by_lookup[(app_id, normalize_unit_lookup_key(unit_key), None)] = unit
             unit_by_lookup[(app_id, normalize_unit_lookup_key(unit_key), f"phase:{phase.id}")] = unit
+        if phase_has_scoreable_unit:
+            phases_by_app[app_id].append(phase)
 
     return {
         "competicio": competicio,
@@ -426,13 +438,12 @@ def resolve_notes_unit(context, comp_aparell_id, *, unit_key=None, group=None, f
 def subjects_for_unit(context, unit, comp_aparell):
     app_id = int(comp_aparell.id)
     if unit.get("phase_id") and unit.get("program_unit_id"):
+        program_unit = ProgramUnit.objects.filter(pk=unit.get("program_unit_id")).select_related("fase").first()
+        if program_unit is None or not is_program_unit_scoreable(program_unit):
+            return []
         slots = list(
-            ProgramUnitSlot.objects
-            .filter(
-                unit_id=unit.get("program_unit_id"),
-                status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
-                subject_id__isnull=False,
-            )
+            program_unit.slots
+            .filter(status__in=scoreable_slot_statuses(), subject_id__isnull=False)
             .order_by("ordre", "slot_index", "id")
         )
         if app_id in context["team_app_ids"]:

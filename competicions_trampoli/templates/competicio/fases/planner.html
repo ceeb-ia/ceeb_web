@@ -20,12 +20,12 @@
 
     {% if comp_aparell %}
       <div class="phase-dashboard-grid">
-        <aside class="phase-dashboard-sidebar">
-          {% include "competicio/fases/_forms.html" %}
-        </aside>
         <main class="phase-dashboard-main">
           {% include "competicio/fases/_phase_flow.html" %}
         </main>
+        <aside class="phase-dashboard-sidebar">
+          {% include "competicio/fases/_forms.html" %}
+        </aside>
       </div>
     {% else %}
       {% include "competicio/fases/_no_apps.html" %}

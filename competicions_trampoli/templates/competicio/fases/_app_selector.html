@@ -3,11 +3,17 @@
     {% for summary in app_summaries %}
       <a class="phase-app-tab {% if summary.app.id == selected_app_id %}is-active{% endif %}"
          href="{% url 'trampoli_fases' competicio.id %}?app={{ summary.app.id }}">
+        <span class="phase-app-tab-kicker">{{ summary.app.display_codi }}</span>
         <span class="phase-app-tab-title">{{ summary.app.display_nom }}</span>
         <span class="phase-app-tab-detail">
-          {{ summary.phase_count }} fases - {{ summary.unit_count }} unitats - {{ summary.state_label }}
+          {{ summary.phase_count }} fases · {{ summary.unit_count }} unitats · {{ summary.state_label }}
         </span>
       </a>
     {% endfor %}
+    <a class="phase-app-tab phase-app-tab-add" href="{% url 'trampoli_aparells_list' competicio.id %}">
+      <span class="phase-app-tab-add-icon">+</span>
+      <span class="phase-app-tab-title">Afegir aparell</span>
+      <span class="phase-app-tab-detail">Configura una nova instancia local</span>
+    </a>
   </nav>
 {% endif %}

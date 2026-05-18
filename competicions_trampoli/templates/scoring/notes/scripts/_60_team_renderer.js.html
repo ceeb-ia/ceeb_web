@@ -435,6 +435,7 @@
 
       const summaryNameTd = document.createElement("td");
       summaryNameTd.className = "name-cell";
+      const faseId = currentScorePhaseId();
       const nameBtn = el("button", {
         type:"button",
         class:"btn btn-link p-0 playback-name-btn js-open-playback",
@@ -443,6 +444,7 @@
       nameBtn.dataset.insId = String(subject.id);
       nameBtn.dataset.exercici = String(exercici);
       nameBtn.dataset.compAparellId = String(appId);
+      nameBtn.dataset.faseId = String(faseId || "");
       summaryNameTd.appendChild(nameBtn);
       appendScoreWarningChip(summaryNameTd, scoreWarnings);
       if(subject.context_name){
@@ -457,11 +459,12 @@
       const mediaBadge = el("button", {
         type:"button",
         class:"playback-media-badge js-open-playback js-playback-media-badge",
-        text: playbackBadgeText(subject.id, exercici, appId),
+        text: playbackBadgeText(subject.id, exercici, appId, faseId),
       });
       mediaBadge.dataset.insId = String(subject.id);
       mediaBadge.dataset.exercici = String(exercici);
       mediaBadge.dataset.compAparellId = String(appId);
+      mediaBadge.dataset.faseId = String(faseId || "");
       summaryNameTd.appendChild(el("div", { class:"mt-1" }, [mediaBadge]));
       summaryTr.appendChild(summaryNameTd);
 

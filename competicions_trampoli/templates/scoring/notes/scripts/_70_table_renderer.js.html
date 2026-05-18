@@ -242,6 +242,7 @@
 
         // Nom només a la primera fila real
         if(j === visibleJudgeRows[0]){
+          const faseId = currentScorePhaseId();
           const nameTd = document.createElement("td");
           nameTd.className = "name-cell";
           nameTd.rowSpan = visibleJudgeRows.length;
@@ -253,6 +254,7 @@
           nameBtn.dataset.insId = String(ins.id);
           nameBtn.dataset.exercici = String(exercici);
           nameBtn.dataset.compAparellId = String(appId);
+          nameBtn.dataset.faseId = String(faseId || "");
           nameTd.appendChild(nameBtn);
           appendScoreWarningChip(nameTd, rowWarnings);
           if(String(ins.subject_kind || "") === "team_unit"){
@@ -269,11 +271,12 @@
           const mediaBadge = el("button",{
             type:"button",
             class:"playback-media-badge js-open-playback js-playback-media-badge",
-            text: playbackBadgeText(ins.id, exercici, appId),
+            text: playbackBadgeText(ins.id, exercici, appId, faseId),
           });
           mediaBadge.dataset.insId = String(ins.id);
           mediaBadge.dataset.exercici = String(exercici);
           mediaBadge.dataset.compAparellId = String(appId);
+          mediaBadge.dataset.faseId = String(faseId || "");
           nameTd.appendChild(el("div",{class:"mt-1"},[mediaBadge]));
           tr.appendChild(nameTd);
         }

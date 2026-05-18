@@ -1,9 +1,18 @@
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from django.contrib.messages import get_messages
 from django.test import TestCase
 from django.urls import reverse
 
 from ...models import CompeticioMembership
 from ...models.classificacions import ClassificacioConfig
-from ...models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
+from ...models.competicio import (
+    CompeticioAparellFase,
+    FasePartitionState,
+    ProgramUnit,
+    ProgramUnitSlot,
+)
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioProgramUnit, RotacioEstacio, RotacioFranja
 from ...models.scoring import ScoreEntry
 from ...services.fases import create_program_unit_with_empty_slots
@@ -194,6 +203,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
                 "qualifiers_count": 8,
                 "reserve_count": 2,
                 "partition_mode": "source_partitions",
+                "tie_policy": "manual_decision",
                 "unit_capacity": 4,
                 "unit_name_template": "{fase} - {particio}",
             },
@@ -205,10 +215,136 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(phase.config["cut"]["qualifiers_count"], 8)
         self.assertEqual(phase.config["cut"]["reserve_count"], 2)
         self.assertEqual(phase.config["cut"]["partition_mode"], "source_partitions")
+        self.assertEqual(phase.config["cut"]["tie_policy"], "manual_decision")
 
         page = self.client.get(self._common_planner_url(self.comp_aparell))
         self.assertContains(page, "Preliminar TRA")
         self.assertContains(page, "Top 8 + 2 reserves")
+
+    def test_planner_exposes_qualification_actions(self):
+        self._create_phase()
+
+        response = self.client.get(self._common_planner_url(self.comp_aparell))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="preview_qualification"')
+        self.assertContains(response, 'value="apply_qualification"')
+        self.assertContains(response, 'value="regenerate_qualification"')
+        self.assertContains(response, "Generar unitats")
+        self.assertContains(response, "Aplicar tall i crear unitats")
+
+    def test_post_preview_qualification_surfaces_service_validation(self):
+        phase = self._create_phase()
+
+        response = self.client.post(
+            self._planner_url(),
+            data={"action": "preview_qualification", "fase_id": phase.id},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("Cal configurar una classificacio origen abans de generar la fase.", messages)
+
+    def test_post_apply_qualification_calls_service_when_available(self):
+        phase = self._create_phase()
+        preview = SimpleNamespace(
+            summary=Mock(
+                return_value={
+                    "candidates": 3,
+                    "slots": 4,
+                    "units": 1,
+                }
+            )
+        )
+        service = Mock(return_value=preview)
+
+        with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
+            response = self.client.post(
+                self._planner_url(),
+                data={"action": "apply_qualification", "fase_id": phase.id},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with(phase, replace_existing=False, allow_replace_protected=False)
+        self.assertContains(response, "Tall congelat per")
+
+    def test_post_confirm_partition_calls_service_when_available(self):
+        phase = self._create_phase()
+        state = SimpleNamespace(partition_key="global")
+        service = Mock(return_value=state)
+
+        with patch("competicions_trampoli.views.competition.fases.actions.confirm_qualification_partition", service):
+            response = self.client.post(
+                self._planner_url(),
+                data={"action": "confirm_partition", "fase_id": phase.id, "partition_key": "global"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with(phase, "global")
+        messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("Particio 'global' confirmada per 'Semifinal'.", messages)
+
+    def test_planner_shows_generated_partition_confirmation_action(self):
+        phase = self._create_phase()
+        FasePartitionState.objects.create(
+            fase=phase,
+            partition_key="global",
+            status=FasePartitionState.Status.GENERATED,
+        )
+
+        response = self.client.get(self._common_planner_url(self.comp_aparell))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="confirm_partition"')
+        self.assertContains(response, "Confirmar particio")
+
+    def test_post_regenerate_qualification_requires_explicit_confirmation(self):
+        phase = self._create_phase()
+        service = Mock()
+
+        with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
+            response = self.client.post(
+                self._planner_url(),
+                data={"action": "regenerate_qualification", "fase_id": phase.id},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_not_called()
+        messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("Cal confirmar explicitament la regeneracio abans de substituir la proposta.", messages)
+
+    def test_post_regenerate_qualification_calls_service_with_replace_existing(self):
+        phase = self._create_phase()
+        preview = SimpleNamespace(
+            summary=Mock(
+                return_value={
+                    "candidates": 4,
+                    "slots": 4,
+                    "units": 2,
+                }
+            )
+        )
+        service = Mock(return_value=preview)
+
+        with patch("competicions_trampoli.views.competition.fases.actions.qualification_is_stale", Mock(return_value=True)):
+            with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
+                response = self.client.post(
+                    self._planner_url(),
+                    data={
+                        "action": "regenerate_qualification",
+                        "fase_id": phase.id,
+                        "confirm_regeneration": "1",
+                    },
+                    follow=True,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with(phase, replace_existing=True, allow_replace_protected=False)
+        self.assertContains(response, "Proposta actualitzada per")
 
     def test_post_delete_phase_only_removes_empty_leaf_phase(self):
         phase = self._create_phase()

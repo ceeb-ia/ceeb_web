@@ -4,7 +4,14 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import Competicio, CompeticioMembership
 from .models.classificacions import ClassificacioTemplateGlobal
-from .models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
+from .models.competicio import (
+    CompeticioAparell,
+    CompeticioAparellFase,
+    FasePartitionState,
+    ProgramUnit,
+    ProgramUnitSlot,
+    QualificationRun,
+)
 from .models.judging import JudgeConversation, JudgeConversationMessage
 from .models.rotacions import RotacioAssignacioProgramUnit
 
@@ -70,6 +77,24 @@ class ProgramUnitSlotAdmin(admin.ModelAdmin):
     list_filter = ("status", "subject_kind", "locked")
     search_fields = ("unit__nom", "subject_kind", "subject_id", "source_particio_key")
     autocomplete_fields = ("unit",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(QualificationRun)
+class QualificationRunAdmin(admin.ModelAdmin):
+    list_display = ("fase", "source_classificacio", "source_phase", "status", "snapshot_hash", "applied_at", "created_at")
+    list_filter = ("status", "fase__competicio")
+    search_fields = ("fase__nom", "source_classificacio__nom", "snapshot_hash")
+    autocomplete_fields = ("fase", "source_phase")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(FasePartitionState)
+class FasePartitionStateAdmin(admin.ModelAdmin):
+    list_display = ("fase", "partition_key", "status", "qualification_run", "confirmed_at", "updated_at")
+    list_filter = ("status", "fase__competicio")
+    search_fields = ("fase__nom", "partition_key", "source_snapshot_hash")
+    autocomplete_fields = ("fase", "qualification_run")
     readonly_fields = ("created_at", "updated_at")
 
 

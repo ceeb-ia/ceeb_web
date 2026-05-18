@@ -4,36 +4,29 @@
       <h4>{{ comp_aparell.display_nom }}</h4>
       <div class="text-muted small">{{ comp_aparell.display_codi }} - {{ phase_count }} fases - {{ unit_count }} unitats competitives</div>
     </div>
-    <div class="phase-action-row">
-      <a class="btn btn-sm btn-outline-secondary" href="{% url 'rotacions_planner' competicio.id %}">Obrir rotacions</a>
-    </div>
   </div>
 
-  <article class="phase-node is-base">
-    <header class="phase-node-header is-base">
-      <div>
-        <div class="phase-node-title">
-          <strong>Preliminar implicita</strong>
-          <span class="badge badge-light border">DEFAULT reservat</span>
-        </div>
-        <div class="text-muted small">Arrel visual de l'arbre. No es desa com a fase; representa el flux inicial existent, les rotacions normals i les notes sense fase_id.</div>
-      </div>
-      <span class="badge badge-secondary">No editable aqui</span>
-    </header>
-  </article>
+  <div class="phase-tree-panel">
+    <a class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}"
+       href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
+      <span class="phase-tree-base-title">Preliminar implicita</span>
+      <span class="phase-tree-base-meta">Arrel visual · DEFAULT reservat · notes sense fase_id</span>
+    </a>
 
-  {% if phases %}
-    <div class="phase-tree">
-      {% for phase in phases %}
-        <div class="phase-tree-item">
-          {% include "competicio/fases/_phase_node.html" with phase=phase %}
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <div class="phase-empty">
-      Encara no hi ha fases avancades. La preliminar/default no es crea aqui: surt dels grups d'inscripcions i del planner de rotacions.
-      Crea una fase per preparar semifinals, finals o rondes posteriors d'aquest aparell.
-    </div>
+    {% if root_phases %}
+      <ol class="phase-tree-list">
+        {% include "competicio/fases/_phase_tree_branch.html" with phases=root_phases %}
+      </ol>
+    {% else %}
+      <div class="phase-empty">
+        La preliminar/default no es crea aqui. Crea una fase filla per preparar semifinals, finals o rondes posteriors d'aquest aparell.
+      </div>
+    {% endif %}
+  </div>
+
+  {% if selected_phase %}
+    <section class="phase-detail-panel" aria-label="Detall de fase seleccionada">
+      {% include "competicio/fases/_phase_node.html" with phase=selected_phase %}
+    </section>
   {% endif %}
 </section>

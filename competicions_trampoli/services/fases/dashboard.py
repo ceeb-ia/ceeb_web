@@ -4,8 +4,15 @@ from collections import defaultdict
 
 from django.db.models import Count, Prefetch
 
-from ...models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
+from ...models.competicio import (
+    CompeticioAparell,
+    CompeticioAparellFase,
+    FasePartitionState,
+    ProgramUnit,
+    ProgramUnitSlot,
+)
 from ...models.rotacions import RotacioAssignacioProgramUnit
+from .qualification import QualificationError, qualification_is_stale
 
 
 def _time_label(value) -> str:
@@ -51,6 +58,7 @@ def _phases_for_comp_aparell(comp_aparell: CompeticioAparell) -> list[Competicio
         .filter(comp_aparell=comp_aparell)
         .select_related("parent")
         .prefetch_related(
+            "partition_states",
             Prefetch(
                 "program_units",
                 queryset=(
@@ -90,6 +98,13 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         reserves = cut_config.get("reserve_count") or phase_config.get("reserve_count") or 0
         unit_capacity = cut_config.get("unit_capacity") or phase_config.get("unit_capacity")
         partition_mode = cut_config.get("partition_mode") or phase_config.get("partition_mode") or "global"
+        tie_policy = cut_config.get("tie_policy") or "classification_order"
+        tie_policy_labels = {
+            "classification_order": "Ordre de classificació",
+            "include_all_at_cut": "Inclou empatats",
+            "manual_decision": "Decisió manual",
+        }
+        qualification_config = phase_config.get("qualification") if isinstance(phase_config.get("qualification"), dict) else {}
         phase.ui_source_configured = bool(
             phase_config.get("source_classificacio_id")
             or phase_config.get("classificacio_id")
@@ -103,8 +118,34 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             if qualifiers
             else "No configurat"
         )
-        phase.ui_partition_label = "Per particio" if partition_mode == "source_partitions" else "Global"
-        phase.ui_unit_capacity_label = f"{unit_capacity} places/unitat" if unit_capacity else "Sense mida d'unitat"
+        phase.ui_partition_label = "Per partició" if partition_mode == "source_partitions" else "Global"
+        phase.ui_tie_policy_label = tie_policy_labels.get(tie_policy, "Ordre de classificació")
+        phase.ui_unit_capacity_label = f"màxim {unit_capacity} places/unitat" if unit_capacity else "Sense mida d'unitat"
+        phase.ui_qualification_run_id = qualification_config.get("run_id")
+        phase.ui_qualification_snapshot_hash = qualification_config.get("snapshot_hash") or ""
+        phase.ui_qualification_stale = False
+        if phase.ui_qualification_snapshot_hash:
+            try:
+                phase.ui_qualification_stale = qualification_is_stale(phase)
+            except QualificationError:
+                phase.ui_qualification_stale = True
+        partition_states = list(phase.partition_states.all())
+        phase.ui_partition_states = partition_states
+        phase.ui_generated_partitions = [
+            {
+                "key": state.partition_key,
+                "status": state.status,
+                "status_label": state.get_status_display(),
+                "confirmed_at": state.confirmed_at,
+                "warnings": list(state.warnings or []),
+                "is_stale": phase.ui_qualification_stale or state.status == FasePartitionState.Status.STALE,
+                "can_confirm": (
+                    not phase.ui_qualification_stale
+                    and state.status == FasePartitionState.Status.GENERATED
+                ),
+            }
+            for state in partition_states
+        ]
         for unit in units:
             slots = list(unit.slots.all())
             programmed_labels = programming_by_unit.get(int(unit.id), [])
@@ -142,7 +183,10 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
                 "detail": (
                     "Encara no hi ha classificacio origen ni regla de tall desades."
                     if not (phase.ui_source_configured and phase.ui_cut_configured)
-                    else f"{phase.ui_source_label} · {phase.ui_cut_label} · {phase.ui_partition_label}"
+                    else (
+                        f"{phase.ui_source_label} · {phase.ui_cut_label} · "
+                        f"{phase.ui_partition_label} · {phase.ui_tie_policy_label}"
+                    )
                 ),
             },
             {
@@ -195,6 +239,29 @@ def _app_summary(comp_aparell: CompeticioAparell, phases: list[CompeticioAparell
     }
 
 
+def _attach_phase_tree(phases: list[CompeticioAparellFase], selected_phase_id: int | None = None) -> list[CompeticioAparellFase]:
+    by_id = {int(phase.id): phase for phase in phases}
+    roots = []
+    for phase in phases:
+        phase.ui_children = []
+        phase.ui_depth = 0
+        phase.ui_is_selected = selected_phase_id is not None and int(phase.id) == selected_phase_id
+    for phase in phases:
+        parent = by_id.get(int(phase.parent_id or 0))
+        if parent is None:
+            roots.append(phase)
+        else:
+            parent.ui_children.append(phase)
+
+    def assign_depth(items, depth=0):
+        for item in items:
+            item.ui_depth = depth
+            assign_depth(getattr(item, "ui_children", []), depth + 1)
+
+    assign_depth(roots)
+    return roots
+
+
 def _positive_int_or_none(value):
     try:
         clean = int(value)
@@ -203,7 +270,7 @@ def _positive_int_or_none(value):
     return clean if clean > 0 else None
 
 
-def phase_dashboard_context(competicio, *, selected_app_id=None) -> dict:
+def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_id=None) -> dict:
     comp_aparells = list(
         CompeticioAparell.objects
         .filter(competicio=competicio, actiu=True)
@@ -225,6 +292,15 @@ def phase_dashboard_context(competicio, *, selected_app_id=None) -> dict:
         app_summaries.append(_app_summary(comp_aparell, phases))
 
     selected_phases = phases_by_app.get(int(selected.id), []) if selected else []
+    requested_phase_id = _positive_int_or_none(selected_phase_id)
+    selected_phase = next(
+        (phase for phase in selected_phases if requested_phase_id and int(phase.id) == requested_phase_id),
+        None,
+    )
+    if selected_phase is None and selected_phases:
+        selected_phase = selected_phases[0]
+    selected_phase_id = int(selected_phase.id) if selected_phase is not None else None
+    root_phases = _attach_phase_tree(selected_phases, selected_phase_id)
     selected_units = [unit for phase in selected_phases for unit in getattr(phase, "ui_units", [])]
     return {
         "competicio": competicio,
@@ -233,6 +309,9 @@ def phase_dashboard_context(competicio, *, selected_app_id=None) -> dict:
         "selected_app_id": int(selected.id) if selected else None,
         "app_summaries": app_summaries,
         "phases": selected_phases,
+        "root_phases": root_phases,
+        "selected_phase": selected_phase,
+        "selected_phase_id": selected_phase_id,
         "phase_count": len(selected_phases),
         "unit_count": len(selected_units),
         "programmed_unit_count": sum(1 for unit in selected_units if getattr(unit, "ui_is_programmed", False)),

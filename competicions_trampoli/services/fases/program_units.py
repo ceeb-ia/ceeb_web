@@ -13,7 +13,10 @@ class SlotSubject:
     subject_kind: str
     subject_id: int
     status: str = ProgramUnitSlot.Status.FILLED
+    source_classificacio_id: Optional[int] = None
+    source_particio_key: str = ""
     source_position: Optional[int] = None
+    source_score: Optional[float] = None
     source_row: Optional[dict] = None
 
 
@@ -85,14 +88,27 @@ def fill_program_unit_slots(
         slot.subject_kind = str(subject.subject_kind or "").strip().lower()
         slot.subject_id = int(subject.subject_id)
         slot.status = subject.status
+        slot.source_classificacio_id = subject.source_classificacio_id
+        slot.source_particio_key = str(subject.source_particio_key or "").strip()
         slot.source_position = subject.source_position
+        slot.source_score = subject.source_score
         slot.source_row = subject.source_row or {}
         slot.full_clean()
         updates.append(slot)
     if updates:
         ProgramUnitSlot.objects.bulk_update(
             updates,
-            ["subject_kind", "subject_id", "status", "source_position", "source_row", "updated_at"],
+            [
+                "subject_kind",
+                "subject_id",
+                "status",
+                "source_classificacio",
+                "source_particio_key",
+                "source_position",
+                "source_score",
+                "source_row",
+                "updated_at",
+            ],
         )
     return unit
 

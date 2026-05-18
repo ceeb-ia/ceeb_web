@@ -1,152 +1,260 @@
-<section class="phase-panel is-muted">
+<section class="phase-panel phase-action-panel">
   <div class="phase-panel-title">
-    <h5>Flux de treball</h5>
+    <h5>Accions de fase</h5>
+    {% if selected_phase %}
+      <span class="badge badge-light border">{{ selected_phase.codi }}</span>
+    {% else %}
+      <span class="badge badge-light border">Preliminar</span>
+    {% endif %}
   </div>
-  <ol class="phase-workflow-list">
-    <li>
-      <span class="phase-workflow-index">1</span>
-      <div>
-        <strong>Crear la fase</strong>
-        <div class="phase-panel-note">Només crea la ronda per a aquest aparell.</div>
+
+  {% if selected_phase %}
+    <div class="phase-selected-summary">
+      <div class="phase-selected-title">{{ selected_phase.nom }}</div>
+      <div class="phase-panel-note">
+        {% if selected_phase.parent %}
+          Penja de {{ selected_phase.parent.nom }}.
+        {% else %}
+          Penja de la preliminar implicita.
+        {% endif %}
       </div>
-    </li>
-    <li>
-      <span class="phase-workflow-index">2</span>
-      <div>
-        <strong>Definir origen i tall</strong>
-        <div class="phase-panel-note">Classificació origen, top N, reserves i criteris. Encara no està automatitzat.</div>
+      <div class="phase-summary-badges">
+        <span class="badge badge-light border">{{ selected_phase.estat }}</span>
+        <span class="badge badge-light border">{{ selected_phase.ui_unit_count }} unitats</span>
+        <span class="badge badge-light border">{{ selected_phase.ui_competitive_slot_count }}/{{ selected_phase.ui_slot_count }} places</span>
+        {% if selected_phase.ui_qualification_stale %}<span class="badge badge-danger">Font canviada</span>{% endif %}
       </div>
-    </li>
-    <li>
-      <span class="phase-workflow-index">3</span>
-      <div>
-        <strong>Crear unitats i places</strong>
-        <div class="phase-panel-note">Manualment ara; més endavant es generarà des del tall.</div>
+    </div>
+  {% else %}
+    <div class="phase-selected-summary">
+      <div class="phase-selected-title">Preliminar implicita</div>
+      <div class="phase-panel-note">
+        Arrel visual de l'arbre. No es desa com a fase i representa el flux inicial existent.
       </div>
-    </li>
-    <li>
-      <span class="phase-workflow-index">4</span>
-      <div>
-        <strong>Programar i puntuar</strong>
-        <div class="phase-panel-note">Rotacions situa les unitats; Notes permet puntuar la fase.</div>
-      </div>
-    </li>
-  </ol>
+    </div>
+  {% endif %}
 </section>
 
 <section class="phase-panel">
   <div class="phase-panel-title">
-    <h5>1. Crear fase avançada</h5>
+    <h5>Afegir fase filla</h5>
   </div>
-  <div class="phase-panel-note mb-2">Això crea el contenidor de la ronda. Encara no hi ha classificació origen, tall ni participants assignats.</div>
+  <div class="phase-panel-note mb-2">
+    Crea una fase nova sota el node seleccionat. Si el parent es Preliminar implicita, la fase penja de l'arrel.
+  </div>
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="create_phase">
-    <div class="mb-2">{{ phase_form.parent.label_tag }}{{ phase_form.parent }}{{ phase_form.parent.errors }}</div>
-    <div class="phase-parent-hint mb-2">Si no tries cap fase pare, penjara visualment de la preliminar implicita.</div>
+    <div class="mb-2">
+      {{ phase_form.parent.label_tag }}{{ phase_form.parent }}{{ phase_form.parent.errors }}
+      {% if phase_form.parent.help_text %}<div class="text-muted small">{{ phase_form.parent.help_text }}</div>{% endif %}
+    </div>
     <div class="mb-2">{{ phase_form.nom.label_tag }}{{ phase_form.nom }}{{ phase_form.nom.errors }}</div>
     <div class="mb-2">{{ phase_form.codi.label_tag }}{{ phase_form.codi }}{{ phase_form.codi.errors }}</div>
     <div class="row">
       <div class="col-5 mb-2">{{ phase_form.ordre.label_tag }}{{ phase_form.ordre }}{{ phase_form.ordre.errors }}</div>
       <div class="col-7 mb-2">{{ phase_form.estat.label_tag }}{{ phase_form.estat }}{{ phase_form.estat.errors }}</div>
     </div>
-    <button class="btn btn-sm btn-primary" type="submit">Crear fase</button>
+    <button class="btn btn-sm btn-primary" type="submit">Crear fase filla</button>
   </form>
 </section>
 
-<section class="phase-panel is-muted">
-  <div class="phase-panel-title">
-    <h5>2. Origen i tall</h5>
-    <span class="badge badge-light border">Configurable</span>
-  </div>
-  {% if phases %}
+{% if selected_phase %}
+  <section class="phase-panel is-muted">
+    <div class="phase-panel-title">
+      <h5>Configurar origen i tall</h5>
+      <span class="badge badge-light border">Regla</span>
+    </div>
     <div class="phase-panel-note mb-2">
-      Desa de quina classificació surt la fase i quin tall s'aplicarà. Encara no genera unitats automàticament.
+      Desa la recepta del tall per a {{ selected_phase.nom }}. No crea unitats fins que apliquis el tall.
     </div>
     <form method="post">
       {% csrf_token %}
       <input type="hidden" name="action" value="configure_source_cut">
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
       <div class="mb-2">
-        <label for="source-cut-fase">Fase desti</label>
-        <select id="source-cut-fase" name="fase_id" class="form-select" required>
-          {% for phase in phases %}
-            <option value="{{ phase.id }}">{{ phase.nom }}</option>
-          {% endfor %}
-        </select>
+        {{ source_cut_form.classificacio.label_tag }}{{ source_cut_form.classificacio }}{{ source_cut_form.classificacio.errors }}
+        {% if source_cut_form.classificacio.help_text %}<div class="text-muted small">{{ source_cut_form.classificacio.help_text }}</div>{% endif %}
       </div>
-      <div class="mb-2">{{ source_cut_form.classificacio.label_tag }}{{ source_cut_form.classificacio }}{{ source_cut_form.classificacio.errors }}</div>
-      <div class="mb-2">{{ source_cut_form.cut_mode.label_tag }}{{ source_cut_form.cut_mode }}{{ source_cut_form.cut_mode.errors }}</div>
+      <div class="mb-2">
+        {{ source_cut_form.cut_mode.label_tag }}{{ source_cut_form.cut_mode }}{{ source_cut_form.cut_mode.errors }}
+        {% if source_cut_form.cut_mode.help_text %}<div class="text-muted small">{{ source_cut_form.cut_mode.help_text }}</div>{% endif %}
+      </div>
       <div class="row">
-        <div class="col-6 mb-2">{{ source_cut_form.qualifiers_count.label_tag }}{{ source_cut_form.qualifiers_count }}{{ source_cut_form.qualifiers_count.errors }}</div>
-        <div class="col-6 mb-2">{{ source_cut_form.reserve_count.label_tag }}{{ source_cut_form.reserve_count }}{{ source_cut_form.reserve_count.errors }}</div>
+        <div class="col-6 mb-2">
+          {{ source_cut_form.qualifiers_count.label_tag }}{{ source_cut_form.qualifiers_count }}{{ source_cut_form.qualifiers_count.errors }}
+          {% if source_cut_form.qualifiers_count.help_text %}<div class="text-muted small">{{ source_cut_form.qualifiers_count.help_text }}</div>{% endif %}
+        </div>
+        <div class="col-6 mb-2">
+          {{ source_cut_form.reserve_count.label_tag }}{{ source_cut_form.reserve_count }}{{ source_cut_form.reserve_count.errors }}
+          {% if source_cut_form.reserve_count.help_text %}<div class="text-muted small">{{ source_cut_form.reserve_count.help_text }}</div>{% endif %}
+        </div>
       </div>
-      <div class="mb-2">{{ source_cut_form.partition_mode.label_tag }}{{ source_cut_form.partition_mode }}{{ source_cut_form.partition_mode.errors }}</div>
+      <div class="mb-2">
+        {{ source_cut_form.partition_mode.label_tag }}{{ source_cut_form.partition_mode }}{{ source_cut_form.partition_mode.errors }}
+        {% if source_cut_form.partition_mode.help_text %}<div class="text-muted small">{{ source_cut_form.partition_mode.help_text }}</div>{% endif %}
+      </div>
+      <div class="mb-2">
+        {{ source_cut_form.tie_policy.label_tag }}{{ source_cut_form.tie_policy }}{{ source_cut_form.tie_policy.errors }}
+        {% if source_cut_form.tie_policy.help_text %}<div class="text-muted small">{{ source_cut_form.tie_policy.help_text }}</div>{% endif %}
+      </div>
       <div class="row">
-        <div class="col-5 mb-2">{{ source_cut_form.unit_capacity.label_tag }}{{ source_cut_form.unit_capacity }}{{ source_cut_form.unit_capacity.errors }}</div>
-        <div class="col-7 mb-2">{{ source_cut_form.unit_name_template.label_tag }}{{ source_cut_form.unit_name_template }}{{ source_cut_form.unit_name_template.errors }}</div>
+        <div class="col-5 mb-2">
+          {{ source_cut_form.unit_capacity.label_tag }}{{ source_cut_form.unit_capacity }}{{ source_cut_form.unit_capacity.errors }}
+          {% if source_cut_form.unit_capacity.help_text %}<div class="text-muted small">{{ source_cut_form.unit_capacity.help_text }}</div>{% endif %}
+        </div>
+        <div class="col-7 mb-2">
+          {{ source_cut_form.unit_name_template.label_tag }}{{ source_cut_form.unit_name_template }}{{ source_cut_form.unit_name_template.errors }}
+          {% if source_cut_form.unit_name_template.help_text %}<div class="text-muted small">{{ source_cut_form.unit_name_template.help_text }}</div>{% endif %}
+        </div>
       </div>
-      <button class="btn btn-sm btn-outline-primary" type="submit">Desar origen i tall</button>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Desar regla de tall</button>
     </form>
-  {% else %}
-    <div class="text-muted small">Crea primer una fase avançada. Després podràs lligar-la a una classificació origen i definir el tall.</div>
-  {% endif %}
-</section>
+  </section>
 
-<section class="phase-panel">
-  <div class="phase-panel-title">
-    <h5>3. Crear unitat manual</h5>
-    <span class="badge badge-light border">Manual</span>
-  </div>
-  <div class="phase-panel-note mb-2">Útil per preparar una final o semifinal a mà. Les places queden buides fins que s'assignen participants o es generen des d'una classificació.</div>
-  {% if phases %}
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Generar unitats</h5>
+      <span class="badge badge-light border">Tall</span>
+    </div>
+    <div class="phase-panel-note mb-2">
+      Previsualitzar no crea res. Aplicar tall crea les unitats programables i congela els classificats.
+    </div>
+    <div class="phase-action-stack">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="preview_qualification">
+        <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+        <button class="btn btn-sm btn-outline-primary" type="submit">Previsualitzar tall</button>
+      </form>
+      <form method="post" onsubmit="return confirm('Aplicar el tall i crear les unitats programables per a aquesta fase?');">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="apply_qualification">
+        <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+        <button class="btn btn-sm btn-primary" type="submit">Aplicar tall i crear unitats</button>
+      </form>
+    </div>
+    {% if qualification_preview %}
+      <div class="phase-panel-note mt-3">
+        <strong>Preview:</strong>
+        {{ qualification_preview.summary.candidates }} participants/reserves,
+        {{ qualification_preview.summary.slots }} places,
+        {{ qualification_preview.summary.units }} unitats.
+      </div>
+      {% if qualification_preview.warnings %}
+        <div class="alert alert-warning mt-2 mb-0">
+          {% for warning in qualification_preview.warnings %}
+            <div>{{ warning }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="phase-panel is-muted">
+    <div class="phase-panel-title">
+      <h5>Regenerar proposta</h5>
+      <span class="badge badge-light border">Controlat</span>
+    </div>
+    <div class="phase-panel-note mb-2">
+      Recalcula i substitueix les unitats generades. Si hi ha slots manuals o bloquejats, cal confirmacio extra.
+    </div>
+    <form method="post" onsubmit="return confirm('Regenerar aquesta proposta i substituir les unitats generades existents?');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="regenerate_qualification">
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+      <div class="form-check mb-2">
+        <input class="form-check-input" id="confirm-regeneration" type="checkbox" name="confirm_regeneration" value="1" required>
+        <label class="form-check-label" for="confirm-regeneration">Substituir la proposta generada</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" id="confirm-replace-protected" type="checkbox" name="confirm_replace_protected" value="1">
+        <label class="form-check-label" for="confirm-replace-protected">Incloure slots manuals o bloquejats</label>
+      </div>
+      <button class="btn btn-sm btn-outline-danger" type="submit">Regenerar unitats</button>
+    </form>
+  </section>
+
+  {% if selected_phase.ui_generated_partitions %}
+    <section class="phase-panel">
+      <div class="phase-panel-title">
+        <h5>Particions generades</h5>
+      </div>
+      <div class="phase-partition-list">
+        {% for partition in selected_phase.ui_generated_partitions %}
+          <div class="phase-partition-item">
+            <div>
+              <strong>{{ partition.key }}</strong>
+              <div class="phase-panel-note">
+                {{ partition.status_label }}
+                {% if partition.is_stale %} · Font canviada{% endif %}
+                {% if partition.warnings %} · {{ partition.warnings|length }} avisos{% endif %}
+              </div>
+            </div>
+            {% if partition.can_confirm %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="confirm_partition">
+                <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+                <input type="hidden" name="partition_key" value="{{ partition.key }}">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar particio</button>
+              </form>
+            {% else %}
+              <span class="badge badge-light border">{{ partition.status_label }}</span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Crear unitat manual</h5>
+      <span class="badge badge-light border">Opcional</span>
+    </div>
+    <div class="phase-panel-note mb-2">
+      Crea una unitat buida dins {{ selected_phase.nom }} sense calcular cap tall.
+    </div>
     <form method="post">
       {% csrf_token %}
       <input type="hidden" name="action" value="create_manual_unit">
-      <div class="mb-2">
-        <label for="manual-fase">Fase desti</label>
-        <select id="manual-fase" name="fase_id" class="form-select" required>
-          {% for phase in phases %}
-            <option value="{{ phase.id }}">{{ phase.nom }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
       <div class="mb-2">{{ manual_unit_form.nom.label_tag }}{{ manual_unit_form.nom }}{{ manual_unit_form.nom.errors }}</div>
       <div class="row">
         <div class="col-5 mb-2">{{ manual_unit_form.capacity.label_tag }}{{ manual_unit_form.capacity }}{{ manual_unit_form.capacity.errors }}</div>
         <div class="col-7 mb-2">{{ manual_unit_form.tipus.label_tag }}{{ manual_unit_form.tipus }}{{ manual_unit_form.tipus.errors }}</div>
       </div>
-      <div class="mb-2">{{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}</div>
-      <button class="btn btn-sm btn-outline-primary" type="submit">Crear unitat</button>
-    </form>
-  {% else %}
-    <div class="text-muted small">Crea primer una fase avancada. La preliminar/default no es crea aqui.</div>
-  {% endif %}
-</section>
-
-<section class="phase-panel">
-  <div class="phase-panel-title">
-    <h5>3b. Crear unitat per partició</h5>
-    <span class="badge badge-light border">Manual</span>
-  </div>
-  <div class="phase-panel-note mb-2">Crea una unitat amb una etiqueta de partició, però encara no calcula el tall ni omple places automàticament.</div>
-  {% if phases %}
-    <form method="post">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="create_partition_unit">
       <div class="mb-2">
-        <label for="partition-fase">Fase desti</label>
-        <select id="partition-fase" name="fase_id" class="form-select" required>
-          {% for phase in phases %}
-            <option value="{{ phase.id }}">{{ phase.nom }}</option>
-          {% endfor %}
-        </select>
+        {{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}
+        {% if manual_unit_form.partition_key.help_text %}<div class="text-muted small">{{ manual_unit_form.partition_key.help_text }}</div>{% endif %}
       </div>
-      <div class="mb-2">{{ partition_unit_form.label.label_tag }}{{ partition_unit_form.label }}{{ partition_unit_form.label.errors }}</div>
-      <div class="mb-2">{{ partition_unit_form.key.label_tag }}{{ partition_unit_form.key }}{{ partition_unit_form.key.errors }}</div>
-      <div class="mb-2">{{ partition_unit_form.capacity.label_tag }}{{ partition_unit_form.capacity }}{{ partition_unit_form.capacity.errors }}</div>
-      <button class="btn btn-sm btn-outline-primary" type="submit">Crear unitat</button>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Crear unitat manual</button>
     </form>
-  {% else %}
-    <div class="text-muted small">Disponible quan hi hagi una fase avancada.</div>
-  {% endif %}
-</section>
+  </section>
+
+  <section class="phase-panel phase-danger-panel">
+    <div class="phase-panel-title">
+      <h5>Eliminar fase</h5>
+    </div>
+    {% if selected_phase.ui_can_delete %}
+      <form method="post" onsubmit="return confirm('Eliminar aquesta fase buida?');">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_phase">
+        <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar fase buida</button>
+      </form>
+    {% else %}
+      <div class="phase-panel-note">Nomes es poden eliminar fases sense filles ni unitats.</div>
+    {% endif %}
+  </section>
+{% else %}
+  <section class="phase-panel is-muted">
+    <div class="phase-panel-title">
+      <h5>Selecciona o crea una fase</h5>
+    </div>
+    <div class="phase-panel-note">
+      Quan hi hagi una fase seleccionada, aqui apareixeran les accions per configurar origen, aplicar tall, confirmar particions i crear unitats manuals.
+    </div>
+  </section>
+{% endif %}
