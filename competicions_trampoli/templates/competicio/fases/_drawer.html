@@ -1,0 +1,58 @@
+{% load static %}
+
+<aside
+  class="phase-dashboard-sidebar phase-drawer"
+  id="phase-actions-drawer"
+  aria-label="Accions de fase"
+>
+  <div class="phase-drawer-shell">
+    <div class="phase-drawer-head">
+      <div class="phase-drawer-title-group">
+        <img class="phase-drawer-mark" src="{% static 'fases/flux.png' %}" alt="">
+        <div>
+          <p class="phase-drawer-kicker">Aparells i fases</p>
+          <h3 class="phase-drawer-title">Accions de fase</h3>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary phase-drawer-close"
+        id="phase-drawer-close"
+        aria-label="Amagar accions de fase"
+        title="Amagar accions de fase">
+        &times;
+      </button>
+    </div>
+
+    <div class="phase-drawer-body">
+      {% if selected_phase %}
+        <nav class="phase-drawer-nav" id="phase-drawer-nav" aria-label="Eines de fase">
+          <button type="button" class="phase-drawer-nav-btn is-active" data-phase-panel-target="origin">
+            <span class="phase-drawer-nav-btn-title">
+              <span>Origen i tall</span>
+              <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+            </span>
+            <span class="phase-drawer-nav-btn-meta">Classificacio i regles</span>
+          </button>
+          <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="groups">
+            <span class="phase-drawer-nav-btn-title">
+              <span>Grups</span>
+              <img src="{% static 'fases/divisions.png' %}" alt="">
+            </span>
+            <span class="phase-drawer-nav-btn-meta">Unitats i particions</span>
+          </button>
+          <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="status">
+            <span class="phase-drawer-nav-btn-title">
+              <span>Estat</span>
+              <img src="{% static 'fases/status.png' %}" alt="">
+            </span>
+            <span class="phase-drawer-nav-btn-meta">Publicacio i control</span>
+          </button>
+        </nav>
+      {% endif %}
+      <div class="phase-drawer-content">
+        {% include "competicio/fases/_forms.html" %}
+      </div>
+    </div>
+  </div>
+</aside>

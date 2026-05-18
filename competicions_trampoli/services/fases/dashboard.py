@@ -297,8 +297,6 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         (phase for phase in selected_phases if requested_phase_id and int(phase.id) == requested_phase_id),
         None,
     )
-    if selected_phase is None and selected_phases:
-        selected_phase = selected_phases[0]
     selected_phase_id = int(selected_phase.id) if selected_phase is not None else None
     root_phases = _attach_phase_tree(selected_phases, selected_phase_id)
     selected_units = [unit for phase in selected_phases for unit in getattr(phase, "ui_units", [])]

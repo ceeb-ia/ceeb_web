@@ -71,7 +71,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             total=9,
         )
 
-        response = self.client.get(self._planner_url())
+        response = self.client.get(f"{self._planner_url()}?phase={fase.id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["competicio"], self.competicio)
@@ -155,7 +155,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             ordre=1,
         )
 
-        response = self.client.get(self._common_planner_url(self.comp_aparell))
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={fase.id}")
 
         self.assertEqual(response.status_code, 200)
         body = response.content.decode("utf-8")
@@ -181,6 +181,45 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         phase = CompeticioAparellFase.objects.get(comp_aparell=self.comp_aparell, codi="SEMI")
         self.assertIsNone(phase.parent_id)
         self.assertEqual(phase.nom, "Semifinal")
+
+    def test_post_create_phase_assigns_order_when_missing(self):
+        existing = self._create_phase(nom="Semifinal A", codi="SEMIA", ordre=1)
+
+        response = self.client.post(
+            self._planner_url(),
+            data={
+                "action": "create_phase",
+                "parent": "",
+                "nom": "Semifinal B",
+                "codi": "semib",
+                "estat": CompeticioAparellFase.Estat.PLANNED,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        phase = CompeticioAparellFase.objects.get(comp_aparell=self.comp_aparell, codi="SEMIB")
+        self.assertIsNone(phase.parent_id)
+        self.assertEqual(phase.ordre, existing.ordre + 1)
+
+    def test_post_create_child_phase_assigns_next_sibling_order(self):
+        parent = self._create_phase(nom="Semifinal", codi="SEMI", ordre=1)
+        first_child = self._create_phase(nom="Final A", codi="FINA", parent=parent, ordre=1)
+
+        response = self.client.post(
+            self._planner_url(),
+            data={
+                "action": "create_phase",
+                "parent": parent.id,
+                "nom": "Final B",
+                "codi": "finb",
+                "estat": CompeticioAparellFase.Estat.PLANNED,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        phase = CompeticioAparellFase.objects.get(comp_aparell=self.comp_aparell, codi="FINB")
+        self.assertEqual(phase.parent_id, parent.id)
+        self.assertEqual(phase.ordre, first_child.ordre + 1)
 
     def test_post_configure_source_cut_stores_phase_config(self):
         phase = self._create_phase()
@@ -217,21 +256,21 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(phase.config["cut"]["partition_mode"], "source_partitions")
         self.assertEqual(phase.config["cut"]["tie_policy"], "manual_decision")
 
-        page = self.client.get(self._common_planner_url(self.comp_aparell))
+        page = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
         self.assertContains(page, "Preliminar TRA")
         self.assertContains(page, "Top 8 + 2 reserves")
 
     def test_planner_exposes_qualification_actions(self):
-        self._create_phase()
+        phase = self._create_phase()
 
-        response = self.client.get(self._common_planner_url(self.comp_aparell))
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="preview_qualification"')
         self.assertContains(response, 'value="apply_qualification"')
         self.assertContains(response, 'value="regenerate_qualification"')
-        self.assertContains(response, "Generar unitats")
-        self.assertContains(response, "Aplicar tall i crear unitats")
+        self.assertContains(response, "Snapshot de la fase")
+        self.assertContains(response, "Congelar snapshot")
 
     def test_post_preview_qualification_surfaces_service_validation(self):
         phase = self._create_phase()
@@ -295,7 +334,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             status=FasePartitionState.Status.GENERATED,
         )
 
-        response = self.client.get(self._common_planner_url(self.comp_aparell))
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="confirm_partition"')
@@ -356,6 +395,38 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertFalse(CompeticioAparellFase.objects.filter(pk=phase.id).exists())
+
+    def test_post_update_phase_status_changes_status(self):
+        phase = self._create_phase()
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "update_phase_status",
+                "fase_id": phase.id,
+                "estat": CompeticioAparellFase.Estat.CLOSED,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        phase.refresh_from_db()
+        self.assertEqual(phase.estat, CompeticioAparellFase.Estat.CLOSED)
+
+    def test_post_update_phase_status_rejects_invalid_status(self):
+        phase = self._create_phase()
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "update_phase_status",
+                "fase_id": phase.id,
+                "estat": "not-a-status",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        phase.refresh_from_db()
+        self.assertEqual(phase.estat, CompeticioAparellFase.Estat.PLANNED)
 
     def test_post_delete_phase_keeps_phase_with_units(self):
         phase = self._create_phase()

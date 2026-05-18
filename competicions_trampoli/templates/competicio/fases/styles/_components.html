@@ -1,0 +1,205 @@
+  .phase-stat {
+    border: 1px solid var(--phase-border);
+    border-radius: 8px;
+    background: var(--phase-surface);
+    padding: 7px 10px;
+    min-width: 116px;
+  }
+
+  .phase-stat-value {
+    display: block;
+    color: var(--phase-text);
+    font-size: 1.05rem;
+    font-weight: 750;
+    line-height: 1.1;
+  }
+
+  .phase-stat-label {
+    display: block;
+    color: var(--phase-muted);
+    font-size: 0.78rem;
+  }
+
+  .phase-app-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    border: 1px solid var(--phase-border);
+    border-radius: 8px;
+    background: var(--phase-soft);
+    padding: 10px;
+    margin-bottom: 16px;
+  }
+
+  .phase-app-tab {
+    display: grid;
+    gap: 3px;
+    min-height: 86px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--phase-text-main);
+    background: rgba(255, 255, 255, 0.65);
+    padding: 10px 12px;
+    text-decoration: none;
+  }
+
+  .phase-app-tab-media {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .phase-app-tab-logo {
+    display: block;
+    width: 38px;
+    height: 38px;
+    object-fit: cover;
+    border: 1px solid rgba(191, 219, 254, 0.9);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .phase-app-tab-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .phase-app-tab:hover {
+    background: #fff;
+    border-color: var(--phase-border);
+    text-decoration: none;
+  }
+
+  .phase-app-tab.is-active {
+    background: #fff;
+    border-color: var(--phase-base);
+    box-shadow: inset 0 3px 0 var(--phase-base), 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+
+  .phase-app-tab-add {
+    border-style: dashed;
+    justify-content: center;
+    color: var(--phase-text);
+  }
+
+  .phase-app-tab-add-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--phase-base);
+    color: #fff;
+    font-weight: 750;
+  }
+
+  .phase-app-tab-kicker,
+  .phase-app-tab-detail {
+    color: var(--phase-muted);
+    font-size: 0.78rem;
+  }
+
+  .phase-app-tab-title {
+    font-weight: 750;
+  }
+
+  .phase-panel,
+  .phase-node,
+  .phase-unit-row,
+  .phase-empty,
+  .phase-tree-panel {
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 8px;
+    background: var(--phase-surface);
+  }
+
+  .phase-panel {
+    padding: 14px;
+  }
+
+  .phase-action-panel {
+    border-color: var(--phase-border);
+    background: var(--phase-soft);
+  }
+
+  .phase-danger-panel {
+    border-color: #FECACA;
+    background: #FEF2F2;
+  }
+
+  .phase-panel h5 {
+    font-size: 0.96rem;
+    margin-bottom: 10px;
+  }
+
+  .phase-panel.is-muted {
+    background: #F8FAFC;
+  }
+
+  .phase-panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .phase-panel-title h5 {
+    margin: 0;
+    color: var(--phase-text);
+    font-weight: 750;
+  }
+
+  .phase-panel-note,
+  .phase-step-detail {
+    color: var(--phase-muted);
+    font-size: 0.82rem;
+  }
+
+  .phase-selected-summary {
+    display: grid;
+    gap: 6px;
+  }
+
+  .phase-selected-title {
+    color: var(--phase-text);
+    font-size: 1.08rem;
+    font-weight: 750;
+  }
+
+  .phase-workflow-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .phase-workflow-list li {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+  }
+
+  .phase-workflow-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--phase-soft);
+    color: var(--phase-text);
+    font-size: 0.78rem;
+    font-weight: 750;
+  }
+
+  .phase-empty {
+    padding: 16px;
+    background: #F8FAFC;
+    color: var(--phase-muted);
+  }

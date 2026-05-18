@@ -1,0 +1,20 @@
+<section class="phase-panel">
+  <div class="phase-panel-title">
+    <h5>Afegir fase filla</h5>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Crea una fase nova sota el node seleccionat. Si el parent es Preliminar implicita, la fase penja de l'arrel.
+  </div>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_phase">
+    <input type="hidden" name="estat" value="planned">
+    <div class="mb-2">
+      {{ phase_form.parent.label_tag }}{{ phase_form.parent }}{{ phase_form.parent.errors }}
+      {% if phase_form.parent.help_text %}<div class="text-muted small">{{ phase_form.parent.help_text }}</div>{% endif %}
+    </div>
+    <div class="mb-2">{{ phase_form.nom.label_tag }}{{ phase_form.nom }}{{ phase_form.nom.errors }}</div>
+    <div class="mb-2">{{ phase_form.codi.label_tag }}{{ phase_form.codi }}{{ phase_form.codi.errors }}</div>
+    <button class="btn btn-sm btn-primary" type="submit">Crear fase filla</button>
+  </form>
+</section>

@@ -79,6 +79,27 @@
 - Les rotacions actuals poden programar un grup mes d'una vegada en franges diferents, pero aixo no crea una segona participacio competitiva.
 - Les classificacions calculen resultats i poden servir de font configurada per una fase, pero encara no materialitzen participants d'una fase posterior de manera automatica.
 
+## Actualitzacio UI Snapshot - 2026-05-18
+
+### Criteri de producte
+- El planner ha de girar al voltant de l'arbre de fases. El drawer lateral es tracta com una eina suplementaria, no com el lloc principal on s'entenen les fases.
+- `Origen i tall` desa una recepta: classificacio font, abast global/per particio, nombre de classificats, reserves i politica d'empats. No ha de crear grups ni congelar participants.
+- `Grups dins de la fase` defineix l'estructura programable de la fase: contenidors, places i criteri de repartiment. Aquesta estructura ha de ser coherent amb la recepta de tall.
+- `Estat de la fase` concentra el flux viu: previsualitzar el snapshot, congelar-lo, activar la fase per jutges i tancar/reobrir quan pertoqui.
+
+### Implementacio UI aplicada
+- Les accions de `preview_qualification`, `apply_qualification` i `regenerate_qualification` es mostren ara dins l'apartat `Estat de la fase` amb llenguatge de snapshot.
+- L'apartat `Origen i tall` queda com a formulari de configuracio de recepta i usa el boto `Desar recepta`.
+- L'apartat de grups parla de contenidors/grups de fase, no d'aplicar tall.
+- La UI deixa una nota tecnica: el backend actual encara acobla `Congelar snapshot` amb l'ompliment de `ProgramUnit`/`ProgramUnitSlot`.
+
+### Evolucio backend pendent
+- Separar semanticament `preview snapshot`, `freeze snapshot` i `populate program units`.
+- Fer que el snapshot congelat sigui el registre estable de participants classificats, reserves, particio d'origen i politica d'empats aplicada.
+- Fer que la creacio/configuracio de grups sigui previa i independent del snapshot, validant que els slots totals no superen els classificats disponibles segons la recepta.
+- Afegir doble validacio sempre que es modifiqui una recepta, grup o snapshot ja congelat, especialment si hi ha slots manuals, bloquejats, programats a rotacions o ja puntuats.
+- Usar `Estat de la fase` per exposar el pas de `programada` a `activa` per al portal de jutges, i de `activa` a `tancada` quan el flux de competicio estigui complet.
+
 ## Decisions Tancades
 
 ### Separacio de conceptes

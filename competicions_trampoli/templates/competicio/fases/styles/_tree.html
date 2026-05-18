@@ -1,0 +1,383 @@
+  .phase-tree-panel {
+    padding: 14px;
+  }
+
+  .phase-tree-base,
+  .phase-tree-node {
+    display: grid;
+    gap: 4px;
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--phase-text-main);
+    padding: 10px 12px;
+    text-decoration: none;
+  }
+
+  .phase-tree-base:hover,
+  .phase-tree-node:hover {
+    border-color: var(--phase-border);
+    background: var(--phase-soft);
+    text-decoration: none;
+  }
+
+  .phase-tree-base.is-selected,
+  .phase-tree-node.is-selected {
+    border-color: var(--phase-base);
+    box-shadow: inset 3px 0 0 var(--phase-base);
+  }
+
+  .phase-tree-base-title,
+  .phase-tree-node-title {
+    color: var(--phase-text);
+    font-weight: 750;
+  }
+
+  .phase-tree-base-meta,
+  .phase-tree-node-meta {
+    color: var(--phase-muted);
+    font-size: 0.8rem;
+  }
+
+  .phase-tree-list,
+  .phase-tree-children {
+    display: grid;
+    gap: 10px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .phase-tree-children {
+    position: relative;
+    margin-left: 22px;
+    padding-left: 18px;
+  }
+
+  .phase-tree-children::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -10px;
+    bottom: 14px;
+    border-left: 2px solid var(--phase-border);
+  }
+
+  .phase-tree-li {
+    position: relative;
+  }
+
+  .phase-tree-children > .phase-tree-li::before {
+    content: "";
+    position: absolute;
+    left: -18px;
+    top: 22px;
+    width: 18px;
+    border-top: 2px solid var(--phase-border);
+  }
+
+  .phase-tree-node {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .phase-tree-node-main {
+    display: grid;
+    gap: 2px;
+  }
+
+  .phase-tree-node-badges {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .phase-detail-panel {
+    display: grid;
+    gap: 12px;
+  }
+
+  .phase-node {
+    overflow: hidden;
+  }
+
+  .phase-node.is-base {
+    border-color: var(--phase-border);
+  }
+
+  .phase-node-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 12px 14px;
+    background: var(--phase-soft);
+    border-bottom: 1px solid var(--phase-border);
+  }
+
+  .phase-node-header.is-base {
+    background: var(--phase-soft);
+  }
+
+  .phase-parent-hint {
+    margin-top: 6px;
+    color: var(--phase-muted);
+    font-size: 0.8rem;
+  }
+
+  .phase-node-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .phase-node-title strong {
+    color: var(--phase-text);
+    font-size: 1rem;
+  }
+
+  .phase-node-body {
+    padding: 12px 14px 14px;
+  }
+
+  .phase-setup-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .phase-step-card {
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+  }
+
+  .phase-step-card.is-done {
+    border-color: #BBF7D0;
+    background: #F0FDF4;
+  }
+
+  .phase-step-card.is-partial {
+    border-color: #FDE68A;
+    background: #FFFBEB;
+  }
+
+  .phase-step-card.is-todo {
+    background: #F8FAFC;
+  }
+
+  .phase-step-label {
+    font-size: 0.82rem;
+    font-weight: 750;
+  }
+
+  .phase-node-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .phase-unit-list,
+  .phase-partition-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .phase-unit-row,
+  .phase-partition-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+  }
+
+  .phase-unit-name {
+    font-weight: 750;
+  }
+
+  .phase-slot-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+  }
+
+  .phase-slot-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 8px;
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 999px;
+    background: #F8FAFC;
+    color: #475569;
+    font-size: 0.8rem;
+  }
+
+  .phase-slot-chip.is-filled {
+    background: #ECFDF3;
+    border-color: #BBF7D0;
+    color: #166534;
+  }
+
+  .phase-slot-chip.is-empty {
+    background: #F8FAFC;
+    color: var(--phase-muted);
+  }
+
+  .phase-slot-summary {
+    margin-top: 8px;
+  }
+
+  .phase-tree-root,
+  .phase-tree-li {
+    position: relative;
+  }
+
+  .phase-tree-base-shell,
+  .phase-tree-node-shell {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: start;
+    max-width: 940px;
+  }
+
+  .phase-tree-base,
+  .phase-tree-node {
+    position: relative;
+    min-height: 58px;
+    border-color: #D7E3F8;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .phase-tree-base::before,
+  .phase-tree-node::before {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--phase-base);
+    border-radius: 999px;
+    background: #fff;
+  }
+
+  .phase-tree-base::before {
+    left: -5px;
+    top: 24px;
+  }
+
+  .phase-tree-node::before {
+    left: -23px;
+    top: 24px;
+  }
+
+  .phase-tree-list {
+    position: relative;
+    margin: 14px 0 0 24px;
+    padding-left: 24px;
+  }
+
+  .phase-tree-list::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -14px;
+    bottom: 31px;
+    border-left: 2px solid var(--phase-border);
+  }
+
+  .phase-tree-children {
+    gap: 12px;
+    margin: 12px 0 0 26px;
+    padding-left: 24px;
+  }
+
+  .phase-tree-children::before {
+    left: 0;
+    top: -12px;
+    bottom: 31px;
+    border-left: 2px solid var(--phase-border);
+  }
+
+  .phase-tree-list > .phase-tree-li::before,
+  .phase-tree-children > .phase-tree-li::before {
+    left: -24px;
+    top: 29px;
+    width: 24px;
+    border-top: 2px solid var(--phase-border);
+  }
+
+  .phase-child-create {
+    min-width: 168px;
+  }
+
+  .phase-child-create-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    width: 100%;
+    border: 1px dashed var(--phase-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--phase-text);
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 700;
+    list-style: none;
+    padding: 6px 10px;
+  }
+
+  .phase-child-create-toggle::-webkit-details-marker {
+    display: none;
+  }
+
+  .phase-child-create[open] .phase-child-create-toggle {
+    border-style: solid;
+    background: var(--phase-soft);
+  }
+
+  .phase-child-create-form {
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--phase-border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.10);
+  }
+
+  .phase-child-create-fields {
+    display: grid;
+    gap: 8px;
+  }
+
+  .phase-child-create-field {
+    display: grid;
+    gap: 3px;
+    color: var(--phase-muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+    margin: 0;
+  }
+
+  .phase-detail-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--phase-neutral-border);
+    padding-bottom: 6px;
+  }
+
+  .phase-detail-heading h5 {
+    margin: 0;
+    color: var(--phase-text);
+    font-size: 1rem;
+    font-weight: 750;
+  }

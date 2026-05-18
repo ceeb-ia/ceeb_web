@@ -80,6 +80,18 @@ def handle_phase_post(view, request):
             messages.success(request, f"Fase '{phase_name}' eliminada.")
             return view.redirect_to_selected_app(view.comp_aparell), {}
 
+        if action == "update_phase_status":
+            status = str(request.POST.get("estat") or "").strip()
+            valid_statuses = {choice.value for choice in CompeticioAparellFase.Estat}
+            if status not in valid_statuses:
+                messages.error(request, "Estat de fase no valid.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            phase.estat = status
+            phase.full_clean()
+            phase.save(update_fields=["estat", "updated_at"])
+            messages.success(request, f"Estat de '{phase.nom}' actualitzat.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
         if action == "configure_source_cut":
             form = PhaseSourceCutForm(request.POST, competicio=view.competicio)
             if form.is_valid():

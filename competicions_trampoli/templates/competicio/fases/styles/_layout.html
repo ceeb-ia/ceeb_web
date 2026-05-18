@@ -1,0 +1,71 @@
+  .phase-page-shell {
+    position: relative;
+  }
+
+  .phase-dashboard-stats,
+  .phase-app-tabs,
+  .phase-action-row,
+  .phase-action-stack,
+  .phase-unit-meta,
+  .phase-unit-statuses,
+  .phase-step-list,
+  .phase-slot-summary,
+  .phase-summary-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .phase-action-stack {
+    align-items: stretch;
+  }
+
+  .phase-dashboard-stats {
+    margin-top: 10px;
+  }
+
+  .phase-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .phase-workspace {
+    position: relative;
+    min-width: 0;
+  }
+
+  .phase-dashboard-main {
+    min-width: 0;
+    transition: padding-right .22s ease;
+  }
+
+  .phase-page-shell.is-drawer-open .phase-dashboard-main {
+    padding-right: calc(var(--phase-drawer-width) + var(--phase-drawer-gap));
+  }
+
+  .phase-flow-stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  .phase-flow-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .phase-flow-head h4 {
+    margin: 0;
+    color: var(--phase-text);
+    font-size: 1.2rem;
+    font-weight: 750;
+  }
+
+  .phase-open-actions-btn {
+    white-space: nowrap;
+  }

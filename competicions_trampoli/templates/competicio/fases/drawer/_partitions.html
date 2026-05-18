@@ -1,0 +1,35 @@
+{% if selected_phase.ui_generated_partitions %}
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Grups/particions existents</h5>
+    </div>
+    <div class="phase-panel-note mb-2">
+      Estat dels contenidors vinculats al darrer snapshot o proposta de repartiment.
+    </div>
+    <div class="phase-partition-list">
+      {% for partition in selected_phase.ui_generated_partitions %}
+        <div class="phase-partition-item">
+          <div>
+            <strong>{{ partition.key }}</strong>
+            <div class="phase-panel-note">
+              {{ partition.status_label }}
+              {% if partition.is_stale %} · Font canviada{% endif %}
+              {% if partition.warnings %} · {{ partition.warnings|length }} avisos{% endif %}
+            </div>
+          </div>
+          {% if partition.can_confirm %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="confirm_partition">
+              <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+              <input type="hidden" name="partition_key" value="{{ partition.key }}">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar particio</button>
+            </form>
+          {% else %}
+            <span class="badge badge-light border">{{ partition.status_label }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}

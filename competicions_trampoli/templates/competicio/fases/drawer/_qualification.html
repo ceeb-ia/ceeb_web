@@ -1,0 +1,65 @@
+<section class="phase-panel">
+  <div class="phase-panel-title">
+    <h5>Snapshot de la fase</h5>
+    <span class="badge badge-light border">Previ a activar</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Previsualitza qui entraria segons la recepta i l'estructura actual. Congelar fixa el snapshot per poder avançar el flux de competicio.
+  </div>
+  <div class="phase-action-stack">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="preview_qualification">
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Previsualitzar snapshot</button>
+    </form>
+    <form method="post" onsubmit="return confirm('Congelar el snapshot de la fase amb la configuracio actual?');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="apply_qualification">
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+      <button class="btn btn-sm btn-primary" type="submit">Congelar snapshot</button>
+    </form>
+  </div>
+  <div class="phase-panel-note mt-2">
+    Nota tecnica: actualment aquesta accio encara omple les unitats programables existents/generades al backend.
+  </div>
+  {% if qualification_preview %}
+    <div class="phase-panel-note mt-3">
+      <strong>Preview:</strong>
+      {{ qualification_preview.summary.candidates }} participants/reserves,
+      {{ qualification_preview.summary.slots }} places,
+      {{ qualification_preview.summary.units }} grups.
+    </div>
+    {% if qualification_preview.warnings %}
+      <div class="alert alert-warning mt-2 mb-0">
+        {% for warning in qualification_preview.warnings %}
+          <div>{{ warning }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+
+<section class="phase-panel is-muted">
+  <div class="phase-panel-title">
+    <h5>Recalcular snapshot</h5>
+    <span class="badge badge-light border">Doble validacio</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Si la recepta o els grups han canviat despres de congelar, cal confirmar explicitament que vols substituir el snapshot.
+  </div>
+  <form method="post" onsubmit="return confirm('Recalcular i substituir el snapshot existent?');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="regenerate_qualification">
+    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+    <div class="form-check mb-2">
+      <input class="form-check-input" id="confirm-regeneration" type="checkbox" name="confirm_regeneration" value="1" required>
+      <label class="form-check-label" for="confirm-regeneration">Substituir el snapshot congelat</label>
+    </div>
+    <div class="form-check mb-2">
+      <input class="form-check-input" id="confirm-replace-protected" type="checkbox" name="confirm_replace_protected" value="1">
+      <label class="form-check-label" for="confirm-replace-protected">Incloure canvis manuals protegits</label>
+    </div>
+    <button class="btn btn-sm btn-outline-danger" type="submit">Recalcular snapshot</button>
+  </form>
+</section>

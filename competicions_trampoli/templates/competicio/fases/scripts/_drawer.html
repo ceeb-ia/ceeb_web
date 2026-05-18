@@ -1,0 +1,150 @@
+<script>
+  (function () {
+    const root = document.getElementById('phase-page-shell');
+    if (!root) return;
+
+    const drawer = document.getElementById('phase-actions-drawer');
+    const toggle = document.getElementById('phase-actions-toggle');
+    const close = document.getElementById('phase-drawer-close');
+    const backdrop = document.getElementById('phase-drawer-backdrop');
+    if (!drawer || !toggle) return;
+
+    const storageKey = [
+      'phaseDrawerOpen',
+      root.dataset.competicioId || '',
+      root.dataset.selectedAppId || '',
+    ].join(':');
+    const panelStorageKey = [
+      'phaseDrawerPanel',
+      root.dataset.competicioId || '',
+      root.dataset.selectedAppId || '',
+    ].join(':');
+    const scrollStorageKey = [
+      'phasePlannerScroll',
+      root.dataset.competicioId || '',
+      root.dataset.selectedAppId || '',
+    ].join(':');
+
+    function hasDrawerFeedback() {
+      return !!drawer.querySelector('.errorlist, .alert, .is-invalid');
+    }
+
+    function setDrawerOpen(open, options) {
+      const opts = options || {};
+      const isOpen = !!open;
+      root.classList.toggle('is-drawer-open', isOpen);
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.setAttribute('title', isOpen ? 'Amagar accions de fase' : 'Mostrar accions de fase');
+      toggle.setAttribute('aria-label', isOpen ? 'Amagar accions de fase' : 'Mostrar accions de fase');
+      drawer.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+      if (backdrop) {
+        backdrop.hidden = !isOpen;
+      }
+      if (!opts.skipSave) {
+        try {
+          window.localStorage.setItem(storageKey, isOpen ? '1' : '0');
+        } catch (error) {
+          // localStorage can be unavailable in restricted browsing contexts.
+        }
+      }
+    }
+
+    function getInitialOpenState() {
+      if (hasDrawerFeedback()) return true;
+      try {
+        return window.localStorage.getItem(storageKey) === '1';
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function saveScrollPosition() {
+      try {
+        window.sessionStorage.setItem(scrollStorageKey, JSON.stringify({
+          y: window.scrollY || window.pageYOffset || 0,
+          savedAt: Date.now(),
+        }));
+      } catch (error) {
+        // sessionStorage can be unavailable in restricted browsing contexts.
+      }
+    }
+
+    function restoreScrollPosition() {
+      let payload = null;
+      try {
+        payload = JSON.parse(window.sessionStorage.getItem(scrollStorageKey) || 'null');
+        window.sessionStorage.removeItem(scrollStorageKey);
+      } catch (error) {
+        return;
+      }
+      if (!payload || typeof payload !== 'object') return;
+      const y = Number(payload.y);
+      const savedAt = Number(payload.savedAt);
+      const isFresh = Number.isFinite(savedAt) && Date.now() - savedAt < 15000;
+      if (!Number.isFinite(y) || y < 0 || !isFresh) return;
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: y, left: 0, behavior: 'auto' });
+      });
+    }
+
+    function setActiveDrawerPanel(panelKey, options) {
+      const opts = options || {};
+      const key = String(panelKey || '').trim() || 'origin';
+      const panels = Array.from(document.querySelectorAll('[data-phase-panel]'));
+      const hasPanel = panels.some((panel) => panel.getAttribute('data-phase-panel') === key);
+      const activeKey = hasPanel ? key : 'origin';
+      panels.forEach((panel) => {
+        const isActive = panel.getAttribute('data-phase-panel') === activeKey;
+        panel.classList.toggle('is-active', isActive);
+        panel.hidden = !isActive;
+      });
+      document.querySelectorAll('[data-phase-panel-target]').forEach((button) => {
+        button.classList.toggle('is-active', button.getAttribute('data-phase-panel-target') === activeKey);
+      });
+      if (!opts.skipSave) {
+        try {
+          window.localStorage.setItem(panelStorageKey, activeKey);
+        } catch (error) {
+          // localStorage can be unavailable in restricted browsing contexts.
+        }
+      }
+    }
+
+    function getInitialDrawerPanel() {
+      try {
+        return window.localStorage.getItem(panelStorageKey) || 'origin';
+      } catch (error) {
+        return 'origin';
+      }
+    }
+
+    toggle.addEventListener('click', () => {
+      setDrawerOpen(!root.classList.contains('is-drawer-open'));
+    });
+    close?.addEventListener('click', () => setDrawerOpen(false));
+    backdrop?.addEventListener('click', () => setDrawerOpen(false));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && root.classList.contains('is-drawer-open')) {
+        setDrawerOpen(false);
+      }
+    });
+    document.querySelectorAll('[data-open-phase-actions]').forEach((button) => {
+      button.addEventListener('click', () => setDrawerOpen(true));
+    });
+    document.querySelectorAll('[data-phase-panel-target]').forEach((button) => {
+      button.addEventListener('click', () => {
+        setActiveDrawerPanel(button.getAttribute('data-phase-panel-target'));
+      });
+    });
+    document.querySelectorAll('.phase-tree-node, .phase-tree-base').forEach((link) => {
+      link.addEventListener('click', saveScrollPosition);
+    });
+    document.querySelectorAll('.phase-child-create-form, .phase-drawer-body form').forEach((form) => {
+      form.addEventListener('submit', saveScrollPosition);
+    });
+
+    setDrawerOpen(getInitialOpenState(), { skipSave: true });
+    setActiveDrawerPanel(getInitialDrawerPanel(), { skipSave: true });
+    restoreScrollPosition();
+  })();
+</script>

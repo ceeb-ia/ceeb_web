@@ -1,0 +1,24 @@
+<section class="phase-panel">
+  <div class="phase-panel-title">
+    <h5>Crear grup de fase manual</h5>
+    <span class="badge badge-light border">Estructura</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Crea un contenidor programable dins {{ selected_phase.nom }}. Els participants s'hi fixaran quan es congeli el snapshot.
+  </div>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_manual_unit">
+    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+    <div class="mb-2">{{ manual_unit_form.nom.label_tag }}{{ manual_unit_form.nom }}{{ manual_unit_form.nom.errors }}</div>
+    <div class="row">
+      <div class="col-5 mb-2">{{ manual_unit_form.capacity.label_tag }}{{ manual_unit_form.capacity }}{{ manual_unit_form.capacity.errors }}</div>
+      <div class="col-7 mb-2">{{ manual_unit_form.tipus.label_tag }}{{ manual_unit_form.tipus }}{{ manual_unit_form.tipus.errors }}</div>
+    </div>
+    <div class="mb-2">
+      {{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}
+      {% if manual_unit_form.partition_key.help_text %}<div class="text-muted small">{{ manual_unit_form.partition_key.help_text }}</div>{% endif %}
+    </div>
+    <button class="btn btn-sm btn-outline-primary" type="submit">Crear grup de fase</button>
+  </form>
+</section>

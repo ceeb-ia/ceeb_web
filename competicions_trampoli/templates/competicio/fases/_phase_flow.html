@@ -4,14 +4,22 @@
       <h4>{{ comp_aparell.display_nom }}</h4>
       <div class="text-muted small">{{ comp_aparell.display_codi }} - {{ phase_count }} fases - {{ unit_count }} unitats competitives</div>
     </div>
+    <button type="button" class="btn btn-sm btn-outline-primary phase-open-actions-btn" data-open-phase-actions>
+      Accions de fase
+    </button>
   </div>
 
   <div class="phase-tree-panel">
-    <a class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}"
-       href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
-      <span class="phase-tree-base-title">Preliminar implicita</span>
-      <span class="phase-tree-base-meta">Arrel visual · DEFAULT reservat · notes sense fase_id</span>
-    </a>
+    <div class="phase-tree-root">
+      <div class="phase-tree-base-shell">
+        <a class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}"
+           href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
+          <span class="phase-tree-base-title">Preliminar implicita</span>
+          <span class="phase-tree-base-meta">Arrel visual · DEFAULT reservat · notes sense fase_id</span>
+        </a>
+        {% include "competicio/fases/_create_child_phase_form.html" with parent_id="" %}
+      </div>
+    </div>
 
     {% if root_phases %}
       <ol class="phase-tree-list">
@@ -19,13 +27,16 @@
       </ol>
     {% else %}
       <div class="phase-empty">
-        La preliminar/default no es crea aqui. Crea una fase filla per preparar semifinals, finals o rondes posteriors d'aquest aparell.
+        La preliminar/default no es crea aqui. Crea una fase filla des de la Preliminar per preparar semifinals, finals o rondes posteriors d'aquest aparell.
       </div>
     {% endif %}
   </div>
 
   {% if selected_phase %}
     <section class="phase-detail-panel" aria-label="Detall de fase seleccionada">
+      <div class="phase-detail-heading">
+        <h5>Detall de la fase seleccionada</h5>
+      </div>
       {% include "competicio/fases/_phase_node.html" with phase=selected_phase %}
     </section>
   {% endif %}

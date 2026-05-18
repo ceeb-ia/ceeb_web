@@ -6,7 +6,7 @@ from django.views import View
 
 from ....forms import CompeticioAparellFaseForm, PhaseSourceCutForm, ProgramUnitManualForm, ProgramUnitPartitionForm
 from ....models import Competicio
-from ....models.competicio import CompeticioAparell
+from ....models.competicio import CompeticioAparell, CompeticioAparellFase
 from ....services.fases.dashboard import phase_dashboard_context
 from .actions import handle_phase_post
 
@@ -96,6 +96,7 @@ class CompeticioFasesPlanner(View):
             "manual_unit_form": manual_unit_form or ProgramUnitManualForm(),
             "partition_unit_form": partition_unit_form or ProgramUnitPartitionForm(),
             "qualification_preview": qualification_preview,
+            "phase_status_choices": CompeticioAparellFase.Estat.choices,
         }
 
 

@@ -1,0 +1,51 @@
+<section class="phase-panel is-muted">
+  <div class="phase-panel-title">
+    <h5>Recepta d'origen i tall</h5>
+    <span class="badge badge-light border">Configuracio</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Defineix d'on sortiran els classificats i quina regla s'usara quan es congeli la fase. No crea grups ni congela participants.
+  </div>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="configure_source_cut">
+    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+    <div class="mb-2">
+      {{ source_cut_form.classificacio.label_tag }}{{ source_cut_form.classificacio }}{{ source_cut_form.classificacio.errors }}
+      {% if source_cut_form.classificacio.help_text %}<div class="text-muted small">{{ source_cut_form.classificacio.help_text }}</div>{% endif %}
+    </div>
+    <div class="mb-2">
+      {{ source_cut_form.cut_mode.label_tag }}{{ source_cut_form.cut_mode }}{{ source_cut_form.cut_mode.errors }}
+      {% if source_cut_form.cut_mode.help_text %}<div class="text-muted small">{{ source_cut_form.cut_mode.help_text }}</div>{% endif %}
+    </div>
+    <div class="row">
+      <div class="col-6 mb-2">
+        {{ source_cut_form.qualifiers_count.label_tag }}{{ source_cut_form.qualifiers_count }}{{ source_cut_form.qualifiers_count.errors }}
+        {% if source_cut_form.qualifiers_count.help_text %}<div class="text-muted small">{{ source_cut_form.qualifiers_count.help_text }}</div>{% endif %}
+      </div>
+      <div class="col-6 mb-2">
+        {{ source_cut_form.reserve_count.label_tag }}{{ source_cut_form.reserve_count }}{{ source_cut_form.reserve_count.errors }}
+        {% if source_cut_form.reserve_count.help_text %}<div class="text-muted small">{{ source_cut_form.reserve_count.help_text }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="mb-2">
+      {{ source_cut_form.partition_mode.label_tag }}{{ source_cut_form.partition_mode }}{{ source_cut_form.partition_mode.errors }}
+      {% if source_cut_form.partition_mode.help_text %}<div class="text-muted small">{{ source_cut_form.partition_mode.help_text }}</div>{% endif %}
+    </div>
+    <div class="mb-2">
+      {{ source_cut_form.tie_policy.label_tag }}{{ source_cut_form.tie_policy }}{{ source_cut_form.tie_policy.errors }}
+      {% if source_cut_form.tie_policy.help_text %}<div class="text-muted small">{{ source_cut_form.tie_policy.help_text }}</div>{% endif %}
+    </div>
+    <div class="row">
+      <div class="col-5 mb-2">
+        {{ source_cut_form.unit_capacity.label_tag }}{{ source_cut_form.unit_capacity }}{{ source_cut_form.unit_capacity.errors }}
+        {% if source_cut_form.unit_capacity.help_text %}<div class="text-muted small">{{ source_cut_form.unit_capacity.help_text }}</div>{% endif %}
+      </div>
+      <div class="col-7 mb-2">
+        {{ source_cut_form.unit_name_template.label_tag }}{{ source_cut_form.unit_name_template }}{{ source_cut_form.unit_name_template.errors }}
+        {% if source_cut_form.unit_name_template.help_text %}<div class="text-muted small">{{ source_cut_form.unit_name_template.help_text }}</div>{% endif %}
+      </div>
+    </div>
+    <button class="btn btn-sm btn-outline-primary" type="submit">Desar recepta</button>
+  </form>
+</section>

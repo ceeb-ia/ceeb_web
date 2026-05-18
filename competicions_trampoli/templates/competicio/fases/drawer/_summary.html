@@ -1,0 +1,36 @@
+<section class="phase-panel phase-action-panel">
+  <div class="phase-panel-title">
+    <h5>Accions de fase</h5>
+    {% if selected_phase %}
+      <span class="badge badge-light border">{{ selected_phase.codi }}</span>
+    {% else %}
+      <span class="badge badge-light border">Preliminar</span>
+    {% endif %}
+  </div>
+
+  {% if selected_phase %}
+    <div class="phase-selected-summary">
+      <div class="phase-selected-title">{{ selected_phase.nom }}</div>
+      <div class="phase-panel-note">
+        {% if selected_phase.parent %}
+          Penja de {{ selected_phase.parent.nom }}.
+        {% else %}
+          Penja de la preliminar implicita.
+        {% endif %}
+      </div>
+      <div class="phase-summary-badges">
+        <span class="badge badge-light border">{{ selected_phase.estat }}</span>
+        <span class="badge badge-light border">{{ selected_phase.ui_unit_count }} unitats</span>
+        <span class="badge badge-light border">{{ selected_phase.ui_competitive_slot_count }}/{{ selected_phase.ui_slot_count }} places</span>
+        {% if selected_phase.ui_qualification_stale %}<span class="badge badge-danger">Font canviada</span>{% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="phase-selected-summary">
+      <div class="phase-selected-title">Preliminar implicita</div>
+      <div class="phase-panel-note">
+        Arrel visual de l'arbre. No es desa com a fase i representa el flux inicial existent.
+      </div>
+    </div>
+  {% endif %}
+</section>

@@ -1,11 +1,18 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Fases - {{ competicio.nom }}{% endblock %}
 
 {% block content %}
 {% include "competicio/fases/_styles.html" %}
 
 <div class="container-fluid mt-4">
-  <div class="phase-dashboard-shell">
+  <div
+    class="phase-dashboard-shell phase-page-shell"
+    id="phase-page-shell"
+    data-competicio-id="{{ competicio.id }}"
+    data-selected-app-id="{{ selected_app_id|default:'' }}"
+    data-selected-phase-id="{% if selected_phase %}{{ selected_phase.id }}{% endif %}"
+  >
     {% include "competicio/fases/_header.html" %}
 
     {% if messages %}
@@ -19,17 +26,35 @@
     {% include "competicio/fases/_app_selector.html" %}
 
     {% if comp_aparell %}
-      <div class="phase-dashboard-grid">
+      <button
+        type="button"
+        class="btn btn-sm btn-primary phase-actions-toggle"
+        id="phase-actions-toggle"
+        aria-controls="phase-actions-drawer"
+        aria-expanded="false"
+        aria-label="Mostrar accions de fase"
+        title="Mostrar accions de fase">
+        <span class="phase-actions-toggle-icon phase-actions-toggle-icon-closed" aria-hidden="true">
+          <img src="{% static 'fases/accions/open.png' %}" alt="">
+        </span>
+        <span class="phase-actions-toggle-icon phase-actions-toggle-icon-open" aria-hidden="true">
+          <img src="{% static 'fases/accions/close.png' %}" alt="">
+        </span>
+      </button>
+
+      <div class="phase-drawer-backdrop" id="phase-drawer-backdrop" hidden></div>
+
+      <div class="phase-workspace phase-dashboard-grid">
         <main class="phase-dashboard-main">
           {% include "competicio/fases/_phase_flow.html" %}
         </main>
-        <aside class="phase-dashboard-sidebar">
-          {% include "competicio/fases/_forms.html" %}
-        </aside>
+        {% include "competicio/fases/_drawer.html" %}
       </div>
     {% else %}
       {% include "competicio/fases/_no_apps.html" %}
     {% endif %}
   </div>
 </div>
+
+{% include "competicio/fases/scripts/_drawer.html" %}
 {% endblock %}

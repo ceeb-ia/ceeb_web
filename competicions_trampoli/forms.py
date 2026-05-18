@@ -709,6 +709,8 @@ class CompeticioAparellFaseForm(forms.ModelForm):
             "Deixa Preliminar implícita si aquesta fase surt del flux inicial sense fase persistent."
         )
 
+        self.fields["ordre"].required = False
+
     def clean_codi(self):
         return str(self.cleaned_data.get("codi") or "").strip().upper()
 

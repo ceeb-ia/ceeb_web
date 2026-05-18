@@ -1,12 +1,19 @@
+{% load static %}
+
 {% if app_summaries %}
   <nav class="phase-app-tabs" aria-label="Aparells amb fases">
     {% for summary in app_summaries %}
       <a class="phase-app-tab {% if summary.app.id == selected_app_id %}is-active{% endif %}"
          href="{% url 'trampoli_fases' competicio.id %}?app={{ summary.app.id }}">
-        <span class="phase-app-tab-kicker">{{ summary.app.display_codi }}</span>
-        <span class="phase-app-tab-title">{{ summary.app.display_nom }}</span>
-        <span class="phase-app-tab-detail">
-          {{ summary.phase_count }} fases · {{ summary.unit_count }} unitats · {{ summary.state_label }}
+        <span class="phase-app-tab-media">
+          <img class="phase-app-tab-logo" src="{% static 'fases/aparells.png' %}" alt="">
+          <span class="phase-app-tab-copy">
+            <span class="phase-app-tab-kicker">{{ summary.app.display_codi }}</span>
+            <span class="phase-app-tab-title">{{ summary.app.display_nom }}</span>
+            <span class="phase-app-tab-detail">
+              {{ summary.phase_count }} fases · {{ summary.unit_count }} unitats · {{ summary.state_label }}
+            </span>
+          </span>
         </span>
       </a>
     {% endfor %}

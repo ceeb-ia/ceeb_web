@@ -1,0 +1,79 @@
+  .phase-dashboard-shell {
+    --phase-base: #2563EB;
+    --phase-base-hover: #1D4ED8;
+    --phase-soft: #EFF6FF;
+    --phase-border: #BFDBFE;
+    --phase-text: #1E3A8A;
+    --phase-bg: #F8FAFC;
+    --phase-surface: #FFFFFF;
+    --phase-neutral-border: #E2E8F0;
+    --phase-muted: #64748B;
+    --phase-text-main: #0F172A;
+    --phase-drawer-width: clamp(560px, 38vw, 720px);
+    --phase-drawer-top: 96px;
+    --phase-drawer-gap: 26px;
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 18px;
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 8px;
+    background: var(--phase-bg);
+    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.10);
+    color: var(--phase-text-main);
+  }
+
+  .phase-dashboard-shell .btn-primary {
+    border-color: var(--phase-base);
+    background-color: var(--phase-base);
+  }
+
+  .phase-dashboard-shell .btn-primary:hover,
+  .phase-dashboard-shell .btn-primary:focus {
+    border-color: var(--phase-base-hover);
+    background-color: var(--phase-base-hover);
+  }
+
+  .phase-dashboard-shell .btn-outline-primary {
+    border-color: var(--phase-base);
+    color: var(--phase-base);
+  }
+
+  .phase-dashboard-shell .btn-outline-primary:hover,
+  .phase-dashboard-shell .btn-outline-primary:focus {
+    border-color: var(--phase-base);
+    background-color: var(--phase-soft);
+    color: var(--phase-text);
+  }
+
+  .phase-dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--phase-neutral-border);
+  }
+
+  .phase-dashboard-title h2 {
+    margin: 0;
+    color: var(--phase-text);
+    font-size: 1.55rem;
+    font-weight: 750;
+  }
+
+  .phase-dashboard-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .phase-dashboard-title-logo {
+    display: block;
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    flex: 0 0 auto;
+  }
