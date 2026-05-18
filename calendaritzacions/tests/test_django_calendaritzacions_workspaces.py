@@ -718,6 +718,113 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(detail["facts"][0]["value"], "G1")
         self.assertEqual(detail["team_calendars"][0]["normalized_level"], "A")
 
+    def test_workspace_hydrates_aggregate_level_mismatch_as_one_group_incident(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun, WorkspaceResourceIncident
+        from calendaritzacions.django.services.workspaces import get_or_create_workspace_for_run, get_workspace_summary
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            solver_explanations = root / "solver_explanations.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "A", "group_id": "G1", "number": 1},
+                            {"team_id": "B", "group_id": "G1", "number": 2},
+                            {"team_id": "C", "group_id": "G1", "number": 3},
+                        ],
+                        "real_matches": [],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {"team_id": "A", "name": "Equip A", "entity": "Club A", "league_name": "Lliga 1", "level": "A"},
+                        {"team_id": "B", "name": "Equip B", "entity": "Club B", "league_name": "Lliga 1", "level": "B"},
+                        {"team_id": "C", "name": "Equip C", "entity": "Club C", "league_name": "Lliga 1", "level": "E"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text("[]", encoding="utf-8")
+            resource_pressure.write_text("[]", encoding="utf-8")
+            solver_explanations.write_text(
+                json.dumps(
+                    {
+                        "level_band": {
+                            "enabled": True,
+                            "mode": "aggregate",
+                            "normalized_teams": [
+                                {"team_id": "A", "team_name": "Equip A", "assigned_group_id": "G1", "assigned_number": 1, "raw_level": "A", "normalized_level": "A"},
+                                {"team_id": "B", "team_name": "Equip B", "assigned_group_id": "G1", "assigned_number": 2, "raw_level": "B", "normalized_level": "B"},
+                                {"team_id": "C", "team_name": "Equip C", "assigned_group_id": "G1", "assigned_number": 3, "raw_level": "E", "normalized_level": "C"},
+                            ],
+                            "violations": [
+                                {
+                                    "group_id": "G1",
+                                    "team_ids": ["A", "B", "C"],
+                                    "families": ["level_a_mismatch", "level_band_mismatch"],
+                                    "family": "level_a_mismatch, level_band_mismatch",
+                                    "dispersion": "A -> C",
+                                    "cost": 1100,
+                                    "violation_cost": 1100,
+                                    "violation_details": [{"family": "level_a_mismatch"}, {"family": "level_band_mismatch"}],
+                                }
+                            ],
+                        },
+                        "level_calendar_explanations": [
+                            {
+                                "group_id": "G1",
+                                "dispersion": "A -> C",
+                                "inevitability": {"status": "no_better_grouping_found_in_relaxed_level_check"},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                    "solver_explanations": str(solver_explanations),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            summary = get_workspace_summary(workspace)
+
+        incident = WorkspaceResourceIncident.objects.get(
+            workspace=workspace,
+            incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH,
+        )
+        self.assertEqual(summary["raw_summary"]["level_mismatches"], 1)
+        self.assertEqual(incident.team_ids, ["A", "B", "C"])
+        self.assertEqual(incident.payload["families"], ["level_a_mismatch", "level_band_mismatch"])
+        self.assertEqual(incident.payload["dispersion"], "A -> C")
+        self.assertEqual(
+            incident.payload["calendar_explanation"]["inevitability"]["status"],
+            "no_better_grouping_found_in_relaxed_level_check",
+        )
+
     def test_venue_round_sheets_use_max_venue_capacity_for_columns(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")

@@ -282,6 +282,13 @@ class ResourceSolverComponentTaskTests(unittest.TestCase):
             patch("calendaritzacions.django.services.component_tasks._merge_active_components", return_value=payload),
             patch("calendaritzacions.django.services.component_tasks._combined_context_from_components", return_value=context),
             patch("calendaritzacions.reporting.resource_solver_excel_adapter.write_resource_solver_workbook"),
+            patch(
+                "calendaritzacions.reporting.resource_solver_plots.write_resource_solver_final_plots",
+                return_value={
+                    "assigned_numbers_by_modality": str(self.root / "plots_final" / "assigned_numbers.png"),
+                    "manifest": str(self.root / "plots_final" / "manifest.json"),
+                },
+            ) as write_final_plots,
         ):
             finalized = _finalize_run_if_components_complete(run.pk)
 
@@ -289,10 +296,13 @@ class ResourceSolverComponentTaskTests(unittest.TestCase):
         resource_solution = str(self.root / "resource_solution.json")
         merged_solution = str(self.root / "merged" / "merged_solution.json")
         self.assertTrue(finalized)
+        write_final_plots.assert_called_once()
         self.assertEqual(run.audit_paths["component_merged_solution"], merged_solution)
         self.assertEqual(run.audit_paths["resource_solution"], resource_solution)
         self.assertEqual(run.audit_paths["resource_solver_result"], str(self.root / "resource_solver_result.json"))
+        self.assertEqual(run.audit_paths["resource_solver_final_plots"], str(self.root / "plots_final" / "manifest.json"))
         self.assertEqual(run.audit_paths["team_catalog"], str(self.root / "team_catalog.json"))
+        self.assertIn("resource_solver: plots finals generats=1", run.logs)
 
 
 def _write_success_artifacts(_context_path, output_dir, *, component_id=None):

@@ -20,7 +20,7 @@ from calendaritzacions.django.models import (
 )
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
-HYDRATION_VERSION = 6
+HYDRATION_VERSION = 7
 MAX_POSITIVE_SMALLINT = 32767
 RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
@@ -365,6 +365,8 @@ def _level_mismatch_incident_detail(
     incident: WorkspaceResourceIncident,
 ) -> dict[str, Any]:
     payload = incident.payload or {}
+    calendar_explanation = payload.get("calendar_explanation") if isinstance(payload.get("calendar_explanation"), dict) else {}
+    inevitability = calendar_explanation.get("inevitability") if isinstance(calendar_explanation.get("inevitability"), dict) else {}
     team_ids = [str(team_id) for team_id in (incident.team_ids or [])]
     assignments = {
         assignment.team_id: assignment
@@ -431,10 +433,12 @@ def _level_mismatch_incident_detail(
         ),
         "facts": [
             {"label": "Grup", "value": group_id or "-"},
-            {"label": "Familia", "value": payload.get("family") or "-"},
+            {"label": "Familia", "value": _level_families_label(payload)},
+            {"label": "Dispersio", "value": payload.get("dispersion") or calendar_explanation.get("dispersion") or "-"},
             {"label": "Cost", "value": payload.get("violation_cost") or incident.excess},
             {"label": "Equips implicats", "value": len(team_ids)},
             {"label": "Nivells", "value": _level_pair_label(payload.get("teams"))},
+            {"label": "Inevitabilitat", "value": inevitability.get("status", "-")},
         ],
         "affected_matches": list(unique_matches.values()),
         "team_calendars": sorted(
@@ -1561,6 +1565,11 @@ def _create_level_mismatch_incidents(
     level_band = solver_explanations.get("level_band") if isinstance(solver_explanations, dict) else None
     if not isinstance(level_band, dict) or not level_band.get("enabled"):
         return
+    explanations_by_group = {
+        str(item.get("group_id") or ""): item
+        for item in _list(solver_explanations.get("level_calendar_explanations"))
+        if isinstance(item, dict) and str(item.get("group_id") or "")
+    }
 
     normalized_by_team = {
         str(row.get("team_id") or ""): row
@@ -1605,12 +1614,15 @@ def _create_level_mismatch_incidents(
             )
         league_counts = Counter(_competition_label(teams.get(team_id, {})) for team_id in team_ids)
         cost = _number(violation.get("violation_cost") or violation.get("cost") or 1)
+        calendar_explanation = explanations_by_group.get(group_id, {})
         payload = {
             **violation,
             "group_id": group_id,
             "teams": team_rows,
             "violation_cost": cost,
             "league_counts": dict(league_counts),
+            "calendar_explanation": calendar_explanation,
+            "dispersion": violation.get("dispersion") or calendar_explanation.get("dispersion"),
         }
         rows.append(
             WorkspaceResourceIncident(
@@ -1984,7 +1996,9 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
         }
     if incident.incident_type == WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH:
         group_id = str(payload.get("group_id") or "-")
-        family = str(payload.get("family") or "-")
+        family = _level_families_label(payload)
+        calendar_explanation = payload.get("calendar_explanation") if isinstance(payload.get("calendar_explanation"), dict) else {}
+        dispersion = str(payload.get("dispersion") or calendar_explanation.get("dispersion") or _level_pair_label(payload.get("teams")))
         team_labels = [
             str(team.get("team_name") or team.get("team_id") or "")
             for team in _list(payload.get("teams"))
@@ -1995,7 +2009,7 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
             "incident_id": incident.pk,
             "type_key": incident.incident_type,
             "type": "Nivell incompatible",
-            "title": f"{group_id} - {_level_pair_label(payload.get('teams'))}",
+            "title": f"{group_id} - {dispersion}",
             "summary": f"{family} al grup {group_id}",
             "description": f"{family} al grup {group_id}",
             "impact": f"+{payload.get('violation_cost') or incident.excess}",
@@ -2491,6 +2505,15 @@ def _level_pair_label(value: Any) -> str:
         if team_name:
             labels.append(f"{team_name}: {raw}->{normalized}")
     return " / ".join(labels) if labels else "-"
+
+
+def _level_families_label(payload: dict[str, Any]) -> str:
+    families = payload.get("families")
+    if isinstance(families, list):
+        clean = [str(family) for family in families if str(family or "")]
+        if clean:
+            return ", ".join(clean)
+    return str(payload.get("family") or "-")
 
 
 def _workspace_level_label(value: Any) -> str:

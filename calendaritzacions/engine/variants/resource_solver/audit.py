@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -197,6 +199,11 @@ def build_solver_explanations(
     seed_deviations = _seed_deviations(result, context)
     linkage = build_linkage_audit(result, context)
     level_band = build_level_band_audit(result, context)
+    level_calendar_explanations = build_level_calendar_explanations(
+        result,
+        context,
+        level_band,
+    )
 
     return {
         "status": result.status,
@@ -211,6 +218,7 @@ def build_solver_explanations(
         "seed_request_deviations_informative_only": seed_deviations,
         "linkage": linkage,
         "level_band": level_band,
+        "level_calendar_explanations": level_calendar_explanations,
         "notes": _explanation_notes(result),
     }
 
@@ -339,31 +347,40 @@ def _build_aggregate_level_band_audit(
 
     for group_id, rows in sorted(rows_by_group.items()):
         sorted_rows = sorted(rows, key=lambda row: str(row["team_id"]))
-        group_violations: list[dict[str, Any]] = []
+        violation_details: list[dict[str, Any]] = []
         levels = {str(row.get("normalized_level") or "") for row in sorted_rows}
 
         if "A" in levels and any(level != "A" for level in levels):
-            violation = _aggregate_level_violation(
-                context,
-                group_id,
-                sorted_rows,
-                family="level_a_mismatch",
-                expected_relation="A separated from non-A",
+            violation_details.append(
+                _aggregate_level_violation(
+                    context,
+                    group_id,
+                    sorted_rows,
+                    family="level_a_mismatch",
+                    expected_relation="A separated from non-A",
+                )
             )
-            group_violations.append(violation)
-            violations.append(violation)
 
         if "B" in levels and "C" in levels:
             affected = [row for row in sorted_rows if row.get("normalized_level") in {"B", "C"}]
-            violation = _aggregate_level_violation(
-                context,
-                group_id,
-                affected,
-                family="level_band_mismatch",
-                expected_relation="B separated from C",
+            violation_details.append(
+                _aggregate_level_violation(
+                    context,
+                    group_id,
+                    affected,
+                    family="level_band_mismatch",
+                    expected_relation="B separated from C",
+                )
             )
-            group_violations.append(violation)
-            violations.append(violation)
+        group_violations = []
+        if violation_details:
+            group_violation = _aggregate_level_group_violation(
+                group_id,
+                sorted_rows,
+                violation_details,
+            )
+            group_violations.append(group_violation)
+            violations.append(group_violation)
 
         groups.append(
             {
@@ -395,6 +412,61 @@ def _build_aggregate_level_band_audit(
     }
 
 
+def build_level_calendar_explanations(
+    result: ResourceSolverResult,
+    context: SolverContext,
+    level_band: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Explain aggregate level dispersion by calendar group after solving."""
+
+    if level_band is None:
+        level_band = build_level_band_audit(result, context)
+    if not isinstance(level_band, dict) or level_band.get("mode") != "aggregate":
+        return []
+
+    groups = [group for group in _list_dicts(level_band.get("groups")) if int(group.get("violations_count", 0) or 0) > 0]
+    if not groups:
+        return []
+
+    assigned_by_team = {assignment.team_id: assignment for assignment in result.assignments}
+    team_by_id = {team.team_id: team for team in context.teams}
+    group_ids = {str(group.group_id) for group in context.groups}
+    competition_groups = _competition_groups_for_context(context, group_ids)
+    inevitability_cache: dict[tuple[str, ...], dict[str, Any]] = {}
+    explanations: list[dict[str, Any]] = []
+
+    for group in groups:
+        group_id = str(group.get("group_id") or "")
+        competition_group_ids = competition_groups.get(group_id, (group_id,))
+        cache_key = tuple(competition_group_ids)
+        if cache_key not in inevitability_cache:
+            inevitability_cache[cache_key] = _check_level_dispersion_inevitability(
+                context,
+                assigned_by_team,
+                team_by_id,
+                competition_group_ids,
+            )
+        teams = [team for team in _list_dicts(group.get("teams"))]
+        levels = [str(team.get("normalized_level") or "B/C") for team in teams]
+        level_counts = Counter(levels)
+        explanations.append(
+            {
+                "type": "level_calendar_dispersion",
+                "group_id": group_id,
+                "competition_group_ids": list(competition_group_ids),
+                "dispersion": _level_dispersion_label(levels),
+                "min_level": _level_min(levels),
+                "max_level": _level_max(levels),
+                "level_counts": dict(sorted(level_counts.items(), key=lambda item: _level_rank(item[0]))),
+                "teams_by_level": _teams_by_level(teams),
+                "families": _level_group_families(group),
+                "reason": _level_dispersion_reason(levels),
+                "inevitability": inevitability_cache[cache_key],
+            }
+        )
+    return explanations
+
+
 def _aggregate_level_violation(
     context: SolverContext,
     group_id: str,
@@ -420,6 +492,290 @@ def _aggregate_level_violation(
         "violation_cost": level_mismatch_weight(context, family),
         "expected_relation": expected_relation,
         "mode": "aggregate",
+    }
+
+
+def _aggregate_level_group_violation(
+    group_id: str,
+    rows: list[dict[str, Any]],
+    violation_details: list[dict[str, Any]],
+) -> dict[str, Any]:
+    families = [str(item.get("family") or "") for item in violation_details if item.get("family")]
+    cost = sum(int(item.get("cost", 0) or 0) for item in violation_details)
+    levels = [str(row.get("normalized_level") or "B/C") for row in rows]
+    return {
+        "group_id": group_id,
+        "team_ids": [str(row["team_id"]) for row in rows],
+        "team_levels": {
+            str(row["team_id"]): str(row.get("normalized_level") or "")
+            for row in rows
+        },
+        "raw_levels": {
+            str(row["team_id"]): str(row.get("raw_level") or "")
+            for row in rows
+        },
+        "families": families,
+        "family": ", ".join(families),
+        "severity": "violation",
+        "cost": cost,
+        "violation_cost": cost,
+        "expected_relation": "; ".join(
+            str(item.get("expected_relation") or "")
+            for item in violation_details
+            if item.get("expected_relation")
+        ),
+        "mode": "aggregate",
+        "dispersion": _level_dispersion_label(levels),
+        "min_level": _level_min(levels),
+        "max_level": _level_max(levels),
+        "reason": _level_dispersion_reason(levels),
+        "violation_details": violation_details,
+    }
+
+
+def _level_group_families(group: dict[str, Any]) -> list[str]:
+    families: set[str] = set()
+    for violation in _list_dicts(group.get("violations")):
+        raw_families = violation.get("families")
+        if isinstance(raw_families, list):
+            families.update(str(item) for item in raw_families if str(item or ""))
+        elif violation.get("family"):
+            families.add(str(violation.get("family")))
+    return sorted(families)
+
+
+def _check_level_dispersion_inevitability(
+    context: SolverContext,
+    assigned_by_team: dict[str, Any],
+    team_by_id: dict[str, Any],
+    competition_group_ids: tuple[str, ...],
+) -> dict[str, Any]:
+    group_set = set(competition_group_ids)
+    teams = [
+        team
+        for team_id, team in sorted(team_by_id.items())
+        if getattr(assigned_by_team.get(team_id), "group_id", None) in group_set
+    ]
+    if not teams:
+        return {"status": "unchecked", "reason": "no_assigned_teams"}
+
+    targets = {
+        str(group.group_id): int(getattr(group, "target_size", 0) or 0)
+        for group in context.groups
+        if str(group.group_id) in group_set
+    }
+    if not targets:
+        targets = Counter(str(assigned_by_team[team.team_id].group_id) for team in teams)
+    allowed_groups = {
+        str(team.team_id): sorted(
+            {
+                str(candidate.group_id)
+                for candidate in context.candidates
+                if str(candidate.team_id) == str(team.team_id) and str(candidate.group_id) in group_set
+            }
+            or {str(assigned_by_team[team.team_id].group_id)}
+        )
+        for team in teams
+    }
+    option_product = math.prod(max(1, len(allowed_groups.get(str(team.team_id), ()))) for team in teams)
+    threshold = int(getattr(context.config, "local_explanation_threshold", 50_000) or 50_000)
+    current_cost, current_violations = _level_assignment_cost(
+        {
+            str(team.team_id): str(assigned_by_team[team.team_id].group_id)
+            for team in teams
+        },
+        teams,
+        context,
+    )
+    if option_product > threshold:
+        return {
+            "status": "unchecked_too_many_options",
+            "reason": f"option_product_above_threshold:{threshold}",
+            "option_product": option_product,
+            "current_cost": current_cost,
+            "current_violations": current_violations,
+            "checked_constraints": ["group_sizes", "candidate_groups", "entity_separation_when_feasible"],
+        }
+
+    best = _search_best_level_grouping(teams, targets, allowed_groups, context)
+    if best is None:
+        return {
+            "status": "unchecked_no_feasible_relaxed_assignment",
+            "option_product": option_product,
+            "current_cost": current_cost,
+            "current_violations": current_violations,
+            "checked_constraints": ["group_sizes", "candidate_groups", "entity_separation_when_feasible"],
+        }
+
+    best_cost, best_violations, best_assignment = best
+    if best_cost < current_cost:
+        status = "avoidable_in_relaxed_level_check"
+        reason = "better_level_grouping_exists_before_resource_and_linkage_checks"
+    else:
+        status = "no_better_grouping_found_in_relaxed_level_check"
+        reason = "current_level_dispersion_is_best_under_checked_constraints"
+    return {
+        "status": status,
+        "reason": reason,
+        "option_product": option_product,
+        "current_cost": current_cost,
+        "best_cost": best_cost,
+        "current_violations": current_violations,
+        "best_violations": best_violations,
+        "checked_constraints": ["group_sizes", "candidate_groups", "entity_separation_when_feasible"],
+        "not_checked_constraints": ["resource_capacity_by_round", "linkage", "level_numbers", "home_away_patterns"],
+        "example_assignment": best_assignment if best_cost < current_cost else {},
+    }
+
+
+def _search_best_level_grouping(
+    teams: list[Any],
+    targets: dict[str, int],
+    allowed_groups: dict[str, list[str]],
+    context: SolverContext,
+) -> tuple[int, int, dict[str, str]] | None:
+    team_entity = {str(team.team_id): str(getattr(team, "entity", "") or "") for team in teams}
+    entity_counts = Counter(team_entity.values())
+    enforce_entity = {
+        entity
+        for entity, count in entity_counts.items()
+        if entity and count <= len(targets)
+    }
+    ordered_teams = sorted(
+        teams,
+        key=lambda team: (len(allowed_groups.get(str(team.team_id), ())), str(team.team_id)),
+    )
+    remaining = dict(targets)
+    assignment: dict[str, str] = {}
+    entities_by_group: dict[str, set[str]] = defaultdict(set)
+    best: tuple[int, int, dict[str, str]] | None = None
+
+    def backtrack(index: int) -> None:
+        nonlocal best
+        if index == len(ordered_teams):
+            if any(value != 0 for value in remaining.values()):
+                return
+            cost, violations = _level_assignment_cost(assignment, teams, context)
+            if best is None or (cost, violations, sorted(assignment.items())) < (
+                best[0],
+                best[1],
+                sorted(best[2].items()),
+            ):
+                best = (cost, violations, dict(sorted(assignment.items())))
+            return
+
+        team = ordered_teams[index]
+        team_id = str(team.team_id)
+        entity = team_entity.get(team_id, "")
+        for group_id in allowed_groups.get(team_id, ()):
+            if remaining.get(group_id, 0) <= 0:
+                continue
+            if entity in enforce_entity and entity in entities_by_group[group_id]:
+                continue
+            assignment[team_id] = group_id
+            remaining[group_id] -= 1
+            added_entity = False
+            if entity in enforce_entity:
+                added_entity = entity not in entities_by_group[group_id]
+                entities_by_group[group_id].add(entity)
+            backtrack(index + 1)
+            if added_entity:
+                entities_by_group[group_id].remove(entity)
+            remaining[group_id] += 1
+            assignment.pop(team_id, None)
+
+    backtrack(0)
+    return best
+
+
+def _level_assignment_cost(
+    assignment: dict[str, str],
+    teams: list[Any],
+    context: SolverContext,
+) -> tuple[int, int]:
+    levels_by_group: dict[str, set[str]] = defaultdict(set)
+    for team in teams:
+        group_id = assignment.get(str(team.team_id))
+        if not group_id:
+            continue
+        levels_by_group[group_id].add(normalize_level(getattr(team, "level", "")))
+    cost = 0
+    violations = 0
+    for levels in levels_by_group.values():
+        if "A" in levels and any(level != "A" for level in levels):
+            cost += level_mismatch_weight(context, "level_a_mismatch")
+            violations += 1
+        if "B" in levels and "C" in levels:
+            cost += level_mismatch_weight(context, "level_band_mismatch")
+            violations += 1
+    return cost, violations
+
+
+def _competition_groups_for_context(
+    context: SolverContext,
+    group_ids: set[str],
+) -> dict[str, tuple[str, ...]]:
+    by_prefix: dict[str, list[str]] = defaultdict(list)
+    for group_id in sorted(group_ids):
+        by_prefix[_group_prefix(group_id)].append(group_id)
+    result: dict[str, tuple[str, ...]] = {}
+    for groups in by_prefix.values():
+        group_tuple = tuple(sorted(groups))
+        for group_id in group_tuple:
+            result[group_id] = group_tuple
+    return result
+
+
+def _group_prefix(group_id: str) -> str:
+    text = str(group_id)
+    if "_G" in text:
+        return text.rsplit("_G", 1)[0]
+    return text
+
+
+def _level_rank(level: str) -> int:
+    return {"A": 0, "B": 1, "B/C": 2, "C": 3}.get(str(level), 2)
+
+
+def _level_min(levels: list[str]) -> str:
+    return min((str(level) for level in levels), key=_level_rank, default="B/C")
+
+
+def _level_max(levels: list[str]) -> str:
+    return max((str(level) for level in levels), key=_level_rank, default="B/C")
+
+
+def _level_dispersion_label(levels: list[str]) -> str:
+    if not levels:
+        return "-"
+    return f"{_level_min(levels)} -> {_level_max(levels)}"
+
+
+def _level_dispersion_reason(levels: list[str]) -> str:
+    level_set = set(levels)
+    reasons = []
+    if "A" in level_set and any(level != "A" for level in level_set):
+        reasons.append("barreja A amb no-A")
+    if "B" in level_set and "C" in level_set:
+        reasons.append("barreja B amb C")
+    return "; ".join(reasons) if reasons else "sense dispersio incompatible"
+
+
+def _teams_by_level(teams: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for team in teams:
+        level = str(team.get("normalized_level") or "B/C")
+        grouped[level].append(
+            {
+                "team_id": str(team.get("team_id") or ""),
+                "team_name": str(team.get("team_name") or team.get("team_id") or ""),
+                "assigned_number": team.get("assigned_number"),
+                "raw_level": str(team.get("raw_level") or ""),
+            }
+        )
+    return {
+        level: sorted(items, key=lambda item: (item.get("assigned_number") or 9999, item.get("team_name") or ""))
+        for level, items in sorted(grouped.items(), key=lambda item: _level_rank(item[0]))
     }
 
 
@@ -730,6 +1086,12 @@ def _common_value(values: list[Any]) -> str:
         return ""
     first = clean[0]
     return first if all(value == first for value in clean) else ""
+
+
+def _list_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _summary_int(built_model: Any | None, summary: dict[str, Any], name: str) -> int:

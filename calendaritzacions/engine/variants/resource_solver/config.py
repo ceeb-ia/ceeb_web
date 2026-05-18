@@ -40,7 +40,7 @@ class ResourceSolverConfig:
     entity_excess_weight: int = 10_000
     empty_number_balance_mode: str = "hard"
     empty_number_imbalance_weight: int = 1_000
-    capacity_estimation_method: str = "floor_half_min_one"
+    capacity_estimation_method: str = "ceil_half_min_one"
     local_explanation_threshold: int = 50_000
     linkage_mode: str = "off"
     linkage_violation_weight: int = 100_000

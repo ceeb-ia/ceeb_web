@@ -56,8 +56,11 @@ class ResourceSolverPlotTests(unittest.TestCase):
             manifest = json.loads(Path(plots["manifest"]).read_text(encoding="utf-8"))
 
             self.assertIn("level_dispersion_by_modality", plots)
+            self.assertIn("assigned_numbers_by_modality", plots)
             self.assertTrue(Path(plots["level_dispersion_by_modality"]).exists())
+            self.assertTrue(Path(plots["assigned_numbers_by_modality"]).exists())
             self.assertIn("level_dispersion_by_modality", manifest["plots"])
+            self.assertIn("assigned_numbers_by_modality", manifest["plots"])
 
 
 if __name__ == "__main__":

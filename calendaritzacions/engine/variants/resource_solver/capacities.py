@@ -16,7 +16,7 @@ from calendaritzacions.engine.variants.resource_solver.types import (
 
 
 def estimate_capacity_from_demand(demand_count: int) -> int:
-    return max(1, math.floor(demand_count / 2))
+    return max(1, math.ceil(demand_count / 2))
 
 
 def estimate_capacities(
