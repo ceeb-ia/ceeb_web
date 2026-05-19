@@ -21,6 +21,7 @@ def process_calendarization(
     resource_solver_level_constraint_mode: str = "off",
     resource_solver_linkage_mode: str = "default",
     resource_solver_decomposition_mode: str = "audit_only",
+    resource_solver_competition_grouping: str = "auto",
     progress_reporter: ProgressReporter | None = None,
 ) -> LegacyProcessResult:
     """Process a calendarization request through the application orchestration boundary."""
@@ -35,6 +36,7 @@ def process_calendarization(
             resource_solver_level_constraint_mode=resource_solver_level_constraint_mode,
             resource_solver_linkage_mode=resource_solver_linkage_mode,
             resource_solver_decomposition_mode=resource_solver_decomposition_mode,
+            resource_solver_competition_grouping=resource_solver_competition_grouping,
         )
         engine = get_engine(engine_name)
         if hasattr(engine, "run"):

@@ -384,7 +384,7 @@ def _build_graph(
     competition_members: dict[str, list[str]] = defaultdict(list)
     resource_members: dict[str, list[str]] = defaultdict(list)
     for team in context.teams:
-        competition_key = _competition_key(team)
+        competition_key = _competition_key(team, context)
         resource_key = base_resource_id_for_team(team)
         competition_members[competition_key].append(team.team_id)
         resource_members[resource_key].append(team.team_id)
@@ -409,19 +409,23 @@ def _build_graph(
     return list(nodes_by_id.values()), edges, uf
 
 
-def _competition_key(team: Any) -> str:
+def _competition_key(team: Any, context: SolverContext | None = None) -> str:
     if _competition_key_for_team is not None:
         try:
-            return _string_key(_competition_key_for_team(team))
+            return _string_key(_competition_key_for_team(team, getattr(context, "config", None)))
         except Exception:
             pass
+    mode = str(getattr(getattr(context, "config", None), "competition_grouping", "auto") or "auto").strip().casefold()
+    if mode == "league":
+        league_name = str(getattr(team, "league_name", "") or "").strip() or "Sense lliga"
+        return _string_key(("league", league_name))
     parts = (
         str(getattr(team, "modality", "") or "").strip(),
         str(getattr(team, "category", "") or "").strip(),
         str(getattr(team, "subcategory", "") or "").strip(),
     )
-    if all(parts):
-        return _string_key(("fields", *parts))
+    if mode == "fields" or all(parts):
+        return _string_key(("fields", *(part or "Sense valor" for part in parts)))
     league_name = str(getattr(team, "league_name", "") or "").strip() or "Sense lliga"
     return _string_key(("league", league_name))
 

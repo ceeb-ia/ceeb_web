@@ -43,6 +43,7 @@ def build_audit_payloads(
         "team_catalog": build_team_catalog_audit(context),
         "resource_pressure": build_resource_pressure_audit(context),
         "candidate_catalog": build_candidate_catalog_audit(context),
+        "level_group_planning": build_level_group_planning_audit(context),
         "solver_model_summary": build_solver_model_summary(raw_result, built_model, context, result),
         "resource_solution": build_resource_solution_audit(result),
         "solver_explanations": build_solver_explanations(result, context),
@@ -110,6 +111,35 @@ def build_candidate_catalog_audit(context: SolverContext) -> list[dict[str, Any]
         }
         for candidate in context.candidates
     ]
+
+
+def build_level_group_planning_audit(context: SolverContext) -> dict[str, Any]:
+    mode = level_constraint_mode(context)
+    rows = list(getattr(context.config, "level_group_size_audit", ()) or ())
+    groups = [
+        {
+            "group_id": group.group_id,
+            "phase_name": group.phase_name,
+            "target_size": group.target_size,
+            "slot_count": len(group.numbers),
+            "numbers": list(group.numbers),
+            "is_small": group.target_size < 6,
+            "is_exceptional_size": group.target_size > 8,
+        }
+        for group in context.groups
+    ]
+    return {
+        "enabled": mode == "hard",
+        "mode": mode,
+        "summary": {
+            "groups": len(groups),
+            "small_groups": sum(1 for group in groups if group["is_small"]),
+            "exceptional_groups": sum(1 for group in groups if group["is_exceptional_size"]),
+            "warnings": len(rows),
+        },
+        "groups": groups,
+        "warnings": rows,
+    }
 
 
 def build_solver_model_summary(

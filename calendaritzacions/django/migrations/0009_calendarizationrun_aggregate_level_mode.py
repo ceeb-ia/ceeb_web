@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
                     ("off", "Desactivat"),
                     ("soft", "Suau per parelles"),
                     ("aggregate", "Suau agregat"),
+                    ("hard", "Dur estructural"),
                 ],
                 default="off",
                 max_length=16,

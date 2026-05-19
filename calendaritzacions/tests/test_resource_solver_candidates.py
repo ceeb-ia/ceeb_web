@@ -51,6 +51,36 @@ class ResourceSolverCandidatesTests(unittest.TestCase):
         self.assertTrue(all(candidate.seed_request_original == "CASA" for candidate in candidates))
         self.assertIn("A-G1-1", {candidate.candidate_id for candidate in candidates})
 
+    def test_generates_ten_slot_projection_for_nine_team_group(self):
+        team = TeamRecord(
+            team_id="A",
+            name="Equip A",
+            entity="Club",
+            league_name="Lliga",
+            venue="Pavello 1",
+            day="Divendres",
+            time="18:00",
+        )
+        group = GroupSpec("G1", 9, 9, 9, "primera_fase")
+
+        candidates = generate_candidates((team,), (group,), PRIMERA_FASE)
+        by_number = {candidate.number: candidate for candidate in candidates}
+
+        self.assertEqual(group.numbers, tuple(range(1, 11)))
+        self.assertEqual(set(by_number), set(range(1, 11)))
+        self.assertEqual(by_number[9].potential_home_rounds, (1, 3, 5, 8))
+        self.assertEqual(by_number[9].opponent_number_by_round[9], 2)
+        self.assertEqual(
+            by_number[10].potential_resources,
+            (
+                "pavello-1|divendres|18-00|J1",
+                "pavello-1|divendres|18-00|J3",
+                "pavello-1|divendres|18-00|J5",
+                "pavello-1|divendres|18-00|J7",
+                "pavello-1|divendres|18-00|J8",
+            ),
+        )
+
     def test_potential_home_resources_use_team_base_resource_and_rounds(self):
         team = TeamRecord(
             team_id="A",

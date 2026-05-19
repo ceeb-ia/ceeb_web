@@ -38,6 +38,7 @@ class FakeRun:
         self.resource_solver_level_constraint_mode = "soft"
         self.resource_solver_linkage_mode = "simulated"
         self.resource_solver_decomposition_mode = "persist_components"
+        self.resource_solver_competition_grouping = "fields"
         self.statuses = []
 
     def mark_running(self):
@@ -81,6 +82,7 @@ class DjangoCalendarizationServicesTests(unittest.TestCase):
             resource_solver_level_constraint_mode="soft",
             resource_solver_linkage_mode="simulated",
             resource_solver_decomposition_mode="persist_components",
+            resource_solver_competition_grouping="fields",
             progress_reporter=ANY,
         )
         self.assertEqual(run.statuses, ["running", "success"])

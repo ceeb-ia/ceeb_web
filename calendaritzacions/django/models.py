@@ -27,9 +27,14 @@ class CalendarizationRun(models.Model):
     LINKAGE_MODE_INPUT = "input"
     LINKAGE_MODE_SIMULATED = "simulated"
 
+    COMPETITION_GROUPING_AUTO = "auto"
+    COMPETITION_GROUPING_LEAGUE = "league"
+    COMPETITION_GROUPING_FIELDS = "fields"
+
     LEVEL_CONSTRAINT_OFF = "off"
     LEVEL_CONSTRAINT_SOFT = "soft"
     LEVEL_CONSTRAINT_AGGREGATE = "aggregate"
+    LEVEL_CONSTRAINT_HARD = "hard"
 
     PHASE_FIRST = "primera_fase"
     PHASE_SECOND = "segona_fase"
@@ -53,6 +58,7 @@ class CalendarizationRun(models.Model):
         (LEVEL_CONSTRAINT_OFF, "Desactivat"),
         (LEVEL_CONSTRAINT_SOFT, "Suau per parelles"),
         (LEVEL_CONSTRAINT_AGGREGATE, "Suau agregat"),
+        (LEVEL_CONSTRAINT_HARD, "Dur estructural"),
     )
     RESOURCE_SOLVER_DECOMPOSITION_OFF = "off"
     RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY = "audit_only"
@@ -68,6 +74,11 @@ class CalendarizationRun(models.Model):
         (LINKAGE_MODE_INPUT, "Input Excel"),
         (LINKAGE_MODE_SIMULATED, "Simulat"),
         (LINKAGE_MODE_OFF, "Desactivat"),
+    )
+    COMPETITION_GROUPING_CHOICES = (
+        (COMPETITION_GROUPING_AUTO, "Auto"),
+        (COMPETITION_GROUPING_LEAGUE, "Nom Lliga"),
+        (COMPETITION_GROUPING_FIELDS, "Modalitat / categoria / subcategoria"),
     )
 
     input_file = models.FileField(upload_to=input_upload_to)
@@ -88,6 +99,11 @@ class CalendarizationRun(models.Model):
         max_length=32,
         choices=RESOURCE_SOLVER_DECOMPOSITION_CHOICES,
         default=RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY,
+    )
+    resource_solver_competition_grouping = models.CharField(
+        max_length=16,
+        choices=COMPETITION_GROUPING_CHOICES,
+        default=COMPETITION_GROUPING_AUTO,
     )
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING)
     task_id = models.CharField(max_length=255, blank=True)

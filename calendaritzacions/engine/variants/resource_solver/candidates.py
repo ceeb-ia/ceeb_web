@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from calendaritzacions.domain.phases import CalendarPhase
+from calendaritzacions.domain.phases import CalendarPhase, phase_calendar, slot_count_for_numbers
 from calendaritzacions.engine.variants.resource_solver.resources import (
     base_resource_id_for_team,
     build_timed_resource_id,
@@ -60,6 +60,7 @@ def generate_candidates(
 
     for team in sorted_teams:
         for group in sorted_groups:
+            group_phase = _calendar_for_group(group, phase)
             for number in group.numbers:
                 candidate_id = _candidate_id(team.team_id, group.group_id, number)
                 candidates.append(
@@ -69,16 +70,22 @@ def generate_candidates(
                         group_id=group.group_id,
                         number=number,
                         seed_request_original=team.seed_request_original,
-                        potential_home_rounds=home_rounds_for_number(number, phase),
-                        opponent_number_by_round=opponent_by_round(number, phase),
+                        potential_home_rounds=home_rounds_for_number(number, group_phase),
+                        opponent_number_by_round=opponent_by_round(number, group_phase),
                         potential_resources=potential_home_resource_ids(
                             team,
                             number,
-                            phase,
+                            group_phase,
                         ),
                     )
                 )
     return tuple(candidates)
+
+
+def _calendar_for_group(group: GroupSpec, default_phase: CalendarPhase) -> CalendarPhase:
+    if not group.phase_name:
+        return default_phase
+    return phase_calendar(group.phase_name, slot_count_for_numbers(group.numbers))
 
 
 def _candidate_id(team_id: str, group_id: str, number: int) -> str:

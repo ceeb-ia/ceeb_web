@@ -41,6 +41,7 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
                 "phase": CalendarizationRun.PHASE_SECOND,
                 "resource_solver_linkage_mode": CalendarizationRun.LINKAGE_MODE_SIMULATED,
                 "resource_solver_level_constraint_mode": CalendarizationRun.LEVEL_CONSTRAINT_SOFT,
+                "resource_solver_competition_grouping": CalendarizationRun.COMPETITION_GROUPING_FIELDS,
                 "resource_solver_decomposition_mode": CalendarizationRun.RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY,
             },
             files={"input_file": SimpleUploadedFile("input.xlsx", b"data")},
@@ -54,6 +55,10 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
         self.assertEqual(
             form.cleaned_data["resource_solver_linkage_mode"],
             CalendarizationRun.LINKAGE_MODE_SIMULATED,
+        )
+        self.assertEqual(
+            form.cleaned_data["resource_solver_competition_grouping"],
+            CalendarizationRun.COMPETITION_GROUPING_FIELDS,
         )
         self.assertNotIn(
             CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
@@ -71,6 +76,7 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
                 "engine_name": CalendarizationRun.ENGINE_RESOURCE_SOLVER,
                 "phase": CalendarizationRun.PHASE_FIRST,
                 "resource_solver_linkage_mode": CalendarizationRun.LINKAGE_MODE_INPUT,
+                "resource_solver_competition_grouping": CalendarizationRun.COMPETITION_GROUPING_AUTO,
                 "resource_solver_decomposition_mode": CalendarizationRun.RESOURCE_SOLVER_DECOMPOSITION_AUDIT_ONLY,
             },
             files={"input_file": SimpleUploadedFile("input.txt", b"data")},
@@ -87,6 +93,8 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
 
         choices = dict(form.fields["resource_solver_level_constraint_mode"].choices)
         self.assertEqual(choices[CalendarizationRun.LEVEL_CONSTRAINT_AGGREGATE], "Suau agregat")
+        grouping_choices = dict(form.fields["resource_solver_competition_grouping"].choices)
+        self.assertEqual(grouping_choices[CalendarizationRun.COMPETITION_GROUPING_LEAGUE], "Nom Lliga")
 
 
 if __name__ == "__main__":

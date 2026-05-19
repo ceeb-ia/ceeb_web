@@ -200,6 +200,28 @@ class ResourceSolverResourcesTests(unittest.TestCase):
 
         self.assertEqual(len(groups_by_team["T0"]), 2)
 
+    @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
+    def test_context_can_force_league_or_field_competition_grouping(self):
+        rows = []
+        for index in range(4):
+            rows.append(_team_row(index, "Futbol", "Benjami", "Mixt", "Lliga compartida"))
+        for index in range(4, 8):
+            rows.append(_team_row(index, "Futbol", "Alevi", "Mixt", "Lliga compartida"))
+
+        by_fields = build_context_from_dataframe(
+            pd.DataFrame(rows),
+            ResourceSolverConfig(linkage_mode="off", competition_grouping="fields"),
+        )
+        by_league = build_context_from_dataframe(
+            pd.DataFrame(rows),
+            ResourceSolverConfig(linkage_mode="off", competition_grouping="league"),
+        )
+
+        self.assertEqual(len(by_fields.groups), 2)
+        self.assertEqual(len(by_league.groups), 1)
+        self.assertTrue(_candidate_groups_by_team(by_fields)["T0"].isdisjoint(_candidate_groups_by_team(by_fields)["T4"]))
+        self.assertEqual(_candidate_groups_by_team(by_league)["T0"], _candidate_groups_by_team(by_league)["T4"])
+
     def test_estimates_capacity_and_builds_pressure_from_unique_teams(self):
         teams = tuple(
             TeamRecord(

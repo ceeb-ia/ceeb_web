@@ -48,6 +48,30 @@ class ResourceSolverContractsTests(unittest.TestCase):
 
         self.assertEqual(config.level_constraint_mode, "aggregate")
 
+    def test_coerces_hard_level_constraint_mode_from_engine_config(self):
+        from calendaritzacions.engine.config import EngineConfig
+
+        config = coerce_resource_solver_config(
+            EngineConfig(
+                name="resource_solver",
+                resource_solver_level_constraint_mode="hard",
+            )
+        )
+
+        self.assertEqual(config.level_constraint_mode, "hard")
+
+    def test_coerces_competition_grouping_from_engine_config(self):
+        from calendaritzacions.engine.config import EngineConfig
+
+        config = coerce_resource_solver_config(
+            EngineConfig(
+                name="resource_solver",
+                resource_solver_competition_grouping="league",
+            )
+        )
+
+        self.assertEqual(config.competition_grouping, "league")
+
     def test_team_and_group_records_are_instantiable(self):
         team = TeamRecord(
             team_id="T1",

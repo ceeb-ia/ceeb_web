@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from calendaritzacions.domain.phases import CalendarPhase, phase_calendar, slot_count_for_numbers
 from calendaritzacions.engine.variants.resource_solver.types import (
     Assignment,
     Candidate,
@@ -82,10 +83,12 @@ def build_real_matches(
 
     by_group_number = _assigned_by_group_number(assignments)
     candidates = _candidate_lookup(context)
+    groups = {group.group_id: group for group in context.groups}
     matches: list[RealMatch] = []
 
     for group_id, numbers in sorted(by_group_number.items()):
-        for round_index, round_matches in enumerate(context.phase, start=1):
+        phase = _calendar_for_group(groups.get(group_id), context)
+        for round_index, round_matches in enumerate(phase, start=1):
             for home_number, away_number in round_matches:
                 home_team = numbers.get(home_number)
                 away_team = numbers.get(away_number)
@@ -314,7 +317,9 @@ def _rests_by_team(
 ) -> dict[str, tuple[int, ...]]:
     rests: dict[str, list[int]] = defaultdict(list)
     occupied = set(assigned_numbers)
-    for round_index, round_matches in enumerate(context.phase, start=1):
+    group = next((item for item in context.groups if item.group_id == group_id), None)
+    phase = _calendar_for_group(group, context)
+    for round_index, round_matches in enumerate(phase, start=1):
         for home_number, away_number in round_matches:
             home_team = assigned_numbers.get(home_number)
             away_team = assigned_numbers.get(away_number)
@@ -346,6 +351,14 @@ def _coerce_entity_group_key(key: Any) -> tuple[str, str]:
         entity, group_id = key.split("|", 1)
         return entity, group_id
     return str(key), ""
+
+
+def _calendar_for_group(group: Any | None, context: SolverContext) -> CalendarPhase:
+    if group is None:
+        return context.phase
+    if not getattr(group, "phase_name", ""):
+        return context.phase
+    return phase_calendar(group.phase_name, slot_count_for_numbers(group.numbers))
 
 
 def _optional_float(value: Any) -> float | None:

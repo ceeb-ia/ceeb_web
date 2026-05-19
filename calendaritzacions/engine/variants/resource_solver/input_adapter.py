@@ -27,7 +27,12 @@ from calendaritzacions.engine.variants.resource_solver.capacities import (
     estimate_capacities,
 )
 from calendaritzacions.engine.variants.resource_solver.candidates import generate_candidates
-from calendaritzacions.engine.variants.resource_solver.groups import build_group_specs
+from calendaritzacions.engine.variants.resource_solver.config import with_level_group_size_audit
+from calendaritzacions.engine.variants.resource_solver.groups import (
+    build_group_specs,
+    build_hard_level_group_plan,
+    hard_level_candidate_families,
+)
 from calendaritzacions.engine.variants.resource_solver.types import SolverContext, TeamRecord
 
 try:
@@ -134,18 +139,39 @@ def build_context_from_dataframe(df: pd.DataFrame, config: Any) -> SolverContext
     pressure = build_resource_pressure(resources, teams, capacities)
     groups = []
     candidates = []
+    level_group_audit: list[dict[str, object]] = []
     for competition_index, (_key, competition_teams) in enumerate(
-        _teams_by_competition(teams),
+        _teams_by_competition(teams, config),
         start=1,
     ):
+        group_prefix = f"C{competition_index}_G"
+        if _hard_level_constraint_mode(config):
+            level_plan = build_hard_level_group_plan(
+                competition_teams,
+                phase_name,
+                group_prefix=group_prefix,
+            )
+            groups.extend(level_plan.groups)
+            level_group_audit.extend(level_plan.audit)
+            for family, family_groups in level_plan.groups_by_family.items():
+                family_teams = tuple(
+                    team
+                    for team in competition_teams
+                    if family in hard_level_candidate_families(team)
+                )
+                if family_teams and family_groups:
+                    candidates.extend(generate_candidates(family_teams, family_groups, phase))
+            continue
+
         competition_groups = build_group_specs(
             competition_teams,
             phase_name,
             config,
-            group_prefix=f"C{competition_index}_G",
+            group_prefix=group_prefix,
         )
         groups.extend(competition_groups)
         candidates.extend(generate_candidates(competition_teams, competition_groups, phase))
+    config = with_level_group_size_audit(config, tuple(level_group_audit))
     return SolverContext(
         teams=teams,
         phase=phase,
@@ -161,20 +187,30 @@ def build_context_from_dataframe(df: pd.DataFrame, config: Any) -> SolverContext
 
 def _teams_by_competition(
     teams: tuple[TeamRecord, ...],
+    config: Any | None = None,
 ) -> tuple[tuple[tuple[str, ...], tuple[TeamRecord, ...]], ...]:
     buckets: dict[tuple[str, ...], list[TeamRecord]] = defaultdict(list)
     for team in teams:
-        buckets[competition_key_for_team(team)].append(team)
+        buckets[competition_key_for_team(team, config)].append(team)
     return tuple(
         (key, tuple(sorted(items, key=lambda item: item.team_id)))
         for key, items in sorted(buckets.items())
     )
 
 
-def competition_key_for_team(team: TeamRecord) -> tuple[str, ...]:
+def competition_key_for_team(team: TeamRecord, config: Any | None = None) -> tuple[str, ...]:
     """Return the stable competition key used to generate resource-solver groups."""
 
+    mode = _competition_grouping_mode(config)
+    if mode == "league":
+        league_name = team.league_name.strip() or "Sense lliga"
+        return ("league", league_name)
+
     parts = (team.modality.strip(), team.category.strip(), team.subcategory.strip())
+    if mode == "fields" or all(parts):
+        normalized_parts = tuple(part or "Sense valor" for part in parts)
+        if mode == "fields" or all(normalized_parts):
+            return ("fields", *normalized_parts)
     if all(parts):
         return ("fields", *parts)
     league_name = team.league_name.strip() or "Sense lliga"
@@ -185,6 +221,16 @@ def competition_node_key(team: TeamRecord) -> str:
     """Return a JSON/path-friendly competition node key for decomposition audits."""
 
     return "|".join(competition_key_for_team(team))
+
+
+def _competition_grouping_mode(config: Any | None) -> str:
+    mode = str(getattr(config, "competition_grouping", "auto") if config is not None else "auto")
+    mode = mode.strip().casefold()
+    if mode in {"league", "lliga", "nom_lliga", "nom-lliga"}:
+        return "league"
+    if mode in {"fields", "camp", "camps", "modalitat", "modalitat_categoria_subcategoria"}:
+        return "fields"
+    return "auto"
 
 
 def _first_existing(row: pd.Series, columns: tuple[str, ...]) -> Any:
@@ -309,6 +355,11 @@ def _normalized_linkage_mode(value: Any) -> str:
     if mode in {"simulated", "simulate", "simulation", "linkage"}:
         return "simulated"
     return "off"
+
+
+def _hard_level_constraint_mode(config: Any) -> bool:
+    mode = str(getattr(config, "level_constraint_mode", "off") or "off").strip().casefold()
+    return mode == "hard"
 
 
 def _linkage_max_group_size(config: Any) -> int:
