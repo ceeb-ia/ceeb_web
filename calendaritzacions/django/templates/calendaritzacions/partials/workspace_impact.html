@@ -1,0 +1,219 @@
+<div class="filter-panel" id="workspaceImpactFiltersPanel">
+  <div class="filter-panel__header">
+    <div>
+      <div class="font-weight-bold">Filtres d'impacte</div>
+      <div class="filter-panel__summary" id="workspaceImpactFiltersSummary">Sense filtres actius.</div>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#workspaceImpactFiltersCollapse" aria-expanded="true" aria-controls="workspaceImpactFiltersCollapse" id="workspaceImpactFiltersToggle">Amagar filtres</button>
+  </div>
+  <div class="collapse show" id="workspaceImpactFiltersCollapse">
+    <div class="filter-panel__body">
+      <div class="form-row">
+        <div class="col-12 col-lg-4 mb-3">
+          <div class="filter-panel__label">Text</div>
+          <input id="workspaceImpactFilterText" class="form-control form-control-sm" placeholder="Cerca equip, entitat, lliga, recurs..." />
+        </div>
+        <div class="col-12 col-md-4 col-lg-2 mb-3">
+          <div class="filter-panel__label">Modalitat</div>
+          <select id="workspaceImpactFilterModality" class="form-control form-control-sm">
+            <option value="">Totes</option>
+            {% for item in impact_view.filters.modalities %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-lg-2 mb-3">
+          <div class="filter-panel__label">Lliga</div>
+          <select id="workspaceImpactFilterLeague" class="form-control form-control-sm">
+            <option value="">Totes</option>
+            {% for item in impact_view.filters.leagues %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-lg-2 mb-3">
+          <div class="filter-panel__label">Categoria</div>
+          <select id="workspaceImpactFilterCategory" class="form-control form-control-sm">
+            <option value="">Totes</option>
+            {% for item in impact_view.filters.categories %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-lg-2 mb-3">
+          <div class="filter-panel__label">Tipus</div>
+          <select id="workspaceImpactFilterType" class="form-control form-control-sm">
+            <option value="">Tots</option>
+            {% for item in impact_view.filters.types %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-lg-3 mb-3">
+          <div class="filter-panel__label">Entitat</div>
+          <select id="workspaceImpactFilterEntity" class="form-control form-control-sm">
+            <option value="">Totes</option>
+            {% for item in impact_view.filters.entities %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-lg-3 mb-3">
+          <div class="filter-panel__label">Jornada</div>
+          <select id="workspaceImpactFilterRound" class="form-control form-control-sm">
+            <option value="">Totes</option>
+            {% for item in impact_view.filters.rounds %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 col-lg-3 mb-3">
+          <div class="filter-panel__label">Nivell</div>
+          <select id="workspaceImpactFilterLevel" class="form-control form-control-sm">
+            <option value="">Tots</option>
+            {% for item in impact_view.filters.levels %}
+            <option value="{{ item.token }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="filter-panel__footer">
+        <div class="filter-panel__status" id="workspaceImpactFiltersResultSummary">Mostrant tot l'impacte.</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="workspaceImpactFiltersReset">Netejar filtres</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="workspace-kpi-grid mb-3">
+  {% for kpi in impact_view.kpis %}
+  <div class="workspace-kpi workspace-kpi-{{ kpi.status|default:'neutral' }}" data-impact-kpi="{{ kpi.key|default:'' }}">
+    <div class="workspace-kpi-label">{{ kpi.label }}</div>
+    <div class="workspace-kpi-value">{{ kpi.value }}</div>
+    {% if kpi.subtitle %}
+    <div class="workspace-kpi-sub">{{ kpi.subtitle }}</div>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="workspace-empty">No hi ha impacte materialitzat per aquest workspace.</div>
+  {% endfor %}
+</div>
+
+<div class="workspace-impact-grid mb-3">
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-1">Equips afectats per modalitat</div>
+    <div class="text-muted small mb-3">Comptatge d'equips unics afectats dins el filtre actiu.</div>
+    <div data-impact-chart="modality"></div>
+  </div>
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-1">Tipus d'incidencia</div>
+    <div class="text-muted small mb-3">Distribucio de files afectades per tipus.</div>
+    <div data-impact-chart="type"></div>
+  </div>
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-1">Top entitats afectades</div>
+    <div class="text-muted small mb-3">Entitats amb mes equips afectats dins el filtre actiu.</div>
+    <div data-impact-chart="entity"></div>
+  </div>
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-1">Jornades afectades</div>
+    <div class="text-muted small mb-3">Impacte distribuit per jornada.</div>
+    <div data-impact-chart="round"></div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12 col-xl-6 mb-3">
+    <div class="workspace-panel h-100">
+      <div class="font-weight-bold mb-2">Resum per modalitat</div>
+      <div class="table-responsive">
+        <table class="table table-sm workspace-table mb-0">
+          <thead class="thead-light"><tr><th>Modalitat</th><th>Equips</th><th>Incidencies</th><th>Entitats</th></tr></thead>
+          <tbody>
+          {% for row in impact_view.modality_rows %}
+          <tr><td class="font-weight-bold">{{ row.label }}</td><td>{{ row.team_count }}</td><td>{{ row.incident_count }}</td><td>{{ row.entity_count }}</td></tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-center text-muted">No hi ha dades per modalitat.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-6 mb-3">
+    <div class="workspace-panel h-100">
+      <div class="font-weight-bold mb-2">Top entitats</div>
+      <div class="table-responsive">
+        <table class="table table-sm workspace-table mb-0">
+          <thead class="thead-light"><tr><th>Entitat</th><th>Equips</th><th>Incidencies</th><th>Modalitats</th></tr></thead>
+          <tbody>
+          {% for row in impact_view.entity_rows %}
+          <tr><td class="font-weight-bold">{{ row.label }}</td><td>{{ row.team_count }}</td><td>{{ row.incident_count }}</td><td>{{ row.modality_count }}</td></tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-center text-muted">No hi ha dades per entitat.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="workspace-panel">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div>
+      <div class="font-weight-bold">Equips afectats i com</div>
+      <div class="text-muted small">Una fila representa un equip afectat per una incidencia concreta.</div>
+    </div>
+    <span class="text-muted small">{{ impact_view.affected_rows|length }} files</span>
+  </div>
+  <div class="table-responsive workspace-impact-table-wrap">
+    <table class="table table-sm table-hover workspace-table mb-0">
+      <thead class="thead-light">
+      <tr><th>Equip</th><th>Entitat</th><th>Competicio</th><th>Tipus</th><th>Jornades</th><th>Impacte</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for row in impact_view.affected_rows %}
+      <tr class="workspace-impact-row"
+          data-team-id="{{ row.team_id }}"
+          data-incident-id="{{ row.incident_id }}"
+          data-text="{{ row.filter_text }}"
+          data-modality="{{ row.modality_token }}"
+          data-modality-label="{{ row.modality }}"
+          data-league="{{ row.league_token }}"
+          data-league-label="{{ row.league }}"
+          data-category="{{ row.category_token }}"
+          data-entity="{{ row.entity_token }}"
+          data-entity-label="{{ row.entity }}"
+          data-level="{{ row.level_token }}"
+          data-type="{{ row.type_key }}"
+          data-type-label="{{ row.type_label }}"
+          data-rounds="{{ row.round_tokens }}"
+          data-round-labels="{{ row.round_labels }}"
+          data-excess="{{ row.excess }}"
+          data-severity="{{ row.severity }}">
+        <td>
+          <div class="font-weight-bold">{{ row.team_name }}</div>
+          <div class="text-muted small">{{ row.team_id }}</div>
+        </td>
+        <td>{{ row.entity }}</td>
+        <td>
+          <div>{{ row.league }}</div>
+          <div class="text-muted small">{{ row.modality }} {{ row.category }} {{ row.subcategory }}</div>
+        </td>
+        <td>{{ row.type_label }}</td>
+        <td>{{ row.round_labels|default:"-" }}</td>
+        <td>{{ row.impact }}</td>
+        <td class="text-right">
+          <a class="btn btn-sm btn-outline-secondary mb-1" href="{% url 'calendaritzacions:resource_workspace_team' run.pk row.team_id %}">Equip</a>
+          <a class="btn btn-sm btn-outline-primary mb-1" href="{% url 'calendaritzacions:resource_workspace_incident' run.pk row.incident_id %}">Incidencia</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="text-center text-muted">No hi ha equips afectats.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div id="workspaceImpactFiltersEmptyState" class="filter-empty-state d-none">Cap impacte coincideix amb els filtres actius.</div>
+</div>

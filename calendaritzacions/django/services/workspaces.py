@@ -638,8 +638,8 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
                     "group_id": assignment.group_id,
                     "has_entity_conflict": has_entity_conflict,
                     "has_resource_excess": has_resource_excess,
-                    "level_label": _workspace_level_label(fields.get("level", "")),
-                    "level_class": _workspace_level_class(fields.get("level", "")),
+                    "level_label": _workspace_normalized_level_label(fields.get("level", "")),
+                    "level_class": _workspace_normalized_level_class(fields.get("level", "")),
                     **fields,
                     "filter_text": _calendar_filter_text(
                         [
@@ -1185,14 +1185,14 @@ def _group_calendar_fields(rows: list[dict[str, str]]) -> dict[str, str]:
 
 
 def _calendar_level_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    counts = Counter(_workspace_level_label(row.get("level") or row.get("level_raw")) for row in rows)
+    counts = Counter(_workspace_normalized_level_label(row.get("level") or row.get("level_raw")) for row in rows)
     order = {"A": 0, "B": 1, "B/C": 2, "C": 3, "Sense nivell": 4}
     return [
         {
             "label": label,
             "count": count,
             "token": _filter_token(label),
-            "class": _workspace_level_class(label),
+            "class": _workspace_level_class_for_label(label),
         }
         for label, count in sorted(counts.items(), key=lambda item: (order.get(item[0], 99), item[0]))
         if count
@@ -2531,8 +2531,24 @@ def _workspace_level_label(value: Any) -> str:
     return {"A": "A", "B": "B", "C": "B/C", "D": "B/C", "E": "C"}[match.group(1)]
 
 
+def _workspace_normalized_level_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if text in {"A", "B", "B/C", "C"}:
+        return text
+    return _workspace_level_label(text)
+
+
 def _workspace_level_class(value: Any) -> str:
     label = _workspace_level_label(value)
+    return _workspace_level_class_for_label(label)
+
+
+def _workspace_normalized_level_class(value: Any) -> str:
+    label = _workspace_normalized_level_label(value)
+    return _workspace_level_class_for_label(label)
+
+
+def _workspace_level_class_for_label(label: str) -> str:
     return {
         "A": "level-a",
         "B": "level-b",

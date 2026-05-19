@@ -1122,6 +1122,95 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(row_c["cells"][1]["side"], "Casa")
         self.assertEqual(row_c["cells"][1]["opponent_id"], "A")
 
+    def test_workspace_calendar_view_keeps_normalized_c_level_label(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_calendar_view,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resource_solution = root / "resource_solution.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            resource_solution.write_text(
+                json.dumps(
+                    {
+                        "status": "FEASIBLE",
+                        "assignments": [
+                            {"team_id": "BC", "group_id": "G1", "number": 1},
+                            {"team_id": "C", "group_id": "G1", "number": 2},
+                        ],
+                        "real_matches": [],
+                        "resource_usage": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps(
+                    [
+                        {
+                            "team_id": "BC",
+                            "name": "Equip B/C",
+                            "entity": "Club",
+                            "league_name": "Lliga 1",
+                            "level": "Nivell C",
+                        },
+                        {
+                            "team_id": "C",
+                            "name": "Equip C",
+                            "entity": "Club",
+                            "league_name": "Lliga 1",
+                            "level": "Nivell E",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text("[]", encoding="utf-8")
+            resource_pressure.write_text("[]", encoding="utf-8")
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solution": str(resource_solution),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            payload = get_workspace_calendar_view(workspace)
+
+        group = payload["groups"][0]
+        rows_by_team = {row["team_id"]: row for row in group["rows"]}
+        self.assertEqual(rows_by_team["BC"]["level"], "B/C")
+        self.assertEqual(rows_by_team["BC"]["level_label"], "B/C")
+        self.assertEqual(rows_by_team["C"]["level"], "C")
+        self.assertEqual(rows_by_team["C"]["level_label"], "C")
+        self.assertEqual(rows_by_team["C"]["level_class"], "level-c")
+        self.assertEqual(
+            group["level_summary"],
+            [
+                {"label": "B/C", "count": 1, "token": "b/c", "class": "level-bc"},
+                {"label": "C", "count": 1, "token": "c", "class": "level-c"},
+            ],
+        )
+        self.assertEqual(
+            payload["filters"]["level"],
+            [{"label": "B/C", "token": "b/c"}, {"label": "C", "token": "c"}],
+        )
+
     def test_workspace_materializes_entity_conflicts_with_team_calendars(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")

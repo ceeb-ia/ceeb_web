@@ -102,6 +102,7 @@ class ResourceWorkspaceOverviewView(CalendaritzacionsAccessMixin, DetailView):
                 "venue_round_sheets": _get_workspace_venue_round_sheets(workspace),
                 "calendar_view": _get_workspace_calendar_view(workspace),
                 "linkage_view": _get_workspace_linkage_view(workspace),
+                "impact_view": _get_workspace_impact_view(workspace),
                 "plot_galleries": _build_plot_galleries(self.object),
                 "workspace_audits": self.object.available_audits,
             }
@@ -378,6 +379,27 @@ def _get_workspace_linkage_view(workspace) -> dict[str, object]:
     _, _, _, _, _, _, get_workspace_linkage_view = _get_workspace_services()
     payload = get_workspace_linkage_view(workspace)
     return payload if isinstance(payload, dict) else {"groups": [], "filters": {}}
+
+
+def _get_workspace_impact_view(workspace) -> dict[str, object]:
+    try:
+        from calendaritzacions.django.services.workspace_impact import get_workspace_impact_view
+    except ModuleNotFoundError as exc:
+        if exc.name != "calendaritzacions.django.services.workspace_impact":
+            raise
+        return {
+            "kpis": [],
+            "filters": {},
+            "modality_rows": [],
+            "entity_rows": [],
+            "league_rows": [],
+            "round_rows": [],
+            "type_rows": [],
+            "affected_rows": [],
+            "charts": [],
+        }
+    payload = get_workspace_impact_view(workspace)
+    return payload if isinstance(payload, dict) else {"kpis": [], "filters": {}, "affected_rows": []}
 
 
 def _decorate_workspace_incidents(run: CalendarizationRun, incidents: object) -> list[object]:

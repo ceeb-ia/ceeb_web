@@ -445,6 +445,27 @@
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+.workspace-impact-grid {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.workspace-impact-table-wrap {
+  max-height: 68vh;
+  overflow: auto;
+}
+
+.workspace-impact-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.workspace-impact-bar-row {
+  grid-template-columns: minmax(120px, 1.4fr) minmax(110px, 2fr) 48px;
+}
+
 .workspace-calendar-wrap {
   max-height: 76vh;
   overflow: auto;
