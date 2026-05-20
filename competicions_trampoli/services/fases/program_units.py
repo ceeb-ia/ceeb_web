@@ -79,7 +79,7 @@ def fill_program_unit_slots(
 ) -> ProgramUnit:
     if unit is None or not getattr(unit, "id", None):
         raise ValueError("Cal una unitat programable desada.")
-    slots = list(unit.slots.order_by("slot_index", "id"))
+    slots = list(unit.slots.order_by("ordre", "slot_index", "id"))
     if len(subjects or []) > len(slots):
         raise ValueError("Hi ha mes subjectes que slots disponibles.")
 

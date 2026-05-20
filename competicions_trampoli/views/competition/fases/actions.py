@@ -13,8 +13,9 @@ from ....forms import (
     ProgramUnitManualForm,
     ProgramUnitPartitionForm,
 )
-from ....models.competicio import CompeticioAparellFase
+from ....models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit
 from ....services.fases.group_plan import structural_cut_signature
+from ....services.fases.logos import logo_choice_paths
 from ....services.fases.planner import (
     configure_phase_group_plan,
     configure_phase_scoring_settings,
@@ -26,11 +27,23 @@ from ....services.fases.planner import (
 )
 from ....services.fases.qualification import (
     QualificationError,
+    accept_current_qualification_snapshot,
     apply_qualification,
     confirm_qualification_partition,
     preview_as_dict,
     qualification_is_stale,
     record_qualification_preview,
+)
+from ....services.fases.slot_overrides import (
+    SlotOverrideError,
+    add_extra_slot_to_unit,
+    assign_inscripcio_to_slot,
+    assign_reserve_to_slot,
+    assign_snapshot_candidate_to_slot,
+    clear_slot_assignment,
+    delete_program_slot,
+    mark_slot_withdrawn,
+    reorder_program_unit_slots,
 )
 from ....services.fases import apply_group_plan, group_plan_as_dict, preview_group_plan
 
@@ -67,6 +80,12 @@ def _publish_blockers(phase) -> list[str]:
     return blockers
 
 
+def _phase_has_applied_snapshot(phase) -> bool:
+    config = phase.config if isinstance(phase.config, dict) else {}
+    qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+    return bool(qualification.get("run_id"))
+
+
 def phase_for_post(competicio, request):
     phase_id = request.POST.get("fase_id")
     if not phase_id:
@@ -95,6 +114,45 @@ def handle_phase_post(view, request):
     action = str(request.POST.get("action") or "").strip()
     selected_app = view.comp_aparell
     try:
+        if action == "update_base_scoring_settings":
+            comp_aparell_id = request.POST.get("comp_aparell_id")
+            comp_aparell = get_object_or_404(
+                CompeticioAparell,
+                pk=comp_aparell_id,
+                competicio=view.competicio,
+            )
+            try:
+                nombre_exercicis = int(request.POST.get("nombre_exercicis") or 1)
+            except (TypeError, ValueError):
+                nombre_exercicis = 0
+            if nombre_exercicis < 1 or nombre_exercicis > 5:
+                messages.error(request, "El nombre d'exercicis de la preliminar ha de ser entre 1 i 5.")
+                return view.redirect_to_selected_app(comp_aparell), {}
+            comp_aparell.nombre_exercicis = nombre_exercicis
+            comp_aparell.full_clean()
+            comp_aparell.save(update_fields=["nombre_exercicis"])
+            messages.success(request, f"Exercicis de la preliminar de '{comp_aparell.display_nom}' actualitzats.")
+            return view.redirect_to_selected_app(comp_aparell), {}
+
+        if action == "update_app_phase_logo":
+            comp_aparell_id = request.POST.get("comp_aparell_id")
+            comp_aparell = get_object_or_404(
+                CompeticioAparell,
+                pk=comp_aparell_id,
+                competicio=view.competicio,
+            )
+            logo_path = str(request.POST.get("logo_path") or "").strip()
+            if logo_path not in logo_choice_paths(view.competicio):
+                messages.error(request, "Logo d'aparell no valid per aquesta competicio.")
+                return view.redirect_to_selected_app(comp_aparell), {}
+            config = comp_aparell.judge_ui_config if isinstance(comp_aparell.judge_ui_config, dict) else {}
+            config["phase_planner_logo"] = logo_path
+            comp_aparell.judge_ui_config = config
+            comp_aparell.full_clean()
+            comp_aparell.save(update_fields=["judge_ui_config"])
+            messages.success(request, f"Logo de '{comp_aparell.display_nom}' actualitzat.")
+            return view.redirect_to_selected_app(comp_aparell), {}
+
         if action == "create_phase":
             if selected_app is None:
                 messages.error(request, "Selecciona un aparell abans de crear fases.")
@@ -183,6 +241,79 @@ def handle_phase_post(view, request):
             messages.error(request, "Revisa la configuracio de la unitat.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
+        if action == "delete_program_unit":
+            unit_id = request.POST.get("unit_id")
+            unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
+            if unit.rotacio_links.exists():
+                messages.error(request, "No es pot eliminar una unitat que ja esta programada a rotacions.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            unit_name = unit.nom
+            unit.delete()
+            messages.success(request, f"Unitat '{unit_name}' eliminada.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "add_extra_program_slot":
+            unit_id = int(request.POST.get("unit_id") or 0)
+            slot = add_extra_slot_to_unit(phase, unit_id)
+            messages.success(request, f"Plaça extra afegida a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "reorder_program_unit_slots":
+            unit_id = int(request.POST.get("unit_id") or 0)
+            raw_order = str(request.POST.get("slot_order") or "").strip()
+            ordered_slot_ids = [int(item) for item in raw_order.split(",") if item.strip().isdigit()]
+            unit = reorder_program_unit_slots(phase, unit_id, ordered_slot_ids)
+            messages.success(request, f"Ordre de places actualitzat a '{unit.nom}'.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "assign_reserve_to_slot":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            reserve_key = str(request.POST.get("reserve_key") or "").strip()
+            slot = assign_reserve_to_slot(phase, slot_id, reserve_key)
+            messages.success(request, f"Reserva assignada a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "assign_snapshot_candidate_to_slot":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            candidate_key = str(request.POST.get("candidate_key") or "").strip()
+            slot = assign_snapshot_candidate_to_slot(phase, slot_id, candidate_key)
+            messages.success(request, f"Candidat recuperat a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "assign_inscripcio_to_slot":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            inscripcio_id = int(request.POST.get("inscripcio_id") or 0)
+            slot = assign_inscripcio_to_slot(phase, slot_id, inscripcio_id)
+            messages.success(request, f"Inscripcio assignada manualment a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "mark_slot_withdrawn":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            slot = mark_slot_withdrawn(phase, slot_id)
+            messages.success(request, f"Baixa marcada a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "clear_slot_assignment":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            slot = clear_slot_assignment(phase, slot_id)
+            messages.success(request, f"Plaça buidada a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "delete_program_slot":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            unit, ordre = delete_program_slot(phase, slot_id)
+            messages.success(request, f"Plaça d'ordre {ordre} eliminada de '{unit.nom}'.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "accept_current_qualification_snapshot":
+            preview = accept_current_qualification_snapshot(phase)
+            summary = preview.summary()
+            messages.success(
+                request,
+                f"Snapshot actual validat: {summary['candidates']} participants/reserves i {summary['slots']} places.",
+            )
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
         if action == "preview_group_plan":
             form = PhaseGroupPlanForm(request.POST)
             if not form.is_valid():
@@ -232,12 +363,17 @@ def handle_phase_post(view, request):
             return None, {"qualification_preview": preview_as_dict(preview)}
 
         if action == "apply_qualification":
-            preview = _apply_qualification(phase, replace_existing=False)
+            has_snapshot = _phase_has_applied_snapshot(phase)
+            if has_snapshot and request.POST.get("confirm_regeneration") != "1":
+                messages.error(request, "Cal marcar 'Substituir el snapshot congelat' abans de recalcular-lo.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            preview = _apply_qualification(phase, replace_existing=has_snapshot)
             summary = preview.summary()
+            action_label = "recalculat" if has_snapshot else "congelat"
             messages.success(
                 request,
                 (
-                    f"Snapshot congelat per '{phase.nom}': {summary['candidates']} participants/reserves "
+                    f"Snapshot {action_label} per '{phase.nom}': {summary['candidates']} participants/reserves "
                     f"assignats als slots existents."
                 ),
             )
@@ -257,7 +393,7 @@ def handle_phase_post(view, request):
             preview = _apply_qualification(
                 phase,
                 replace_existing=True,
-                allow_replace_protected=request.POST.get("confirm_replace_protected") == "1",
+                allow_replace_protected=False,
             )
             summary = preview.summary()
             stale_label = "actualitzada" if is_stale else "regenerada"
@@ -276,6 +412,9 @@ def handle_phase_post(view, request):
         messages.error(request, "No s'ha pogut completar l'accio per una restriccio d'unicitat.")
         return view.redirect_to_selected_app(selected_app), {}
     except QualificationError as exc:
+        messages.error(request, str(exc))
+        return view.redirect_to_selected_app(selected_app), {}
+    except SlotOverrideError as exc:
         messages.error(request, str(exc))
         return view.redirect_to_selected_app(selected_app), {}
     except ValueError as exc:

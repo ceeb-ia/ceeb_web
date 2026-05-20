@@ -1,3 +1,5 @@
+{% load static %}
+
 <article class="phase-node">
   <header class="phase-node-header">
     <div>
@@ -8,6 +10,8 @@
         <span class="badge badge-light border">{{ phase.ui_nombre_exercicis }} exercici(s)</span>
         {% if phase.ui_generation_mode == "classification" %}
           <span class="badge badge-success">Generada des de classificacio</span>
+        {% elif phase.ui_unit_count %}
+          <span class="badge badge-light border">{{ phase.ui_unit_count }} unitats</span>
         {% else %}
           <span class="badge badge-light border">Sense unitats</span>
         {% endif %}
@@ -17,13 +21,15 @@
       {% else %}
         <div class="text-muted small">Pare visual: Preliminar implicita</div>
       {% endif %}
-      {% if phase.ui_source_configured or phase.ui_cut_configured %}
-        <div class="text-muted small">
-          Origen: {{ phase.ui_source_label }} · Tall: {{ phase.ui_cut_label }} · {{ phase.ui_partition_label }} · {{ phase.ui_unit_capacity_label }}
-        </div>
-      {% else %}
-        <div class="text-muted small">Origen i tall encara no configurats.</div>
-      {% endif %}
+      <div class="phase-node-overview">
+        <span>{{ phase.ui_unit_count }} unitats</span>
+        <span>{{ phase.ui_competitive_slot_count }}/{{ phase.ui_slot_count }} places assignades</span>
+        {% if phase.ui_pending_unit_count %}
+          <span>{{ phase.ui_pending_unit_count }} pendents de rotacions</span>
+        {% else %}
+          <span>Programacio al dia</span>
+        {% endif %}
+      </div>
     </div>
     <div class="phase-node-controls">
       <div class="phase-unit-statuses">
@@ -34,13 +40,12 @@
         {% else %}
           <span class="badge badge-success">Programacio al dia</span>
         {% endif %}
-        {% if phase.ui_qualification_stale %}
+        {% if phase.ui_qualification_source_changed %}
           <span class="badge badge-danger">Font canviada</span>
+        {% elif phase.ui_qualification_manual_pending %}
+          <span class="badge badge-warning">Snapshot pendent de validar</span>
         {% endif %}
       </div>
-      <button type="button" class="btn btn-sm btn-outline-primary phase-open-actions-btn" data-open-phase-actions>
-        Editar accions
-      </button>
     </div>
   </header>
 
@@ -50,45 +55,155 @@
         {{ phase.ui_group_plan_stale_reason }} Les unitats generades poden no obeir la recepta actual.
       </div>
     {% endif %}
-    <div class="phase-setup-grid">
-      {% for step in phase.ui_setup_steps %}
-        <div class="phase-step-card is-{{ step.state }}">
-          <div class="phase-step-label">{{ step.label }}</div>
-          <div class="phase-step-detail">{{ step.detail }}</div>
+
+    <div class="phase-summary-grid">
+      <section class="phase-summary-card phase-summary-card-source {% if phase.ui_source_configured and phase.ui_cut_configured %}is-ready{% else %}is-pending{% endif %}">
+        <div class="phase-summary-card-head">
+          <div>
+            <div class="phase-summary-kicker">
+              <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+              <span>Configuracio</span>
+            </div>
+            <h6>Origen i tall</h6>
+          </div>
+          {% if phase.ui_source_configured and phase.ui_cut_configured %}
+            <span class="badge phase-badge-blue">Configurat</span>
+          {% else %}
+            <span class="badge badge-light border">Pendent</span>
+          {% endif %}
         </div>
-      {% endfor %}
-    </div>
-    {% if phase.ui_units %}
-      <div class="phase-unit-list">
-        {% for unit in phase.ui_units %}
-          {% include "competicio/fases/_program_unit_row.html" with unit=unit %}
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="text-muted small">Encara no hi ha unitats competitives en aquesta fase. Crear la fase no assigna participants ni defineix cap tall.</div>
-    {% endif %}
-    {% if phase.ui_generated_partitions %}
-      <div class="phase-unit-list mt-2">
-        {% for partition in phase.ui_generated_partitions %}
-          <div class="phase-unit-row">
-            <div>
-              <div class="phase-unit-name">{{ partition.key }}</div>
-              <div class="phase-unit-meta text-muted small">
+        <dl class="phase-summary-list">
+          <div>
+            <dt>Origen</dt>
+            <dd>{{ phase.ui_source_label }}</dd>
+          </div>
+          <div>
+            <dt>Tall</dt>
+            <dd>{{ phase.ui_cut_label }}</dd>
+          </div>
+          <div>
+            <dt>Particio</dt>
+            <dd>{{ phase.ui_partition_label }}</dd>
+          </div>
+          <div>
+            <dt>Empats</dt>
+            <dd>{{ phase.ui_tie_policy_label }}</dd>
+          </div>
+          <div>
+            <dt>Mida unitat</dt>
+            <dd>{{ phase.ui_unit_capacity_label }}</dd>
+          </div>
+        </dl>
+        {% if phase.ui_qualification_source_changed %}
+          <div class="phase-summary-note is-danger">La classificacio font ha canviat.</div>
+        {% elif phase.ui_qualification_manual_pending %}
+          <div class="phase-summary-note">Hi ha canvis manuals pendents de validar.</div>
+        {% elif not phase.ui_source_configured or not phase.ui_cut_configured %}
+          <div class="phase-summary-note">Falta desar origen i regla de tall.</div>
+        {% endif %}
+      </section>
+
+      <section class="phase-summary-card phase-summary-card-units is-wide {% if phase.ui_unit_count %}is-ready{% else %}is-pending{% endif %}">
+        <div class="phase-summary-card-head">
+          <div>
+            <div class="phase-summary-kicker">
+              <img src="{% static 'fases/divisions.png' %}" alt="">
+              <span>Blocs</span>
+            </div>
+            <h6>Unitats i places</h6>
+          </div>
+          <div class="phase-summary-metrics">
+            <span>{{ phase.ui_unit_count }} unitats</span>
+            <span>{{ phase.ui_competitive_slot_count }}/{{ phase.ui_slot_count }} places</span>
+          </div>
+        </div>
+        {% if phase.ui_units %}
+          <div class="phase-unit-list phase-unit-list-embedded">
+            {% for unit in phase.ui_units %}
+              {% include "competicio/fases/_program_unit_row.html" with unit=unit %}
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="phase-summary-empty">
+            <span>Encara no hi ha unitats competitives en aquesta fase.</span>
+            <button type="button" class="btn btn-sm btn-outline-primary phase-open-actions-btn" data-open-phase-actions data-open-phase-panel="groups">
+              Obrir grups
+            </button>
+          </div>
+        {% endif %}
+        {% if phase.ui_generated_partitions %}
+          <div class="phase-partition-strip">
+            {% for partition in phase.ui_generated_partitions %}
+              <div class="phase-partition-chip {% if partition.is_stale %}is-stale{% endif %}">
+                <strong>{{ partition.key }}</strong>
                 <span>{{ partition.status_label }}</span>
-                {% if partition.is_stale %}<span>Font canviada</span>{% endif %}
                 {% if partition.warnings %}<span>{{ partition.warnings|length }} avisos</span>{% endif %}
               </div>
-            </div>
-            <div class="phase-unit-statuses">
-              {% if partition.is_stale %}
-                <span class="badge badge-danger">Stale</span>
-              {% else %}
-                <span class="badge badge-light border">{{ partition.status_label }}</span>
+              {% if partition.warnings %}
+                <div class="phase-partition-warning-list phase-partition-warning-list-compact">
+                  {% for warning in partition.warnings %}
+                    <div>{{ warning }}</div>
+                  {% endfor %}
+                </div>
               {% endif %}
-            </div>
+            {% endfor %}
           </div>
-        {% endfor %}
-      </div>
-    {% endif %}
+        {% endif %}
+      </section>
+
+      <section class="phase-summary-card phase-summary-card-status">
+        <div class="phase-summary-card-head">
+          <div>
+            <div class="phase-summary-kicker">
+              <img src="{% static 'fases/status.png' %}" alt="">
+              <span>Control</span>
+            </div>
+            <h6>Estat</h6>
+          </div>
+          <span class="badge phase-badge-blue">{{ phase.ui_user_status_label }}</span>
+        </div>
+        <div class="phase-status-stack">
+          <div class="phase-status-row">
+            <span>Snapshot</span>
+            {% if phase.ui_has_generated_slots %}
+              <strong>Generat</strong>
+            {% elif phase.ui_unit_count %}
+              <strong>Pendent</strong>
+            {% else %}
+              <strong>Sense unitats</strong>
+            {% endif %}
+          </div>
+          <div class="phase-status-row">
+            <span>Grups</span>
+            {% if phase.ui_group_plan_stale %}
+              <strong class="is-danger">Revisar</strong>
+            {% elif phase.ui_unit_count %}
+              <strong>Preparats</strong>
+            {% else %}
+              <strong>Pendents</strong>
+            {% endif %}
+          </div>
+          <div class="phase-status-row">
+            <span>Rotacions</span>
+            {% if phase.ui_pending_unit_count %}
+              <strong>{{ phase.ui_programmed_unit_count }}/{{ phase.ui_unit_count }}</strong>
+            {% else %}
+              <strong>Al dia</strong>
+            {% endif %}
+          </div>
+          <div class="phase-status-row">
+            <span>Reserves</span>
+            <strong>{{ phase.ui_available_reserve_count|default:0 }} disponibles</strong>
+          </div>
+        </div>
+        {% if phase.ui_phase_alerts %}
+          <div class="phase-alert-chip-list">
+            {% for alert in phase.ui_phase_alerts %}
+              <span class="phase-alert-chip">{{ alert }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </section>
+    </div>
   </div>
 </article>

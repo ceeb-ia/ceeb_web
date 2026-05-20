@@ -8,12 +8,22 @@ from ...models.competicio import (
     CompeticioAparell,
     CompeticioAparellFase,
     FasePartitionState,
+    Inscripcio,
     ProgramUnit,
     ProgramUnitSlot,
 )
 from ...models.rotacions import RotacioAssignacioProgramUnit
 from .group_plan import structural_cut_signature
-from .qualification import QualificationError, qualification_is_stale
+from .logos import available_app_logos_for_competicio, selected_logo_path_for_app
+from .qualification import QualificationError, qualification_is_stale, qualification_source_changed
+from .slot_overrides import (
+    active_subject_refs_for_phase,
+    available_recoverable_options_for_slot,
+    available_reserve_options_for_slot,
+    manual_inscripcio_options_for_phase,
+    recoverable_snapshot_options_for_phase,
+    reserve_options_for_phase,
+)
 
 
 def _time_label(value) -> str:
@@ -53,6 +63,45 @@ def _programming_by_unit(competicio) -> dict[int, list[str]]:
     return dict(labels_by_unit)
 
 
+def _source_row_text(source_row: dict, *keys: str) -> str:
+    if not isinstance(source_row, dict):
+        return ""
+    for key in keys:
+        value = source_row.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    display = source_row.get("display")
+    if isinstance(display, dict):
+        for key in keys:
+            value = display.get(key)
+            if value not in (None, ""):
+                return str(value).strip()
+    cells = source_row.get("cells")
+    if isinstance(cells, dict):
+        for key in keys:
+            value = cells.get(key)
+            if value not in (None, ""):
+                return str(value).strip()
+    return ""
+
+
+def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: dict[int, Inscripcio]) -> None:
+    for slot in slots:
+        source_row = slot.source_row if isinstance(slot.source_row, dict) else {}
+        subject_kind = str(slot.subject_kind or "").strip().lower()
+        subject_id = int(slot.subject_id or 0)
+        label = _source_row_text(source_row, "participant", "nom", "name", "label", "equip_nom")
+        meta = _source_row_text(source_row, "entitat_nom", "entitat", "club", "categoria", "subcategoria")
+        if not label and subject_kind == "inscripcio" and subject_id:
+            inscripcio = inscripcions_by_id.get(subject_id)
+            if inscripcio is not None:
+                label = str(getattr(inscripcio, "nom_i_cognoms", "") or "").strip()
+                meta = str(getattr(inscripcio, "entitat", "") or "").strip()
+        slot.ui_subject_label = label
+        slot.ui_subject_meta = meta
+        slot.ui_subject_fallback = f"{slot.subject_kind}:{slot.subject_id}" if slot.subject_kind and slot.subject_id else ""
+
+
 def _phases_for_comp_aparell(comp_aparell: CompeticioAparell) -> list[CompeticioAparellFase]:
     return list(
         CompeticioAparellFase.objects
@@ -68,7 +117,7 @@ def _phases_for_comp_aparell(comp_aparell: CompeticioAparell) -> list[Competicio
                     .prefetch_related(
                         Prefetch(
                             "slots",
-                            queryset=ProgramUnitSlot.objects.order_by("slot_index", "id"),
+                            queryset=ProgramUnitSlot.objects.order_by("ordre", "slot_index", "id"),
                         )
                     )
                     .order_by("ordre", "id")
@@ -86,6 +135,17 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             child_counts[int(phase.parent_id)] += 1
     for phase in phases:
         units = list(phase.program_units.all())
+        phase_slots = [slot for unit in units for slot in list(unit.slots.all())]
+        inscripcio_ids = {
+            int(slot.subject_id)
+            for slot in phase_slots
+            if str(slot.subject_kind or "").strip().lower() == "inscripcio" and slot.subject_id
+        }
+        inscripcions_by_id = {
+            int(inscripcio.id): inscripcio
+            for inscripcio in Inscripcio.objects.filter(id__in=inscripcio_ids).only("id", "nom_i_cognoms", "entitat")
+        }
+        _decorate_slot_subjects(phase_slots, inscripcions_by_id)
         phase_config = phase.config if isinstance(phase.config, dict) else {}
         source_config = phase_config.get("source") if isinstance(phase_config.get("source"), dict) else {}
         cut_config = phase_config.get("cut") if isinstance(phase_config.get("cut"), dict) else {}
@@ -153,11 +213,28 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_qualification_run_id = qualification_config.get("run_id")
         phase.ui_qualification_snapshot_hash = qualification_config.get("snapshot_hash") or ""
         phase.ui_qualification_stale = False
+        phase.ui_qualification_source_changed = False
+        phase.ui_qualification_manual_pending = False
         if phase.ui_qualification_snapshot_hash:
             try:
                 phase.ui_qualification_stale = qualification_is_stale(phase)
+                phase.ui_qualification_source_changed = qualification_source_changed(phase)
+                phase.ui_qualification_manual_pending = bool(
+                    phase.ui_qualification_stale
+                    and not phase.ui_qualification_source_changed
+                )
             except QualificationError:
                 phase.ui_qualification_stale = True
+                phase.ui_qualification_source_changed = True
+        phase_reserve_options = reserve_options_for_phase(phase)
+        phase_recoverable_options = recoverable_snapshot_options_for_phase(phase)
+        phase_active_subject_refs = active_subject_refs_for_phase(phase)
+        phase.ui_reserve_options = phase_reserve_options
+        phase.ui_recoverable_snapshot_options = phase_recoverable_options
+        phase.ui_manual_inscripcio_options = []
+        phase.ui_available_reserve_count = sum(
+            1 for option in phase_reserve_options if option.subject_ref not in phase_active_subject_refs
+        )
         partition_states = list(phase.partition_states.all())
         phase.ui_partition_states = partition_states
         phase.ui_generated_partitions = [
@@ -168,6 +245,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
                 "confirmed_at": state.confirmed_at,
                 "warnings": list(state.warnings or []),
                 "is_stale": phase.ui_qualification_stale or state.status == FasePartitionState.Status.STALE,
+                "stale_label": "Font canviada" if phase.ui_qualification_source_changed else "Snapshot pendent",
                 "can_confirm": (
                     not phase.ui_qualification_stale
                     and state.status == FasePartitionState.Status.GENERATED
@@ -177,6 +255,20 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         ]
         for unit in units:
             slots = list(unit.slots.all())
+            for slot in slots:
+                active_refs = set(phase_active_subject_refs)
+                if slot.subject_id and slot.status in {ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL}:
+                    active_refs.discard((str(slot.subject_kind or "").strip().lower(), int(slot.subject_id)))
+                slot.ui_reserve_options = available_reserve_options_for_slot(
+                    slot,
+                    phase_reserve_options,
+                    active_refs,
+                )
+                slot.ui_recoverable_options = available_recoverable_options_for_slot(
+                    slot,
+                    phase_recoverable_options,
+                    active_refs,
+                )
             metadata = unit.metadata if isinstance(unit.metadata, dict) else {}
             programmed_labels = programming_by_unit.get(int(unit.id), [])
             unit.ui_programmed_labels = programmed_labels
@@ -189,6 +281,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             )
             unit.ui_empty_slots_count = sum(1 for slot in slots if slot.status == ProgramUnitSlot.Status.EMPTY)
             unit.ui_slot_count = len(slots)
+            unit.ui_has_locked_slots = any(slot.locked for slot in slots)
             unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
             unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
             unit.ui_formation_strategy_label = {
@@ -209,8 +302,10 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_phase_alerts = []
         if phase.ui_group_plan_stale:
             phase.ui_phase_alerts.append("Grups pendents de revisar")
-        if phase.ui_qualification_stale:
+        if phase.ui_qualification_source_changed:
             phase.ui_phase_alerts.append("Font canviada")
+        elif phase.ui_qualification_manual_pending:
+            phase.ui_phase_alerts.append("Snapshot pendent de validar")
         if phase.ui_unit_count and not phase.ui_has_generated_slots:
             phase.ui_phase_alerts.append("Snapshot pendent")
         if not phase.ui_unit_count:
@@ -262,7 +357,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         ]
 
 
-def _app_summary(comp_aparell: CompeticioAparell, phases: list[CompeticioAparellFase]) -> dict:
+def _app_summary(comp_aparell: CompeticioAparell, phases: list[CompeticioAparellFase], logo_choices: list[dict]) -> dict:
     units = [unit for phase in phases for unit in getattr(phase, "ui_units", [])]
     phase_count = len(phases)
     unit_count = len(units)
@@ -288,6 +383,7 @@ def _app_summary(comp_aparell: CompeticioAparell, phases: list[CompeticioAparell
         "pending_unit_count": pending_unit_count,
         "state": state,
         "state_label": state_label,
+        "logo_path": selected_logo_path_for_app(comp_aparell, logo_choices),
     }
 
 
@@ -333,6 +429,7 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
     selected = None
     if comp_aparells:
         selected = next((app for app in comp_aparells if selected_id and int(app.id) == selected_id), None) or comp_aparells[0]
+    app_logo_choices = available_app_logos_for_competicio(competicio)
 
     programming_by_unit = _programming_by_unit(competicio)
     phases_by_app: dict[int, list[CompeticioAparellFase]] = {}
@@ -341,7 +438,7 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         phases = _phases_for_comp_aparell(comp_aparell)
         _decorate_phase_units(phases, programming_by_unit)
         phases_by_app[int(comp_aparell.id)] = phases
-        app_summaries.append(_app_summary(comp_aparell, phases))
+        app_summaries.append(_app_summary(comp_aparell, phases, app_logo_choices))
 
     selected_phases = phases_by_app.get(int(selected.id), []) if selected else []
     requested_phase_id = _positive_int_or_none(selected_phase_id)
@@ -350,6 +447,8 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         None,
     )
     selected_phase_id = int(selected_phase.id) if selected_phase is not None else None
+    if selected_phase is not None:
+        selected_phase.ui_manual_inscripcio_options = manual_inscripcio_options_for_phase(selected_phase)
     root_phases = _attach_phase_tree(selected_phases, selected_phase_id)
     selected_units = [unit for phase in selected_phases for unit in getattr(phase, "ui_units", [])]
     return {
@@ -358,6 +457,7 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         "comp_aparell": selected,
         "selected_app_id": int(selected.id) if selected else None,
         "app_summaries": app_summaries,
+        "app_logo_choices": app_logo_choices,
         "phases": selected_phases,
         "root_phases": root_phases,
         "selected_phase": selected_phase,

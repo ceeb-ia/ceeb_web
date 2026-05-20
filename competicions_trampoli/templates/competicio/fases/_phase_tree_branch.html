@@ -3,48 +3,82 @@
 {% for phase in phases %}
   <li class="phase-tree-li">
     <div class="phase-tree-node-shell">
-      <a class="phase-tree-node {% if phase.ui_is_selected %}is-selected{% endif %}"
-         href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}&phase={{ phase.id }}">
-        <span class="phase-tree-node-main">
-          <span class="phase-tree-node-title">{{ phase.nom }}</span>
-          <span class="phase-tree-node-meta">
-            {{ phase.codi }} - {{ phase.ui_user_status_label }} - {{ phase.ui_unit_count }} unitats - {{ phase.ui_nombre_exercicis }} exercici(s)
+      <div class="phase-tree-node {% if phase.ui_is_selected %}is-selected{% endif %}">
+        <a class="phase-tree-node-link"
+           href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}&phase={{ phase.id }}">
+          <span class="phase-tree-node-main">
+            <span class="phase-tree-title-line">
+              <img class="phase-tree-phase-logo" src="{% static 'fases/avancada.png' %}" alt="">
+              <span class="phase-tree-node-title">{{ phase.nom }}</span>
+            </span>
+            <span class="phase-tree-node-meta">
+              {{ phase.codi }} - {{ phase.ui_user_status_label }} - {{ phase.ui_unit_count }} unitats - {{ phase.ui_nombre_exercicis }} exercici(s)
+            </span>
           </span>
-        </span>
-        <span class="phase-tree-node-badges">
-          {% if phase.ui_group_plan_stale %}
-            <span class="badge badge-danger">Revisar grups</span>
-          {% elif phase.ui_qualification_stale %}
-            <span class="badge badge-danger">Font canviada</span>
-          {% elif phase.ui_generation_mode == "classification" %}
-            <span class="badge badge-success">Tall aplicat</span>
-          {% else %}
-            <span class="badge badge-light border">Sense unitats</span>
-          {% endif %}
-        </span>
-      </a>
-      <div class="phase-tree-node-tools">
-        <a class="btn btn-sm btn-outline-warning phase-themed-btn"
-           href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
-          <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
-          <span>Puntuacio</span>
+          <span class="phase-tree-node-badges">
+            {% if phase.ui_group_plan_stale %}
+              <span class="badge badge-danger">Revisar grups</span>
+            {% elif phase.ui_qualification_source_changed %}
+              <span class="badge badge-danger">Font canviada</span>
+            {% elif phase.ui_qualification_manual_pending %}
+              <span class="badge badge-warning">Snapshot pendent</span>
+            {% elif phase.ui_generation_mode == "classification" %}
+              <span class="badge badge-success">Tall aplicat</span>
+            {% elif phase.ui_unit_count %}
+              {% if phase.ui_programmed_unit_count %}
+                <span class="badge badge-success">{{ phase.ui_programmed_unit_count }}/{{ phase.ui_unit_count }} programades</span>
+              {% else %}
+                <span class="badge badge-light border">{{ phase.ui_unit_count }} unitats</span>
+              {% endif %}
+            {% else %}
+              <span class="badge badge-light border">Sense unitats</span>
+            {% endif %}
+          </span>
         </a>
-        <form method="post" class="phase-exercise-form" title="Exercicis d'aquesta fase">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="update_phase_scoring_settings">
-          <input type="hidden" name="fase_id" value="{{ phase.id }}">
-          <label>
-            <span>Ex.</span>
-            <input class="form-control form-control-sm" type="number" name="nombre_exercicis" min="1" max="5" value="{{ phase.ui_nombre_exercicis }}">
-          </label>
-          <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
-        </form>
+        <details class="phase-node-menu">
+          <summary
+            class="btn btn-sm btn-outline-secondary phase-node-menu-toggle"
+            aria-label="Accions de {{ phase.nom }}"
+            title="Accions de fase">
+            &hellip;
+          </summary>
+          <div class="phase-node-menu-panel">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary phase-node-menu-action"
+              data-open-phase-actions
+              data-open-phase-panel="groups"
+              data-phase-url="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}&phase={{ phase.id }}">
+              <span>Grups i unitats</span>
+            </button>
+            <a class="btn btn-sm btn-outline-warning phase-themed-btn phase-node-menu-action"
+               href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+              <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+              <span>Puntuacio</span>
+            </a>
+            <form method="post" class="phase-exercise-form phase-exercise-form-menu" title="Exercicis d'aquesta fase">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="update_phase_scoring_settings">
+              <input type="hidden" name="fase_id" value="{{ phase.id }}">
+              <label>
+                <span>Exercicis</span>
+                <input class="form-control form-control-sm" type="number" name="nombre_exercicis" min="1" max="5" value="{{ phase.ui_nombre_exercicis }}">
+              </label>
+              <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
+            </form>
+          </div>
+        </details>
+      </div>
+      <div class="phase-tree-node-tools">
         {% include "competicio/fases/_create_child_phase_form.html" with parent_id=phase.id %}
       </div>
     </div>
     {% if phase.ui_units %}
       <details class="phase-tree-units">
-        <summary>{{ phase.ui_unit_count }} unitats programables</summary>
+        <summary>
+          <span>{{ phase.ui_unit_count }} unitats programables</span>
+          <span class="phase-tree-units-arrow" aria-hidden="true"></span>
+        </summary>
         {% if phase.ui_group_plan_stale %}
           <div class="alert alert-warning mb-2">
             {{ phase.ui_group_plan_stale_reason }} Revisa o regenera el pla de grups abans de congelar el snapshot.

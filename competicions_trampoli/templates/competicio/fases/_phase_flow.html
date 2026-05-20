@@ -12,21 +12,47 @@
         <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
         <span>Puntuacio</span>
       </a>
-      <button type="button" class="btn btn-sm btn-outline-primary phase-open-actions-btn" data-open-phase-actions>
-        Accions de fase
-      </button>
     </div>
   </div>
 
   <div class="phase-tree-panel">
     <div class="phase-tree-root">
       <div class="phase-tree-base-shell">
-        <a class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}"
-           href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
-          <span class="phase-tree-base-title">Preliminar implicita</span>
-          <span class="phase-tree-base-meta">Arrel visual · DEFAULT reservat · notes sense fase_id</span>
-        </a>
-        {% include "competicio/fases/_create_child_phase_form.html" with parent_id="" %}
+        <div class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}">
+          <a class="phase-tree-base-link"
+             href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
+            <span class="phase-tree-node-main">
+              <span class="phase-tree-title-line">
+                <img class="phase-tree-phase-logo" src="{% static 'fases/preliminar.png' %}" alt="">
+                <span class="phase-tree-base-title">Preliminar implicita</span>
+              </span>
+              <span class="phase-tree-base-meta">Arrel visual - DEFAULT reservat - {{ comp_aparell.nombre_exercicis }} exercici(s)</span>
+            </span>
+          </a>
+          <details class="phase-node-menu phase-base-menu">
+            <summary
+              class="btn btn-sm btn-outline-secondary phase-node-menu-toggle"
+              aria-label="Accions de la preliminar"
+              title="Accions de la preliminar">
+              &hellip;
+            </summary>
+            <div class="phase-node-menu-panel">
+              <form method="post" class="phase-exercise-form phase-exercise-form-menu phase-base-exercise-form" title="Exercicis de la preliminar">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_base_scoring_settings">
+                <input type="hidden" name="comp_aparell_id" value="{{ comp_aparell.id }}">
+                <label>
+                  <span>Exercicis</span>
+                  <input class="form-control form-control-sm" type="number" name="nombre_exercicis" min="1" max="5" value="{{ comp_aparell.nombre_exercicis }}">
+                </label>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
+              </form>
+            </div>
+          </details>
+        </div>
+        <div class="phase-tree-base-tools">
+          {% include "competicio/fases/_create_child_phase_form.html" with parent_id="" %}
+        </div>
       </div>
     </div>
 

@@ -13,9 +13,16 @@
             <strong>{{ partition.key }}</strong>
             <div class="phase-panel-note">
               {{ partition.status_label }}
-              {% if partition.is_stale %} · Font canviada{% endif %}
-              {% if partition.warnings %} · {{ partition.warnings|length }} avisos{% endif %}
+              {% if partition.is_stale %} - {{ partition.stale_label }}{% endif %}
+              {% if partition.warnings %} - {{ partition.warnings|length }} avisos{% endif %}
             </div>
+            {% if partition.warnings %}
+              <div class="phase-partition-warning-list">
+                {% for warning in partition.warnings %}
+                  <div>{{ warning }}</div>
+                {% endfor %}
+              </div>
+            {% endif %}
           </div>
           {% if partition.can_confirm %}
             <form method="post">

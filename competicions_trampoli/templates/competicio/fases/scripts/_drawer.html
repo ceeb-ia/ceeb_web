@@ -82,9 +82,19 @@
       const savedAt = Number(payload.savedAt);
       const isFresh = Number.isFinite(savedAt) && Date.now() - savedAt < 15000;
       if (!Number.isFinite(y) || y < 0 || !isFresh) return;
-      requestAnimationFrame(() => {
+      const restore = () => {
         window.scrollTo({ top: y, left: 0, behavior: 'auto' });
-      });
+      };
+      requestAnimationFrame(() => requestAnimationFrame(restore));
+      window.setTimeout(restore, 120);
+    }
+
+    function normalizeSearchText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
     }
 
     function setActiveDrawerPanel(panelKey, options) {
@@ -118,6 +128,138 @@
       }
     }
 
+    function closeOtherSlotMenus(current) {
+      document.querySelectorAll('.phase-slot-actions[open]').forEach((details) => {
+        if (details !== current) {
+          details.removeAttribute('open');
+        }
+      });
+    }
+
+    function positionSlotMenu(details) {
+      const summary = details.querySelector(':scope > summary');
+      const menu = details.querySelector(':scope > .phase-slot-actions-menu');
+      if (!summary || !menu || !details.open) return;
+
+      const rect = summary.getBoundingClientRect();
+      const gap = 8;
+      const viewportPadding = 12;
+      const menuWidth = Math.min(340, Math.max(280, window.innerWidth - (viewportPadding * 2)));
+      const left = Math.min(
+        Math.max(viewportPadding, rect.right - menuWidth),
+        Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding)
+      );
+      const spaceBelow = window.innerHeight - rect.bottom - gap - viewportPadding;
+      const spaceAbove = rect.top - gap - viewportPadding;
+      const openAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(220, Math.min(520, openAbove ? spaceAbove : spaceBelow));
+      const top = openAbove ? Math.max(viewportPadding, rect.top - gap - maxHeight) : rect.bottom + gap;
+
+      menu.classList.add('is-floating');
+      menu.style.setProperty('--phase-slot-menu-left', `${left}px`);
+      menu.style.setProperty('--phase-slot-menu-top', `${top}px`);
+      menu.style.setProperty('--phase-slot-menu-max-height', `${maxHeight}px`);
+      menu.style.width = `${menuWidth}px`;
+    }
+
+    function clearSlotMenuPosition(details) {
+      const menu = details.querySelector(':scope > .phase-slot-actions-menu');
+      if (!menu) return;
+      menu.classList.remove('is-floating');
+      menu.style.removeProperty('--phase-slot-menu-left');
+      menu.style.removeProperty('--phase-slot-menu-top');
+      menu.style.removeProperty('--phase-slot-menu-max-height');
+      menu.style.removeProperty('width');
+    }
+
+    function repositionOpenSlotMenus() {
+      document.querySelectorAll('.phase-slot-actions[open]').forEach(positionSlotMenu);
+    }
+
+    function slotOrderWorkspace(id) {
+      return id ? document.getElementById(id) : null;
+    }
+
+    function slotOrderBackdrop(id) {
+      if (!id) return null;
+      return Array.from(document.querySelectorAll('[data-slot-order-backdrop]'))
+        .find((node) => node.getAttribute('data-slot-order-backdrop') === id) || null;
+    }
+
+    function refreshSlotOrderIndexes(workspace) {
+      if (!workspace) return;
+      workspace.querySelectorAll('[data-slot-order-item]').forEach((item, index) => {
+        const label = item.querySelector('[data-slot-order-index]');
+        if (label) label.textContent = String(index + 1);
+      });
+    }
+
+    function serializeSlotOrder(form) {
+      const input = form.querySelector('[data-slot-order-input]');
+      const list = form.querySelector('[data-slot-order-list]');
+      if (!input || !list) return;
+      input.value = Array.from(list.querySelectorAll('[data-slot-order-item]'))
+        .map((item) => item.getAttribute('data-slot-id'))
+        .filter(Boolean)
+        .join(',');
+    }
+
+    function openSlotOrderWorkspace(id) {
+      const workspace = slotOrderWorkspace(id);
+      if (!workspace) return;
+      closeOtherSlotMenus(null);
+      workspace.hidden = false;
+      const backdrop = slotOrderBackdrop(id);
+      if (backdrop) backdrop.hidden = false;
+      document.body.classList.add('phase-slot-order-open');
+      refreshSlotOrderIndexes(workspace);
+      const search = workspace.querySelector('[data-slot-order-filter]');
+      if (search) {
+        search.value = '';
+        search.focus();
+      }
+      workspace.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+        item.hidden = false;
+      });
+    }
+
+    function closeSlotOrderWorkspace(id) {
+      const workspace = slotOrderWorkspace(id);
+      if (workspace) workspace.hidden = true;
+      const backdrop = slotOrderBackdrop(id);
+      if (backdrop) backdrop.hidden = true;
+      if (!document.querySelector('[data-slot-order-workspace]:not([hidden])')) {
+        document.body.classList.remove('phase-slot-order-open');
+      }
+    }
+
+    function moveSlotOrderItem(item, direction) {
+      if (!item) return;
+      const list = item.closest('[data-slot-order-list]');
+      if (!list) return;
+      if (direction === 'up') {
+        const prev = item.previousElementSibling;
+        if (prev) list.insertBefore(item, prev);
+      } else if (direction === 'down') {
+        const next = item.nextElementSibling;
+        if (next) list.insertBefore(next, item);
+      }
+      refreshSlotOrderIndexes(item.closest('[data-slot-order-workspace]'));
+      item.focus?.();
+    }
+
+    function dragAfterElement(container, y) {
+      const candidates = Array.from(container.querySelectorAll('[data-slot-order-item]:not(.is-dragging):not([hidden])'));
+      return candidates.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          return { offset, element: child };
+        }
+        return closest;
+      }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+
     toggle.addEventListener('click', () => {
       setDrawerOpen(!root.classList.contains('is-drawer-open'));
     });
@@ -127,9 +269,35 @@
       if (event.key === 'Escape' && root.classList.contains('is-drawer-open')) {
         setDrawerOpen(false);
       }
+      if (event.key === 'Escape') {
+        closeOtherSlotMenus(null);
+        document.querySelectorAll('[data-slot-order-workspace]:not([hidden])').forEach((workspace) => {
+          closeSlotOrderWorkspace(workspace.id);
+        });
+      }
+    });
+    document.addEventListener('click', (event) => {
+      const openMenu = event.target.closest('.phase-slot-actions[open]');
+      if (openMenu) return;
+      closeOtherSlotMenus(null);
     });
     document.querySelectorAll('[data-open-phase-actions]').forEach((button) => {
-      button.addEventListener('click', () => setDrawerOpen(true));
+      button.addEventListener('click', () => {
+        const panelTarget = button.getAttribute('data-open-phase-panel');
+        const phaseUrl = button.getAttribute('data-phase-url');
+        setDrawerOpen(true);
+        if (panelTarget) {
+          setActiveDrawerPanel(panelTarget);
+        }
+        if (phaseUrl) {
+          const target = new URL(phaseUrl, window.location.href);
+          const current = new URL(window.location.href);
+          if (target.pathname !== current.pathname || target.search !== current.search) {
+            saveScrollPosition();
+            window.location.href = target.toString();
+          }
+        }
+      });
     });
     document.querySelectorAll('[data-phase-panel-target]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -139,8 +307,95 @@
     document.querySelectorAll('.phase-tree-node, .phase-tree-base').forEach((link) => {
       link.addEventListener('click', saveScrollPosition);
     });
-    document.querySelectorAll('.phase-child-create-form, .phase-drawer-body form').forEach((form) => {
+    document.querySelectorAll('.phase-child-create-form, .phase-drawer-body form, .phase-base-exercise-form').forEach((form) => {
       form.addEventListener('submit', saveScrollPosition);
+    });
+    document.querySelectorAll('.phase-slot-actions form').forEach((form) => {
+      form.addEventListener('submit', saveScrollPosition);
+    });
+    root.addEventListener('submit', saveScrollPosition, true);
+    document.querySelectorAll('.phase-slot-actions').forEach((details) => {
+      details.addEventListener('toggle', () => {
+        if (details.open) {
+          closeOtherSlotMenus(details);
+          positionSlotMenu(details);
+        } else {
+          clearSlotMenuPosition(details);
+        }
+      });
+    });
+    window.addEventListener('resize', repositionOpenSlotMenus);
+    window.addEventListener('scroll', repositionOpenSlotMenus, true);
+    document.querySelectorAll('[data-slot-manual-filter]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const slotId = input.getAttribute('data-slot-manual-filter');
+        const select = document.getElementById(`manual-inscripcio-${slotId}`);
+        if (!select) return;
+        const needle = normalizeSearchText(input.value);
+        Array.from(select.options).forEach((option, index) => {
+          if (index === 0) {
+            option.hidden = false;
+            return;
+          }
+          option.hidden = !!needle && !normalizeSearchText(option.textContent).includes(needle);
+        });
+      });
+    });
+    document.querySelectorAll('[data-open-slot-order-workspace]').forEach((button) => {
+      button.addEventListener('click', () => {
+        openSlotOrderWorkspace(button.getAttribute('data-open-slot-order-workspace'));
+      });
+    });
+    document.querySelectorAll('[data-close-slot-order-workspace]').forEach((button) => {
+      button.addEventListener('click', () => {
+        closeSlotOrderWorkspace(button.getAttribute('data-close-slot-order-workspace'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-backdrop]').forEach((backdrop) => {
+      backdrop.addEventListener('click', () => {
+        closeSlotOrderWorkspace(backdrop.getAttribute('data-slot-order-backdrop'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-form]').forEach((form) => {
+      form.addEventListener('submit', () => serializeSlotOrder(form));
+    });
+    document.querySelectorAll('[data-slot-order-filter]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const workspace = slotOrderWorkspace(input.getAttribute('data-slot-order-filter'));
+        if (!workspace) return;
+        const needle = normalizeSearchText(input.value);
+        workspace.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+          const text = item.getAttribute('data-search-text') || item.textContent || '';
+          item.hidden = !!needle && !normalizeSearchText(text).includes(needle);
+        });
+      });
+    });
+    document.querySelectorAll('[data-slot-order-move]').forEach((button) => {
+      button.addEventListener('click', () => {
+        moveSlotOrderItem(button.closest('[data-slot-order-item]'), button.getAttribute('data-slot-order-move'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+      item.addEventListener('dragstart', () => {
+        item.classList.add('is-dragging');
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('is-dragging');
+        refreshSlotOrderIndexes(item.closest('[data-slot-order-workspace]'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-list]').forEach((list) => {
+      list.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        const dragging = list.querySelector('.is-dragging');
+        if (!dragging) return;
+        const after = dragAfterElement(list, event.clientY);
+        if (after == null) {
+          list.appendChild(dragging);
+        } else {
+          list.insertBefore(dragging, after);
+        }
+      });
     });
 
     setDrawerOpen(getInitialOpenState(), { skipSave: true });

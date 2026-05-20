@@ -1,27 +1,47 @@
 <section class="phase-panel">
   <div class="phase-panel-title">
     <h5>Snapshot de la fase</h5>
-    <span class="badge badge-light border">Previ a activar</span>
+    {% if selected_phase.ui_qualification_run_id %}
+      <span class="badge badge-light border">Ja congelat</span>
+    {% else %}
+      <span class="badge badge-light border">Previ a activar</span>
+    {% endif %}
   </div>
   <div class="phase-panel-note mb-2">
     Requereix unitats ja generades a Grups. Previsualitza qui ompliria els slots existents i congela aquesta assignacio.
   </div>
   <div class="phase-action-stack">
+    {% if selected_phase.ui_qualification_manual_pending %}
+      <form method="post" onsubmit="return confirm('Validar el snapshot actual amb els canvis manuals?');">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="accept_current_qualification_snapshot">
+        <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+        <button class="btn btn-sm btn-outline-success" type="submit">Validar snapshot actual</button>
+      </form>
+    {% endif %}
     <form method="post">
       {% csrf_token %}
       <input type="hidden" name="action" value="preview_qualification">
       <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
       <button class="btn btn-sm btn-outline-primary" type="submit">Previsualitzar snapshot</button>
     </form>
-    <form method="post" onsubmit="return confirm('Congelar el snapshot de la fase amb la configuracio actual?');">
+    <form method="post" onsubmit="return confirm('Aplicar el snapshot de la fase amb la configuracio actual?');">
       {% csrf_token %}
       <input type="hidden" name="action" value="apply_qualification">
       <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
-      <button class="btn btn-sm btn-primary" type="submit">Congelar snapshot</button>
+      {% if selected_phase.ui_qualification_run_id %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" id="confirm-regeneration" type="checkbox" name="confirm_regeneration" value="1">
+          <label class="form-check-label" for="confirm-regeneration">Substituir el snapshot congelat</label>
+        </div>
+      {% endif %}
+      <button class="btn btn-sm btn-primary" type="submit">
+        {% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}
+      </button>
     </form>
   </div>
   <div class="phase-panel-note mt-2">
-    Aquesta accio no defineix l'estructura de grups: nomes omple slots existents amb classificats i reserves.
+    Aquesta accio no defineix l'estructura de grups: omple slots existents amb classificats i conserva les reserves per a substitucions manuals.
   </div>
   {% if qualification_preview %}
     <div class="phase-panel-note mt-3">
@@ -38,28 +58,4 @@
       </div>
     {% endif %}
   {% endif %}
-</section>
-
-<section class="phase-panel is-muted">
-  <div class="phase-panel-title">
-    <h5>Recalcular snapshot</h5>
-    <span class="badge badge-light border">Doble validacio</span>
-  </div>
-  <div class="phase-panel-note mb-2">
-    Si la recepta o les unitats generades han canviat despres de congelar, cal confirmar explicitament que vols omplir de nou els slots existents.
-  </div>
-  <form method="post" onsubmit="return confirm('Recalcular i substituir el snapshot existent?');">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="regenerate_qualification">
-    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
-    <div class="form-check mb-2">
-      <input class="form-check-input" id="confirm-regeneration" type="checkbox" name="confirm_regeneration" value="1" required>
-      <label class="form-check-label" for="confirm-regeneration">Substituir el snapshot congelat</label>
-    </div>
-    <div class="form-check mb-2">
-      <input class="form-check-input" id="confirm-replace-protected" type="checkbox" name="confirm_replace_protected" value="1">
-      <label class="form-check-label" for="confirm-replace-protected">Incloure canvis manuals protegits</label>
-    </div>
-    <button class="btn btn-sm btn-outline-danger" type="submit">Recalcular snapshot</button>
-  </form>
 </section>

@@ -3,19 +3,38 @@
 {% if app_summaries %}
   <nav class="phase-app-tabs" aria-label="Aparells amb fases">
     {% for summary in app_summaries %}
-      <a class="phase-app-tab {% if summary.app.id == selected_app_id %}is-active{% endif %}"
-         href="{% url 'trampoli_fases' competicio.id %}?app={{ summary.app.id }}">
+      <div class="phase-app-tab {% if summary.app.id == selected_app_id %}is-active{% endif %}">
         <span class="phase-app-tab-media">
-          <img class="phase-app-tab-logo" src="{% static 'fases/aparells.png' %}" alt="">
-          <span class="phase-app-tab-copy">
+          <span class="phase-app-logo-picker">
+            <details>
+              <summary title="Canviar logo de {{ summary.app.display_nom }}">
+                <img class="phase-app-tab-logo" src="{% static summary.logo_path %}" alt="">
+              </summary>
+              <div class="phase-app-logo-menu">
+                {% for logo in app_logo_choices %}
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_app_phase_logo">
+                    <input type="hidden" name="comp_aparell_id" value="{{ summary.app.id }}">
+                    <input type="hidden" name="logo_path" value="{{ logo.path }}">
+                    <button class="phase-app-logo-choice {% if logo.path == summary.logo_path %}is-selected{% endif %}" type="submit" title="{{ logo.label }}">
+                      <img src="{% static logo.path %}" alt="">
+                      <span>{{ logo.label }}</span>
+                    </button>
+                  </form>
+                {% endfor %}
+              </div>
+            </details>
+          </span>
+          <a class="phase-app-tab-copy" href="{% url 'trampoli_fases' competicio.id %}?app={{ summary.app.id }}">
             <span class="phase-app-tab-kicker">{{ summary.app.display_codi }}</span>
             <span class="phase-app-tab-title">{{ summary.app.display_nom }}</span>
             <span class="phase-app-tab-detail">
-              {{ summary.phase_count }} fases · {{ summary.unit_count }} unitats · {{ summary.state_label }}
+              {{ summary.phase_count }} fases - {{ summary.unit_count }} unitats - {{ summary.state_label }}
             </span>
-          </span>
+          </a>
         </span>
-      </a>
+      </div>
     {% endfor %}
     <a class="phase-app-tab phase-app-tab-add" href="{% url 'trampoli_aparells_list' competicio.id %}">
       <span class="phase-app-tab-media">

@@ -23,18 +23,202 @@
       </div>
       <div class="phase-slot-list">
         {% for slot in unit.slots.all %}
-          <span class="phase-slot-chip {% if slot.status != 'empty' %}is-filled{% else %}is-empty{% endif %}">
-            Plaça {{ slot.slot_index }} · {{ slot.get_status_display }}{% if slot.subject_kind %} · {{ slot.subject_kind }}:{{ slot.subject_id }}{% endif %}
-          </span>
+          <div class="phase-slot-chip {% if slot.status == 'withdrawn' %}is-withdrawn{% elif slot.status != 'empty' %}is-filled{% else %}is-empty{% endif %}">
+            <span class="phase-slot-chip-main">
+              Ordre {{ slot.ordre }} - {{ slot.get_status_display }}{% if slot.ui_subject_label %} - {{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %} - {{ slot.ui_subject_fallback }}{% endif %}
+              {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
+            </span>
+            {% if not slot.locked %}
+              <details class="phase-slot-actions">
+                <summary title="Accions de plaça">...</summary>
+                <div class="phase-slot-actions-menu">
+                  {% if slot.status != 'empty' %}
+                    {% if slot.status != 'withdrawn' %}
+                      <form method="post" onsubmit="return confirm('Marcar aquesta plaça com a baixa?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="mark_slot_withdrawn">
+                        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                        <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                        <button class="btn btn-sm btn-outline-warning" type="submit">Marcar baixa</button>
+                      </form>
+                    {% endif %}
+                    <form method="post" onsubmit="return confirm('Buidar aquesta plaça?');">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="clear_slot_assignment">
+                      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                      <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                      <button class="btn btn-sm btn-outline-secondary" type="submit">Buidar plaça</button>
+                    </form>
+                  {% endif %}
+                  {% if slot.status != 'empty' %}
+                    <div class="phase-slot-delete-warning">Eliminar aquesta plaça també elimina l'assignació actual.</div>
+                  {% endif %}
+                  <form method="post" onsubmit="return confirm('{% if slot.status != 'empty' %}Aquesta plaça esta ocupada o marcada amb estat. Si l elimines, es perdra aquesta assignacio. Vols continuar?{% else %}Eliminar aquesta plaça buida?{% endif %}');">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_program_slot">
+                    <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                    <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar plaça</button>
+                  </form>
+                  {% if slot.ui_reserve_options %}
+                    <div class="phase-slot-reserve-list">
+                      <div class="phase-slot-actions-note">
+                        {% if slot.status == 'empty' or slot.status == 'withdrawn' %}Assignar reserva{% else %}Substituir per reserva{% endif %}
+                      </div>
+                      {% for reserve in slot.ui_reserve_options %}
+                        <form method="post">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="assign_reserve_to_slot">
+                          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                          <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                          <input type="hidden" name="reserve_key" value="{{ reserve.key }}">
+                          <button class="phase-slot-reserve-choice" type="submit" title="{{ reserve.label }}{% if reserve.meta %} - {{ reserve.meta }}{% endif %}">
+                            <span>{{ reserve.label }}</span>
+                            {% if reserve.meta %}<small>{{ reserve.meta }}</small>{% endif %}
+                          </button>
+                        </form>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  {% if slot.ui_recoverable_options %}
+                    <div class="phase-slot-reserve-list">
+                      <div class="phase-slot-actions-note">Recuperar classificats retirats del snapshot</div>
+                      {% for candidate in slot.ui_recoverable_options %}
+                        <form method="post">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="assign_snapshot_candidate_to_slot">
+                          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                          <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                          <input type="hidden" name="candidate_key" value="{{ candidate.key }}">
+                          <button class="phase-slot-reserve-choice" type="submit" title="{{ candidate.label }}{% if candidate.meta %} - {{ candidate.meta }}{% endif %}">
+                            <span>{{ candidate.label }}</span>
+                            {% if candidate.meta %}<small>{{ candidate.meta }}</small>{% endif %}
+                          </button>
+                        </form>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  {% if not slot.ui_reserve_options and not slot.ui_recoverable_options %}
+                    <div class="phase-slot-actions-note">Sense reserves ni candidats recuperables</div>
+                  {% endif %}
+                  <details class="phase-slot-manual-workspace">
+                    <summary>Assignacio manual</summary>
+                    <form method="post" class="phase-slot-manual-form">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="assign_inscripcio_to_slot">
+                      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                      <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                      <label for="manual-inscripcio-{{ slot.id }}">Cerca i tria inscripcio</label>
+                      <input
+                        class="form-control form-control-sm"
+                        type="search"
+                        data-slot-manual-filter="{{ slot.id }}"
+                        placeholder="Filtra per nom, entitat o categoria">
+                      <select class="form-select form-select-sm" id="manual-inscripcio-{{ slot.id }}" name="inscripcio_id" required>
+                        <option value="">Selecciona una inscripcio</option>
+                        {% for option in phase.ui_manual_inscripcio_options %}
+                          <option value="{{ option.inscripcio_id }}" {% if option.assigned %}disabled{% endif %}>
+                            {{ option.label }}{% if option.meta %} - {{ option.meta }}{% endif %}{% if option.assigned %} - ja assignada{% endif %}{% if option.excluded_from_app %} - exclosa de l'aparell{% endif %}
+                          </option>
+                        {% endfor %}
+                      </select>
+                      <button class="btn btn-sm btn-outline-primary" type="submit">Assignar inscripcio</button>
+                    </form>
+                    <div class="phase-slot-actions-note">Aquesta assignacio queda marcada com a manual.</div>
+                  </details>
+                </div>
+              </details>
+            {% endif %}
+          </div>
         {% endfor %}
       </div>
     {% endif %}
   </div>
   <div class="phase-unit-statuses">
+    {% if unit.slots.all %}
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-open-slot-order-workspace="slot-order-workspace-{{ unit.id }}" {% if unit.ui_has_locked_slots %}disabled title="No es pot ordenar una unitat amb places bloquejades"{% endif %}>
+        Ordenar places
+      </button>
+    {% endif %}
+    <form method="post" class="phase-unit-add-slot-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_extra_program_slot">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Afegir plaça</button>
+    </form>
     {% if unit.ui_is_programmed %}
       <span class="badge badge-success">Programat</span>
     {% else %}
       <span class="badge badge-warning">Pendent de programar</span>
+      <form method="post" class="phase-unit-delete-inline" onsubmit="return confirm('Eliminar aquesta unitat programable?');">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_program_unit">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+      </form>
     {% endif %}
   </div>
 </div>
+
+{% if unit.slots.all %}
+  <div class="phase-slot-order-backdrop" data-slot-order-backdrop="slot-order-workspace-{{ unit.id }}" hidden></div>
+  <section
+    class="phase-slot-order-workspace"
+    id="slot-order-workspace-{{ unit.id }}"
+    data-slot-order-workspace
+    hidden
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="slot-order-title-{{ unit.id }}">
+    <div class="phase-slot-order-head">
+      <div>
+        <div class="phase-slot-order-kicker">Ordre custom</div>
+        <h6 id="slot-order-title-{{ unit.id }}">{{ unit.nom }}</h6>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-close-slot-order-workspace="slot-order-workspace-{{ unit.id }}">Tancar</button>
+    </div>
+    <div class="phase-slot-order-toolbar">
+      <input
+        class="form-control form-control-sm"
+        type="search"
+        data-slot-order-filter="slot-order-workspace-{{ unit.id }}"
+        placeholder="Cerca per ordre, estat, participant, entitat o categoria">
+      <span class="phase-slot-actions-note">{{ unit.ui_slot_count }} places</span>
+    </div>
+    <form method="post" class="phase-slot-order-form" data-slot-order-form>
+      {% csrf_token %}
+      <input type="hidden" name="action" value="reorder_program_unit_slots">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <input type="hidden" name="slot_order" value="" data-slot-order-input>
+      <div class="phase-slot-order-list" data-slot-order-list>
+        {% for slot in unit.slots.all %}
+          <article
+            class="phase-slot-order-item"
+            draggable="{% if slot.locked %}false{% else %}true{% endif %}"
+            data-slot-order-item
+            data-slot-id="{{ slot.id }}"
+            data-search-text="ordre {{ slot.ordre }} {{ slot.get_status_display }} {{ slot.ui_subject_label }} {{ slot.ui_subject_meta }} {{ slot.ui_subject_fallback }}">
+            <span class="phase-slot-order-handle" aria-hidden="true">::</span>
+            <span class="phase-slot-order-index" data-slot-order-index>{{ forloop.counter }}</span>
+            <span class="phase-slot-order-main">
+              <strong>{{ slot.get_status_display }}{% if slot.locked %} · bloquejada{% endif %}</strong>
+              <span>{% if slot.ui_subject_label %}{{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %}{{ slot.ui_subject_fallback }}{% else %}Plaça buida{% endif %}</span>
+              {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
+            </span>
+            <span class="phase-slot-order-actions">
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="up" title="Pujar">↑</button>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="down" title="Baixar">↓</button>
+            </span>
+          </article>
+        {% endfor %}
+      </div>
+      <div class="phase-slot-order-footer">
+        <button class="btn btn-sm btn-primary" type="submit">Desar ordre</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-close-slot-order-workspace="slot-order-workspace-{{ unit.id }}">Cancel·lar</button>
+      </div>
+    </form>
+  </section>
+{% endif %}

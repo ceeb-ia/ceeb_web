@@ -24,6 +24,13 @@
     {% if unit.ui_programmed_labels %}
       <span>{{ unit.ui_programmed_labels|length }} franja/es</span>
     {% endif %}
+    <form method="post" class="phase-unit-add-slot-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_extra_program_slot">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Afegir plaça</button>
+    </form>
   </div>
 
   <details class="phase-program-unit-edit">
@@ -51,5 +58,14 @@
       </label>
       <button class="btn btn-sm btn-outline-primary" type="submit">Desar unitat</button>
     </form>
+    {% if not unit.ui_is_programmed %}
+      <form method="post" class="phase-program-unit-delete-form" onsubmit="return confirm('Eliminar aquesta unitat programable?');">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_program_unit">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar unitat</button>
+      </form>
+    {% endif %}
   </details>
 </article>

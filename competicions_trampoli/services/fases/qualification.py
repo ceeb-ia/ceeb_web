@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from ...models.classificacions import ClassificacioConfig
 from ...models.competicio import (
@@ -504,8 +505,8 @@ def _candidate_units_for_partition(
 def _slots_for_unit(unit: ProgramUnit) -> list[ProgramUnitSlot]:
     prefetched = getattr(unit, "_prefetched_objects_cache", {}).get("slots")
     if prefetched is not None:
-        return sorted(prefetched, key=lambda slot: (slot.slot_index, slot.id or 0))
-    return list(unit.slots.order_by("slot_index", "id"))
+        return sorted(prefetched, key=lambda slot: (slot.ordre, slot.slot_index, slot.id or 0))
+    return list(unit.slots.order_by("ordre", "slot_index", "id"))
 
 
 def _qualification_group_settings(fase: CompeticioAparellFase) -> dict:
@@ -903,6 +904,54 @@ def qualification_is_stale(fase: CompeticioAparellFase) -> bool:
         return True
 
 
+def qualification_source_changed(fase: CompeticioAparellFase) -> bool:
+    config = fase.config if isinstance(fase.config, dict) else {}
+    qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+    source_classificacio_id = qualification.get("source_classificacio_id")
+    generated_at_raw = str(qualification.get("generated_at") or "").strip()
+    if not source_classificacio_id or not generated_at_raw:
+        return False
+    generated_at = parse_datetime(generated_at_raw)
+    if generated_at is None:
+        return False
+    classificacio = ClassificacioConfig.objects.filter(id=source_classificacio_id).only("id", "updated_at").first()
+    if classificacio is None:
+        return True
+    return bool(classificacio.updated_at and classificacio.updated_at > generated_at)
+
+
+def accept_current_qualification_snapshot(fase: CompeticioAparellFase) -> QualificationPreview:
+    if qualification_source_changed(fase):
+        raise QualificationError("La classificacio font ha canviat. Recalcula el snapshot abans de validar-lo.")
+    preview = preview_qualification(fase)
+    now = timezone.now()
+    with transaction.atomic():
+        run = _create_run(preview, status=QualificationRun.Status.APPLIED, applied_at=now)
+        config = fase.config if isinstance(fase.config, dict) else {}
+        old_qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+        config["qualification"] = {
+            **old_qualification,
+            "run_id": run.id,
+            "source_classificacio_id": preview.classificacio.id,
+            "source_phase_id": preview.source_phase.id if preview.source_phase else None,
+            "snapshot_hash": preview.snapshot_hash,
+            "generated_at": now.isoformat(),
+            "validated_at": now.isoformat(),
+            "manual_validated": True,
+            "summary": preview.summary(),
+            "warnings": list(preview.warnings),
+            "partitions": _partition_keys_for_preview(preview),
+            "stale": False,
+        }
+        fase.config = config
+        if fase.estat == CompeticioAparellFase.Estat.STALE:
+            fase.estat = CompeticioAparellFase.Estat.GENERATED
+            fase.save(update_fields=["config", "estat", "updated_at"])
+        else:
+            fase.save(update_fields=["config", "updated_at"])
+    return preview
+
+
 def mark_qualification_stale_if_needed(fase: CompeticioAparellFase) -> bool:
     if not qualification_is_stale(fase):
         return False
@@ -984,11 +1033,13 @@ __all__ = [
     "QualificationError",
     "QualificationPreview",
     "QualificationUnitPreview",
+    "accept_current_qualification_snapshot",
     "apply_qualification",
     "confirm_qualification_partition",
     "mark_qualification_stale_if_needed",
     "preview_as_dict",
     "preview_qualification",
+    "qualification_source_changed",
     "qualification_is_stale",
     "record_qualification_preview",
 ]

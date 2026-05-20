@@ -33,7 +33,7 @@ def phase_planner_context(comp_aparell: CompeticioAparell) -> dict:
                     .prefetch_related(
                         Prefetch(
                             "slots",
-                            queryset=ProgramUnitSlot.objects.order_by("slot_index", "id"),
+                            queryset=ProgramUnitSlot.objects.order_by("ordre", "slot_index", "id"),
                         )
                     )
                     .order_by("ordre", "id")
@@ -164,7 +164,7 @@ def update_program_unit_for_phase(fase: CompeticioAparellFase, form) -> ProgramU
     unit_id = int(form.cleaned_data["unit_id"])
     unit = ProgramUnit.objects.get(fase=fase, id=unit_id)
     new_capacity = int(form.cleaned_data["capacity"])
-    old_slots = list(unit.slots.order_by("slot_index", "id"))
+    old_slots = list(unit.slots.order_by("ordre", "slot_index", "id"))
     old_capacity = len(old_slots)
     if new_capacity < old_capacity:
         removable = [
@@ -178,15 +178,19 @@ def update_program_unit_for_phase(fase: CompeticioAparellFase, form) -> ProgramU
             slot.delete()
     elif new_capacity > old_capacity:
         max_slot_index = max([slot.slot_index for slot in old_slots] or [0])
+        max_ordre = max([slot.ordre for slot in old_slots] or [0])
         ProgramUnitSlot.objects.bulk_create(
             [
                 ProgramUnitSlot(
                     unit=unit,
                     slot_index=index,
-                    ordre=index,
+                    ordre=max_ordre + offset,
                     status=ProgramUnitSlot.Status.EMPTY,
                 )
-                for index in range(max_slot_index + 1, max_slot_index + (new_capacity - old_capacity) + 1)
+                for offset, index in enumerate(
+                    range(max_slot_index + 1, max_slot_index + (new_capacity - old_capacity) + 1),
+                    start=1,
+                )
             ]
         )
 

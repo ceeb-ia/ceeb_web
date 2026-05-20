@@ -9,6 +9,7 @@ class Competicio(models.Model):
         PATINATGE = "patinatge", "Patinatge"
         TRAMPOLI = "trampoli", "Gimnàstica trampolí"
         ARTISTICA = "artistica", "Gimnàstica artística"
+        RITMICA = "ritmica", "Gimnastica ritmica"
     nom = models.CharField(max_length=255)
     data = models.DateField(blank=True, null=True)
     tipus = models.CharField(max_length=20, choices=Tipus.choices, default=Tipus.TRAMPOLI)
