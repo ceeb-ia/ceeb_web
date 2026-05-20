@@ -4,7 +4,7 @@
     <span class="badge badge-light border">Previ a activar</span>
   </div>
   <div class="phase-panel-note mb-2">
-    Previsualitza qui entraria segons la recepta i l'estructura actual. Congelar fixa el snapshot per poder avançar el flux de competicio.
+    Requereix unitats ja generades a Grups. Previsualitza qui ompliria els slots existents i congela aquesta assignacio.
   </div>
   <div class="phase-action-stack">
     <form method="post">
@@ -21,14 +21,14 @@
     </form>
   </div>
   <div class="phase-panel-note mt-2">
-    Nota tecnica: actualment aquesta accio encara omple les unitats programables existents/generades al backend.
+    Aquesta accio no defineix l'estructura de grups: nomes omple slots existents amb classificats i reserves.
   </div>
   {% if qualification_preview %}
     <div class="phase-panel-note mt-3">
       <strong>Preview:</strong>
       {{ qualification_preview.summary.candidates }} participants/reserves,
       {{ qualification_preview.summary.slots }} places,
-      {{ qualification_preview.summary.units }} grups.
+      {{ qualification_preview.summary.units }} unitats existents.
     </div>
     {% if qualification_preview.warnings %}
       <div class="alert alert-warning mt-2 mb-0">
@@ -46,7 +46,7 @@
     <span class="badge badge-light border">Doble validacio</span>
   </div>
   <div class="phase-panel-note mb-2">
-    Si la recepta o els grups han canviat despres de congelar, cal confirmar explicitament que vols substituir el snapshot.
+    Si la recepta o les unitats generades han canviat despres de congelar, cal confirmar explicitament que vols omplir de nou els slots existents.
   </div>
   <form method="post" onsubmit="return confirm('Recalcular i substituir el snapshot existent?');">
     {% csrf_token %}

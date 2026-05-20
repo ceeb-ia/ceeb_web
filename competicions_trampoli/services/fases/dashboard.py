@@ -12,6 +12,7 @@ from ...models.competicio import (
     ProgramUnitSlot,
 )
 from ...models.rotacions import RotacioAssignacioProgramUnit
+from .group_plan import structural_cut_signature
 from .qualification import QualificationError, qualification_is_stale
 
 
@@ -88,6 +89,13 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase_config = phase.config if isinstance(phase.config, dict) else {}
         source_config = phase_config.get("source") if isinstance(phase_config.get("source"), dict) else {}
         cut_config = phase_config.get("cut") if isinstance(phase_config.get("cut"), dict) else {}
+        scoring_config = phase_config.get("scoring") if isinstance(phase_config.get("scoring"), dict) else {}
+        try:
+            phase_exercises = int(scoring_config.get("nombre_exercicis") or phase.comp_aparell.nombre_exercicis or 1)
+        except (TypeError, ValueError):
+            phase_exercises = 1
+        phase.ui_nombre_exercicis = max(1, min(5, phase_exercises))
+        phase.ui_nombre_exercicis_is_override = bool(scoring_config.get("nombre_exercicis"))
         source_name = (
             source_config.get("classificacio_nom")
             or source_config.get("nom")
@@ -105,6 +113,27 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             "manual_decision": "Decisió manual",
         }
         qualification_config = phase_config.get("qualification") if isinstance(phase_config.get("qualification"), dict) else {}
+        group_plan_config = phase_config.get("group_plan") if isinstance(phase_config.get("group_plan"), dict) else {}
+        current_cut_signature = structural_cut_signature(cut_config)
+        stored_cut_signature = str(group_plan_config.get("cut_signature") or "").strip()
+        phase.ui_group_plan_stale = bool(
+            group_plan_config.get("stale")
+            or (stored_cut_signature and stored_cut_signature != current_cut_signature)
+        )
+        phase.ui_group_plan_stale_reason = (
+            group_plan_config.get("stale_reason")
+            or "La recepta d'origen i tall ha canviat."
+        )
+        phase.ui_user_status_value = (
+            phase.estat
+            if phase.estat in {CompeticioAparellFase.Estat.PUBLISHED, CompeticioAparellFase.Estat.CLOSED}
+            else CompeticioAparellFase.Estat.PLANNED
+        )
+        phase.ui_user_status_label = {
+            CompeticioAparellFase.Estat.PLANNED: "Esborrany",
+            CompeticioAparellFase.Estat.PUBLISHED: "Publicada",
+            CompeticioAparellFase.Estat.CLOSED: "Tancada",
+        }.get(phase.ui_user_status_value, "Esborrany")
         phase.ui_source_configured = bool(
             phase_config.get("source_classificacio_id")
             or phase_config.get("classificacio_id")
@@ -148,6 +177,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         ]
         for unit in units:
             slots = list(unit.slots.all())
+            metadata = unit.metadata if isinstance(unit.metadata, dict) else {}
             programmed_labels = programming_by_unit.get(int(unit.id), [])
             unit.ui_programmed_labels = programmed_labels
             unit.ui_is_programmed = bool(programmed_labels)
@@ -160,6 +190,13 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_empty_slots_count = sum(1 for slot in slots if slot.status == ProgramUnitSlot.Status.EMPTY)
             unit.ui_slot_count = len(slots)
             unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
+            unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
+            unit.ui_formation_strategy_label = {
+                "classification_order": "Ordre de classificacio",
+                "serpentine": "Serpentina",
+                "first_last": "Primer amb ultim",
+            }.get(unit.ui_formation_strategy, "Ordre de classificacio")
+            unit.ui_group_plan_strategy = str(metadata.get("group_plan_strategy") or "")
         phase.ui_units = units
         phase.ui_unit_count = len(units)
         phase.ui_programmed_unit_count = sum(1 for unit in units if unit.ui_is_programmed)
@@ -169,13 +206,24 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_slot_count = sum(unit.ui_slot_count for unit in units)
         phase.ui_has_generated_slots = any(unit.ui_has_generated_slots for unit in units)
         phase.ui_generation_mode = "classification" if phase.ui_has_generated_slots else ("manual" if units else "none")
+        phase.ui_phase_alerts = []
+        if phase.ui_group_plan_stale:
+            phase.ui_phase_alerts.append("Grups pendents de revisar")
+        if phase.ui_qualification_stale:
+            phase.ui_phase_alerts.append("Font canviada")
+        if phase.ui_unit_count and not phase.ui_has_generated_slots:
+            phase.ui_phase_alerts.append("Snapshot pendent")
+        if not phase.ui_unit_count:
+            phase.ui_phase_alerts.append("Sense unitats")
+        if phase.ui_pending_unit_count:
+            phase.ui_phase_alerts.append("Programacio pendent")
         phase.ui_child_count = child_counts.get(int(phase.id), 0)
         phase.ui_can_delete = phase.ui_unit_count == 0 and phase.ui_child_count == 0
         phase.ui_setup_steps = [
             {
                 "label": "Fase creada",
                 "state": "done",
-                "detail": "Contenidor de la ronda definit per aquest aparell.",
+                "detail": f"Contenidor de la ronda definit amb {phase.ui_nombre_exercicis} exercici(s).",
             },
             {
                 "label": "Origen i tall",
@@ -191,11 +239,15 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             },
             {
                 "label": "Unitats i places",
-                "state": "done" if phase.ui_unit_count and phase.ui_competitive_slot_count else ("partial" if phase.ui_unit_count else "todo"),
+                "state": "todo" if phase.ui_group_plan_stale else ("done" if phase.ui_unit_count and phase.ui_competitive_slot_count else ("partial" if phase.ui_unit_count else "todo")),
                 "detail": (
+                    "La recepta ha canviat. Revisa o regenera el pla de grups."
+                    if phase.ui_group_plan_stale
+                    else (
                     f"{phase.ui_competitive_slot_count}/{phase.ui_slot_count} places amb participant o equip."
                     if phase.ui_unit_count
                     else "Cap unitat competitiva creada encara."
+                    )
                 ),
             },
             {

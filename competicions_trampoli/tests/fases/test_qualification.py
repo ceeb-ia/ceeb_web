@@ -1,18 +1,21 @@
 from copy import deepcopy
+from datetime import date
 
 from django.test import TestCase
 
 from ..base import _BaseTrampoliDataMixin
 from ...models.classificacions import ClassificacioConfig
-from ...models.competicio import CompeticioAparellFase, FasePartitionState, ProgramUnitSlot, QualificationRun
+from ...models.competicio import CompeticioAparellFase, FasePartitionState, ProgramUnit, ProgramUnitSlot, QualificationRun
 from ...models.scoring import ScoreEntry
 from ...services.classificacions.compute import DEFAULT_SCHEMA
 from ...services.fases import (
     QualificationError,
     SlotSubject,
+    apply_group_plan,
     apply_qualification,
     confirm_qualification_partition,
     create_program_unit_from_subjects,
+    preview_group_plan,
     preview_qualification,
     qualification_is_stale,
     record_qualification_preview,
@@ -97,18 +100,23 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         cfg = self._source_cfg()
         dest = self._dest_phase(cfg)
 
+        group_plan = preview_group_plan(dest)
+        self.assertEqual(group_plan.summary()["units"], 1)
+        self.assertEqual(group_plan.summary()["slots"], 2)
+        apply_group_plan(dest)
         preview = preview_qualification(dest)
 
         self.assertEqual(preview.summary()["candidates"], 3)
         self.assertEqual(preview.summary()["reserves"], 1)
-        self.assertEqual(preview.summary()["units"], 2)
+        self.assertEqual(preview.summary()["units"], 1)
+        self.assertEqual(preview.summary()["slots"], 2)
 
         applied = apply_qualification(dest)
         dest.refresh_from_db()
 
         self.assertEqual(applied.snapshot_hash, preview.snapshot_hash)
         self.assertEqual(dest.estat, CompeticioAparellFase.Estat.GENERATED)
-        self.assertEqual(dest.program_units.count(), 2)
+        self.assertEqual(dest.program_units.count(), 1)
         slots = list(
             ProgramUnitSlot.objects
             .filter(unit__fase=dest)
@@ -119,12 +127,13 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
             [
                 ("inscripcio", self.ins_1.id, ProgramUnitSlot.Status.FILLED, 1),
                 ("inscripcio", self.ins_2.id, ProgramUnitSlot.Status.FILLED, 2),
-                ("inscripcio", self.ins_3.id, ProgramUnitSlot.Status.RESERVE, 3),
             ],
         )
         self.assertTrue(all(slot.source_classificacio_id == cfg.id for slot in slots))
         self.assertIn("qualification", dest.config)
-        self.assertEqual(QualificationRun.objects.filter(fase=dest, status=QualificationRun.Status.APPLIED).count(), 1)
+        run = QualificationRun.objects.get(fase=dest, status=QualificationRun.Status.APPLIED)
+        self.assertIn("global", run.payload["reserves"])
+        self.assertEqual(run.payload["reserves"]["global"][0]["subject_id"], self.ins_3.id)
         state = FasePartitionState.objects.get(fase=dest, partition_key="global")
         self.assertEqual(state.status, FasePartitionState.Status.GENERATED)
         self.assertEqual(state.qualification_run.source_classificacio_id, cfg.id)
@@ -134,19 +143,63 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(confirmed.status, FasePartitionState.Status.CONFIRMED)
         self.assertEqual(dest.estat, CompeticioAparellFase.Estat.CONFIRMED)
 
-    def test_record_preview_persists_previewed_run_without_generating_slots(self):
+    def test_group_plan_creates_empty_units_and_record_preview_does_not_fill_slots(self):
         self._score(self.ins_1, 9.0)
         self._score(self.ins_2, 8.0)
         cfg = self._source_cfg()
         dest = self._dest_phase(cfg)
 
+        group_plan = apply_group_plan(dest)
+        self.assertEqual(group_plan.summary()["units"], 1)
+        self.assertEqual(dest.program_units.count(), 1)
+        self.assertEqual(
+            ProgramUnitSlot.objects.filter(unit__fase=dest, status=ProgramUnitSlot.Status.EMPTY).count(),
+            2,
+        )
         preview = record_qualification_preview(dest)
 
         self.assertEqual(preview.summary()["candidates"], 3)
-        self.assertEqual(dest.program_units.count(), 0)
+        self.assertFalse(
+            ProgramUnitSlot.objects.filter(unit__fase=dest).exclude(status=ProgramUnitSlot.Status.EMPTY).exists()
+        )
         run = QualificationRun.objects.get(fase=dest)
         self.assertEqual(run.status, QualificationRun.Status.PREVIEWED)
         self.assertEqual(run.snapshot_hash, preview.snapshot_hash)
+
+    def test_apply_qualification_requires_existing_group_units(self):
+        self._score(self.ins_1, 9.0)
+        self._score(self.ins_2, 8.0)
+        cfg = self._source_cfg()
+        dest = self._dest_phase(cfg)
+
+        with self.assertRaisesMessage(QualificationError, "Grups"):
+            apply_qualification(dest)
+
+    def test_group_plan_by_count_excludes_reserves_from_unit_slots(self):
+        self._score(self.ins_1, 9.0)
+        self._score(self.ins_2, 8.0)
+        self._score(self.ins_3, 7.0)
+        cfg = self._source_cfg()
+        dest = self._dest_phase(cfg)
+        dest.config["cut"]["qualifiers_count"] = 2
+        dest.config["cut"]["reserve_count"] = 1
+        dest.config["group_plan_settings"] = {
+            "split_mode": "by_count",
+            "units_per_partition": 2,
+            "unit_capacity": 8,
+            "formation_strategy": "classification_order",
+            "unit_name_template": "{fase} - {particio}",
+        }
+        dest.save(update_fields=["config", "updated_at"])
+
+        preview = apply_group_plan(dest)
+
+        self.assertEqual(preview.summary()["units"], 2)
+        self.assertEqual(preview.summary()["slots"], 2)
+        self.assertEqual(
+            list(dest.program_units.order_by("ordre").values_list("capacity", flat=True)),
+            [1, 1],
+        )
 
     def test_apply_requires_persistent_source_phase_to_be_closed_or_confirmed(self):
         source_phase = CompeticioAparellFase.objects.create(
@@ -165,6 +218,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         self._score(self.ins_2, 8.0, phase=source_phase)
         cfg = self._source_cfg(phase=source_phase)
         dest = self._dest_phase(cfg)
+        apply_group_plan(dest)
 
         preview = preview_qualification(dest)
         self.assertTrue(any("Cal confirmar-la o tancar-la" in warning for warning in preview.warnings))
@@ -175,7 +229,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         source_phase.save(update_fields=["estat", "updated_at"])
 
         apply_qualification(dest)
-        self.assertEqual(dest.program_units.count(), 2)
+        self.assertEqual(dest.program_units.count(), 1)
 
     def test_source_changes_mark_generated_phase_as_stale_without_rewriting_slots(self):
         score_1 = self._score(self.ins_1, 9.0)
@@ -183,6 +237,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         self._score(self.ins_3, 7.0)
         cfg = self._source_cfg()
         dest = self._dest_phase(cfg)
+        apply_group_plan(dest)
         apply_qualification(dest)
         original_slots = list(
             ProgramUnitSlot.objects
@@ -214,6 +269,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         dest = self._dest_phase(cfg, tie_policy="manual_decision")
         dest.config["cut"]["reserve_count"] = 0
         dest.save(update_fields=["config", "updated_at"])
+        apply_group_plan(dest)
 
         preview = preview_qualification(dest)
 
@@ -238,6 +294,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         dest = self._dest_phase(cfg, tie_policy="include_all_at_cut")
         dest.config["cut"]["reserve_count"] = 0
         dest.save(update_fields=["config", "updated_at"])
+        apply_group_plan(dest)
 
         apply_qualification(dest)
 
@@ -257,6 +314,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         self._score(self.ins_3, 7.0)
         cfg = self._source_cfg()
         dest = self._dest_phase(cfg)
+        apply_group_plan(dest)
         apply_qualification(dest)
         slot = ProgramUnitSlot.objects.filter(unit__fase=dest).order_by("id").first()
         slot.locked = True
@@ -267,3 +325,66 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
 
         apply_qualification(dest, replace_existing=True, allow_replace_protected=True)
         self.assertEqual(QualificationRun.objects.filter(fase=dest, status=QualificationRun.Status.APPLIED).count(), 2)
+
+    def test_source_partitions_fill_matching_partition_units(self):
+        self.ins_1.data_naixement = date(2009, 1, 1)
+        self.ins_2.data_naixement = date(2010, 1, 1)
+        self.ins_3.data_naixement = date(2009, 6, 1)
+        self.ins_1.save(update_fields=["data_naixement"])
+        self.ins_2.save(update_fields=["data_naixement"])
+        self.ins_3.save(update_fields=["data_naixement"])
+        self._score(self.ins_1, 9.0)
+        self._score(self.ins_2, 8.0)
+        self._score(self.ins_3, 7.0)
+
+        schema = self._schema_for_app()
+        schema["particions"] = ["any_naixement_forquilla"]
+        schema["particions_v2"] = [
+            {"code": "any_naixement_forquilla", "apply_mode": "all", "parent_values": []},
+        ]
+        schema["particions_config"] = {
+            "any_naixement_forquilla": {
+                "ranges": [
+                    {"label": "2007-2009", "from_year": 2007, "to_year": 2009},
+                    {"label": "2010-2012", "from_year": 2010, "to_year": 2012},
+                ],
+                "sense_data_label": "Sense data",
+                "fora_rang_label": "Fora de forquilla",
+            }
+        }
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.competicio,
+            nom="Classificacio per edat",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+        dest = self._dest_phase(cfg)
+        dest.config["cut"]["partition_mode"] = "source_partitions"
+        dest.config["cut"]["qualifiers_count"] = 1
+        dest.config["cut"]["reserve_count"] = 0
+        dest.config["cut"]["unit_capacity"] = 1
+        dest.save(update_fields=["config", "updated_at"])
+
+        apply_group_plan(dest)
+        self.assertEqual(
+            set(ProgramUnit.objects.filter(fase=dest).values_list("partition_key", flat=True)),
+            {"any_naixement_forquilla:2007-2009", "any_naixement_forquilla:2010-2012"},
+        )
+
+        apply_qualification(dest)
+
+        filled = list(
+            ProgramUnitSlot.objects
+            .filter(unit__fase=dest, status=ProgramUnitSlot.Status.FILLED)
+            .order_by("unit__partition_key")
+            .values_list("unit__partition_key", "source_particio_key", "subject_id")
+        )
+        self.assertEqual(
+            filled,
+            [
+                ("any_naixement_forquilla:2007-2009", "any_naixement_forquilla:2007-2009", self.ins_1.id),
+                ("any_naixement_forquilla:2010-2012", "any_naixement_forquilla:2010-2012", self.ins_2.id),
+            ],
+        )

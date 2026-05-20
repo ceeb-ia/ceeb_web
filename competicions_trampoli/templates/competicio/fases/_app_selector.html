@@ -18,9 +18,13 @@
       </a>
     {% endfor %}
     <a class="phase-app-tab phase-app-tab-add" href="{% url 'trampoli_aparells_list' competicio.id %}">
-      <span class="phase-app-tab-add-icon">+</span>
-      <span class="phase-app-tab-title">Afegir aparell</span>
-      <span class="phase-app-tab-detail">Configura una nova instancia local</span>
+      <span class="phase-app-tab-media">
+        <img class="phase-app-tab-logo" src="{% static 'fases/nova_fase.png' %}" alt="">
+        <span class="phase-app-tab-copy">
+          <span class="phase-app-tab-title">Afegir aparell</span>
+          <span class="phase-app-tab-detail">Configura una nova instancia local</span>
+        </span>
+      </span>
     </a>
   </nav>
 {% endif %}

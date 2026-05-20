@@ -4,11 +4,10 @@
       <div class="phase-node-title">
         <strong>{{ phase.nom }}</strong>
         <span class="badge badge-light border">{{ phase.codi }}</span>
-        <span class="badge badge-secondary">{{ phase.estat }}</span>
+        <span class="badge badge-secondary">{{ phase.ui_user_status_label }}</span>
+        <span class="badge badge-light border">{{ phase.ui_nombre_exercicis }} exercici(s)</span>
         {% if phase.ui_generation_mode == "classification" %}
           <span class="badge badge-success">Generada des de classificacio</span>
-        {% elif phase.ui_generation_mode == "manual" %}
-          <span class="badge badge-warning">Manual</span>
         {% else %}
           <span class="badge badge-light border">Sense unitats</span>
         {% endif %}
@@ -46,6 +45,11 @@
   </header>
 
   <div class="phase-node-body">
+    {% if phase.ui_group_plan_stale %}
+      <div class="alert alert-warning">
+        {{ phase.ui_group_plan_stale_reason }} Les unitats generades poden no obeir la recepta actual.
+      </div>
+    {% endif %}
     <div class="phase-setup-grid">
       {% for step in phase.ui_setup_steps %}
         <div class="phase-step-card is-{{ step.state }}">

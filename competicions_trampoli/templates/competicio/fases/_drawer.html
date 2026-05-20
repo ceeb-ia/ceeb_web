@@ -37,16 +37,17 @@
           <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="groups">
             <span class="phase-drawer-nav-btn-title">
               <span>Grups</span>
+              {% if selected_phase.ui_group_plan_stale %}<span class="badge badge-danger">Revisar</span>{% endif %}
               <img src="{% static 'fases/divisions.png' %}" alt="">
             </span>
-            <span class="phase-drawer-nav-btn-meta">Unitats i particions</span>
+            <span class="phase-drawer-nav-btn-meta">Previsualitzacio i unitats</span>
           </button>
           <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="status">
             <span class="phase-drawer-nav-btn-title">
               <span>Estat</span>
               <img src="{% static 'fases/status.png' %}" alt="">
             </span>
-            <span class="phase-drawer-nav-btn-meta">Publicacio i control</span>
+            <span class="phase-drawer-nav-btn-meta">Snapshot i control</span>
           </button>
         </nav>
       {% endif %}

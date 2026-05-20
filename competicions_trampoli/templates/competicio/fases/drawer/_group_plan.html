@@ -1,0 +1,78 @@
+<section class="phase-panel">
+  <div class="phase-panel-title">
+    <h5>Pla de grups</h5>
+    <span class="badge badge-light border">Unitats buides</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Previsualitza les unitats competitives que es generaran a partir de la recepta. Les reserves no creen places dins les unitats; quedaran separades al snapshot.
+  </div>
+  {% if selected_phase.ui_group_plan_stale %}
+    <div class="alert alert-warning mb-2">
+      {{ selected_phase.ui_group_plan_stale_reason }} Les unitats actuals poden no coincidir amb classificats, reserves o particions.
+    </div>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+    <div class="mb-2">
+      {{ group_plan_form.split_mode.label_tag }}{{ group_plan_form.split_mode }}{{ group_plan_form.split_mode.errors }}
+    </div>
+    <div class="row">
+      <div class="col-6 mb-2" data-group-plan-field="by_count">
+        {{ group_plan_form.units_per_partition.label_tag }}{{ group_plan_form.units_per_partition }}{{ group_plan_form.units_per_partition.errors }}
+        {% if group_plan_form.units_per_partition.help_text %}<div class="text-muted small">{{ group_plan_form.units_per_partition.help_text }}</div>{% endif %}
+      </div>
+      <div class="col-6 mb-2" data-group-plan-field="by_capacity">
+        {{ group_plan_form.unit_capacity.label_tag }}{{ group_plan_form.unit_capacity }}{{ group_plan_form.unit_capacity.errors }}
+        {% if group_plan_form.unit_capacity.help_text %}<div class="text-muted small">{{ group_plan_form.unit_capacity.help_text }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="mb-2">
+      {{ group_plan_form.formation_strategy.label_tag }}{{ group_plan_form.formation_strategy }}{{ group_plan_form.formation_strategy.errors }}
+    </div>
+    <div class="mb-2">
+      {{ group_plan_form.unit_name_template.label_tag }}{{ group_plan_form.unit_name_template }}{{ group_plan_form.unit_name_template.errors }}
+      {% if group_plan_form.unit_name_template.help_text %}<div class="text-muted small">{{ group_plan_form.unit_name_template.help_text }}</div>{% endif %}
+    </div>
+    <div class="form-check mb-2">
+      <input class="form-check-input" id="replace-existing-group-plan" type="checkbox" name="replace_existing" value="1">
+      <label class="form-check-label" for="replace-existing-group-plan">Substituir unitats existents</label>
+    </div>
+    <div class="phase-action-stack">
+      <button class="btn btn-sm btn-outline-primary" type="submit" name="action" value="preview_group_plan">Previsualitzar grups</button>
+      <button class="btn btn-sm btn-primary" type="submit" name="action" value="apply_group_plan" onclick="return confirm('Generar les unitats buides de la fase amb el pla actual?');">Generar unitats buides</button>
+    </div>
+  </form>
+  {% if group_plan_preview %}
+    <div class="phase-panel-note mt-3">
+      <strong>Preview:</strong>
+      {{ group_plan_preview.summary.units }} unitats buides,
+      {{ group_plan_preview.summary.slots }} places competitives.
+    </div>
+    {% if group_plan_preview.warnings %}
+      <div class="alert alert-warning mt-2 mb-0">
+        {% for warning in group_plan_preview.warnings %}
+          <div>{{ warning }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+
+<script>
+  (function () {
+    const splitMode = document.getElementById('id_split_mode');
+    if (!splitMode) return;
+    const fields = Array.from(document.querySelectorAll('[data-group-plan-field]'));
+
+    function syncGroupPlanFields() {
+      const activeMode = splitMode.value || 'by_count';
+      fields.forEach((field) => {
+        field.hidden = field.getAttribute('data-group-plan-field') !== activeMode;
+      });
+    }
+
+    splitMode.addEventListener('change', syncGroupPlanFields);
+    syncGroupPlanFields();
+  })();
+</script>

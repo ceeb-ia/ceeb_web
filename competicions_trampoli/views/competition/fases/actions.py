@@ -4,13 +4,25 @@ from django.contrib import messages
 from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 
-from ....forms import CompeticioAparellFaseForm, PhaseSourceCutForm, ProgramUnitManualForm, ProgramUnitPartitionForm
+from ....forms import (
+    CompeticioAparellFaseForm,
+    PhaseGroupPlanForm,
+    PhaseScoringSettingsForm,
+    PhaseSourceCutForm,
+    ProgramUnitEditForm,
+    ProgramUnitManualForm,
+    ProgramUnitPartitionForm,
+)
 from ....models.competicio import CompeticioAparellFase
+from ....services.fases.group_plan import structural_cut_signature
 from ....services.fases.planner import (
+    configure_phase_group_plan,
+    configure_phase_scoring_settings,
     create_manual_unit_for_phase,
     create_partition_unit_for_phase,
     create_phase_for_comp_aparell,
     configure_phase_source_cut,
+    update_program_unit_for_phase,
 )
 from ....services.fases.qualification import (
     QualificationError,
@@ -20,6 +32,39 @@ from ....services.fases.qualification import (
     qualification_is_stale,
     record_qualification_preview,
 )
+from ....services.fases import apply_group_plan, group_plan_as_dict, preview_group_plan
+
+
+USER_PHASE_STATUSES = {
+    CompeticioAparellFase.Estat.PLANNED,
+    CompeticioAparellFase.Estat.PUBLISHED,
+    CompeticioAparellFase.Estat.CLOSED,
+}
+
+
+def _group_plan_is_stale(phase):
+    config = phase.config if isinstance(phase.config, dict) else {}
+    group_plan = config.get("group_plan") if isinstance(config.get("group_plan"), dict) else {}
+    cut = config.get("cut") if isinstance(config.get("cut"), dict) else {}
+    stored = str(group_plan.get("cut_signature") or "").strip()
+    return bool(group_plan.get("stale") or (stored and stored != structural_cut_signature(cut)))
+
+
+def _publish_blockers(phase) -> list[str]:
+    blockers = []
+    if _group_plan_is_stale(phase):
+        blockers.append("revisa o regenera el pla de grups")
+    if not phase.program_units.exists():
+        blockers.append("genera unitats de grups")
+    config = phase.config if isinstance(phase.config, dict) else {}
+    qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+    if not qualification.get("run_id"):
+        blockers.append("congela el snapshot")
+    elif qualification.get("stale") or qualification_is_stale(phase):
+        blockers.append("recalcula el snapshot")
+    if phase.partition_states.exists() and phase.partition_states.exclude(status="confirmed").exists():
+        blockers.append("confirma les particions pendents")
+    return blockers
 
 
 def phase_for_post(competicio, request):
@@ -82,10 +127,14 @@ def handle_phase_post(view, request):
 
         if action == "update_phase_status":
             status = str(request.POST.get("estat") or "").strip()
-            valid_statuses = {choice.value for choice in CompeticioAparellFase.Estat}
-            if status not in valid_statuses:
+            if status not in USER_PHASE_STATUSES:
                 messages.error(request, "Estat de fase no valid.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            if status == CompeticioAparellFase.Estat.PUBLISHED:
+                blockers = _publish_blockers(phase)
+                if blockers:
+                    messages.error(request, "No es pot publicar encara: " + "; ".join(blockers) + ".")
+                    return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             phase.estat = status
             phase.full_clean()
             phase.save(update_fields=["estat", "updated_at"])
@@ -99,6 +148,15 @@ def handle_phase_post(view, request):
                 messages.success(request, f"Origen i tall de '{phase.nom}' configurats.")
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             return None, {"source_cut_form": form}
+
+        if action == "update_phase_scoring_settings":
+            form = PhaseScoringSettingsForm(request.POST)
+            if form.is_valid():
+                configure_phase_scoring_settings(phase, form)
+                messages.success(request, f"Exercicis de '{phase.nom}' actualitzats.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            messages.error(request, "Revisa el nombre d'exercicis de la fase.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "create_manual_unit":
             form = ProgramUnitManualForm(request.POST)
@@ -116,14 +174,59 @@ def handle_phase_post(view, request):
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             return None, {"partition_unit_form": form}
 
+        if action == "update_program_unit":
+            form = ProgramUnitEditForm(request.POST)
+            if form.is_valid():
+                unit = update_program_unit_for_phase(phase, form)
+                messages.success(request, f"Unitat '{unit.nom}' actualitzada.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            messages.error(request, "Revisa la configuracio de la unitat.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "preview_group_plan":
+            form = PhaseGroupPlanForm(request.POST)
+            if not form.is_valid():
+                return None, {"group_plan_form": form}
+            configure_phase_group_plan(phase, form)
+            preview = preview_group_plan(phase)
+            summary = preview.summary()
+            messages.info(
+                request,
+                (
+                    f"Pla de grups de '{phase.nom}': "
+                    f"{summary.get('units', 0)} unitats buides i {summary.get('slots', 0)} places."
+                ),
+            )
+            return None, {"group_plan_preview": group_plan_as_dict(preview)}
+
+        if action == "apply_group_plan":
+            form = PhaseGroupPlanForm(request.POST)
+            if not form.is_valid():
+                return None, {"group_plan_form": form}
+            configure_phase_group_plan(phase, form)
+            preview = apply_group_plan(
+                phase,
+                replace_existing=request.POST.get("replace_existing") == "1",
+                allow_replace_protected=request.POST.get("allow_replace_protected") == "1",
+            )
+            summary = preview.summary()
+            messages.success(
+                request,
+                (
+                    f"Unitats buides generades per '{phase.nom}': "
+                    f"{summary.get('units', 0)} unitats i {summary.get('slots', 0)} places."
+                ),
+            )
+            return view.redirect_to_selected_app(phase.comp_aparell), {}
+
         if action == "preview_qualification":
             preview = record_qualification_preview(phase)
             summary = preview.summary()
             messages.info(
                 request,
                 (
-                    f"Preview de '{phase.nom}': {summary['candidates']} participants/reserves, "
-                    f"{summary['slots']} places i {summary['units']} unitats."
+                    f"Snapshot previst de '{phase.nom}': {summary['candidates']} participants/reserves "
+                    f"per omplir {summary['slots']} places existents."
                 ),
             )
             return None, {"qualification_preview": preview_as_dict(preview)}
@@ -134,8 +237,8 @@ def handle_phase_post(view, request):
             messages.success(
                 request,
                 (
-                    f"Tall congelat per '{phase.nom}': {summary['candidates']} participants/reserves "
-                    f"en {summary['units']} unitats."
+                    f"Snapshot congelat per '{phase.nom}': {summary['candidates']} participants/reserves "
+                    f"assignats als slots existents."
                 ),
             )
             return view.redirect_to_selected_app(phase.comp_aparell), {}
@@ -161,8 +264,8 @@ def handle_phase_post(view, request):
             messages.success(
                 request,
                 (
-                    f"Proposta {stale_label} per '{phase.nom}': {summary['candidates']} participants/reserves "
-                    f"en {summary['units']} unitats."
+                    f"Snapshot {stale_label} per '{phase.nom}': {summary['candidates']} participants/reserves "
+                    f"assignats als slots existents."
                 ),
             )
             return view.redirect_to_selected_app(phase.comp_aparell), {}

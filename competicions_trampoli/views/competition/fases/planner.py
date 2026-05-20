@@ -4,11 +4,24 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 
-from ....forms import CompeticioAparellFaseForm, PhaseSourceCutForm, ProgramUnitManualForm, ProgramUnitPartitionForm
+from ....forms import (
+    CompeticioAparellFaseForm,
+    PhaseGroupPlanForm,
+    PhaseSourceCutForm,
+    ProgramUnitManualForm,
+    ProgramUnitPartitionForm,
+)
 from ....models import Competicio
 from ....models.competicio import CompeticioAparell, CompeticioAparellFase
 from ....services.fases.dashboard import phase_dashboard_context
 from .actions import handle_phase_post
+
+
+USER_PHASE_STATUS_CHOICES = (
+    (CompeticioAparellFase.Estat.PLANNED, "Esborrany"),
+    (CompeticioAparellFase.Estat.PUBLISHED, "Publicada"),
+    (CompeticioAparellFase.Estat.CLOSED, "Tancada"),
+)
 
 
 class CompeticioFasesPlanner(View):
@@ -67,6 +80,20 @@ class CompeticioFasesPlanner(View):
             "unit_name_template": cut.get("unit_name_template") or "{fase} - {particio}",
         }
 
+    def _group_plan_initial(self, phase):
+        if phase is None:
+            return {}
+        config = phase.config if isinstance(phase.config, dict) else {}
+        settings = config.get("group_plan_settings") if isinstance(config.get("group_plan_settings"), dict) else {}
+        cut = config.get("cut") if isinstance(config.get("cut"), dict) else {}
+        return {
+            "split_mode": settings.get("split_mode") or "by_count",
+            "units_per_partition": settings.get("units_per_partition") or 1,
+            "unit_capacity": settings.get("unit_capacity") or cut.get("unit_capacity") or 8,
+            "formation_strategy": settings.get("formation_strategy") or "classification_order",
+            "unit_name_template": settings.get("unit_name_template") or cut.get("unit_name_template") or "{fase} - {particio}",
+        }
+
     def get_context(
         self,
         *,
@@ -74,6 +101,8 @@ class CompeticioFasesPlanner(View):
         source_cut_form=None,
         manual_unit_form=None,
         partition_unit_form=None,
+        group_plan_form=None,
+        group_plan_preview=None,
         qualification_preview=None,
     ):
         dashboard = phase_dashboard_context(
@@ -95,8 +124,10 @@ class CompeticioFasesPlanner(View):
             ),
             "manual_unit_form": manual_unit_form or ProgramUnitManualForm(),
             "partition_unit_form": partition_unit_form or ProgramUnitPartitionForm(),
+            "group_plan_form": group_plan_form or PhaseGroupPlanForm(initial=self._group_plan_initial(selected_phase)),
+            "group_plan_preview": group_plan_preview,
             "qualification_preview": qualification_preview,
-            "phase_status_choices": CompeticioAparellFase.Estat.choices,
+            "phase_status_choices": USER_PHASE_STATUS_CHOICES,
         }
 
 

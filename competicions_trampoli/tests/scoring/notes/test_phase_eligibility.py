@@ -115,6 +115,63 @@ class NotesPhaseEligibilityTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(table_payload["context"]["fase_id"], phase.id)
         self.assertEqual([row["subject_id"] for row in table_payload["subjects"]], [self.ins_1.id, self.ins_2.id])
 
+    def test_phase_exercise_override_is_used_by_notes_and_save(self):
+        self.comp_app.nombre_exercicis = 1
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
+        phase.config = {"scoring": {"nombre_exercicis": 3}}
+        phase.save(update_fields=["config", "updated_at"])
+        unit = self._create_unit(
+            phase,
+            [SlotSubject("inscripcio", self.ins_1.id)],
+            status=ProgramUnit.Status.PUBLISHED,
+        )
+        unit_key = f"phase:{phase.id}:unit:{unit.id}"
+
+        manifest = self.client.get(reverse("scoring_notes_manifest", kwargs={"pk": self.comp.id}))
+        manifest_payload = manifest.json()
+        manifest_unit = next(row for row in manifest_payload["units"] if row["key"] == unit_key)
+        manifest_phase = next(row for row in manifest_payload["phases_by_app"][str(self.comp_app.id)] if row["id"] == phase.id)
+        self.assertEqual(manifest_unit["exercicis"], [1, 2, 3])
+        self.assertEqual(manifest_phase["exercicis"], [1, 2, 3])
+
+        table = self.client.get(
+            reverse("scoring_notes_table", kwargs={"pk": self.comp.id}),
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "fase_id": phase.id,
+                "exercici": 5,
+                "unit_key": unit_key,
+            },
+        )
+        self.assertEqual(table.status_code, 200)
+        self.assertEqual(table.json()["context"]["exercici"], 3)
+
+        save = self.client.post(
+            reverse("scoring_save_partial", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_1.id,
+                    "comp_aparell_id": self.comp_app.id,
+                    "fase_id": phase.id,
+                    "exercici": 5,
+                    "inputs_patch": {"E": 8.5},
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(save.status_code, 200)
+        self.assertEqual(save.json()["exercici"], 3)
+        self.assertTrue(
+            ScoreEntry.objects.filter(
+                competicio=self.comp,
+                comp_aparell=self.comp_app,
+                fase=phase,
+                inscripcio=self.ins_1,
+                exercici=3,
+            ).exists()
+        )
+
     def test_pending_decision_slot_is_not_scoreable(self):
         phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
         unit = self._create_unit(

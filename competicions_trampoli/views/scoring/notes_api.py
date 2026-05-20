@@ -18,6 +18,7 @@ from ...services.scoring.schema_resolution import resolve_scoring_schema_for_com
 from ...services.scoring.notes_units import (
     build_notes_units_context,
     clamp_exercici,
+    effective_exercise_count,
     media_counts_for_inscripcions,
     order_subjects_for_unit,
     resolve_notes_unit,
@@ -151,7 +152,10 @@ def _unit_identity(unit):
 
 def _unit_context_payload(context, unit):
     comp_aparell = _app_for_unit(context, unit)
-    exercicis = list(range(1, clamp_exercici(999, comp_aparell) + 1)) if comp_aparell else [1]
+    if isinstance(unit.get("exercicis"), list) and unit.get("exercicis"):
+        exercicis = unit.get("exercicis")
+    else:
+        exercicis = list(range(1, effective_exercise_count(comp_aparell) + 1)) if comp_aparell else [1]
     label_parts = [
         unit.get("franja_label") or ("Fora de programa" if unit.get("is_out_of_program") else ""),
         unit.get("app_label") or "",
@@ -719,7 +723,7 @@ def notes_table(request, pk):
     if not phase_id and unit.get("phase_id"):
         return JsonResponse({"ok": False, "error": "invalid_phase_unit"}, status=400)
 
-    exercici = clamp_exercici(request.GET.get("exercici"), comp_aparell)
+    exercici = clamp_exercici(request.GET.get("exercici"), comp_aparell, max_exercicis=unit.get("nombre_exercicis"))
     schema, logical_schema = _schema_payload(comp_aparell, competicio)
     raw_subjects = subjects_for_unit(context, unit, comp_aparell)
     ordered_subjects = order_subjects_for_unit(context, unit, raw_subjects, comp_aparell)
@@ -832,10 +836,11 @@ def notes_warnings(request, pk):
                 for subject in ordered_subjects
             ]
         subjects_by_warning_key = _warning_subject_map(subjects)
-        exercises = [exercici_filter] if exercici_filter else list(range(1, int(comp_aparell.nombre_exercicis or 1) + 1))
+        unit_exercise_count = effective_exercise_count(comp_aparell, max_exercicis=unit.get("nombre_exercicis"))
+        exercises = [exercici_filter] if exercici_filter else list(range(1, unit_exercise_count + 1))
         scanned["units"] += 1
         for exercici in exercises:
-            exercici = clamp_exercici(exercici, comp_aparell)
+            exercici = clamp_exercici(exercici, comp_aparell, max_exercicis=unit_exercise_count)
             unit_phase_id = _parse_positive_int(unit.get("phase_id"))
             scores = _serialize_scores(competicio, comp_aparell, exercici, ordered_subjects, logical_schema, phase_id=unit_phase_id)
             unit_warnings = _all_warnings_payload(logical_schema, scores, subjects, comp_aparell, exercici, phase_id=unit_phase_id)

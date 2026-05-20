@@ -733,6 +733,25 @@ class CompeticioAparellFaseForm(forms.ModelForm):
         }
 
 
+class PhaseScoringSettingsForm(forms.Form):
+    nombre_exercicis = forms.IntegerField(
+        label="Exercicis",
+        min_value=1,
+        max_value=5,
+        widget=forms.NumberInput(attrs={"class": "form-control form-control-sm", "min": 1, "max": 5}),
+        help_text="Nombre d'exercicis que es faran en aquesta fase.",
+    )
+
+    def clean_nombre_exercicis(self):
+        n = int(self.cleaned_data.get("nombre_exercicis") or 1)
+        if n < 1 or n > 5:
+            raise ValidationError(
+                _("El nombre d'exercicis de la fase ha de ser entre 1 i 5."),
+                code="invalid_phase_nombre_exercicis",
+            )
+        return n
+
+
 class PhaseSourceCutForm(forms.Form):
     CUT_MODE_TOP_N = "top_n"
     PARTITION_GLOBAL = "global"
@@ -795,6 +814,7 @@ class PhaseSourceCutForm(forms.Form):
         min_value=1,
         max_value=200,
         initial=8,
+        required=False,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
         help_text="No canvia quants classifiquen; només reparteix el tall en una o més unitats programables quan s'apliqui.",
     )
@@ -814,6 +834,81 @@ class PhaseSourceCutForm(forms.Form):
         if self.competicio is not None and getattr(self.competicio, "id", None):
             qs = ClassificacioConfig.objects.filter(competicio=self.competicio, activa=True).order_by("ordre", "id")
         self.fields["classificacio"].queryset = qs
+
+    def clean_unit_name_template(self):
+        value = str(self.cleaned_data.get("unit_name_template") or "").strip()
+        return value or "{fase} - {particio}"
+
+    def clean_unit_capacity(self):
+        return self.cleaned_data.get("unit_capacity") or 8
+
+
+class PhaseGroupPlanForm(forms.Form):
+    SPLIT_BY_COUNT = "by_count"
+    SPLIT_BY_CAPACITY = "by_capacity"
+    FORMATION_CLASSIFICATION_ORDER = "classification_order"
+    FORMATION_SERPENTINE = "serpentine"
+    FORMATION_FIRST_LAST = "first_last"
+
+    split_mode = forms.ChoiceField(
+        label="Com crear unitats",
+        choices=[
+            (SPLIT_BY_COUNT, "Nombre de grups per particio/global"),
+            (SPLIT_BY_CAPACITY, "Mida maxima de cada grup"),
+        ],
+        initial=SPLIT_BY_COUNT,
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    units_per_partition = forms.IntegerField(
+        label="Grups per particio/global",
+        min_value=1,
+        max_value=50,
+        initial=1,
+        required=False,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 50}),
+        help_text="S'aplica a cada particio si el tall es per particio; en global s'aplica una sola vegada.",
+    )
+    unit_capacity = forms.IntegerField(
+        label="Mida maxima",
+        min_value=1,
+        max_value=200,
+        initial=8,
+        required=False,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+        help_text="S'usa quan tries repartir per mida maxima.",
+    )
+    formation_strategy = forms.ChoiceField(
+        label="Criteri de repartiment",
+        choices=[
+            (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificacio"),
+            (FORMATION_SERPENTINE, "Serpentina"),
+            (FORMATION_FIRST_LAST, "Primer amb ultim"),
+        ],
+        initial=FORMATION_CLASSIFICATION_ORDER,
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    unit_name_template = forms.CharField(
+        label="Nom automatic de les unitats",
+        max_length=180,
+        required=False,
+        initial="{fase} - {particio}",
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "{fase} - {particio}"}),
+        help_text="Pots usar {fase}, {particio}, {index} i {total}.",
+    )
+
+    def clean_units_per_partition(self):
+        return self.cleaned_data.get("units_per_partition") or 1
+
+    def clean_split_mode(self):
+        return self.cleaned_data.get("split_mode") or self.SPLIT_BY_COUNT
+
+    def clean_unit_capacity(self):
+        return self.cleaned_data.get("unit_capacity") or 8
+
+    def clean_formation_strategy(self):
+        return self.cleaned_data.get("formation_strategy") or self.FORMATION_CLASSIFICATION_ORDER
 
     def clean_unit_name_template(self):
         value = str(self.cleaned_data.get("unit_name_template") or "").strip()
@@ -843,6 +938,35 @@ class ProgramUnitManualForm(forms.Form):
         required=False,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
         help_text="Opcional. Serveix per identificar una categoria/grup quan crees una unitat manual.",
+    )
+
+
+class ProgramUnitEditForm(forms.Form):
+    FORMATION_CLASSIFICATION_ORDER = "classification_order"
+    FORMATION_SERPENTINE = "serpentine"
+    FORMATION_FIRST_LAST = "first_last"
+
+    unit_id = forms.IntegerField(widget=forms.HiddenInput)
+    nom = forms.CharField(
+        label="Nom",
+        max_length=180,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    capacity = forms.IntegerField(
+        label="Places",
+        min_value=1,
+        max_value=200,
+        widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
+    )
+    formation_strategy = forms.ChoiceField(
+        label="Criteri",
+        choices=[
+            (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificacio"),
+            (FORMATION_SERPENTINE, "Serpentina"),
+            (FORMATION_FIRST_LAST, "Primer amb ultim"),
+        ],
+        initial=FORMATION_CLASSIFICATION_ORDER,
+        widget=forms.Select(attrs={"class": "form-select"}),
     )
 
 

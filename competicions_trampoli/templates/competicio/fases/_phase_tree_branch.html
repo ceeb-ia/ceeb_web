@@ -1,3 +1,5 @@
+{% load static %}
+
 {% for phase in phases %}
   <li class="phase-tree-li">
     <div class="phase-tree-node-shell">
@@ -6,23 +8,59 @@
         <span class="phase-tree-node-main">
           <span class="phase-tree-node-title">{{ phase.nom }}</span>
           <span class="phase-tree-node-meta">
-            {{ phase.codi }} · {{ phase.estat }} · {{ phase.ui_unit_count }} unitats
+            {{ phase.codi }} - {{ phase.ui_user_status_label }} - {{ phase.ui_unit_count }} unitats - {{ phase.ui_nombre_exercicis }} exercici(s)
           </span>
         </span>
         <span class="phase-tree-node-badges">
-          {% if phase.ui_qualification_stale %}
+          {% if phase.ui_group_plan_stale %}
+            <span class="badge badge-danger">Revisar grups</span>
+          {% elif phase.ui_qualification_stale %}
             <span class="badge badge-danger">Font canviada</span>
           {% elif phase.ui_generation_mode == "classification" %}
             <span class="badge badge-success">Tall aplicat</span>
-          {% elif phase.ui_generation_mode == "manual" %}
-            <span class="badge badge-warning">Manual</span>
           {% else %}
             <span class="badge badge-light border">Sense unitats</span>
           {% endif %}
         </span>
       </a>
-      {% include "competicio/fases/_create_child_phase_form.html" with parent_id=phase.id %}
+      <div class="phase-tree-node-tools">
+        <a class="btn btn-sm btn-outline-warning phase-themed-btn"
+           href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+          <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+          <span>Puntuacio</span>
+        </a>
+        <form method="post" class="phase-exercise-form" title="Exercicis d'aquesta fase">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_phase_scoring_settings">
+          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <label>
+            <span>Ex.</span>
+            <input class="form-control form-control-sm" type="number" name="nombre_exercicis" min="1" max="5" value="{{ phase.ui_nombre_exercicis }}">
+          </label>
+          <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
+        </form>
+        {% include "competicio/fases/_create_child_phase_form.html" with parent_id=phase.id %}
+      </div>
     </div>
+    {% if phase.ui_units %}
+      <details class="phase-tree-units">
+        <summary>{{ phase.ui_unit_count }} unitats programables</summary>
+        {% if phase.ui_group_plan_stale %}
+          <div class="alert alert-warning mb-2">
+            {{ phase.ui_group_plan_stale_reason }} Revisa o regenera el pla de grups abans de congelar el snapshot.
+          </div>
+        {% endif %}
+        <div class="phase-program-unit-grid">
+          {% for unit in phase.ui_units %}
+            {% include "competicio/fases/_program_unit_card.html" with phase=phase unit=unit %}
+          {% endfor %}
+        </div>
+      </details>
+    {% elif phase.ui_group_plan_stale %}
+      <div class="alert alert-warning phase-tree-warning">
+        {{ phase.ui_group_plan_stale_reason }} Revisa el pla de grups.
+      </div>
+    {% endif %}
     {% if phase.ui_children %}
       <ol class="phase-tree-children">
         {% include "competicio/fases/_phase_tree_branch.html" with phases=phase.ui_children %}

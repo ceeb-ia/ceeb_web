@@ -21,7 +21,7 @@ from ...services.classificacions.phase_scope import (
     PHASE_SCOPE_PER_APP,
     normalize_phase_scope_payload,
 )
-from .program_units import SlotSubject, create_program_unit_with_empty_slots, fill_program_unit_slots
+from .program_units import SlotSubject, fill_program_unit_slots
 
 
 SOURCE_PHASE_READY_STATES = {
@@ -63,6 +63,7 @@ class QualificationUnitPreview:
     label: str
     partition_key: str
     capacity: int
+    unit_id: int | None = None
     candidates: list[QualificationCandidate] = field(default_factory=list)
 
 
@@ -75,19 +76,17 @@ class QualificationPreview:
     units: list[QualificationUnitPreview]
     warnings: list[str] = field(default_factory=list)
     partition_warnings: dict[str, list[str]] = field(default_factory=dict)
+    reserves: dict[str, list[QualificationCandidate]] = field(default_factory=dict)
 
     @property
     def candidate_count(self) -> int:
-        return sum(len(unit.candidates) for unit in self.units)
+        return sum(len(unit.candidates) for unit in self.units) + sum(
+            len(items) for items in self.reserves.values()
+        )
 
     @property
     def reserve_count(self) -> int:
-        return sum(
-            1
-            for unit in self.units
-            for candidate in unit.candidates
-            if candidate.status == ProgramUnitSlot.Status.RESERVE
-        )
+        return sum(len(items) for items in self.reserves.values())
 
     @property
     def pending_decision_count(self) -> int:
@@ -118,6 +117,7 @@ class QualificationPreview:
             "summary": self.summary(),
             "units": [
                 {
+                    "unit_id": unit.unit_id,
                     "label": unit.label,
                     "partition_key": unit.partition_key,
                     "capacity": unit.capacity,
@@ -136,6 +136,21 @@ class QualificationPreview:
                 }
                 for unit in self.units
             ],
+            "reserves": {
+                key: [
+                    {
+                        "subject_kind": candidate.subject_kind,
+                        "subject_id": candidate.subject_id,
+                        "status": candidate.status,
+                        "source_particio_key": candidate.source_particio_key,
+                        "source_position": candidate.source_position,
+                        "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
+                        "source_row": candidate.source_row,
+                    }
+                    for candidate in items
+                ]
+                for key, items in self.reserves.items()
+            },
             "partition_warnings": self.partition_warnings,
         }
 
@@ -362,6 +377,63 @@ def _build_units_for_partition(
     warnings: list[str],
     partition_warnings: dict[str, list[str]],
 ) -> list[QualificationUnitPreview]:
+    selected = _select_candidates_for_partition(
+        partition_key=partition_key,
+        rows=rows,
+        qualifiers_count=qualifiers_count,
+        reserve_count=reserve_count,
+        tie_policy=tie_policy,
+        warnings=warnings,
+        partition_warnings=partition_warnings,
+    )
+    competitive = [candidate for candidate in selected if candidate.status != ProgramUnitSlot.Status.RESERVE]
+    slot_target = max(qualifiers_count, len(competitive), 1)
+    unit_count = (slot_target + unit_capacity - 1) // unit_capacity
+    units = []
+    for offset in range(0, slot_target, unit_capacity):
+        capacity = min(unit_capacity, slot_target - offset)
+        index = (offset // unit_capacity) + 1
+        label = _format_unit_label(
+            unit_name_template,
+            fase=fase,
+            partition_key=partition_key,
+            index=index,
+            total=unit_count,
+        )
+        units.append(
+            QualificationUnitPreview(
+                label=label,
+                partition_key=partition_key,
+                capacity=capacity,
+                candidates=competitive[offset:offset + capacity],
+            )
+        )
+    return units
+
+
+def _split_reserve_candidates(
+    selected: list[QualificationCandidate],
+) -> tuple[list[QualificationCandidate], list[QualificationCandidate]]:
+    competitive = []
+    reserves = []
+    for candidate in selected:
+        if candidate.status == ProgramUnitSlot.Status.RESERVE:
+            reserves.append(candidate)
+        else:
+            competitive.append(candidate)
+    return competitive, reserves
+
+
+def _select_candidates_for_partition(
+    *,
+    partition_key: str,
+    rows: list[dict],
+    qualifiers_count: int,
+    reserve_count: int,
+    tie_policy: str,
+    warnings: list[str],
+    partition_warnings: dict[str, list[str]],
+) -> list[QualificationCandidate]:
     if not rows:
         _add_partition_warning(
             warnings,
@@ -401,29 +473,172 @@ def _build_units_for_partition(
             partition_key,
             f"nomes hi ha {len(rows)} participants disponibles de {qualifiers_count} places configurades.",
         )
+    return selected
 
-    slot_target = max(qualifiers_count + reserve_count, len(selected), 1)
-    unit_count = (slot_target + unit_capacity - 1) // unit_capacity
-    units = []
-    for offset in range(0, slot_target, unit_capacity):
-        capacity = min(unit_capacity, slot_target - offset)
-        index = (offset // unit_capacity) + 1
-        label = _format_unit_label(
-            unit_name_template,
-            fase=fase,
-            partition_key=partition_key,
-            index=index,
-            total=unit_count,
+
+def _partition_key_for_unit(unit: ProgramUnit, partition_mode: str) -> str:
+    key = str(unit.partition_key or "").strip()
+    if partition_mode == "global" and not key:
+        return "global"
+    return key or "global"
+
+
+def _candidate_units_for_partition(
+    existing_units: list[ProgramUnit],
+    *,
+    partition_mode: str,
+    partition_key: str,
+) -> list[ProgramUnit]:
+    key = str(partition_key or "").strip() or "global"
+    if partition_mode == "global":
+        return [
+            unit for unit in existing_units
+            if _partition_key_for_unit(unit, partition_mode) == "global"
+        ]
+    return [
+        unit for unit in existing_units
+        if _partition_key_for_unit(unit, partition_mode) == key
+    ]
+
+
+def _slots_for_unit(unit: ProgramUnit) -> list[ProgramUnitSlot]:
+    prefetched = getattr(unit, "_prefetched_objects_cache", {}).get("slots")
+    if prefetched is not None:
+        return sorted(prefetched, key=lambda slot: (slot.slot_index, slot.id or 0))
+    return list(unit.slots.order_by("slot_index", "id"))
+
+
+def _qualification_group_settings(fase: CompeticioAparellFase) -> dict:
+    config = fase.config if isinstance(fase.config, dict) else {}
+    group_plan = config.get("group_plan") if isinstance(config.get("group_plan"), dict) else {}
+    settings = config.get("group_plan_settings") if isinstance(config.get("group_plan_settings"), dict) else {}
+    return {
+        "formation_strategy": (
+            group_plan.get("formation_strategy")
+            or settings.get("formation_strategy")
+            or "classification_order"
         )
-        units.append(
+    }
+
+
+def _chunks_by_strategy(
+    selected: list[QualificationCandidate],
+    capacities: list[int],
+    *,
+    strategy: str,
+) -> tuple[list[list[QualificationCandidate]], int]:
+    chunks = [[] for _ in capacities]
+    if not selected or not capacities:
+        return chunks, len(selected)
+
+    def next_open(start: int, step: int = 1):
+        total = len(capacities)
+        for offset in range(total):
+            index = (start + offset * step) % total
+            if len(chunks[index]) < capacities[index]:
+                return index
+        return None
+
+    if strategy == "serpentine":
+        direction = 1
+        index = 0
+        for candidate in selected:
+            target = next_open(index, direction)
+            if target is None:
+                return chunks, len(selected) - sum(len(chunk) for chunk in chunks)
+            chunks[target].append(candidate)
+            if direction == 1:
+                if target >= len(capacities) - 1:
+                    direction = -1
+                    index = target
+                else:
+                    index = target + 1
+            else:
+                if target <= 0:
+                    direction = 1
+                    index = target
+                else:
+                    index = target - 1
+        return chunks, 0
+
+    if strategy == "first_last":
+        left = 0
+        right = len(selected) - 1
+        unit_index = 0
+        while left <= right:
+            target = next_open(unit_index)
+            if target is None:
+                return chunks, right - left + 1
+            chunks[target].append(selected[left])
+            left += 1
+            if left <= right and len(chunks[target]) < capacities[target]:
+                chunks[target].append(selected[right])
+                right -= 1
+            unit_index = target + 1
+        return chunks, 0
+
+    offset = 0
+    for index, capacity in enumerate(capacities):
+        chunks[index] = selected[offset:offset + capacity]
+        offset += capacity
+    return chunks, max(0, len(selected) - offset)
+
+
+def _build_existing_unit_previews(
+    *,
+    fase: CompeticioAparellFase,
+    existing_units: list[ProgramUnit],
+    partition_mode: str,
+    partition_key: str,
+    selected: list[QualificationCandidate],
+    warnings: list[str],
+    partition_warnings: dict[str, list[str]],
+) -> list[QualificationUnitPreview]:
+    units = _candidate_units_for_partition(
+        existing_units,
+        partition_mode=partition_mode,
+        partition_key=partition_key,
+    )
+    if not units:
+        _add_partition_warning(
+            warnings,
+            partition_warnings,
+            partition_key,
+            "no hi ha unitats de programa per a aquesta particio. Genera-les a Grups abans de congelar.",
+        )
+        return []
+
+    previews = []
+    capacities = []
+    for unit in units:
+        capacity = len(_slots_for_unit(unit))
+        if capacity <= 0:
+            capacity = _positive_int(unit.capacity, default=0)
+        capacities.append(capacity)
+    settings = _qualification_group_settings(fase)
+    chunks, unassigned = _chunks_by_strategy(
+        selected,
+        capacities,
+        strategy=str(settings.get("formation_strategy") or "classification_order"),
+    )
+    for unit, capacity, chunk in zip(units, capacities, chunks):
+        previews.append(
             QualificationUnitPreview(
-                label=label,
-                partition_key=partition_key,
+                unit_id=unit.id,
+                label=unit.nom,
+                partition_key=_partition_key_for_unit(unit, partition_mode),
                 capacity=capacity,
-                candidates=selected[offset:offset + capacity],
+                candidates=chunk,
             )
         )
-    return units
+    if unassigned:
+        _add_partition_warning(
+            warnings,
+            partition_warnings,
+            partition_key,
+            f"no hi ha prou slots per assignar {unassigned} classificat/s o reserva/es.",
+        )
+    return previews
 
 
 def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
@@ -432,9 +647,7 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
     _source, cut = _phase_config(fase)
     qualifiers_count = _positive_int(cut.get("qualifiers_count"), default=0)
     reserve_count = _positive_int(cut.get("reserve_count"), default=0)
-    unit_capacity = _positive_int(cut.get("unit_capacity"), default=qualifiers_count + reserve_count or 1)
     partition_mode = str(cut.get("partition_mode") or "global").strip() or "global"
-    unit_name_template = str(cut.get("unit_name_template") or "{fase} - {particio}").strip()
     tie_policy = str(cut.get("tie_policy") or "classification_order").strip() or "classification_order"
     if qualifiers_count <= 0:
         raise QualificationError("Cal configurar un nombre positiu de classificats.")
@@ -442,6 +655,14 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
         raise QualificationError("El mode de particio del tall no es valid.")
     if tie_policy not in TIE_POLICIES:
         raise QualificationError("La politica d'empats del tall no es valida.")
+    existing_units = list(
+        ProgramUnit.objects
+        .filter(fase=fase)
+        .prefetch_related("slots")
+        .order_by("ordre", "id")
+    )
+    if not existing_units:
+        raise QualificationError("Primer genera les unitats buides de la fase a Grups.")
 
     warnings = []
     partition_warnings = {}
@@ -450,18 +671,27 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
         warnings.append(source_warning)
     result = compute_classificacio(fase.competicio, classificacio)
     units = []
+    reserves = {}
     for partition_key, rows in _rows_for_cut(result, partition_mode):
+        selected = _select_candidates_for_partition(
+            partition_key=partition_key,
+            rows=rows,
+            qualifiers_count=qualifiers_count,
+            reserve_count=reserve_count,
+            tie_policy=tie_policy,
+            warnings=warnings,
+            partition_warnings=partition_warnings,
+        )
+        competitive, reserve_candidates = _split_reserve_candidates(selected)
+        if reserve_candidates:
+            reserves[partition_key] = reserve_candidates
         units.extend(
-            _build_units_for_partition(
+            _build_existing_unit_previews(
                 fase=fase,
-                classificacio_id=classificacio.id,
+                existing_units=existing_units,
+                partition_mode=partition_mode,
                 partition_key=partition_key,
-                rows=rows,
-                qualifiers_count=qualifiers_count,
-                reserve_count=reserve_count,
-                unit_capacity=unit_capacity,
-                unit_name_template=unit_name_template,
-                tie_policy=tie_policy,
+                selected=competitive,
                 warnings=warnings,
                 partition_warnings=partition_warnings,
             )
@@ -480,7 +710,23 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
             units=units,
             warnings=warnings,
             partition_warnings=partition_warnings,
+            reserves=reserves,
         ).payload()["units"],
+        "reserves": {
+            key: [
+                {
+                    "subject_kind": candidate.subject_kind,
+                    "subject_id": candidate.subject_id,
+                    "status": candidate.status,
+                    "source_particio_key": candidate.source_particio_key,
+                    "source_position": candidate.source_position,
+                    "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
+                    "source_row": candidate.source_row,
+                }
+                for candidate in items
+            ]
+            for key, items in reserves.items()
+        },
     }
     return QualificationPreview(
         fase=fase,
@@ -490,6 +736,7 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
         units=units,
         warnings=warnings,
         partition_warnings=partition_warnings,
+        reserves=reserves,
     )
 
 
@@ -564,6 +811,23 @@ def _protected_slots_exist(fase: CompeticioAparellFase) -> bool:
     ).exists()
 
 
+def _assigned_slots_exist(fase: CompeticioAparellFase) -> bool:
+    return ProgramUnitSlot.objects.filter(unit__fase=fase).exclude(status=ProgramUnitSlot.Status.EMPTY).exists()
+
+
+def _clear_qualification_slots(fase: CompeticioAparellFase) -> None:
+    ProgramUnitSlot.objects.filter(unit__fase=fase).update(
+        subject_kind="",
+        subject_id=None,
+        status=ProgramUnitSlot.Status.EMPTY,
+        source_classificacio=None,
+        source_particio_key="",
+        source_position=None,
+        source_score=None,
+        source_row={},
+    )
+
+
 def apply_qualification(
     fase: CompeticioAparellFase,
     *,
@@ -574,33 +838,32 @@ def apply_qualification(
     source_warning = _source_phase_warning(preview.source_phase)
     if source_warning:
         raise QualificationError(source_warning)
-    if fase.program_units.exists() and not replace_existing:
-        raise QualificationError("La fase desti ja te unitats. Revisa-les o buida-les abans de generar el tall.")
+    if _assigned_slots_exist(fase) and not replace_existing:
+        raise QualificationError("La fase desti ja te slots omplerts. Revisa'ls o reemplaça el snapshot.")
+    if replace_existing and _protected_slots_exist(fase) and not allow_replace_protected:
+        raise QualificationError("No es poden sobreescriure slots bloquejats o manuals.")
 
     with transaction.atomic():
-        if replace_existing:
-            if _protected_slots_exist(fase) and not allow_replace_protected:
-                raise QualificationError("No es poden sobreescriure slots bloquejats o manuals.")
-            fase.program_units.all().delete()
-
         now = timezone.now()
         run = _create_run(preview, status=QualificationRun.Status.APPLIED, applied_at=now)
-        for order, unit_preview in enumerate(preview.units, start=1):
-            unit = create_program_unit_with_empty_slots(
-                fase=fase,
-                nom=unit_preview.label,
-                capacity=unit_preview.capacity,
-                tipus=ProgramUnit.Tipus.BLOCK,
-                ordre=order,
-                partition_key=unit_preview.partition_key,
-                partition_values={"key": unit_preview.partition_key},
-                status=ProgramUnit.Status.GENERATED,
-                metadata={
-                    "qualification_snapshot_hash": preview.snapshot_hash,
-                    "qualification_run_id": run.id,
-                    "source_classificacio_id": preview.classificacio.id,
-                },
-            )
+        _clear_qualification_slots(fase)
+        units_by_id = {
+            unit.id: unit
+            for unit in ProgramUnit.objects.filter(fase=fase).prefetch_related("slots")
+        }
+        for unit_preview in preview.units:
+            unit = units_by_id.get(unit_preview.unit_id)
+            if unit is None:
+                continue
+            metadata = unit.metadata if isinstance(unit.metadata, dict) else {}
+            metadata.update({
+                "qualification_snapshot_hash": preview.snapshot_hash,
+                "qualification_run_id": run.id,
+                "source_classificacio_id": preview.classificacio.id,
+            })
+            unit.metadata = metadata
+            unit.status = ProgramUnit.Status.GENERATED
+            unit.save(update_fields=["metadata", "status", "updated_at"])
             fill_program_unit_slots(
                 unit,
                 [
@@ -704,6 +967,7 @@ def preview_as_dict(preview: QualificationPreview) -> dict:
         "summary": preview.summary(),
         "warnings": list(preview.warnings),
         "partition_warnings": dict(preview.partition_warnings),
+        "reserves": dict(preview.reserves),
         "units": [
             {
                 "label": unit.label,

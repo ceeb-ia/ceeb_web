@@ -1,10 +1,10 @@
 <section class="phase-panel">
   <div class="phase-panel-title">
-    <h5>Crear grup de fase manual</h5>
-    <span class="badge badge-light border">Estructura</span>
+    <h5>Unitat manual</h5>
+    <span class="badge badge-light border">Avancat</span>
   </div>
   <div class="phase-panel-note mb-2">
-    Crea un contenidor programable dins {{ selected_phase.nom }}. Els participants s'hi fixaran quan es congeli el snapshot.
+    Opcio secundaria per crear una unitat concreta a ma. El flux recomanat es generar les unitats buides des del pla de grups.
   </div>
   <form method="post">
     {% csrf_token %}
@@ -19,6 +19,6 @@
       {{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}
       {% if manual_unit_form.partition_key.help_text %}<div class="text-muted small">{{ manual_unit_form.partition_key.help_text }}</div>{% endif %}
     </div>
-    <button class="btn btn-sm btn-outline-primary" type="submit">Crear grup de fase</button>
+    <button class="btn btn-sm btn-outline-secondary" type="submit">Crear unitat manual</button>
   </form>
 </section>

@@ -38,15 +38,31 @@ def normalize_unit_lookup_key(value):
     return str(value)
 
 
-def clamp_exercici(value, comp_aparell=None):
+def effective_exercise_count(comp_aparell=None, phase=None, max_exercicis=None):
+    if max_exercicis not in (None, ""):
+        raw = max_exercicis
+    else:
+        raw = None
+        phase_config = getattr(phase, "config", None)
+        if isinstance(phase_config, dict):
+            scoring_config = phase_config.get("scoring")
+            if isinstance(scoring_config, dict):
+                raw = scoring_config.get("nombre_exercicis")
+        if raw in (None, ""):
+            raw = getattr(comp_aparell, "nombre_exercicis", 1)
+    try:
+        count = int(raw or 1)
+    except Exception:
+        count = 1
+    return max(1, min(5, count))
+
+
+def clamp_exercici(value, comp_aparell=None, *, phase=None, max_exercicis=None):
     try:
         exercici = int(value or 1)
     except Exception:
         exercici = 1
-    try:
-        max_ex = int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)
-    except Exception:
-        max_ex = 1
+    max_ex = effective_exercise_count(comp_aparell, phase=phase, max_exercicis=max_exercicis)
     return max(1, min(max_ex, exercici))
 
 
@@ -67,7 +83,7 @@ def serialize_comp_aparell(comp_aparell):
         "code": str(getattr(comp_aparell, "display_codi", "") or getattr(comp_aparell.aparell, "codi", "") or ""),
         "ordre": comp_aparell.ordre,
         "subject_mode": "team" if is_team_context_app(comp_aparell) else "individual",
-        "exercicis": list(range(1, clamp_exercici(999, comp_aparell) + 1)),
+        "exercicis": list(range(1, effective_exercise_count(comp_aparell) + 1)),
     }
 
 
@@ -99,6 +115,7 @@ def _excluded_by_inscripcio(competicio, app_ids):
 
 
 def serialize_phase(phase):
+    exercise_count = effective_exercise_count(phase.comp_aparell, phase=phase)
     return {
         "id": phase.id,
         "label": str(phase.nom or ""),
@@ -106,6 +123,8 @@ def serialize_phase(phase):
         "ordre": phase.ordre,
         "estat": phase.estat,
         "comp_aparell_id": phase.comp_aparell_id,
+        "nombre_exercicis": exercise_count,
+        "exercicis": list(range(1, exercise_count + 1)),
     }
 
 
@@ -347,6 +366,7 @@ def build_notes_units_context(competicio):
         comp_aparell = apps_by_id.get(app_id)
         if comp_aparell is None:
             continue
+        exercise_count = effective_exercise_count(comp_aparell, phase=phase)
         subject_kind = "team_unit" if app_id in team_app_ids else "inscripcio"
         phase_has_scoreable_unit = False
         for program_unit in phase.program_units.all():
@@ -374,6 +394,8 @@ def build_notes_units_context(competicio):
                 "program_unit_id": program_unit.id,
                 "comp_aparell_id": app_id,
                 "app_label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+                "nombre_exercicis": exercise_count,
+                "exercicis": list(range(1, exercise_count + 1)),
                 "member_keys": [],
                 "subject_refs": subject_refs,
                 "subject_kind": subject_kind,

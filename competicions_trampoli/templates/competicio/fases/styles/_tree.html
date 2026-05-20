@@ -243,7 +243,7 @@
   .phase-tree-node-shell {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(176px, auto);
     gap: 10px;
     align-items: start;
     max-width: 940px;
@@ -318,6 +318,32 @@
     min-width: 168px;
   }
 
+  .phase-tree-node-tools {
+    display: grid;
+    gap: 8px;
+    min-width: 176px;
+  }
+
+  .phase-exercise-form {
+    display: flex;
+    gap: 6px;
+    align-items: end;
+  }
+
+  .phase-exercise-form label {
+    display: grid;
+    gap: 2px;
+    color: var(--phase-muted);
+    font-size: 0.74rem;
+    font-weight: 750;
+    margin: 0;
+    min-width: 70px;
+  }
+
+  .phase-exercise-form input {
+    min-width: 70px;
+  }
+
   .phase-child-create-toggle {
     display: inline-flex;
     align-items: center;
@@ -380,4 +406,95 @@
     color: var(--phase-text);
     font-size: 1rem;
     font-weight: 750;
+  }
+
+  .phase-tree-units {
+    max-width: 940px;
+    margin: 8px 178px 0 0;
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px 10px;
+  }
+
+  .phase-tree-units > summary {
+    cursor: pointer;
+    color: var(--phase-text);
+    font-size: 0.84rem;
+    font-weight: 750;
+    list-style: none;
+  }
+
+  .phase-tree-units > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .phase-tree-warning {
+    max-width: 940px;
+    margin: 8px 178px 0 0;
+  }
+
+  .phase-program-unit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .phase-program-unit-card {
+    border: 1px solid #D7E3F8;
+    border-radius: 8px;
+    background: #F8FAFC;
+    padding: 10px;
+  }
+
+  .phase-program-unit-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .phase-program-unit-card-title {
+    color: var(--phase-text);
+    font-weight: 800;
+  }
+
+  .phase-program-unit-card-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    color: var(--phase-muted);
+    font-size: 0.8rem;
+  }
+
+  .phase-program-unit-edit {
+    margin-top: 10px;
+  }
+
+  .phase-program-unit-edit > summary {
+    cursor: pointer;
+    color: var(--phase-text);
+    font-size: 0.82rem;
+    font-weight: 750;
+    list-style: none;
+  }
+
+  .phase-program-unit-edit > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .phase-program-unit-form {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .phase-program-unit-form label {
+    display: grid;
+    gap: 3px;
+    color: var(--phase-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
   }

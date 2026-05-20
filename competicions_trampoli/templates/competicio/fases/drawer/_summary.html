@@ -19,10 +19,11 @@
         {% endif %}
       </div>
       <div class="phase-summary-badges">
-        <span class="badge badge-light border">{{ selected_phase.estat }}</span>
+        <span class="badge badge-light border">{{ selected_phase.ui_user_status_label }}</span>
         <span class="badge badge-light border">{{ selected_phase.ui_unit_count }} unitats</span>
         <span class="badge badge-light border">{{ selected_phase.ui_competitive_slot_count }}/{{ selected_phase.ui_slot_count }} places</span>
         {% if selected_phase.ui_qualification_stale %}<span class="badge badge-danger">Font canviada</span>{% endif %}
+        {% if selected_phase.ui_group_plan_stale %}<span class="badge badge-danger">Revisar grups</span>{% endif %}
       </div>
     </div>
   {% else %}

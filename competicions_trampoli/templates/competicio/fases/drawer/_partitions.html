@@ -1,10 +1,10 @@
 {% if selected_phase.ui_generated_partitions %}
   <section class="phase-panel">
     <div class="phase-panel-title">
-      <h5>Grups/particions existents</h5>
+      <h5>Particions de snapshot</h5>
     </div>
     <div class="phase-panel-note mb-2">
-      Estat dels contenidors vinculats al darrer snapshot o proposta de repartiment.
+      Estat de les particions vinculades al snapshot congelat o pendent de confirmar.
     </div>
     <div class="phase-partition-list">
       {% for partition in selected_phase.ui_generated_partitions %}

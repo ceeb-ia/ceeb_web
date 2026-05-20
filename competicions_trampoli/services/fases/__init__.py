@@ -18,10 +18,20 @@ from .qualification import (
     qualification_is_stale,
     record_qualification_preview,
 )
+from .group_plan import (
+    GroupPlanPreview,
+    GroupPlanUnitPreview,
+    apply_group_plan,
+    group_plan_as_dict,
+    preview_group_plan,
+)
 
 __all__ = [
+    "GroupPlanPreview",
+    "GroupPlanUnitPreview",
     "QualificationError",
     "SlotSubject",
+    "apply_group_plan",
     "apply_qualification",
     "confirm_qualification_partition",
     "create_program_unit_from_subjects",
@@ -29,8 +39,10 @@ __all__ = [
     "create_units_one_per_partition",
     "create_units_split_by_capacity",
     "fill_program_unit_slots",
+    "group_plan_as_dict",
     "next_program_unit_order",
     "phase_dashboard_context",
+    "preview_group_plan",
     "mark_qualification_stale_if_needed",
     "preview_as_dict",
     "preview_qualification",
