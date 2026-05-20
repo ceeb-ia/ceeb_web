@@ -100,6 +100,32 @@ def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: di
         slot.ui_subject_label = label
         slot.ui_subject_meta = meta
         slot.ui_subject_fallback = f"{slot.subject_kind}:{slot.subject_id}" if slot.subject_kind and slot.subject_id else ""
+        manual = source_row.get("manual_override") if isinstance(source_row.get("manual_override"), dict) else {}
+        override_type = str(manual.get("type") or "").strip()
+        source_position = getattr(slot, "source_position", None)
+        source_position_label = f"#{source_position}" if source_position else ""
+        if slot.status == ProgramUnitSlot.Status.EMPTY:
+            origin_label = "Sense origen"
+        elif override_type == "manual_inscripcio":
+            origin_label = "Manual"
+        elif override_type == "reserve_promotion" or slot.status == ProgramUnitSlot.Status.RESERVE:
+            origin_label = f"Reserva {source_position_label}".strip()
+        elif source_position:
+            origin_label = f"Classificat {source_position_label}"
+        elif slot.source_classificacio_id:
+            origin_label = "Classificat"
+        elif slot.status == ProgramUnitSlot.Status.MANUAL:
+            origin_label = "Manual"
+        else:
+            origin_label = slot.get_status_display()
+        origin_parts = []
+        partition = str(slot.source_particio_key or "").strip()
+        if partition:
+            origin_parts.append(f"Particio: {partition}")
+        if slot.source_score is not None:
+            origin_parts.append(f"Punts: {slot.source_score}")
+        slot.ui_origin_label = origin_label
+        slot.ui_origin_detail = " / ".join(origin_parts)
 
 
 def _phases_for_comp_aparell(comp_aparell: CompeticioAparell) -> list[CompeticioAparellFase]:
@@ -406,7 +432,23 @@ def _attach_phase_tree(phases: list[CompeticioAparellFase], selected_phase_id: i
             item.ui_depth = depth
             assign_depth(getattr(item, "ui_children", []), depth + 1)
 
+    def attach_branch_stats(items):
+        for item in items:
+            children = getattr(item, "ui_children", [])
+            attach_branch_stats(children)
+            item.ui_branch_phase_count = 1 + sum(getattr(child, "ui_branch_phase_count", 1) for child in children)
+            item.ui_branch_unit_count = getattr(item, "ui_unit_count", 0) + sum(
+                getattr(child, "ui_branch_unit_count", 0)
+                for child in children
+            )
+            item.ui_branch_programmed_unit_count = getattr(item, "ui_programmed_unit_count", 0) + sum(
+                getattr(child, "ui_branch_programmed_unit_count", 0)
+                for child in children
+            )
+            item.ui_can_delete_branch = item.ui_branch_programmed_unit_count == 0
+
     assign_depth(roots)
+    attach_branch_stats(roots)
     return roots
 
 

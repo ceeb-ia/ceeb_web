@@ -188,9 +188,16 @@
 
     function refreshSlotOrderIndexes(workspace) {
       if (!workspace) return;
-      workspace.querySelectorAll('[data-slot-order-item]').forEach((item, index) => {
+      let visibleIndex = 0;
+      workspace.querySelectorAll('[data-slot-order-item]').forEach((item) => {
         const label = item.querySelector('[data-slot-order-index]');
-        if (label) label.textContent = String(index + 1);
+        if (!label) return;
+        if (item.hidden) {
+          label.textContent = '';
+        } else {
+          visibleIndex += 1;
+          label.textContent = String(visibleIndex);
+        }
       });
     }
 
@@ -208,8 +215,14 @@
       const workspace = slotOrderWorkspace(id);
       if (!workspace) return;
       closeOtherSlotMenus(null);
-      workspace.hidden = false;
       const backdrop = slotOrderBackdrop(id);
+      if (backdrop && backdrop.parentElement !== document.body) {
+        document.body.appendChild(backdrop);
+      }
+      if (workspace.parentElement !== document.body) {
+        document.body.appendChild(workspace);
+      }
+      workspace.hidden = false;
       if (backdrop) backdrop.hidden = false;
       document.body.classList.add('phase-slot-order-open');
       refreshSlotOrderIndexes(workspace);
@@ -238,10 +251,12 @@
       const list = item.closest('[data-slot-order-list]');
       if (!list) return;
       if (direction === 'up') {
-        const prev = item.previousElementSibling;
+        let prev = item.previousElementSibling;
+        while (prev && prev.hidden) prev = prev.previousElementSibling;
         if (prev) list.insertBefore(item, prev);
       } else if (direction === 'down') {
-        const next = item.nextElementSibling;
+        let next = item.nextElementSibling;
+        while (next && next.hidden) next = next.nextElementSibling;
         if (next) list.insertBefore(next, item);
       }
       refreshSlotOrderIndexes(item.closest('[data-slot-order-workspace]'));
@@ -368,6 +383,7 @@
           const text = item.getAttribute('data-search-text') || item.textContent || '';
           item.hidden = !!needle && !normalizeSearchText(text).includes(needle);
         });
+        refreshSlotOrderIndexes(workspace);
       });
     });
     document.querySelectorAll('[data-slot-order-move]').forEach((button) => {

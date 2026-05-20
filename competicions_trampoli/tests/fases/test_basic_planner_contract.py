@@ -15,7 +15,7 @@ from ...models.competicio import (
 )
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioProgramUnit, RotacioEstacio, RotacioFranja
 from ...models.scoring import ScoreEntry
-from ...services.fases import create_program_unit_with_empty_slots
+from ...services.fases import SlotSubject, create_program_unit_from_subjects, create_program_unit_with_empty_slots
 from ..base import _BaseTrampoliDataMixin
 
 
@@ -50,6 +50,32 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             nom=nom,
             codi=codi,
             ordre=ordre,
+        )
+
+    def _place_program_unit_in_rotacions(self, unit):
+        franja = RotacioFranja.objects.create(
+            competicio=self.competicio,
+            hora_inici="09:00",
+            hora_fi="10:00",
+            ordre=1,
+            ordre_visual=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.competicio,
+            tipus="aparell",
+            comp_aparell=self.comp_aparell,
+            ordre=1,
+        )
+        assignacio = RotacioAssignacio.objects.create(
+            competicio=self.competicio,
+            franja=franja,
+            estacio=estacio,
+        )
+        return RotacioAssignacioProgramUnit.objects.create(
+            assignacio=assignacio,
+            program_unit=unit,
+            ordre=1,
         )
 
     def test_planner_lists_advanced_phase_and_program_units_without_score_payloads(self):
@@ -163,6 +189,52 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("Semifinal Pendent", body)
         self.assertIn("Programat", body)
         self.assertIn("Pendent de programar", body)
+
+    def test_reordered_slots_show_current_place_and_classification_origin(self):
+        fase = self._create_phase()
+        first = self._create_inscripcio(self.competicio, "Classificat u")
+        second = self._create_inscripcio(self.competicio, "Classificat dos")
+        unit = create_program_unit_from_subjects(
+            fase=fase,
+            nom="Final ordre visible",
+            subjects=[
+                SlotSubject(
+                    "inscripcio",
+                    first.id,
+                    source_position=1,
+                    source_particio_key="global",
+                    source_row={"participant": "Classificat u", "entitat": "Club A"},
+                ),
+                SlotSubject(
+                    "inscripcio",
+                    second.id,
+                    source_position=2,
+                    source_particio_key="global",
+                    source_row={"participant": "Classificat dos", "entitat": "Club B"},
+                ),
+            ],
+        )
+        slots = list(unit.slots.order_by("ordre", "slot_index", "id"))
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "reorder_program_unit_slots",
+                "fase_id": fase.id,
+                "unit_id": unit.id,
+                "slot_order": f"{slots[1].id},{slots[0].id}",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={fase.id}")
+        self.assertEqual(page.status_code, 200)
+        selected_phase = page.context["selected_phase"]
+        selected_unit = selected_phase.ui_units[0]
+        rendered_slots = list(selected_unit.slots.all())
+        self.assertEqual([slot.subject_id for slot in rendered_slots], [second.id, first.id])
+        self.assertEqual([slot.ui_origin_label for slot in rendered_slots], ["Classificat #2", "Classificat #1"])
 
     def test_post_create_phase_creates_advanced_phase(self):
         response = self.client.post(
@@ -457,6 +529,92 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertFalse(CompeticioAparellFase.objects.filter(pk=phase.id).exists())
+
+    def test_post_delete_phase_branch_removes_descendants_without_rotacions(self):
+        phase = self._create_phase()
+        child = self._create_phase(nom="Final", codi="FIN", parent=phase, ordre=3)
+        parent_unit = create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal pendent",
+            capacity=1,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+        child_unit = create_program_unit_with_empty_slots(
+            fase=child,
+            nom="Final pendent",
+            capacity=1,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "delete_phase_branch",
+                "fase_id": phase.id,
+                "confirm_branch_delete": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CompeticioAparellFase.objects.filter(pk__in=[phase.id, child.id]).exists())
+        self.assertFalse(ProgramUnit.objects.filter(pk__in=[parent_unit.id, child_unit.id]).exists())
+
+    def test_post_delete_phase_branch_requires_confirmation(self):
+        phase = self._create_phase()
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={"action": "delete_phase_branch", "fase_id": phase.id},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(CompeticioAparellFase.objects.filter(pk=phase.id).exists())
+        messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertTrue(any("Cal confirmar l'eliminacio" in message for message in messages))
+
+    def test_post_delete_phase_branch_blocks_programmed_descendant(self):
+        phase = self._create_phase()
+        child = self._create_phase(nom="Final", codi="FIN", parent=phase, ordre=3)
+        child_unit = create_program_unit_with_empty_slots(
+            fase=child,
+            nom="Final programada",
+            capacity=1,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+        self._place_program_unit_in_rotacions(child_unit)
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "delete_phase_branch",
+                "fase_id": phase.id,
+                "confirm_branch_delete": "1",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(CompeticioAparellFase.objects.filter(pk=phase.id).exists())
+        self.assertTrue(CompeticioAparellFase.objects.filter(pk=child.id).exists())
+        messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertTrue(any("programades a rotacions" in message for message in messages))
+
+    def test_phase_tree_disables_branch_delete_when_descendant_is_programmed(self):
+        phase = self._create_phase()
+        child = self._create_phase(nom="Final", codi="FIN", parent=phase, ordre=3)
+        child_unit = create_program_unit_with_empty_slots(
+            fase=child,
+            nom="Final programada",
+            capacity=1,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+        self._place_program_unit_in_rotacions(child_unit)
+
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Hi ha unitats d'aquesta branca programades a rotacions.")
 
     def test_post_update_phase_status_changes_status(self):
         phase = self._create_phase()

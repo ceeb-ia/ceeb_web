@@ -66,6 +66,31 @@
               </label>
               <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
             </form>
+            {% if phase.ui_can_delete_branch %}
+              <form
+                method="post"
+                class="phase-branch-delete-form"
+                onsubmit="return confirm('Eliminar la branca {{ phase.nom|escapejs }} i totes les fases filles? Aquesta accio tambe eliminara les unitats no programades de la branca.');">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_phase_branch">
+                <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                <input type="hidden" name="confirm_branch_delete" value="1">
+                <button class="btn btn-sm btn-outline-danger phase-node-menu-action" type="submit">
+                  <span>Eliminar branca</span>
+                </button>
+              </form>
+            {% else %}
+              <button
+                class="btn btn-sm btn-outline-danger phase-node-menu-action"
+                type="button"
+                disabled
+                title="Aquesta branca te unitats programades a rotacions.">
+                <span>Eliminar branca</span>
+              </button>
+              <div class="phase-node-menu-note">
+                Hi ha unitats d'aquesta branca programades a rotacions.
+              </div>
+            {% endif %}
           </div>
         </details>
       </div>

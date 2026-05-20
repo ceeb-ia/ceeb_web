@@ -59,6 +59,7 @@ class CompeticioAparell(models.Model):
     codi_local = models.CharField(max_length=40, blank=True, default="", db_index=True)
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis")
     judge_ui_config = models.JSONField(default=dict, blank=True)
+    participation_config = models.JSONField(default=dict, blank=True)
 
     # CREC QUE REDUNDANT A PARTIR D'AQUI; INUTIL JA
     ordre = models.PositiveSmallIntegerField(default=1)

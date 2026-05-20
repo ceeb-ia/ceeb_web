@@ -250,3 +250,82 @@ class InscripcionsSetAparellsViewTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(r.status_code, 400)
 
 
+class CompeticioAparellParticipationViewTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio()
+        self.user = self._login_competicio_user(
+            self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            username_prefix="participation_editor",
+        )
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "modalitat", "label": "Modalitat", "kind": "extra"},
+            ]
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+        app = self._create_aparell("DMT_PART", "DMT Participacio", owner=self.user)
+        self.comp_app = self._create_comp_aparell(self.comp, app, ordre=1, actiu=True)
+        self.ins_dmt = self._create_inscripcio(self.comp, "DMT 1", ordre=1)
+        self.ins_dmt.extra = {"modalitat": "DMT"}
+        self.ins_dmt.save(update_fields=["extra"])
+        self.ins_tra = self._create_inscripcio(self.comp, "TRA 1", ordre=2)
+        self.ins_tra.extra = {"modalitat": "TRA"}
+        self.ins_tra.save(update_fields=["extra"])
+        self.url = reverse(
+            "trampoli_aparell_participation",
+            kwargs={"pk": self.comp.id, "app_id": self.comp_app.id},
+        )
+
+    def _rule_payload(self, *, intent="preview", confirm=False, value="DMT"):
+        return {
+            "participation_mode": "include_matching",
+            "filter_field": ["modalitat"],
+            "filter_operator": ["is_any"],
+            "filter_values": [value],
+            "intent": intent,
+            "confirm_participation_apply": "1" if confirm else "",
+        }
+
+    def test_preview_does_not_replace_exclusions(self):
+        response = self.client.post(self.url, data=self._rule_payload(intent="preview"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Previsualitzacio")
+        self.assertFalse(InscripcioAparellExclusio.objects.filter(comp_aparell=self.comp_app).exists())
+
+    def test_apply_replaces_participation_from_zero_and_persists_rule(self):
+        InscripcioAparellExclusio.objects.create(
+            inscripcio=self.ins_dmt,
+            comp_aparell=self.comp_app,
+            motiu="Manual antic",
+        )
+
+        response = self.client.post(self.url, data=self._rule_payload(intent="apply", confirm=True))
+
+        self.assertEqual(response.status_code, 302)
+        excluded_ids = set(
+            InscripcioAparellExclusio.objects.filter(comp_aparell=self.comp_app).values_list("inscripcio_id", flat=True)
+        )
+        self.assertEqual(excluded_ids, {self.ins_tra.id})
+        self.comp_app.refresh_from_db()
+        self.assertEqual(self.comp_app.participation_config["mode"], "include_matching")
+        self.assertEqual(self.comp_app.participation_config["filters"][0]["field"], "modalitat")
+        self.assertEqual(self.comp_app.participation_config["last_summary"]["included_count"], 1)
+        self.assertEqual(self.comp_app.participation_config["last_summary"]["excluded_count"], 1)
+
+    def test_apply_requires_confirmation(self):
+        response = self.client.post(self.url, data=self._rule_payload(intent="apply", confirm=False))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Confirma la substitucio massiva")
+        self.assertFalse(InscripcioAparellExclusio.objects.filter(comp_aparell=self.comp_app).exists())
+
+    def test_planner_and_aparell_list_link_to_participation_panel(self):
+        list_response = self.client.get(reverse("trampoli_aparells_list", kwargs={"pk": self.comp.id}))
+        planner_response = self.client.get(reverse("trampoli_fases", kwargs={"pk": self.comp.id}))
+
+        self.assertContains(list_response, "Participacio")
+        self.assertContains(planner_response, "Participacio")
+
+

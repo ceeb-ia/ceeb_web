@@ -509,22 +509,47 @@
   .phase-slot-chip {
     position: relative;
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 5px;
     min-height: 24px;
     max-width: 100%;
-    padding: 2px 8px;
+    padding: 5px 8px;
     border: 1px solid var(--phase-neutral-border);
-    border-radius: 999px;
+    border-radius: 8px;
     background: #F8FAFC;
     color: #475569;
     font-size: 0.8rem;
   }
 
   .phase-slot-chip-main {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .phase-slot-chip-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .phase-slot-chip-head span,
+  .phase-slot-chip-head strong {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.76);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .phase-slot-chip-subject {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .phase-slot-chip.is-filled {
@@ -719,7 +744,7 @@
   .phase-slot-order-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 1250;
+    z-index: 100090;
     background: rgba(15, 23, 42, 0.38);
   }
 
@@ -727,13 +752,26 @@
     overflow: hidden;
   }
 
+  body.phase-slot-order-open .footer_section {
+    z-index: 0 !important;
+    pointer-events: none;
+  }
+
+  body.phase-slot-order-open .phase-slot-order-backdrop {
+    z-index: 100090 !important;
+  }
+
+  body.phase-slot-order-open .phase-slot-order-workspace {
+    z-index: 100100 !important;
+  }
+
   .phase-slot-order-workspace {
     position: fixed;
-    inset: 5vh max(14px, calc((100vw - min(860px, 94vw)) / 2));
-    z-index: 1260;
+    inset: max(14px, 4vh) max(14px, calc((100vw - min(860px, 94vw)) / 2)) max(18px, 4vh);
+    z-index: 100100;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
-    max-height: 90vh;
+    max-height: calc(100vh - max(28px, 8vh));
     min-width: 0;
     border: 1px solid var(--phase-border);
     border-radius: 8px;
@@ -1061,6 +1099,12 @@
   .phase-node-menu-action {
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .phase-node-menu-note {
+    color: var(--phase-muted);
+    font-size: 0.74rem;
+    line-height: 1.25;
   }
 
   .phase-exercise-form {

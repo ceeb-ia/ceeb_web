@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from django.contrib import messages
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404
 
 from ....forms import (
@@ -97,6 +98,37 @@ def phase_for_post(competicio, request):
     )
 
 
+def _phase_branch_delete_order(phase) -> list[int]:
+    phases = list(
+        CompeticioAparellFase.objects
+        .filter(competicio=phase.competicio, comp_aparell=phase.comp_aparell)
+        .only("id", "parent_id")
+    )
+    children_by_parent: dict[int, list[int]] = {}
+    for item in phases:
+        if item.parent_id:
+            children_by_parent.setdefault(int(item.parent_id), []).append(int(item.id))
+
+    ordered: list[int] = []
+
+    def visit(phase_id: int) -> None:
+        for child_id in children_by_parent.get(phase_id, []):
+            visit(child_id)
+        ordered.append(phase_id)
+
+    visit(int(phase.id))
+    return ordered
+
+
+def _programmed_units_in_branch(phase_ids: list[int]):
+    return (
+        ProgramUnit.objects
+        .filter(fase_id__in=phase_ids, rotacio_links__isnull=False)
+        .distinct()
+        .order_by("fase__ordre", "ordre", "id")
+    )
+
+
 def _apply_qualification(phase, *, replace_existing=False, allow_replace_protected=False):
     try:
         return apply_qualification(
@@ -181,6 +213,35 @@ def handle_phase_post(view, request):
             phase_name = phase.nom
             phase.delete()
             messages.success(request, f"Fase '{phase_name}' eliminada.")
+            return view.redirect_to_selected_app(view.comp_aparell), {}
+
+        if action == "delete_phase_branch":
+            if request.POST.get("confirm_branch_delete") != "1":
+                messages.error(request, "Cal confirmar l'eliminacio de la branca.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            branch_phase_ids = _phase_branch_delete_order(phase)
+            programmed_units = _programmed_units_in_branch(branch_phase_ids)
+            if programmed_units.exists():
+                sample = list(programmed_units.values_list("nom", flat=True)[:3])
+                suffix = f": {', '.join(sample)}" if sample else ""
+                messages.error(
+                    request,
+                    "No es pot eliminar aquesta branca perque te unitats programades a rotacions" + suffix + ".",
+                )
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            phase_name = phase.nom
+            phase_count = len(branch_phase_ids)
+            try:
+                with transaction.atomic():
+                    for phase_id in branch_phase_ids:
+                        CompeticioAparellFase.objects.get(pk=phase_id).delete()
+            except ProtectedError:
+                messages.error(
+                    request,
+                    "No es pot eliminar aquesta branca perque alguna fase ja te dades protegides.",
+                )
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            messages.success(request, f"Branca '{phase_name}' eliminada ({phase_count} fase/s).")
             return view.redirect_to_selected_app(view.comp_aparell), {}
 
         if action == "update_phase_status":

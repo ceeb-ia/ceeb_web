@@ -281,6 +281,7 @@
                     <div class="d-inline-flex flex-wrap justify-content-end gap-2">
                       <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                       <a class="btn btn-sm btn-outline-warning" href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
+                      <a class="btn btn-sm btn-outline-primary" href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Participacio</a>
                       <a class="btn btn-sm section-btn section-btn--fases" href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ comp_aparell.id }}">Fases</a>
                       <form method="post" action="{% url 'competicio_aparell_delete' competicio.id comp_aparell.id %}" class="d-inline">
                         {% csrf_token %}

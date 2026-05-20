@@ -25,8 +25,16 @@
         {% for slot in unit.slots.all %}
           <div class="phase-slot-chip {% if slot.status == 'withdrawn' %}is-withdrawn{% elif slot.status != 'empty' %}is-filled{% else %}is-empty{% endif %}">
             <span class="phase-slot-chip-main">
-              Ordre {{ slot.ordre }} - {{ slot.get_status_display }}{% if slot.ui_subject_label %} - {{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %} - {{ slot.ui_subject_fallback }}{% endif %}
+              <span class="phase-slot-chip-head">
+                <strong>Plaça {{ forloop.counter }}</strong>
+                <span>{{ slot.ui_origin_label }}</span>
+                <span>{{ slot.get_status_display }}</span>
+              </span>
+              <span class="phase-slot-chip-subject">
+                {% if slot.ui_subject_label %}{{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %}{{ slot.ui_subject_fallback }}{% else %}Plaça buida{% endif %}
+              </span>
               {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
+              {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
             </span>
             {% if not slot.locked %}
               <details class="phase-slot-actions">
@@ -200,13 +208,15 @@
             draggable="{% if slot.locked %}false{% else %}true{% endif %}"
             data-slot-order-item
             data-slot-id="{{ slot.id }}"
-            data-search-text="ordre {{ slot.ordre }} {{ slot.get_status_display }} {{ slot.ui_subject_label }} {{ slot.ui_subject_meta }} {{ slot.ui_subject_fallback }}">
+            data-search-text="plaça {{ forloop.counter }} ordre {{ slot.ordre }} {{ slot.ui_origin_label }} {{ slot.ui_origin_detail }} {{ slot.get_status_display }} {{ slot.ui_subject_label }} {{ slot.ui_subject_meta }} {{ slot.ui_subject_fallback }}">
             <span class="phase-slot-order-handle" aria-hidden="true">::</span>
             <span class="phase-slot-order-index" data-slot-order-index>{{ forloop.counter }}</span>
             <span class="phase-slot-order-main">
+              <span>Plaça {{ forloop.counter }} - {{ slot.ui_origin_label }}</span>
               <strong>{{ slot.get_status_display }}{% if slot.locked %} · bloquejada{% endif %}</strong>
               <span>{% if slot.ui_subject_label %}{{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %}{{ slot.ui_subject_fallback }}{% else %}Plaça buida{% endif %}</span>
               {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
+              {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
             </span>
             <span class="phase-slot-order-actions">
               <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="up" title="Pujar">↑</button>

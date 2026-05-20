@@ -4,6 +4,7 @@ from .base import competition_view
 from ..views.competition.aparatus import (
     CompeticioAparellCreate,
     CompeticioAparellDeleteView,
+    CompeticioAparellParticipationView,
     CompeticioAparellUpdate,
     TrampoliAparellList,
 )
@@ -47,6 +48,11 @@ urlpatterns = [
         "competicio/<int:pk>/notes/trampoli/aparells/<int:app_id>/editar/",
         competition_view(CompeticioAparellUpdate.as_view(), "scoring.edit"),
         name="trampoli_aparell_edit",
+    ),
+    path(
+        "competicio/<int:pk>/notes/trampoli/aparells/<int:app_id>/participacio/",
+        competition_view(CompeticioAparellParticipationView.as_view(), "scoring.edit"),
+        name="trampoli_aparell_participation",
     ),
     path(
         "competicio/<int:pk>/notes/trampoli/fases/",

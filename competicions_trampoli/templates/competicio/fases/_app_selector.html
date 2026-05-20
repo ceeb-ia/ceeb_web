@@ -34,9 +34,16 @@
             </span>
           </a>
         </span>
+        <span class="phase-app-tab-actions">
+          <a
+            class="phase-app-tab-action"
+            href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=summary.app.id %}?next={{ request.get_full_path|urlencode }}">
+            Participacio
+          </a>
+        </span>
       </div>
     {% endfor %}
-    <a class="phase-app-tab phase-app-tab-add" href="{% url 'trampoli_aparells_list' competicio.id %}">
+    <a class="phase-app-tab phase-app-tab-add" href="{% url 'trampoli_aparell_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">
       <span class="phase-app-tab-media">
         <img class="phase-app-tab-logo" src="{% static 'fases/nova_fase.png' %}" alt="">
         <span class="phase-app-tab-copy">
