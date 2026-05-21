@@ -1,0 +1,43 @@
+                  <tr class="franja-row-global franja-row--{{ f.tipus }} js-franja-visual-target"
+                      data-franja-visual-row="{{ f.id }}"
+                      data-color-raw="{{ f.color_fons|default_if_none:'' }}"
+                      draggable="true"
+                      style="--franja-bg: {{ f.resolved_background_color }}; --franja-fg: {{ f.resolved_text_color }}; --franja-border: {{ f.resolved_border_color }};">
+                    <th colspan="{{ estacions|length|add:1 }}" class="franja-special-cell">
+                      <div class="franja-head">
+                        <div class="franja-info">
+                          <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                            <span class="franja-special-badge">{{ f.tipus_label }}</span>
+                            <span class="franja-special-label"><span class="franja-visual-drag-handle" title="Arrossega per moure visualment">&#8942;&#8942;</span>{{ f.display_label }}</span>
+                          </div>
+                          <div class="mini mt-1">{{ f.hora_inici }} - {{ f.hora_fi }}</div>
+                        </div>
+                        <div class="dropdown franja-actions franja-actions--always">
+                          <button class="btn btn-sm btn-light franja-menu-toggle"
+                                  type="button"
+                                  data-toggle="dropdown"
+                                  aria-haspopup="true"
+                                  aria-expanded="false"
+                                  title="Accions de franja">
+                            <span aria-hidden="true">...</span>
+                          </button>
+                          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end franja-actions-menu">
+                            <button class="dropdown-item js-edit-fr"
+                                    data-url="{% url 'rotacions_franja_update_inline' competicio.id f.id %}"
+                                    data-titol="{{ f.titol|default_if_none:''|escape }}"
+                                    data-hi="{{ f.hora_inici|time:'H:i' }}"
+                                    data-hf="{{ f.hora_fi|time:'H:i' }}"
+                                    data-tipus="{{ f.tipus }}"
+                                    data-color="{{ f.color_fons|default_if_none:'' }}"
+                                    type="button">Editar</button>
+                            <button class="dropdown-item js-insert-after"
+                                    data-fr="{{ f.id }}"
+                                    type="button">Inserir despres</button>
+                            <button class="dropdown-item text-danger js-del-fr"
+                                    data-fr="{{ f.id }}"
+                                    type="button">Eliminar</button>
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                  </tr>

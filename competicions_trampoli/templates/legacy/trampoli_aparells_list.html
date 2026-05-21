@@ -1,19 +1,146 @@
 {% extends "base.html" %}
-{% block title %}Aparells – {{ competicio.nom }}{% endblock %}
+{% load static %}
+{% block title %}Aparells - {{ competicio.nom }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-  <div class="card-surface">
+<style>
+  .apparatus-page-shell {
+    --app-base: #2563EB;
+    --app-border: #E2E8F0;
+    --app-muted: #64748B;
+    --app-text: #0F172A;
+    --app-title: #1E3A8A;
+    width: calc(100% - 18px);
+    max-width: none;
+    margin: 9px auto 0;
+    padding: 18px;
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    background: #F8FAFC;
+    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.10);
+    color: var(--app-text);
+  }
 
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-      <div>
-        <h2 class="mb-1">Aparells · {{ competicio.nom }}</h2>
-        <div class="text-muted small">Selecciona i configura els aparells d’aquesta competició.</div>
+  .apparatus-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+    padding: 12px 4px 16px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  .apparatus-title-block {
+    min-width: 0;
+    flex: 1 1 460px;
+  }
+
+  .apparatus-title-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .apparatus-title-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 10px;
+    background: #FFFFFF;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+    flex: 0 0 auto;
+  }
+
+  .apparatus-title-logo img {
+    display: block;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+
+  .apparatus-page-title {
+    margin: 0;
+    color: var(--app-title);
+    font-size: clamp(1.9rem, 3vw, 2.45rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  .apparatus-context-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px 10px;
+    margin-top: 10px;
+    color: var(--app-muted);
+    font-size: .9rem;
+    line-height: 1.35;
+  }
+
+  .apparatus-context-main {
+    color: var(--app-text);
+    font-weight: 650;
+  }
+
+  .apparatus-context-line > span:not(:first-child)::before {
+    content: "";
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    margin-right: 10px;
+    border-radius: 999px;
+    background: #CBD5E1;
+    vertical-align: middle;
+  }
+
+  .apparatus-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .5rem;
+  }
+
+  @media (max-width: 720px) {
+    .apparatus-page-shell {
+      width: calc(100% - 12px);
+      margin-top: 6px;
+      padding: 12px;
+    }
+
+    .apparatus-page-header,
+    .apparatus-header-actions {
+      justify-content: flex-start;
+    }
+  }
+</style>
+
+<div class="container-fluid mt-4">
+  <div class="card-surface apparatus-page-shell">
+
+    <header class="apparatus-page-header">
+      <div class="apparatus-title-block">
+        <div class="apparatus-title-row">
+          <span class="apparatus-title-logo" aria-hidden="true">
+            <img src="{% static 'dock/configuracio.png' %}" alt="">
+          </span>
+          <h1 class="apparatus-page-title">Aparells</h1>
+        </div>
+        <div class="apparatus-context-line">
+          <span class="apparatus-context-main">{{ competicio.nom }}</span>
+          <span>Selecciona i configura els aparells d'aquesta competici&oacute;.</span>
+        </div>
       </div>
 
-      <div class="d-flex flex-wrap justify-content-end gap-2">
+      <div class="apparatus-header-actions">
         <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
+           href="{% url 'trampoli_config' competicio.id %}">Configuraci&oacute;</a>
         <a class="btn btn-sm section-btn section-btn--fases"
            href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">Aparells globals</a>
         <a class="btn btn-sm btn-outline-primary"
@@ -21,7 +148,7 @@
         <a class="btn btn-sm section-btn section-btn--notes"
            href="{% url 'scoring_notes_home' competicio.id %}">Anar a notes</a>
       </div>
-    </div>
+    </header>
 
     <div class="table-responsive">
       <table class="table table-sm table-bordered align-middle">
@@ -61,7 +188,7 @@
               <td class="text-center">{{ ca.nombre_exercicis }}</td>
               <td class="text-center">
                 {% if ca.actiu %}
-                  <span class="badge badge-success">Sí</span>
+                  <span class="badge badge-success">S&iacute;</span>
                 {% else %}
                   <span class="badge badge-secondary">No</span>
                 {% endif %}
@@ -70,11 +197,9 @@
                 <a class="btn btn-sm section-btn section-btn--fases"
                    href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ ca.id }}">Fases</a>
                 <a class="btn btn-sm btn-outline-primary"
-                   href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Participacio</a>
+                   href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Participaci&oacute;</a>
                 <a class="btn btn-sm btn-outline-secondary"
                    href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
-                
-                   
               </td>
             </tr>
           {% empty %}

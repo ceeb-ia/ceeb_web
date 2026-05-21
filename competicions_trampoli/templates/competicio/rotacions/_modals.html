@@ -1,0 +1,53 @@
+<div class="modal fade" id="editFrModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar franja</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Tancar"></button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="text" class="form-control form-control-sm" id="editFrTitol" placeholder="Títol">
+        <select class="form-control form-control-sm" id="editFrTipus">
+          {% for opt in franja_type_options %}
+            <option value="{{ opt.value }}">{{ opt.label }}</option>
+          {% endfor %}
+        </select>
+        <div class="d-flex" style="gap:8px;">
+          <input type="time" class="form-control form-control-sm" id="editFrHi">
+          <input type="time" class="form-control form-control-sm" id="editFrHf">
+        </div>
+        <div class="d-flex align-items-center" style="gap:8px;">
+          <input type="color" class="form-control form-control-sm p-1" id="editFrColor" value="#EFF6FF" title="Color de fons" style="width:58px;">
+          <button class="btn btn-sm btn-outline-secondary" type="button" id="btnEditFrColorReset">Restablir color</button>
+        </div>
+        <div class="mini text-muted">En desar, les franges següents s’ajustaran automàticament.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel·lar</button>
+        <button class="btn btn-sm btn-primary" id="btnEditFrSave">Desar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="franjaReorderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirmar reordenacio horaria</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Tancar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="reorder-preview-origin" id="franjaReorderOrigin"></div>
+        <div class="mini text-muted mb-2" id="franjaReorderCopy">
+          Aquest canvi recalculara l'ordre competitiu a partir del nou horari. Notes i jutges seguiran la sequencia competitiva resultant.
+        </div>
+        <div class="reorder-preview-list" id="franjaReorderList"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel.lar</button>
+        <button class="btn btn-sm btn-primary" id="btnFranjaReorderAccept">Acceptar i reordenar</button>
+      </div>
+    </div>
+  </div>
+</div>
+

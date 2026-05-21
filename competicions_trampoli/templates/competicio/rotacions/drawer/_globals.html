@@ -1,0 +1,67 @@
+{% if globals_part == "before_franges" %}
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title">Mostrar grups fora de programa</div>
+              <div class="drawer-section-subtitle">Controla si aquests grups tambe apareixen a notes i jutges.</div>
+            </div>
+          </div>
+          <label class="visibility-toggle" for="show-out-of-program-toggle">
+            <input
+              type="checkbox"
+              id="show-out-of-program-toggle"
+              {% if show_out_of_program_in_competition_views %}checked{% endif %}
+            >
+            <span class="visibility-toggle-copy">
+              <span class="visibility-toggle-label">Mostrar grups fora de programa a notes i jutges</span>
+              <span class="mini" id="show-out-of-program-toggle-status">
+                {% if show_out_of_program_in_competition_views %}
+                  Aquests grups també es mostren a les vistes de competició.
+                {% else %}
+                  Aquests grups només es mostren al planner de rotacions.
+                {% endif %}
+              </span>
+            </span>
+          </label>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title">Utilitats</div>
+              <div class="drawer-section-subtitle">Elements neutres per ajudar a editar la graella.</div>
+            </div>
+          </div>
+          <div class="group-bucket-list rotation-utility-list">
+            <div class="chip chip-muted" draggable="true" data-key="">(Buit)</div>
+          </div>
+        </section>
+{% elif globals_part == "after_franges" %}
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+                <span>Estructura de graella</span>
+                <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="incidencies" aria-label="Ajuda descans">?</button>
+              </div>
+              <div class="drawer-section-subtitle">Afegir una estacio auxiliar de descans per estructurar la graella.</div>
+            </div>
+          </div>
+          <div class="rotation-action-row">
+            <button class="btn btn-sm btn-outline-dark rotation-btn" id="btnAddDescans">+ Descans</button>
+          </div>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+                <span>Operacions globals</span>
+                <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="canvis_manuals" aria-label="Ajuda operacions globals">?</button>
+              </div>
+              <div class="drawer-section-subtitle">Accio destructiva sobre el programa complet.</div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline-danger rotation-btn-danger" id="btnClearAll" title="Netejar tot el programa">🧹 Netejar Programa</button>
+        </section>
+{% endif %}

@@ -1,0 +1,36 @@
+{% load static %}
+
+<button type="button"
+        class="btn btn-sm btn-primary planner-drawer-toggle planner-left-toggle rotation-actions-toggle"
+        id="planner-left-toggle"
+        aria-controls="planner-left-drawer"
+        aria-expanded="true"
+        aria-label="Mostrar programacio"
+        title="Mostrar programacio">
+  <span class="planner-drawer-toggle-icon planner-drawer-toggle-icon-closed" aria-hidden="true">
+    <img src="{% static 'rotacions/accions/open.png' %}" alt="">
+  </span>
+  <span class="planner-drawer-toggle-icon planner-drawer-toggle-icon-open" aria-hidden="true">
+    <img src="{% static 'rotacions/accions/close.png' %}" alt="">
+  </span>
+  <span class="planner-toggle-label-open">Amagar programacio</span>
+  <span class="planner-toggle-label-closed">Mostrar programacio</span>
+</button>
+<button type="button"
+        class="btn btn-sm btn-primary planner-drawer-toggle planner-export-toggle rotation-actions-toggle rotation-actions-toggle--export"
+        id="planner-export-toggle"
+        aria-controls="planner-export-drawer"
+        aria-expanded="false"
+        aria-label="Mostrar export"
+        title="Mostrar export">
+  <span class="planner-drawer-toggle-icon planner-drawer-toggle-icon-closed" aria-hidden="true">
+    <img src="{% static 'rotacions/accions/open.png' %}" alt="">
+  </span>
+  <span class="planner-drawer-toggle-icon planner-drawer-toggle-icon-open" aria-hidden="true">
+    <img src="{% static 'rotacions/accions/close.png' %}" alt="">
+  </span>
+  <span class="planner-toggle-label-open">Amagar export</span>
+  <span class="planner-toggle-label-closed">Mostrar export</span>
+</button>
+<div class="planner-drawer-backdrop" id="planner-left-backdrop" aria-hidden="true"></div>
+<div class="planner-drawer-backdrop" id="planner-export-backdrop" aria-hidden="true"></div>

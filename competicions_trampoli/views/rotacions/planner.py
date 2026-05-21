@@ -1,4 +1,6 @@
 import json
+import unicodedata
+from pathlib import Path
 
 from django.db.models import Count
 from django.http import JsonResponse
@@ -26,6 +28,7 @@ from ...services.rotacions.rotacions_ordering import (
     assignacio_program_units,
     get_rotacions_order_modes,
 )
+from ...services.fases.logos import selected_logo_path_for_app
 from ...services.teams.team_series import get_programmed_series_ids, serie_label
 from ._shared import (
     _assignacio_grups,
@@ -38,6 +41,55 @@ from ._shared import (
 
 def _is_competitive_franja(franja):
     return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
+
+def _logo_key(value):
+    text = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return "".join(ch if ch.isalnum() else " " for ch in text).strip()
+
+
+def _rotacions_logo_candidates(competicio):
+    root = Path(__file__).resolve().parents[2] / "static" / "rotacions" / "aparells"
+    discipline = str(getattr(competicio, "tipus", "") or "").strip().lower()
+    dirs = []
+    if discipline in {"artistica", "ritmica"}:
+        dirs.append(root / discipline)
+    dirs.append(root)
+    out = []
+    for directory in dirs:
+        if not directory.exists():
+            continue
+        for path in sorted(directory.iterdir()):
+            if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+                rel = path.relative_to(root.parent).as_posix()
+                out.append({"path": rel, "key": _logo_key(path.stem)})
+    return out
+
+
+def _rotacions_logo_path_for_app(comp_aparell):
+    if not comp_aparell:
+        return ""
+    candidates = _rotacions_logo_candidates(comp_aparell.competicio)
+    if not candidates:
+        return ""
+    selected = selected_logo_path_for_app(comp_aparell)
+    selected_key = _logo_key(Path(selected).stem)
+    if selected_key:
+        for candidate in candidates:
+            if candidate["key"] == selected_key:
+                return candidate["path"]
+    code = _logo_key(getattr(comp_aparell, "display_codi", ""))
+    name = _logo_key(getattr(comp_aparell, "display_nom", ""))
+    haystack = f"{code} {name}".strip()
+    for candidate in candidates:
+        if candidate["key"] and candidate["key"] in haystack:
+            return candidate["path"]
+    for candidate in candidates:
+        key_parts = [part for part in candidate["key"].split() if part]
+        if any(part in haystack for part in key_parts):
+            return candidate["path"]
+    return candidates[0]["path"]
 
 
 def rotacions_planner(request, pk):
@@ -135,6 +187,8 @@ def rotacions_planner(request, pk):
         .select_related("comp_aparell__aparell")
         .order_by("ordre", "id")
     )
+    for estacio in estacions:
+        estacio.ui_logo_path = _rotacions_logo_path_for_app(getattr(estacio, "comp_aparell", None))
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre_visual", "id"))
     franja_type_options = [
         {"value": value, "label": label}

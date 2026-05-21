@@ -1,0 +1,37 @@
+{% load static %}
+
+<!-- Sidebar -->
+<div class="cardx cardx-left drawer-panel rotation-drawer rotation-drawer--left" id="planner-left-drawer" aria-label="Eines de rotacions">
+  <div class="rotation-drawer-shell">
+    <div class="cardx-h rotation-drawer-head">
+      <div class="rotation-drawer-title-group">
+        <img class="rotation-drawer-mark" src="{% static 'dock/rotacions.png' %}" alt="">
+        <div>
+          <p class="rotation-drawer-kicker">Rotacions</p>
+          <div class="rotation-drawer-title d-flex align-items-center" style="gap:6px;">
+            <span>Planner</span>
+            <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda grups">?</button>
+          </div>
+          <div class="mini">Programables, franges i operacions globals del planner.</div>
+        </div>
+      </div>
+      <span class="badge badge-light">{{ grups_display|length }}</span>
+    </div>
+
+    <div class="cardx-b rotation-drawer-body">
+      <div class="planner-sidebar-shell">
+        {% include "competicio/rotacions/drawer/_nav.html" %}
+
+        <div class="planner-sidebar-panels" id="planner-sidebar-panels">
+          {% include "competicio/rotacions/drawer/_programables.html" %}
+
+          {% include "competicio/rotacions/drawer/_globals.html" with globals_part="before_franges" %}
+
+          {% include "competicio/rotacions/drawer/_franges.html" %}
+
+          {% include "competicio/rotacions/drawer/_globals.html" with globals_part="after_franges" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

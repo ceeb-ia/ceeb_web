@@ -1,0 +1,15 @@
+{% load static %}
+
+<header class="rotation-dashboard-header">
+  <div class="rotation-dashboard-title">
+    <div class="rotation-dashboard-title-row">
+      <span class="rotation-dashboard-title-logo" aria-hidden="true">
+        <img src="{% static 'dock/rotacions.png' %}" alt="">
+      </span>
+      <h1>Rotacions</h1>
+    </div>
+    <div class="text-muted small rotation-dashboard-subtitle">
+      <span class="rotation-dashboard-context-main">{{ competicio.nom }}</span> - arrossega grups a la graella i guarda el programa.
+    </div>
+  </div>
+</header>

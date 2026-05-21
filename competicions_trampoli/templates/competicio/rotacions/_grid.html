@@ -1,0 +1,35 @@
+    <!-- Grid -->
+    <div class="cardx cardx-main rotation-grid-card">
+      <div class="cardx-h rotation-grid-titlebar">
+        <div class="rotation-grid-title">
+          <span>Programa (franges × estacions)</span>
+          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="ordre_sortida" aria-label="Ajuda programa">?</button>
+        </div>
+        <div class="mini rotation-grid-hint">Tip: arrossega “(Buit)” per esborrar una cel·la</div>
+      </div>
+
+      <div class="cardx-b">
+        <div class="grid-wrap">
+          <table class="rot">
+            <thead>
+              {% include "competicio/rotacions/grid/_header.html" %}
+            </thead>
+
+            <tbody>
+              {% for f in franges %}
+                {% if f.is_competitive %}
+                  {% include "competicio/rotacions/grid/_row_competitive.html" %}
+                {% else %}
+                  {% include "competicio/rotacions/grid/_row_global.html" %}
+                {% endif %}
+              {% empty %}
+                {% include "competicio/rotacions/grid/_empty.html" %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mini mt-2" id="saveStatus"></div>
+      </div>
+    </div>
+

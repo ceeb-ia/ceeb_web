@@ -1,0 +1,21 @@
+{% load static %}
+              <tr>
+                <th class="rot-franja-col">
+                  <span class="rot-th-label">Franja</span>
+                  <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="aparell_rotacio" aria-label="Ajuda franges i estacions">?</button>
+                </th>
+                {% for a in estacions %}
+                  <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}">
+                    <div class="rot-station-head">
+                      <span class="rot-station-name">
+                        <span class="rot-station-handle" aria-hidden="true">⠿</span>
+                        {% if a.ui_logo_path %}
+                          <img class="rot-station-logo" src="{% static a.ui_logo_path %}" alt="">
+                        {% endif %}
+                        <span class="rot-station-label">{{ a.nom }}</span>
+                      </span>
+                      <button class="btn btn-sm btn-outline-danger py-0 px-2 js-del-es rot-station-delete" data-es="{{ a.id }}" title="Eliminar estació">×</button>
+                    </div>
+                  </th>
+                {% endfor %}
+              </tr>

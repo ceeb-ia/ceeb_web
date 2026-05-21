@@ -1,0 +1,92 @@
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="programables">
+              <div class="drawer-section-head">
+                <div>
+                  <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+                    <span>Programables</span>
+                    <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda programables">?</button>
+                  </div>
+                  <div class="drawer-section-subtitle">Grups individuals i series d'equip preparades per arrossegar a la graella.</div>
+                </div>
+                <span class="badge badge-light rotation-count-badge">{{ grups_display|length }}</span>
+              </div>
+              <div class="drawer-active-station is-empty" id="activeStationBox">
+                <div class="drawer-active-station-copy">
+                  <span class="drawer-active-station-label">Estacio activa</span>
+                  <span class="drawer-active-station-meta" id="activeStationMeta">Cap focus seleccionat.</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="clearActiveStation">Netejar</button>
+              </div>
+              <div class="drawer-filterbar mb-3">
+                <input type="search" class="form-control form-control-sm rotation-search-control" id="programSearch" placeholder="Cerca grup, serie, aparell o numero">
+                <div class="drawer-filter-row" id="programPlacementFilters">
+                  <button type="button" class="filter-chip is-active" data-program-placement="all">Tot</button>
+                  <button type="button" class="filter-chip" data-program-placement="programmed">Programats</button>
+                  <button type="button" class="filter-chip" data-program-placement="out">Fora de programa</button>
+                </div>
+                <div class="drawer-filter-row" id="programKindFilters">
+                  <button type="button" class="filter-chip is-active" data-program-kind="all">Tots</button>
+                  <button type="button" class="filter-chip" data-program-kind="group">Grups</button>
+                  <button type="button" class="filter-chip" data-program-kind="series">Equips</button>
+                  <button type="button" class="filter-chip" data-program-kind="program_unit">Fases</button>
+                  <button type="button" class="filter-chip" data-program-non-empty="true">No buits</button>
+                </div>
+              </div>
+
+              <div class="planner-panel-stack">
+                <div class="group-bucket planner-program-bucket" id="programmed-bucket">
+                  <div class="group-bucket-head">
+                    <div class="fw-semibold">Programats</div>
+                    <span class="badge badge-light rotation-count-badge" id="programmed-groups-count">0</span>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Grups</div>
+                      <span class="badge badge-light rotation-count-badge" id="programmed-groups-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="programmed-group-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Equips</div>
+                      <span class="badge badge-light rotation-count-badge" id="programmed-series-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="programmed-series-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Fases</div>
+                      <span class="badge badge-light rotation-count-badge" id="programmed-units-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="programmed-unit-list"></div>
+                  </div>
+                </div>
+
+                <div class="group-bucket planner-program-bucket" id="out-of-program-bucket">
+                  <div class="group-bucket-head">
+                    <div class="fw-semibold">Fora de programa</div>
+                    <span class="badge badge-warning rotation-count-badge" id="out-of-program-groups-count">{{ out_of_program_groups_count }}</span>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Grups</div>
+                      <span class="badge badge-light rotation-count-badge" id="out-of-program-groups-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="out-of-program-group-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Equips</div>
+                      <span class="badge badge-light rotation-count-badge" id="out-of-program-series-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="out-of-program-series-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Fases</div>
+                      <span class="badge badge-light rotation-count-badge" id="out-of-program-units-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="out-of-program-unit-list"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
