@@ -137,6 +137,179 @@
       box-shadow: 0 18px 42px rgba(180, 83, 9, .14);
     }
 
+    .rotation-toolbar {
+      position: sticky;
+      top: 8px;
+      z-index: 1040;
+      margin-bottom: 12px;
+      border: 1px solid var(--rotation-border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .96);
+      box-shadow: 0 14px 32px rgba(15, 23, 42, .12);
+      backdrop-filter: blur(10px);
+    }
+
+    .rotation-toolbar-strip {
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      padding: 10px;
+      border-bottom: 1px solid var(--rotation-neutral-border);
+      overflow-x: auto;
+    }
+
+    .rotation-toolbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 0 0 auto;
+      min-width: 210px;
+      padding-right: 12px;
+      border-right: 1px solid var(--rotation-neutral-border);
+    }
+
+    .rotation-toolbar-mark {
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(254, 215, 170, .9);
+      border-radius: 8px;
+      background: #FFFFFF;
+      object-fit: contain;
+    }
+
+    .rotation-toolbar-title {
+      color: var(--rotation-text-main);
+      font-size: .98rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .rotation-toolbar-tabs {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      flex: 1 1 auto;
+      min-width: max-content;
+    }
+
+    .planner-toolbar-nav-btn {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      min-width: 116px;
+      padding: 8px 10px;
+      border: 1px solid var(--rotation-neutral-border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: var(--rotation-text-main);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .12s ease, background .12s ease, color .12s ease, box-shadow .12s ease;
+    }
+
+    .planner-toolbar-nav-btn:hover,
+    .planner-toolbar-nav-btn:focus {
+      border-color: var(--rotation-border);
+      background: var(--rotation-soft);
+      outline: none;
+    }
+
+    .planner-toolbar-nav-btn.is-active {
+      border-color: var(--rotation-base);
+      background: var(--rotation-base);
+      color: #FFFFFF;
+      box-shadow: 0 8px 18px rgba(180, 83, 9, .18);
+    }
+
+    .rotation-toolbar-tab-title {
+      font-size: .9rem;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .rotation-toolbar-tab-meta {
+      color: var(--rotation-muted);
+      font-size: .74rem;
+      font-weight: 650;
+      line-height: 1.2;
+    }
+
+    .planner-toolbar-nav-btn.is-active .rotation-toolbar-tab-meta {
+      color: rgba(255, 255, 255, .82);
+    }
+
+    .rotation-toolbar-collapse {
+      flex: 0 0 auto;
+      align-self: center;
+      border-radius: 8px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .rotation-toolbar-panels {
+      max-height: min(46vh, 460px);
+      overflow: auto;
+      padding: 12px;
+      background: #F8FAFC;
+    }
+
+    .rotation-toolbar.is-collapsed .rotation-toolbar-panels {
+      display: none;
+    }
+
+    .rotation-toolbar.is-collapsed .rotation-toolbar-strip {
+      border-bottom: 0;
+    }
+
+    .rotation-toolbar-panel-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+
+    .rotation-toolbar-panel-grid > .drawer-section {
+      grid-column: span 12;
+      min-width: 0;
+      margin-top: 0;
+    }
+
+    .rotation-toolbar-panel-grid > .drawer-section + .drawer-section {
+      margin-top: 0;
+    }
+
+    .rotation-toolbar-panel-grid > [data-drawer-panel="globals"] {
+      grid-column: span 6;
+    }
+
+    .rotation-toolbar-panel-grid > [data-drawer-panel="franges"] {
+      grid-column: span 6;
+    }
+
+    .rotation-export-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 10px;
+      align-items: start;
+    }
+
+    .rotation-export-fields,
+    .rotation-export-logo {
+      grid-column: span 3;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .rotation-export-save {
+      grid-column: span 3;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .rotation-drawer-head {
       flex: 0 0 auto;
       margin: 0;

@@ -1386,55 +1386,31 @@ function renderPlannerSummary(){
   if (outMembersBadge) outMembersBadge.textContent = `${outMembersCount} subjectes`;
 }
 
-function isPlannerMobileLayout(){
-  return window.matchMedia("(max-width: 1200px)").matches;
+function isPlannerToolbarOpen(){
+  const toolbar = document.getElementById("rotation-toolbar");
+  return toolbar ? !toolbar.classList.contains("is-collapsed") : true;
 }
 
-function syncLeftDrawerState(){
-  const open = document.body.classList.contains("planner-left-open");
-  const btn = document.getElementById("planner-left-toggle");
-  const backdrop = document.getElementById("planner-left-backdrop");
-  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
-  if (backdrop) backdrop.setAttribute("aria-hidden", open ? "false" : "true");
+function setPlannerToolbarOpen(open){
+  const toolbar = document.getElementById("rotation-toolbar");
+  const collapseBtn = document.getElementById("rotation-toolbar-collapse");
+  const panels = document.getElementById("rotation-toolbar-panels");
+  const shouldOpen = !!open;
+  if (toolbar) toolbar.classList.toggle("is-collapsed", !shouldOpen);
+  if (collapseBtn) {
+    collapseBtn.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    collapseBtn.textContent = shouldOpen ? "Amagar" : "Mostrar";
+  }
+  if (panels) panels.setAttribute("aria-hidden", shouldOpen ? "false" : "true");
+  syncPlannerDrawerPanels();
 }
 
-function syncExportDrawerState(){
-  const open = document.body.classList.contains("planner-export-open");
-  const btn = document.getElementById("planner-export-toggle");
-  const backdrop = document.getElementById("planner-export-backdrop");
-  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
-  if (backdrop) backdrop.setAttribute("aria-hidden", open ? "false" : "true");
+function togglePlannerToolbar(){
+  setPlannerToolbarOpen(!isPlannerToolbarOpen());
 }
 
 function syncPlannerDrawerStates(){
-  syncLeftDrawerState();
-  syncExportDrawerState();
-}
-
-function setLeftDrawerOpen(open){
-  const shouldOpen = !!open;
-  if (shouldOpen && isPlannerMobileLayout()) {
-    document.body.classList.remove("planner-export-open");
-  }
-  document.body.classList.toggle("planner-left-open", shouldOpen);
-  syncPlannerDrawerStates();
-}
-
-function setExportDrawerOpen(open){
-  const shouldOpen = !!open;
-  if (shouldOpen && isPlannerMobileLayout()) {
-    document.body.classList.remove("planner-left-open");
-  }
-  document.body.classList.toggle("planner-export-open", shouldOpen);
-  syncPlannerDrawerStates();
-}
-
-function toggleLeftDrawer(){
-  setLeftDrawerOpen(!document.body.classList.contains("planner-left-open"));
-}
-
-function toggleExportDrawer(){
-  setExportDrawerOpen(!document.body.classList.contains("planner-export-open"));
+  setPlannerToolbarOpen(isPlannerToolbarOpen());
 }
 
 function syncPlannerDrawerPanels(){
@@ -1444,7 +1420,7 @@ function syncPlannerDrawerPanels(){
     btn.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
   document.querySelectorAll("[data-drawer-panel]").forEach((panel) => {
-    const shouldShow = String(panel.dataset.drawerPanel || "") === activePlannerDrawerPanel;
+    const shouldShow = isPlannerToolbarOpen() && String(panel.dataset.drawerPanel || "") === activePlannerDrawerPanel;
     panel.hidden = !shouldShow;
   });
 }
@@ -1562,9 +1538,10 @@ function initVisualFranjaRowDnD(){
 }
 
 function setPlannerDrawerPanel(panelKey){
-  activePlannerDrawerPanel = ["programables", "franges", "globals"].includes(String(panelKey || ""))
+  activePlannerDrawerPanel = ["programables", "franges", "globals", "export"].includes(String(panelKey || ""))
     ? String(panelKey)
     : "programables";
+  setPlannerToolbarOpen(true);
   syncPlannerDrawerPanels();
 }
 
@@ -1725,46 +1702,15 @@ function renderGroupBuckets(){
 }
 
 function initPlannerDrawerControls(){
-  const body = document.body;
-  const mediaQuery = window.matchMedia("(max-width: 1200px)");
-
-  const applyViewportDefaults = () => {
-    if (mediaQuery.matches) {
-      body.classList.remove("planner-left-open");
-      body.classList.remove("planner-export-open");
-    } else {
-      body.classList.add("planner-left-open");
-      body.classList.remove("planner-export-open");
-    }
-    syncPlannerDrawerStates();
-  };
-
   setPlannerDrawerPanel(activePlannerDrawerPanel);
-  applyViewportDefaults();
+  setPlannerToolbarOpen(true);
 
-  const leftToggleBtn = document.getElementById("planner-left-toggle");
-  if (leftToggleBtn) leftToggleBtn.addEventListener("click", () => toggleLeftDrawer());
-
-  const exportToggleBtn = document.getElementById("planner-export-toggle");
-  if (exportToggleBtn) exportToggleBtn.addEventListener("click", () => toggleExportDrawer());
-
-  const leftBackdrop = document.getElementById("planner-left-backdrop");
-  if (leftBackdrop) leftBackdrop.addEventListener("click", () => setLeftDrawerOpen(false));
-
-  const exportBackdrop = document.getElementById("planner-export-backdrop");
-  if (exportBackdrop) exportBackdrop.addEventListener("click", () => setExportDrawerOpen(false));
-
-  const onViewportChange = () => applyViewportDefaults();
-  if (typeof mediaQuery.addEventListener === "function") {
-    mediaQuery.addEventListener("change", onViewportChange);
-  } else if (typeof mediaQuery.addListener === "function") {
-    mediaQuery.addListener(onViewportChange);
-  }
+  const toolbarCollapse = document.getElementById("rotation-toolbar-collapse");
+  if (toolbarCollapse) toolbarCollapse.addEventListener("click", () => togglePlannerToolbar());
 
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      setLeftDrawerOpen(false);
-      setExportDrawerOpen(false);
+      setPlannerToolbarOpen(false);
     }
   });
 

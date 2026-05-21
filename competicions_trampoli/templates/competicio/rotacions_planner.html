@@ -8,14 +8,12 @@
 <div class="rotation-dashboard-shell rotation-page-shell" id="rotation-page-shell">
   {% include "competicio/rotacions/_header.html" %}
   {% include "competicio/rotacions/_summary.html" %}
-  {% include "competicio/rotacions/_drawer_toggles.html" %}
 
   <div class="rotation-workspace board">
     <main class="rotation-dashboard-main">
+      {% include "competicio/rotacions/_toolbar.html" %}
       {% include "competicio/rotacions/_grid.html" %}
     </main>
-    {% include "competicio/rotacions/_left_drawer.html" %}
-    {% include "competicio/rotacions/_export_drawer.html" %}
   </div>
 </div>
 {% include "competicio/rotacions/_help_drawer.html" %}

@@ -1,0 +1,116 @@
+{% load static %}
+
+<section class="rotation-toolbar" id="rotation-toolbar" aria-label="Barra d'eines de rotacions">
+  <div class="rotation-toolbar-strip">
+    <div class="rotation-toolbar-brand">
+      <img class="rotation-toolbar-mark" src="{% static 'dock/rotacions.png' %}" alt="">
+      <div>
+        <div class="rotation-toolbar-title">Planner</div>
+        <div class="mini">Eines de programa, franges, vista i export</div>
+      </div>
+    </div>
+
+    <nav class="rotation-toolbar-tabs" aria-label="Apartats del planner">
+      <button type="button" class="planner-toolbar-nav-btn is-active" data-drawer-panel-target="programables" aria-pressed="true">
+        <span class="rotation-toolbar-tab-title">Programables</span>
+        <span class="rotation-toolbar-tab-meta">{{ grups_display|length }} grups</span>
+      </button>
+      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="franges" aria-pressed="false">
+        <span class="rotation-toolbar-tab-title">Franges</span>
+        <span class="rotation-toolbar-tab-meta">Crear i generar</span>
+      </button>
+      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="globals" aria-pressed="false">
+        <span class="rotation-toolbar-tab-title">Eines</span>
+        <span class="rotation-toolbar-tab-meta">Vista i estructura</span>
+      </button>
+      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="export" aria-pressed="false">
+        <span class="rotation-toolbar-tab-title">Export</span>
+        <span class="rotation-toolbar-tab-meta">Excel i logo</span>
+      </button>
+    </nav>
+
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary rotation-toolbar-collapse"
+            id="rotation-toolbar-collapse"
+            aria-controls="rotation-toolbar-panels"
+            aria-expanded="true">
+      Amagar
+    </button>
+  </div>
+
+  <div class="rotation-toolbar-panels drawer-panel" id="rotation-toolbar-panels">
+    <div class="rotation-toolbar-panel-grid">
+      {% include "competicio/rotacions/drawer/_programables.html" %}
+
+      {% include "competicio/rotacions/drawer/_globals.html" with globals_part="before_franges" %}
+
+      {% include "competicio/rotacions/drawer/_franges.html" %}
+
+      {% include "competicio/rotacions/drawer/_globals.html" with globals_part="after_franges" %}
+
+      <section class="drawer-section planner-sidebar-panel rotation-export-panel" data-drawer-panel="export" hidden>
+        <div class="drawer-section-head">
+          <div>
+            <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+              <span>Exportacio Excel</span>
+              <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="validacio" aria-label="Ajuda validacio">?</button>
+            </div>
+            <div class="drawer-section-subtitle">Opcions de sortida, logo i camps visibles per a l'Excel de rotacions.</div>
+          </div>
+        </div>
+        <div class="dropdown d-inline-block">
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary dropdown-toggle js-export-dd-toggle"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  id="exportExcelDropdown">
+            Excel
+          </button>
+          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end" aria-labelledby="exportExcelDropdown">
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=participants">
+              Exportar participants
+            </a>
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=groups">
+              Exportar grups
+            </a>
+          </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="rotation-export-grid">
+          <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
+          <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
+          <input type="date" class="form-control form-control-sm" id="exportDate">
+
+          <div class="rotation-export-fields">
+            <div class="mini fw-semibold d-flex align-items-center" style="gap:6px;">
+              <span>Camps de participants</span>
+              <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="capcalera_grup" aria-label="Ajuda camps de participants">?</button>
+            </div>
+            <div id="exportFieldsList" class="export-fields-list"></div>
+            <div class="mini text-muted">Es mostraran dins cada cel.la en mode participants.</div>
+          </div>
+
+          <div class="rotation-export-logo">
+            <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+              <input type="file" class="form-control form-control-sm" id="exportLogoFile" accept="image/*" style="flex:1; min-width:170px;">
+              <button class="btn btn-sm btn-outline-primary" id="btnExportLogoUpload">Pujar logo</button>
+              <button class="btn btn-sm btn-outline-danger" id="btnExportLogoClear">Treure</button>
+            </div>
+
+            <div id="exportLogoPreviewWrap" class="mini text-muted" style="display:none;">
+              <div class="mb-1">Logo actual:</div>
+              <img id="exportLogoPreview" alt="Logo export" style="max-width:180px; max-height:72px; border:1px solid #e5e7eb; border-radius:6px; padding:2px; background:#fff;">
+            </div>
+          </div>
+
+          <div class="rotation-export-save">
+            <button class="btn btn-sm btn-outline-primary" id="btnExportMetaSave">Desar dades export</button>
+            <div class="mini" id="exportMetaStatus"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>

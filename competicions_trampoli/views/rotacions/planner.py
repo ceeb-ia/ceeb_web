@@ -52,17 +52,22 @@ def _logo_key(value):
 def _rotacions_logo_candidates(competicio):
     root = Path(__file__).resolve().parents[2] / "static" / "rotacions" / "aparells"
     discipline = str(getattr(competicio, "tipus", "") or "").strip().lower()
+    if discipline not in {"artistica", "ritmica", "trampoli"}:
+        discipline = "trampoli"
     dirs = []
-    if discipline in {"artistica", "ritmica"}:
-        dirs.append(root / discipline)
+    dirs.append(root / discipline)
     dirs.append(root)
     out = []
+    seen = set()
     for directory in dirs:
         if not directory.exists():
             continue
         for path in sorted(directory.iterdir()):
             if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
-                rel = path.relative_to(root.parent).as_posix()
+                rel = path.relative_to(root.parents[1]).as_posix()
+                if rel in seen:
+                    continue
+                seen.add(rel)
                 out.append({"path": rel, "key": _logo_key(path.stem)})
     return out
 

@@ -45,6 +45,27 @@
         pointer-events: auto;
       }
 
+      .rotation-toolbar {
+        top: 4px;
+      }
+
+      .rotation-toolbar-strip {
+        align-items: stretch;
+      }
+
+      .rotation-toolbar-brand {
+        min-width: 180px;
+      }
+
+      .rotation-toolbar-panels {
+        max-height: min(58vh, 520px);
+      }
+
+      .rotation-toolbar-panel-grid > [data-drawer-panel="globals"],
+      .rotation-toolbar-panel-grid > [data-drawer-panel="franges"] {
+        grid-column: span 12;
+      }
+
       .planner-sidebar-nav {
         grid-template-columns: 1fr;
       }
@@ -72,6 +93,28 @@
 
       .rotation-drawer-body {
         padding: 12px;
+      }
+
+      .rotation-toolbar-brand {
+        min-width: 150px;
+      }
+
+      .planner-toolbar-nav-btn {
+        min-width: 104px;
+      }
+
+      .rotation-toolbar-panels {
+        padding: 10px;
+      }
+
+      .rotation-export-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .rotation-export-fields,
+      .rotation-export-logo,
+      .rotation-export-save {
+        grid-column: 1;
       }
 
       .planner-drawer-toggle {
