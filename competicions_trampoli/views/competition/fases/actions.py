@@ -41,6 +41,7 @@ from ....services.fases.slot_overrides import (
     assign_inscripcio_to_slot,
     assign_reserve_to_slot,
     assign_snapshot_candidate_to_slot,
+    clear_program_unit_slots,
     clear_slot_assignment,
     delete_program_slot,
     mark_slot_withdrawn,
@@ -85,6 +86,13 @@ def _phase_has_applied_snapshot(phase) -> bool:
     config = phase.config if isinstance(phase.config, dict) else {}
     qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
     return bool(qualification.get("run_id"))
+
+
+def _phase_is_draft(phase) -> bool:
+    return phase.estat not in {
+        CompeticioAparellFase.Estat.PUBLISHED,
+        CompeticioAparellFase.Estat.CLOSED,
+    }
 
 
 def phase_for_post(competicio, request):
@@ -325,6 +333,15 @@ def handle_phase_post(view, request):
             ordered_slot_ids = [int(item) for item in raw_order.split(",") if item.strip().isdigit()]
             unit = reorder_program_unit_slots(phase, unit_id, ordered_slot_ids)
             messages.success(request, f"Ordre de places actualitzat a '{unit.nom}'.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "clear_program_unit_slots":
+            if not _phase_is_draft(phase):
+                messages.error(request, "Nomes es poden buidar places mentre la fase esta en esborrany.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            unit_id = int(request.POST.get("unit_id") or 0)
+            unit, cleared_count = clear_program_unit_slots(phase, unit_id)
+            messages.success(request, f"{cleared_count} places buidades a '{unit.nom}'.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "assign_reserve_to_slot":

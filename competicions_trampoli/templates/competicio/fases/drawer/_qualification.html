@@ -12,7 +12,12 @@
   </div>
   <div class="phase-action-stack">
     {% if selected_phase.ui_qualification_manual_pending %}
-      <form method="post" onsubmit="return confirm('Validar el snapshot actual amb els canvis manuals?');">
+      <form
+        method="post"
+        data-phase-confirm-title="Validar snapshot"
+        data-phase-confirm-message="Validar el snapshot actual amb els canvis manuals?"
+        data-phase-confirm-label="Validar snapshot"
+        data-phase-confirm-tone="warning">
         {% csrf_token %}
         <input type="hidden" name="action" value="accept_current_qualification_snapshot">
         <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
@@ -25,7 +30,12 @@
       <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
       <button class="btn btn-sm btn-outline-primary" type="submit">Previsualitzar snapshot</button>
     </form>
-    <form method="post" onsubmit="return confirm('Aplicar el snapshot de la fase amb la configuracio actual?');">
+    <form
+      method="post"
+      data-phase-confirm-title="{% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}"
+      data-phase-confirm-message="Aplicar el snapshot de la fase amb la configuracio actual?"
+      data-phase-confirm-label="{% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}"
+      data-phase-confirm-tone="warning">
       {% csrf_token %}
       <input type="hidden" name="action" value="apply_qualification">
       <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">

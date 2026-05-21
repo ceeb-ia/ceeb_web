@@ -588,6 +588,55 @@ def clear_slot_assignment(fase: CompeticioAparellFase, slot_id: int) -> ProgramU
     return slot
 
 
+def clear_program_unit_slots(fase: CompeticioAparellFase, unit_id: int) -> tuple[ProgramUnit, int]:
+    try:
+        unit = ProgramUnit.objects.get(id=unit_id, fase=fase)
+    except ObjectDoesNotExist as exc:
+        raise SlotOverrideError("Unitat no valida per aquesta fase.") from exc
+    slots = list(ProgramUnitSlot.objects.filter(unit=unit).order_by("ordre", "slot_index", "id"))
+    if any(slot.locked for slot in slots):
+        raise SlotOverrideError("No es poden buidar places bloquejades.")
+    updates = []
+    for slot in slots:
+        if (
+            slot.status == ProgramUnitSlot.Status.EMPTY
+            and not slot.subject_kind
+            and not slot.subject_id
+            and not slot.source_classificacio_id
+            and not slot.source_particio_key
+            and slot.source_position is None
+            and slot.source_score is None
+            and not (slot.source_row or {})
+        ):
+            continue
+        slot.subject_kind = ""
+        slot.subject_id = None
+        slot.status = ProgramUnitSlot.Status.EMPTY
+        slot.source_classificacio = None
+        slot.source_particio_key = ""
+        slot.source_position = None
+        slot.source_score = None
+        slot.source_row = {}
+        slot.full_clean()
+        updates.append(slot)
+    if updates:
+        ProgramUnitSlot.objects.bulk_update(
+            updates,
+            [
+                "subject_kind",
+                "subject_id",
+                "status",
+                "source_classificacio",
+                "source_particio_key",
+                "source_position",
+                "source_score",
+                "source_row",
+                "updated_at",
+            ],
+        )
+    return unit, len(updates)
+
+
 def delete_program_slot(fase: CompeticioAparellFase, slot_id: int) -> tuple[ProgramUnit, int]:
     try:
         slot = ProgramUnitSlot.objects.select_related("unit").get(id=slot_id, unit__fase=fase)

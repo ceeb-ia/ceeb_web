@@ -3,7 +3,12 @@
     <h5>Eliminar fase</h5>
   </div>
   {% if selected_phase.ui_can_delete %}
-    <form method="post" onsubmit="return confirm('Eliminar aquesta fase buida?');">
+    <form
+      method="post"
+      data-phase-confirm-title="Eliminar fase"
+      data-phase-confirm-message="Eliminar aquesta fase buida?"
+      data-phase-confirm-label="Eliminar fase"
+      data-phase-confirm-tone="danger">
       {% csrf_token %}
       <input type="hidden" name="action" value="delete_phase">
       <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">

@@ -128,6 +128,106 @@
       }
     }
 
+    const confirmModal = document.getElementById('phase-confirm-modal');
+    const confirmBackdrop = document.getElementById('phase-confirm-backdrop');
+    const confirmTitle = document.getElementById('phase-confirm-title');
+    const confirmMessage = document.getElementById('phase-confirm-message');
+    const confirmAccept = document.getElementById('phase-confirm-accept');
+    let pendingConfirm = null;
+
+    function confirmConfigFromSubmit(event) {
+      const submitter = event.submitter;
+      const source = submitter?.getAttribute?.('data-phase-confirm-message') ? submitter : event.target;
+      const message = source?.getAttribute?.('data-phase-confirm-message') || '';
+      if (!message) return null;
+      return {
+        source,
+        message,
+        title: source.getAttribute('data-phase-confirm-title') || 'Confirmar accio',
+        label: source.getAttribute('data-phase-confirm-label') || 'Continuar',
+        tone: source.getAttribute('data-phase-confirm-tone') || 'primary',
+      };
+    }
+
+    function setConfirmTone(tone) {
+      if (!confirmModal || !confirmAccept) return;
+      confirmModal.classList.remove('is-danger', 'is-warning');
+      let buttonClass = 'btn btn-sm btn-primary';
+      if (tone === 'danger') {
+        confirmModal.classList.add('is-danger');
+        buttonClass = 'btn btn-sm btn-danger';
+      } else if (tone === 'warning') {
+        confirmModal.classList.add('is-warning');
+        buttonClass = 'btn btn-sm btn-warning';
+      }
+      confirmAccept.className = buttonClass;
+    }
+
+    function openPhaseConfirm(form, submitter, config) {
+      if (!confirmModal || !confirmBackdrop || !confirmAccept) {
+        return true;
+      }
+      pendingConfirm = { form, submitter };
+      if (confirmTitle) confirmTitle.textContent = config.title;
+      if (confirmMessage) confirmMessage.textContent = config.message;
+      confirmAccept.textContent = config.label;
+      setConfirmTone(config.tone);
+      if (confirmModal.parentElement !== document.body) document.body.appendChild(confirmModal);
+      if (confirmBackdrop.parentElement !== document.body) document.body.appendChild(confirmBackdrop);
+      confirmModal.hidden = false;
+      confirmBackdrop.hidden = false;
+      confirmModal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('phase-confirm-open');
+      window.setTimeout(() => confirmAccept.focus(), 0);
+      return false;
+    }
+
+    function closePhaseConfirm() {
+      pendingConfirm = null;
+      if (confirmModal) {
+        confirmModal.hidden = true;
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
+      if (confirmBackdrop) confirmBackdrop.hidden = true;
+      document.body.classList.remove('phase-confirm-open');
+    }
+
+    function submitPendingConfirm() {
+      if (!pendingConfirm?.form) return;
+      const { form, submitter } = pendingConfirm;
+      pendingConfirm = null;
+      form.dataset.phaseConfirmAccepted = '1';
+      saveScrollPosition();
+      if (submitter && typeof form.requestSubmit === 'function') {
+        form.requestSubmit(submitter);
+      } else {
+        form.submit();
+      }
+      closePhaseConfirm();
+    }
+
+    function handleConfirmSubmit(event) {
+      const form = event.target;
+      if (!form || form.dataset.phaseConfirmAccepted === '1') {
+        if (form) delete form.dataset.phaseConfirmAccepted;
+        return;
+      }
+      const config = confirmConfigFromSubmit(event);
+      if (!config) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const accepted = openPhaseConfirm(form, event.submitter, config);
+      if (accepted) {
+        form.dataset.phaseConfirmAccepted = '1';
+        saveScrollPosition();
+        if (event.submitter && typeof form.requestSubmit === 'function') {
+          form.requestSubmit(event.submitter);
+        } else {
+          form.submit();
+        }
+      }
+    }
+
     function closeOtherSlotMenus(current) {
       document.querySelectorAll('.phase-slot-actions[open]').forEach((details) => {
         if (details !== current) {
@@ -280,7 +380,16 @@
     });
     close?.addEventListener('click', () => setDrawerOpen(false));
     backdrop?.addEventListener('click', () => setDrawerOpen(false));
+    confirmBackdrop?.addEventListener('click', closePhaseConfirm);
+    confirmAccept?.addEventListener('click', submitPendingConfirm);
+    document.querySelectorAll('[data-phase-confirm-cancel]').forEach((button) => {
+      button.addEventListener('click', closePhaseConfirm);
+    });
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && pendingConfirm) {
+        closePhaseConfirm();
+        return;
+      }
       if (event.key === 'Escape' && root.classList.contains('is-drawer-open')) {
         setDrawerOpen(false);
       }
@@ -322,6 +431,7 @@
     document.querySelectorAll('.phase-tree-node, .phase-tree-base').forEach((link) => {
       link.addEventListener('click', saveScrollPosition);
     });
+    root.addEventListener('submit', handleConfirmSubmit, true);
     document.querySelectorAll('.phase-child-create-form, .phase-drawer-body form, .phase-base-exercise-form').forEach((form) => {
       form.addEventListener('submit', saveScrollPosition);
     });
@@ -372,7 +482,10 @@
       });
     });
     document.querySelectorAll('[data-slot-order-form]').forEach((form) => {
-      form.addEventListener('submit', () => serializeSlotOrder(form));
+      form.addEventListener('submit', () => {
+        saveScrollPosition();
+        serializeSlotOrder(form);
+      });
     });
     document.querySelectorAll('[data-slot-order-filter]').forEach((input) => {
       input.addEventListener('input', () => {

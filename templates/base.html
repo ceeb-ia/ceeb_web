@@ -208,9 +208,6 @@
 
         {% block content %}
         {% endblock %}
-        {% if has_competition_dock and not hide_base_chrome %}
-        {% include "competicio/_competition_dock.html" %}
-        {% endif %}
         </main>
 
     {% if not hide_base_chrome %}
@@ -219,6 +216,9 @@
         <p>&copy; 2026 <a href="https://ceeb.cat/">Web CEEB</a></p>
     </footer>
     <!-- End Footer -->
+    {% endif %}
+    {% if has_competition_dock and not hide_base_chrome %}
+    {% include "competicio/_competition_dock.html" %}
     {% endif %}
 
     <!-- Scripts -->

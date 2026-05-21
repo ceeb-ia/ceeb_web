@@ -5,14 +5,13 @@
 {% block content %}
 {% include "competicio/fases/_styles.html" %}
 
-<div class="container-fluid mt-4">
-  <div
-    class="phase-dashboard-shell phase-page-shell"
-    id="phase-page-shell"
-    data-competicio-id="{{ competicio.id }}"
-    data-selected-app-id="{{ selected_app_id|default:'' }}"
-    data-selected-phase-id="{% if selected_phase %}{{ selected_phase.id }}{% endif %}"
-  >
+<div
+  class="phase-dashboard-shell phase-page-shell"
+  id="phase-page-shell"
+  data-competicio-id="{{ competicio.id }}"
+  data-selected-app-id="{{ selected_app_id|default:'' }}"
+  data-selected-phase-id="{% if selected_phase %}{{ selected_phase.id }}{% endif %}"
+>
     {% include "competicio/fases/_header.html" %}
 
     {% if messages %}
@@ -53,7 +52,7 @@
     {% else %}
       {% include "competicio/fases/_no_apps.html" %}
     {% endif %}
-  </div>
+    {% include "competicio/fases/_confirm_modal.html" %}
 </div>
 
 {% include "competicio/fases/scripts/_drawer.html" %}

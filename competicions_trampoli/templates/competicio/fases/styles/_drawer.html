@@ -169,6 +169,81 @@
     margin: 0;
   }
 
+  .phase-drawer-body .phase-action-stack {
+    align-items: flex-end;
+  }
+
+  .phase-drawer-body .phase-action-stack > form {
+    flex: 0 1 auto;
+  }
+
+  .phase-drawer-body .phase-action-stack .btn {
+    white-space: nowrap;
+  }
+
+  .phase-drawer-body label {
+    margin-bottom: 4px;
+    color: var(--phase-text-main);
+    font-size: 0.78rem;
+    font-weight: 760;
+  }
+
+  .phase-drawer-body select.form-select,
+  .phase-drawer-body select.form-control {
+    min-height: 36px;
+    height: auto;
+    padding: 0.42rem 2.15rem 0.42rem 0.68rem;
+    border: 1px solid var(--phase-border);
+    border-radius: 9px;
+    appearance: none;
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--phase-base) 50%),
+      linear-gradient(135deg, var(--phase-base) 50%, transparent 50%);
+    background-position:
+      calc(100% - 16px) 50%,
+      calc(100% - 11px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    color: #334155;
+    font-size: 0.86rem;
+    font-weight: 680;
+    line-height: 1.35;
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, color .16s ease;
+  }
+
+  .phase-drawer-body select.form-select:hover,
+  .phase-drawer-body select.form-control:hover {
+    border-color: var(--phase-base);
+    background-color: var(--phase-soft);
+    color: var(--phase-text);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+  }
+
+  .phase-drawer-body select.form-select:focus,
+  .phase-drawer-body select.form-control:focus {
+    border-color: var(--phase-base);
+    background-color: #fff;
+    color: var(--phase-text-main);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    outline: none;
+  }
+
+  .phase-drawer-body select.form-select:disabled,
+  .phase-drawer-body select.form-control:disabled {
+    border-color: #E2E8F0;
+    background-color: #F8FAFC;
+    color: #94A3B8;
+    cursor: not-allowed;
+  }
+
+  .phase-drawer-body select.form-select option,
+  .phase-drawer-body select.form-control option {
+    color: #0F172A;
+    font-weight: 600;
+  }
+
   .phase-drawer-backdrop {
     position: fixed;
     inset: 0;
@@ -183,6 +258,117 @@
 
   .phase-drawer-backdrop[hidden] {
     display: none;
+  }
+
+  body.phase-confirm-open {
+    overflow: hidden;
+  }
+
+  body.phase-confirm-open .footer_section {
+    z-index: 0 !important;
+  }
+
+  .phase-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100200;
+    background: rgba(15, 23, 42, 0.34);
+  }
+
+  .phase-confirm-backdrop[hidden],
+  .phase-confirm-modal[hidden] {
+    display: none;
+  }
+
+  .phase-confirm-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 100210;
+    display: flex;
+    flex-direction: column;
+    width: min(460px, calc(100vw - 32px));
+    max-height: min(520px, calc(100vh - 32px));
+    overflow: hidden;
+    transform: translate(-50%, -50%);
+    border: 1px solid var(--phase-border);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 54px rgba(15, 23, 42, 0.24);
+  }
+
+  .phase-confirm-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--phase-border);
+    border-left: 4px solid var(--phase-base);
+    background: var(--phase-soft);
+  }
+
+  .phase-confirm-kicker {
+    margin: 0 0 2px;
+    color: var(--phase-base);
+    font-size: 0.72rem;
+    font-weight: 820;
+    text-transform: uppercase;
+  }
+
+  .phase-confirm-head h5 {
+    margin: 0;
+    color: var(--phase-text);
+    font-size: 1.02rem;
+    font-weight: 800;
+  }
+
+  .phase-confirm-body {
+    padding: 16px;
+    overflow: auto;
+  }
+
+  .phase-confirm-body p {
+    margin: 0;
+    color: var(--phase-text-main);
+    font-size: 0.92rem;
+    line-height: 1.45;
+  }
+
+  .phase-confirm-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--phase-neutral-border);
+    background: #F8FAFC;
+  }
+
+  .phase-confirm-modal.is-danger {
+    border-color: #FECACA;
+  }
+
+  .phase-confirm-modal.is-danger .phase-confirm-head {
+    border-left-color: #DC2626;
+    border-bottom-color: #FECACA;
+    background: #FEF2F2;
+  }
+
+  .phase-confirm-modal.is-danger .phase-confirm-kicker,
+  .phase-confirm-modal.is-danger .phase-confirm-head h5 {
+    color: #991B1B;
+  }
+
+  .phase-confirm-modal.is-warning .phase-confirm-head {
+    border-left-color: #F59E0B;
+    border-bottom-color: #FDE68A;
+    background: #FFFBEB;
+  }
+
+  .phase-confirm-modal.is-warning .phase-confirm-kicker,
+  .phase-confirm-modal.is-warning .phase-confirm-head h5 {
+    color: #92400E;
   }
 
   .phase-drawer-nav {

@@ -12,14 +12,17 @@ from ...services.classificacions.compute import compute_classificacio
 from .program_units import create_program_unit_with_empty_slots
 from .qualification import (
     QualificationError,
+    QualificationCandidate,
     TIE_POLICIES,
     _build_units_for_partition,
+    _chunks_by_strategy,
     _format_unit_label,
     _partition_keys_for_preview,
     _phase_config,
     _positive_int,
     _rows_for_cut,
     _select_candidates_for_partition,
+    _slot_order_candidates,
     _snapshot_hash,
     _source_classificacio,
     _source_phase_for_classificacio,
@@ -35,6 +38,7 @@ class GroupPlanUnitPreview:
     order: int
     partition_values: dict = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
+    planned_candidates: list[QualificationCandidate] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -72,6 +76,18 @@ class GroupPlanPreview:
                     "order": unit.order,
                     "partition_values": dict(unit.partition_values),
                     "metadata": dict(unit.metadata),
+                    "planned_candidates": [
+                        {
+                            "subject_kind": candidate.subject_kind,
+                            "subject_id": candidate.subject_id,
+                            "status": candidate.status,
+                            "source_particio_key": candidate.source_particio_key,
+                            "source_position": candidate.source_position,
+                            "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
+                            "source_row": candidate.source_row,
+                        }
+                        for candidate in unit.planned_candidates
+                    ],
                 }
                 for unit in self.units
             ],
@@ -146,6 +162,7 @@ def _build_units_by_count(
     units_per_partition: int,
     unit_name_template: str,
     tie_policy: str,
+    formation_strategy: str,
     warnings: list[str],
     partition_warnings: dict[str, list[str]],
 ) -> list:
@@ -166,9 +183,17 @@ def _build_units_by_count(
     slot_target = max(qualifiers_count, len(competitive), unit_count)
     base = slot_target // unit_count
     remainder = slot_target % unit_count
+    capacities = [
+        base + (1 if index <= remainder else 0)
+        for index in range(1, unit_count + 1)
+    ]
+    chunks, unassigned = _chunks_by_strategy(
+        competitive,
+        capacities,
+        strategy=formation_strategy,
+    )
     units = []
-    for index in range(1, unit_count + 1):
-        capacity = base + (1 if index <= remainder else 0)
+    for index, (capacity, chunk) in enumerate(zip(capacities, chunks), start=1):
         label = _format_unit_label(
             unit_name_template,
             fase=fase,
@@ -183,7 +208,15 @@ def _build_units_by_count(
                 capacity=capacity,
                 order=0,
                 partition_values={"key": partition_key},
+                planned_candidates=_slot_order_candidates(chunk, strategy=formation_strategy),
             )
+        )
+    if unassigned:
+        _add_partition_warning(
+            warnings,
+            partition_warnings,
+            partition_key,
+            f"no hi ha prou slots per assignar {unassigned} classificat/s o reserva/es.",
         )
     return units
 
@@ -216,6 +249,7 @@ def preview_group_plan(fase: CompeticioAparellFase) -> GroupPlanPreview:
                 units_per_partition=group_config["units_per_partition"],
                 unit_name_template=group_config["unit_name_template"],
                 tie_policy=group_config["tie_policy"],
+                formation_strategy=group_config["formation_strategy"],
                 warnings=warnings,
                 partition_warnings=partition_warnings,
             )
@@ -232,6 +266,7 @@ def preview_group_plan(fase: CompeticioAparellFase) -> GroupPlanPreview:
                 tie_policy=group_config["tie_policy"],
                 warnings=warnings,
                 partition_warnings=partition_warnings,
+                strategy=group_config["formation_strategy"],
             )
         for unit in partition_units:
             units.append(
@@ -247,6 +282,7 @@ def preview_group_plan(fase: CompeticioAparellFase) -> GroupPlanPreview:
                         "group_index": order,
                         "source_classificacio_id": classificacio.id,
                     },
+                    planned_candidates=list(getattr(unit, "planned_candidates", None) or getattr(unit, "candidates", [])),
                 )
             )
             order += 1
@@ -263,6 +299,18 @@ def preview_group_plan(fase: CompeticioAparellFase) -> GroupPlanPreview:
                 "partition_key": unit.partition_key,
                 "capacity": unit.capacity,
                 "order": unit.order,
+                "planned_candidates": [
+                    {
+                        "subject_kind": candidate.subject_kind,
+                        "subject_id": candidate.subject_id,
+                        "status": candidate.status,
+                        "source_particio_key": candidate.source_particio_key,
+                        "source_position": candidate.source_position,
+                        "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
+                        "source_row": candidate.source_row,
+                    }
+                    for candidate in unit.planned_candidates
+                ],
             }
             for unit in units
         ],
@@ -290,6 +338,39 @@ def _protected_replacement_exists(fase: CompeticioAparellFase) -> bool:
     )
 
 
+def _seed_planned_slot_origins(
+    unit: ProgramUnit,
+    candidates: list[QualificationCandidate],
+    *,
+    classificacio_id: int,
+) -> None:
+    if not candidates:
+        return
+    slots = list(unit.slots.order_by("ordre", "slot_index", "id"))
+    updates = []
+    for slot, candidate in zip(slots, candidates):
+        source_row = {"phase_seed_position": candidate.source_row.get("phase_seed_position") or candidate.source_position}
+        slot.source_classificacio_id = classificacio_id
+        slot.source_particio_key = candidate.source_particio_key
+        slot.source_position = candidate.source_position
+        slot.source_score = candidate.source_score
+        slot.source_row = source_row
+        updates.append(slot)
+    if updates:
+        ProgramUnitSlot.objects.bulk_update(
+            updates,
+            [
+                "source_classificacio",
+                "source_particio_key",
+                "source_position",
+                "source_score",
+                "source_row",
+                "updated_at",
+            ],
+            batch_size=500,
+        )
+
+
 def apply_group_plan(
     fase: CompeticioAparellFase,
     *,
@@ -312,7 +393,7 @@ def apply_group_plan(
                 "group_plan_snapshot_hash": preview.snapshot_hash,
                 "source_classificacio_id": preview.classificacio.id,
             })
-            create_program_unit_with_empty_slots(
+            unit = create_program_unit_with_empty_slots(
                 fase=fase,
                 nom=unit_preview.label,
                 capacity=unit_preview.capacity,
@@ -322,6 +403,11 @@ def apply_group_plan(
                 partition_values=dict(unit_preview.partition_values),
                 metadata=metadata,
                 status=ProgramUnit.Status.GENERATED,
+            )
+            _seed_planned_slot_origins(
+                unit,
+                list(unit_preview.planned_candidates),
+                classificacio_id=preview.classificacio.id,
             )
 
         config = fase.config if isinstance(fase.config, dict) else {}
@@ -356,6 +442,14 @@ def group_plan_as_dict(preview: GroupPlanPreview) -> dict:
                 "capacity": unit.capacity,
                 "order": unit.order,
                 "partition_values": dict(unit.partition_values),
+                "planned_candidates": [
+                    {
+                        "source_position": candidate.source_position,
+                        "source_particio_key": candidate.source_particio_key,
+                        "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
+                    }
+                    for candidate in unit.planned_candidates
+                ],
             }
             for unit in preview.units
         ],

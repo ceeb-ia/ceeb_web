@@ -12,8 +12,9 @@
     --phase-drawer-width: clamp(560px, 38vw, 720px);
     --phase-drawer-top: 96px;
     --phase-drawer-gap: 26px;
-    max-width: 1680px;
-    margin: 0 auto;
+    width: calc(100% - 18px);
+    max-width: none;
+    margin: 9px auto 0;
     padding: 18px;
     border: 1px solid var(--phase-neutral-border);
     border-radius: 8px;
@@ -59,8 +60,15 @@
   .phase-dashboard-title h2 {
     margin: 0;
     color: var(--phase-text);
-    font-size: 1.55rem;
-    font-weight: 750;
+    font-size: clamp(1.9rem, 3vw, 2.45rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  .phase-dashboard-subtitle {
+    margin-top: 8px;
+    line-height: 1.35;
   }
 
   .phase-dashboard-title-row {

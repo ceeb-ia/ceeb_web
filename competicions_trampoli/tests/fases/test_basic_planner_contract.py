@@ -16,6 +16,7 @@ from ...models.competicio import (
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioProgramUnit, RotacioEstacio, RotacioFranja
 from ...models.scoring import ScoreEntry
 from ...services.fases import SlotSubject, create_program_unit_from_subjects, create_program_unit_with_empty_slots
+from ...services.fases.group_plan import apply_group_plan
 from ..base import _BaseTrampoliDataMixin
 
 
@@ -403,6 +404,142 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "Unitats buides generades per")
         self.assertContains(response, "2 unitats")
         self.assertContains(response, "4 places")
+
+    def test_group_plan_badge_reflects_applied_snapshot(self):
+        phase = self._create_phase()
+        phase.config = {"qualification": {"run_id": 123, "snapshot_hash": ""}}
+        phase.save(update_fields=["config", "updated_at"])
+
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Snapshot aplicat")
+        self.assertNotContains(response, "Unitats buides</span>")
+
+    def test_draft_phase_can_clear_all_slots_in_unit(self):
+        phase = self._create_phase()
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Unitat A",
+            subjects=[
+                SlotSubject("inscripcio", 101, status=ProgramUnitSlot.Status.FILLED, source_row={"name": "A"}),
+                SlotSubject("inscripcio", 102, status=ProgramUnitSlot.Status.MANUAL, source_row={"name": "B"}),
+            ],
+        )
+
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+        self.assertContains(response, "Buidar places")
+        self.assertContains(response, 'data-phase-confirm-message="Buidar totes les places de la unitat Unitat A?')
+
+        response = self.client.post(
+            self._planner_url(),
+            data={"action": "clear_program_unit_slots", "fase_id": phase.id, "unit_id": unit.id},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        slots = list(unit.slots.order_by("ordre", "slot_index", "id"))
+        for slot in slots:
+            slot.refresh_from_db()
+            self.assertEqual(slot.status, ProgramUnitSlot.Status.EMPTY)
+            self.assertEqual(slot.subject_kind, "")
+            self.assertIsNone(slot.subject_id)
+            self.assertEqual(slot.source_row, {})
+        self.assertContains(response, "2 places buidades")
+
+    def test_clear_all_slots_in_unit_requires_draft_phase(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.PUBLISHED
+        phase.save(update_fields=["estat", "updated_at"])
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Unitat publicada",
+            subjects=[SlotSubject("inscripcio", 101, status=ProgramUnitSlot.Status.FILLED)],
+        )
+
+        response = self.client.post(
+            self._planner_url(),
+            data={"action": "clear_program_unit_slots", "fase_id": phase.id, "unit_id": unit.id},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        slot = unit.slots.get()
+        self.assertEqual(slot.status, ProgramUnitSlot.Status.FILLED)
+        self.assertContains(response, "Nomes es poden buidar places mentre la fase esta en esborrany.")
+
+    def test_group_plan_seeds_expected_classification_positions_on_empty_slots(self):
+        phase = self._create_phase()
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.competicio,
+            nom="Preliminar",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema={},
+        )
+        phase.config = {
+            "source": {"classificacio_id": cfg.id, "classificacio_nom": cfg.nom, "tipus": cfg.tipus},
+            "cut": {
+                "mode": "top_n",
+                "qualifiers_count": 4,
+                "reserve_count": 0,
+                "partition_mode": "global",
+                "tie_policy": "classification_order",
+                "unit_capacity": 2,
+                "unit_name_template": "{fase} - {particio}",
+            },
+            "group_plan_settings": {
+                "split_mode": "by_count",
+                "units_per_partition": 2,
+                "unit_capacity": 2,
+                "formation_strategy": "serpentine",
+                "unit_name_template": "{fase} - {particio}",
+            },
+        }
+        phase.save(update_fields=["config", "updated_at"])
+        rows = {
+            "global": [
+                {"posicio": index, "punts": 10 - index, "inscripcio_id": 100 + index, "participant": f"Classificat {index}"}
+                for index in range(1, 5)
+            ]
+        }
+
+        with patch("competicions_trampoli.services.fases.group_plan.compute_classificacio", return_value=rows):
+            apply_group_plan(phase)
+
+        units = list(phase.program_units.prefetch_related("slots").order_by("ordre", "id"))
+        self.assertEqual(
+            [[slot.source_position for slot in unit.slots.order_by("ordre", "slot_index", "id")] for unit in units],
+            [[4, 1], [3, 2]],
+        )
+        self.assertTrue(all(slot.status == ProgramUnitSlot.Status.EMPTY for unit in units for slot in unit.slots.all()))
+        self.assertEqual(
+            [
+                [(slot.source_row or {}).get("phase_seed_position") for slot in unit.slots.order_by("ordre", "slot_index", "id")]
+                for unit in units
+            ],
+            [[4, 1], [3, 2]],
+        )
+        self.assertTrue(
+            all(
+                "participant" not in (slot.source_row or {})
+                for unit in units
+                for slot in unit.slots.all()
+            )
+        )
+
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+
+        selected_unit = response.context["selected_phase"].ui_units[0]
+        self.assertEqual(
+            [slot.ui_origin_label for slot in selected_unit.slots.all()],
+            ["4t classificat previst", "1r classificat previst"],
+        )
+        origin_detail = " ".join(slot.ui_origin_detail for slot in selected_unit.slots.all())
+        self.assertNotIn("Posicio classificacio", origin_detail)
+        self.assertNotIn("Punts:", origin_detail)
+        self.assertNotContains(response, "Previst: Classificat 1")
 
     def test_post_preview_qualification_surfaces_service_validation(self):
         phase = self._create_phase()

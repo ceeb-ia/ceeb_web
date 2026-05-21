@@ -32,6 +32,10 @@ body.competicions-app.has-competition-dock main {
   padding-bottom: 108px;
 }
 
+body.competicions-app.has-competition-dock .footer_section {
+  margin-bottom: 108px;
+}
+
 body.competicions-app .competition-dock {
   position: fixed;
   left: 50%;
@@ -178,6 +182,10 @@ body.competicions-app.has-competition-dock .inscripcions-back-to-top {
 @media (max-width: 767.98px) {
   body.competicions-app.has-competition-dock main {
     padding-bottom: 100px;
+  }
+
+  body.competicions-app.has-competition-dock .footer_section {
+    margin-bottom: 100px;
   }
 
   body.competicions-app .competition-dock {

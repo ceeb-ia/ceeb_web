@@ -70,7 +70,10 @@
               <form
                 method="post"
                 class="phase-branch-delete-form"
-                onsubmit="return confirm('Eliminar la branca {{ phase.nom|escapejs }} i totes les fases filles? Aquesta accio tambe eliminara les unitats no programades de la branca.');">
+                data-phase-confirm-title="Eliminar branca"
+                data-phase-confirm-message="Eliminar la branca {{ phase.nom }} i totes les fases filles? Aquesta accio tambe eliminara les unitats no programades de la branca."
+                data-phase-confirm-label="Eliminar branca"
+                data-phase-confirm-tone="danger">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="delete_phase_branch">
                 <input type="hidden" name="fase_id" value="{{ phase.id }}">

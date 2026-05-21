@@ -63,6 +63,27 @@ def _programming_by_unit(competicio) -> dict[int, list[str]]:
     return dict(labels_by_unit)
 
 
+def _to_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ordinal_ca(value: int | None) -> str:
+    if not value:
+        return ""
+    if value == 1:
+        return "1r"
+    if value == 2:
+        return "2n"
+    if value == 3:
+        return "3r"
+    if value == 4:
+        return "4t"
+    return f"{value}e"
+
+
 def _source_row_text(source_row: dict, *keys: str) -> str:
     if not isinstance(source_row, dict):
         return ""
@@ -97,21 +118,28 @@ def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: di
             if inscripcio is not None:
                 label = str(getattr(inscripcio, "nom_i_cognoms", "") or "").strip()
                 meta = str(getattr(inscripcio, "entitat", "") or "").strip()
-        slot.ui_subject_label = label
-        slot.ui_subject_meta = meta
+        slot.ui_subject_label = "" if slot.status == ProgramUnitSlot.Status.EMPTY else label
+        slot.ui_subject_meta = "" if slot.status == ProgramUnitSlot.Status.EMPTY else meta
         slot.ui_subject_fallback = f"{slot.subject_kind}:{slot.subject_id}" if slot.subject_kind and slot.subject_id else ""
         manual = source_row.get("manual_override") if isinstance(source_row.get("manual_override"), dict) else {}
         override_type = str(manual.get("type") or "").strip()
         source_position = getattr(slot, "source_position", None)
+        seed_position = _to_int(source_row.get("phase_seed_position"))
+        display_position = seed_position or source_position
         source_position_label = f"#{source_position}" if source_position else ""
+        display_position_label = f"#{display_position}" if display_position else ""
         if slot.status == ProgramUnitSlot.Status.EMPTY:
-            origin_label = "Sense origen"
+            origin_label = (
+                f"{_ordinal_ca(display_position)} classificat previst"
+                if display_position
+                else "Sense origen"
+            )
         elif override_type == "manual_inscripcio":
             origin_label = "Manual"
         elif override_type == "reserve_promotion" or slot.status == ProgramUnitSlot.Status.RESERVE:
             origin_label = f"Reserva {source_position_label}".strip()
-        elif source_position:
-            origin_label = f"Classificat {source_position_label}"
+        elif display_position:
+            origin_label = f"Classificat {display_position_label}"
         elif slot.source_classificacio_id:
             origin_label = "Classificat"
         elif slot.status == ProgramUnitSlot.Status.MANUAL:
@@ -122,8 +150,11 @@ def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: di
         partition = str(slot.source_particio_key or "").strip()
         if partition:
             origin_parts.append(f"Particio: {partition}")
-        if slot.source_score is not None:
-            origin_parts.append(f"Punts: {slot.source_score}")
+        if slot.status != ProgramUnitSlot.Status.EMPTY:
+            if seed_position and source_position and seed_position != source_position:
+                origin_parts.append(f"Posicio classificacio: #{source_position}")
+            if slot.source_score is not None:
+                origin_parts.append(f"Punts: {slot.source_score}")
         slot.ui_origin_label = origin_label
         slot.ui_origin_detail = " / ".join(origin_parts)
 

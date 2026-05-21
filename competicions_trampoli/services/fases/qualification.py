@@ -258,14 +258,18 @@ def _candidate_from_row(
     *,
     particio_key: str,
     status: str,
+    seed_position: int | None = None,
 ) -> QualificationCandidate | None:
     subject = _subject_from_row(row)
     if subject is None:
         return None
     subject_kind, subject_id = subject
+    source_row = _clean_source_row(row)
+    if seed_position:
+        source_row["phase_seed_position"] = seed_position
     return QualificationCandidate(
         source_particio_key=particio_key,
-        source_row=_clean_source_row(row),
+        source_row=source_row,
         subject_kind=subject_kind,
         subject_id=subject_id,
         status=status,
@@ -377,6 +381,7 @@ def _build_units_for_partition(
     tie_policy: str,
     warnings: list[str],
     partition_warnings: dict[str, list[str]],
+    strategy: str = "classification_order",
 ) -> list[QualificationUnitPreview]:
     selected = _select_candidates_for_partition(
         partition_key=partition_key,
@@ -390,10 +395,17 @@ def _build_units_for_partition(
     competitive = [candidate for candidate in selected if candidate.status != ProgramUnitSlot.Status.RESERVE]
     slot_target = max(qualifiers_count, len(competitive), 1)
     unit_count = (slot_target + unit_capacity - 1) // unit_capacity
+    capacities = [
+        min(unit_capacity, slot_target - offset)
+        for offset in range(0, slot_target, unit_capacity)
+    ]
+    chunks, unassigned = _chunks_by_strategy(
+        competitive,
+        capacities,
+        strategy=str(strategy or "classification_order"),
+    )
     units = []
-    for offset in range(0, slot_target, unit_capacity):
-        capacity = min(unit_capacity, slot_target - offset)
-        index = (offset // unit_capacity) + 1
+    for index, (capacity, chunk) in enumerate(zip(capacities, chunks), start=1):
         label = _format_unit_label(
             unit_name_template,
             fase=fase,
@@ -406,8 +418,15 @@ def _build_units_for_partition(
                 label=label,
                 partition_key=partition_key,
                 capacity=capacity,
-                candidates=competitive[offset:offset + capacity],
+                candidates=_slot_order_candidates(chunk, strategy=str(strategy or "classification_order")),
             )
+        )
+    if unassigned:
+        _add_partition_warning(
+            warnings,
+            partition_warnings,
+            partition_key,
+            f"no hi ha prou slots per assignar {unassigned} classificat/s o reserva/es.",
         )
     return units
 
@@ -454,8 +473,13 @@ def _select_candidates_for_partition(
         warnings=warnings,
         partition_warnings=partition_warnings,
     )
-    for row, status in selected_rows:
-        candidate = _candidate_from_row(row, particio_key=partition_key, status=status)
+    for seed_position, (row, status) in enumerate(selected_rows, start=1):
+        candidate = _candidate_from_row(
+            row,
+            particio_key=partition_key,
+            status=status,
+            seed_position=seed_position,
+        )
         if candidate is None:
             unsupported += 1
             continue
@@ -585,6 +609,16 @@ def _chunks_by_strategy(
     return chunks, max(0, len(selected) - offset)
 
 
+def _slot_order_candidates(
+    candidates: list[QualificationCandidate],
+    *,
+    strategy: str,
+) -> list[QualificationCandidate]:
+    if str(strategy or "").strip() == "serpentine":
+        return list(reversed(candidates))
+    return list(candidates)
+
+
 def _build_existing_unit_previews(
     *,
     fase: CompeticioAparellFase,
@@ -617,10 +651,11 @@ def _build_existing_unit_previews(
             capacity = _positive_int(unit.capacity, default=0)
         capacities.append(capacity)
     settings = _qualification_group_settings(fase)
+    strategy = str(settings.get("formation_strategy") or "classification_order")
     chunks, unassigned = _chunks_by_strategy(
         selected,
         capacities,
-        strategy=str(settings.get("formation_strategy") or "classification_order"),
+        strategy=strategy,
     )
     for unit, capacity, chunk in zip(units, capacities, chunks):
         previews.append(
@@ -629,7 +664,7 @@ def _build_existing_unit_previews(
                 label=unit.nom,
                 partition_key=_partition_key_for_unit(unit, partition_mode),
                 capacity=capacity,
-                candidates=chunk,
+                candidates=_slot_order_candidates(chunk, strategy=strategy),
             )
         )
     if unassigned:

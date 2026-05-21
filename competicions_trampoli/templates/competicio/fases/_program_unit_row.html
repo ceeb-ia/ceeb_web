@@ -1,6 +1,13 @@
 <div class="phase-unit-row">
   <div>
-    <div class="phase-unit-name">{{ unit.nom }}</div>
+    <div class="phase-unit-title-row">
+      <div class="phase-unit-name">{{ unit.nom }}</div>
+      {% if unit.ui_is_programmed %}
+        <span class="badge badge-success phase-unit-status-badge">Programat</span>
+      {% else %}
+        <span class="badge badge-warning phase-unit-status-badge" title="Pendent de programar">Pendent</span>
+      {% endif %}
+    </div>
     <div class="phase-unit-meta text-muted small">
       <span>{{ unit.get_tipus_display }}</span>
       <span>{{ unit.ui_slot_count|default:unit.slots_count }} places</span>
@@ -31,7 +38,13 @@
                 <span>{{ slot.get_status_display }}</span>
               </span>
               <span class="phase-slot-chip-subject">
-                {% if slot.ui_subject_label %}{{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %}{{ slot.ui_subject_fallback }}{% else %}Plaça buida{% endif %}
+                {% if slot.ui_subject_label %}
+                  {{ slot.ui_subject_label }}
+                {% elif slot.ui_subject_fallback %}
+                  {{ slot.ui_subject_fallback }}
+                {% else %}
+                  Plaça buida
+                {% endif %}
               </span>
               {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
               {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
@@ -42,7 +55,12 @@
                 <div class="phase-slot-actions-menu">
                   {% if slot.status != 'empty' %}
                     {% if slot.status != 'withdrawn' %}
-                      <form method="post" onsubmit="return confirm('Marcar aquesta plaça com a baixa?');">
+                      <form
+                        method="post"
+                        data-phase-confirm-title="Marcar baixa"
+                        data-phase-confirm-message="Marcar aquesta plaça com a baixa?"
+                        data-phase-confirm-label="Marcar baixa"
+                        data-phase-confirm-tone="warning">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="mark_slot_withdrawn">
                         <input type="hidden" name="fase_id" value="{{ phase.id }}">
@@ -50,7 +68,12 @@
                         <button class="btn btn-sm btn-outline-warning" type="submit">Marcar baixa</button>
                       </form>
                     {% endif %}
-                    <form method="post" onsubmit="return confirm('Buidar aquesta plaça?');">
+                    <form
+                      method="post"
+                      data-phase-confirm-title="Buidar plaça"
+                      data-phase-confirm-message="Buidar aquesta plaça?"
+                      data-phase-confirm-label="Buidar plaça"
+                      data-phase-confirm-tone="warning">
                       {% csrf_token %}
                       <input type="hidden" name="action" value="clear_slot_assignment">
                       <input type="hidden" name="fase_id" value="{{ phase.id }}">
@@ -61,7 +84,12 @@
                   {% if slot.status != 'empty' %}
                     <div class="phase-slot-delete-warning">Eliminar aquesta plaça també elimina l'assignació actual.</div>
                   {% endif %}
-                  <form method="post" onsubmit="return confirm('{% if slot.status != 'empty' %}Aquesta plaça esta ocupada o marcada amb estat. Si l elimines, es perdra aquesta assignacio. Vols continuar?{% else %}Eliminar aquesta plaça buida?{% endif %}');">
+                  <form
+                    method="post"
+                    data-phase-confirm-title="Eliminar plaça"
+                    data-phase-confirm-message="{% if slot.status != 'empty' %}Aquesta plaça esta ocupada o marcada amb estat. Si l elimines, es perdra aquesta assignacio. Vols continuar?{% else %}Eliminar aquesta plaça buida?{% endif %}"
+                    data-phase-confirm-label="Eliminar plaça"
+                    data-phase-confirm-tone="danger">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete_program_slot">
                     <input type="hidden" name="fase_id" value="{{ phase.id }}">
@@ -142,31 +170,63 @@
       </div>
     {% endif %}
   </div>
-  <div class="phase-unit-statuses">
-    {% if unit.slots.all %}
-      <button class="btn btn-sm btn-outline-secondary" type="button" data-open-slot-order-workspace="slot-order-workspace-{{ unit.id }}" {% if unit.ui_has_locked_slots %}disabled title="No es pot ordenar una unitat amb places bloquejades"{% endif %}>
-        Ordenar places
-      </button>
-    {% endif %}
-    <form method="post" class="phase-unit-add-slot-form">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="add_extra_program_slot">
-      <input type="hidden" name="fase_id" value="{{ phase.id }}">
-      <input type="hidden" name="unit_id" value="{{ unit.id }}">
-      <button class="btn btn-sm btn-outline-primary" type="submit">Afegir plaça</button>
-    </form>
-    {% if unit.ui_is_programmed %}
-      <span class="badge badge-success">Programat</span>
-    {% else %}
-      <span class="badge badge-warning">Pendent de programar</span>
-      <form method="post" class="phase-unit-delete-inline" onsubmit="return confirm('Eliminar aquesta unitat programable?');">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="delete_program_unit">
-        <input type="hidden" name="fase_id" value="{{ phase.id }}">
-        <input type="hidden" name="unit_id" value="{{ unit.id }}">
-        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
-      </form>
-    {% endif %}
+  <div class="phase-unit-actions-wrap">
+    <details class="phase-slot-actions phase-unit-actions">
+      <summary title="Accions de la unitat" aria-label="Accions de la unitat">...</summary>
+      <div class="phase-slot-actions-menu phase-unit-actions-menu">
+        {% if unit.slots.all %}
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-open-slot-order-workspace="slot-order-workspace-{{ unit.id }}" {% if unit.ui_has_locked_slots %}disabled title="No es pot ordenar una unitat amb places bloquejades"{% endif %}>
+            Ordenar places
+          </button>
+          {% if phase.ui_user_status_value == 'planned' %}
+            <form
+              method="post"
+              class="phase-unit-clear-slots-form"
+              data-phase-confirm-title="Buidar places"
+              data-phase-confirm-message="Buidar totes les places de la unitat {{ unit.nom }}? Es perdran les assignacions actuals."
+              data-phase-confirm-label="Buidar places"
+              data-phase-confirm-tone="warning">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="clear_program_unit_slots">
+              <input type="hidden" name="fase_id" value="{{ phase.id }}">
+              <input type="hidden" name="unit_id" value="{{ unit.id }}">
+              <button class="btn btn-sm btn-outline-warning" type="submit">Buidar places</button>
+            </form>
+          {% else %}
+            <button class="btn btn-sm btn-outline-warning" type="button" disabled title="Nomes es pot buidar una unitat en esborrany">
+              Buidar places
+            </button>
+          {% endif %}
+        {% endif %}
+        <form method="post" class="phase-unit-add-slot-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add_extra_program_slot">
+          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <input type="hidden" name="unit_id" value="{{ unit.id }}">
+          <button class="btn btn-sm btn-outline-primary" type="submit">Afegir plaça</button>
+        </form>
+        {% if unit.ui_is_programmed %}
+          <button class="btn btn-sm btn-outline-danger" type="button" disabled title="No es pot eliminar una unitat programada a rotacions">
+            Eliminar unitat
+          </button>
+          <div class="phase-slot-actions-note">No es pot eliminar una unitat programada a rotacions.</div>
+        {% else %}
+          <form
+            method="post"
+            class="phase-unit-delete-inline"
+            data-phase-confirm-title="Eliminar unitat"
+            data-phase-confirm-message="Eliminar aquesta unitat programable?"
+            data-phase-confirm-label="Eliminar unitat"
+            data-phase-confirm-tone="danger">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_program_unit">
+            <input type="hidden" name="fase_id" value="{{ phase.id }}">
+            <input type="hidden" name="unit_id" value="{{ unit.id }}">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar unitat</button>
+          </form>
+        {% endif %}
+      </div>
+    </details>
   </div>
 </div>
 
@@ -214,7 +274,15 @@
             <span class="phase-slot-order-main">
               <span>Plaça {{ forloop.counter }} - {{ slot.ui_origin_label }}</span>
               <strong>{{ slot.get_status_display }}{% if slot.locked %} · bloquejada{% endif %}</strong>
-              <span>{% if slot.ui_subject_label %}{{ slot.ui_subject_label }}{% elif slot.ui_subject_fallback %}{{ slot.ui_subject_fallback }}{% else %}Plaça buida{% endif %}</span>
+              <span>
+                {% if slot.ui_subject_label %}
+                  {{ slot.ui_subject_label }}
+                {% elif slot.ui_subject_fallback %}
+                  {{ slot.ui_subject_fallback }}
+                {% else %}
+                  Plaça buida
+                {% endif %}
+              </span>
               {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
               {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
             </span>

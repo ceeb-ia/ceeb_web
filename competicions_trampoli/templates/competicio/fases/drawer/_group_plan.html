@@ -1,7 +1,15 @@
 <section class="phase-panel">
   <div class="phase-panel-title">
     <h5>Pla de grups</h5>
-    <span class="badge badge-light border">Unitats buides</span>
+    {% if selected_phase.ui_qualification_source_changed %}
+      <span class="badge badge-danger">Font canviada</span>
+    {% elif selected_phase.ui_qualification_manual_pending %}
+      <span class="badge badge-warning">Snapshot pendent</span>
+    {% elif selected_phase.ui_qualification_run_id %}
+      <span class="badge badge-light border">Snapshot aplicat</span>
+    {% else %}
+      <span class="badge badge-light border">Unitats buides</span>
+    {% endif %}
   </div>
   <div class="phase-panel-note mb-2">
     Previsualitza les unitats competitives que es generaran a partir de la recepta. Les reserves no creen places dins les unitats; quedaran separades al snapshot.
@@ -40,7 +48,16 @@
     </div>
     <div class="phase-action-stack">
       <button class="btn btn-sm btn-outline-primary" type="submit" name="action" value="preview_group_plan">Previsualitzar grups</button>
-      <button class="btn btn-sm btn-primary" type="submit" name="action" value="apply_group_plan" onclick="return confirm('Generar les unitats buides de la fase amb el pla actual?');">Generar unitats buides</button>
+      <button
+        class="btn btn-sm btn-primary"
+        type="submit"
+        name="action"
+        value="apply_group_plan"
+        data-phase-confirm-title="Generar unitats"
+        data-phase-confirm-message="Generar les unitats buides de la fase amb el pla actual?"
+        data-phase-confirm-label="Generar unitats">
+        Generar unitats buides
+      </button>
     </div>
   </form>
   {% if group_plan_preview %}

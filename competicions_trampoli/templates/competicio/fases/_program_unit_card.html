@@ -52,14 +52,20 @@
         <span>Criteri</span>
         <select class="form-select form-select-sm" name="formation_strategy">
           <option value="classification_order" {% if unit.ui_formation_strategy == "classification_order" %}selected{% endif %}>Ordre de classificacio</option>
-          <option value="serpentine" {% if unit.ui_formation_strategy == "serpentine" %}selected{% endif %}>Serpentina</option>
+          <option value="serpentine" {% if unit.ui_formation_strategy == "serpentine" %}selected{% endif %}>Ordre invers</option>
           <option value="first_last" {% if unit.ui_formation_strategy == "first_last" %}selected{% endif %}>Primer amb ultim</option>
         </select>
       </label>
       <button class="btn btn-sm btn-outline-primary" type="submit">Desar unitat</button>
     </form>
     {% if not unit.ui_is_programmed %}
-      <form method="post" class="phase-program-unit-delete-form" onsubmit="return confirm('Eliminar aquesta unitat programable?');">
+      <form
+        method="post"
+        class="phase-program-unit-delete-form"
+        data-phase-confirm-title="Eliminar unitat"
+        data-phase-confirm-message="Eliminar aquesta unitat programable?"
+        data-phase-confirm-label="Eliminar unitat"
+        data-phase-confirm-tone="danger">
         {% csrf_token %}
         <input type="hidden" name="action" value="delete_program_unit">
         <input type="hidden" name="fase_id" value="{{ phase.id }}">

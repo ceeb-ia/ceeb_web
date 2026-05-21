@@ -431,16 +431,34 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
-    align-items: center;
+    align-items: start;
     border: 1px solid #E2EAF7;
     border-radius: 8px;
     background: #F8FBFF;
     padding: 10px 12px;
   }
 
+  .phase-unit-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
   .phase-unit-name {
+    min-width: 0;
     color: var(--phase-text);
     font-weight: 750;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .phase-unit-status-badge {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    font-size: 0.68rem;
+    line-height: 1.2;
   }
 
   .phase-unit-meta {
@@ -504,6 +522,13 @@
     flex-wrap: wrap;
     gap: 5px;
     margin-top: 8px;
+  }
+
+  .phase-unit-list-embedded .phase-slot-list {
+    max-height: 132px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
   }
 
   .phase-slot-chip {
@@ -625,6 +650,29 @@
   .phase-slot-actions-menu form,
   .phase-unit-add-slot-form {
     margin: 0;
+  }
+
+  .phase-unit-actions-wrap {
+    justify-self: end;
+  }
+
+  .phase-unit-actions > summary {
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: #FFFFFF;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+
+  .phase-unit-actions-menu {
+    right: 0;
+    left: auto;
+    width: min(220px, calc(100vw - 32px));
+  }
+
+  .phase-unit-actions-menu .btn {
+    width: 100%;
+    text-align: left;
   }
 
   .phase-slot-reserve-list {
