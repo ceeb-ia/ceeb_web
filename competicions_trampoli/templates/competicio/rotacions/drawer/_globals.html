@@ -40,6 +40,32 @@
 <section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
           <div class="drawer-section-head">
             <div>
+              <div class="drawer-section-title">Validacio</div>
+              <div class="drawer-section-subtitle">Revisa duplicats, simultaneitats, compatibilitat i franges buides.</div>
+            </div>
+          </div>
+          <div class="validation-panel">
+            <div class="rotation-action-row">
+              <button class="btn btn-sm btn-outline-primary rotation-btn-primary" id="btnValidateRotacions" type="button">Validar programa</button>
+              <span class="validation-summary" id="rotacionsValidationSummary">Sense validar</span>
+            </div>
+            <div class="validation-results" id="rotacionsValidationResults"></div>
+          </div>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title">Notes internes</div>
+              <div class="drawer-section-subtitle">Notes de treball associades a franges del programa.</div>
+            </div>
+          </div>
+          <div class="franja-notes-list" id="franjaNotesList"></div>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
+          <div class="drawer-section-head">
+            <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
                 <span>Estructura de graella</span>
                 <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="incidencies" aria-label="Ajuda descans">?</button>

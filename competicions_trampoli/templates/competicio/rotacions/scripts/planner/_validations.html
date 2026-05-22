@@ -1,0 +1,111 @@
+<script>
+(function(){
+  const VALIDATE_URL = "{% url 'rotacions_validate_program' competicio.id %}";
+
+  function escapeLocal(value){
+    if (typeof escapeHtml === "function") return escapeHtml(value);
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[ch]));
+  }
+
+  function highlightPlannerRow(franjaId){
+    const row = document.querySelector(`.franja-row-competitive[data-franja-row="${franjaId}"], .franja-row-global[data-franja-visual-row="${franjaId}"]`);
+    if (!row) return;
+    const wrap = document.querySelector(".grid-wrap");
+    if (wrap) {
+      wrap.scrollTo({top: Math.max(0, row.offsetTop - 80), behavior: "smooth"});
+    } else {
+      row.scrollIntoView({block: "center", behavior: "smooth"});
+    }
+    row.classList.add("is-validation-highlight");
+    window.setTimeout(() => row.classList.remove("is-validation-highlight"), 2200);
+  }
+
+  function highlightPlannerCell(franjaId, estacioId){
+    if (!estacioId) {
+      highlightPlannerRow(franjaId);
+      return;
+    }
+    const cell = document.querySelector(`.js-cell[data-franja="${franjaId}"][data-estacio="${estacioId}"]`);
+    if (!cell) {
+      highlightPlannerRow(franjaId);
+      return;
+    }
+    const wrap = document.querySelector(".grid-wrap");
+    if (wrap) {
+      const top = cell.offsetTop - 80;
+      const left = cell.offsetLeft - 160;
+      wrap.scrollTo({top: Math.max(0, top), left: Math.max(0, left), behavior: "smooth"});
+    } else {
+      cell.scrollIntoView({block: "center", behavior: "smooth"});
+    }
+    cell.classList.add("is-validation-highlight");
+    window.setTimeout(() => cell.classList.remove("is-validation-highlight"), 2200);
+  }
+
+  function renderGroup(title, items, className){
+    if (!items.length) return "";
+    return `
+      <div class="validation-group validation-group--${className}">
+        <div class="validation-group-title">${escapeLocal(title)} <span>${items.length}</span></div>
+        ${items.map((item) => `
+          <div class="validation-item">
+            <div class="validation-item-message">${escapeLocal(item.message || "")}</div>
+            ${item.franja_id ? `<button type="button" class="validation-jump" data-franja-id="${item.franja_id}" data-estacio-id="${item.estacio_id || ""}">Anar-hi</button>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderValidation(data){
+    const errors = data.errors || [];
+    const warnings = data.warnings || [];
+    const info = data.info || [];
+    const summary = document.getElementById("rotacionsValidationSummary");
+    const results = document.getElementById("rotacionsValidationResults");
+    if (summary) summary.textContent = `${errors.length} errors · ${warnings.length} avisos`;
+    if (!results) return;
+    if (!errors.length && !warnings.length && !info.length) {
+      results.innerHTML = '<div class="validation-empty">No hi ha resultats de validacio.</div>';
+      return;
+    }
+    results.innerHTML = [
+      renderGroup("Errors", errors, "error"),
+      renderGroup("Avisos", warnings, "warning"),
+      renderGroup("Info", info, "info"),
+    ].join("");
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("btnValidateRotacions");
+    if (btn) {
+      btn.addEventListener("click", async () => {
+        const summary = document.getElementById("rotacionsValidationSummary");
+        if (summary) summary.textContent = "Validant...";
+        try {
+          const data = await postJSON(VALIDATE_URL, {});
+          renderValidation(data || {});
+        } catch (e) {
+          if (summary) summary.textContent = "Error de validacio";
+          if (typeof showAlert === "function") showAlert(e.message || e);
+          else window.alert(e.message || e);
+        }
+      });
+    }
+    document.addEventListener("click", (ev) => {
+      const jump = ev.target.closest(".validation-jump");
+      if (!jump) return;
+      highlightPlannerCell(jump.dataset.franjaId, jump.dataset.estacioId);
+    });
+  });
+
+  window.highlightPlannerCell = highlightPlannerCell;
+  window.highlightPlannerRow = highlightPlannerRow;
+})();
+</script>

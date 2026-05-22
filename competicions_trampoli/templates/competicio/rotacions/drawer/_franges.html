@@ -26,6 +26,29 @@
 <section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
           <div class="drawer-section-head">
             <div>
+              <div class="drawer-section-title">Seleccio</div>
+              <div class="drawer-section-subtitle" id="franjaSelectionSummary">0 franges seleccionades</div>
+            </div>
+          </div>
+          <div class="franja-bulk-panel" id="franjaBulkPanel">
+            <div class="franja-bulk-empty">Marca franges a la graella per activar accions massives.</div>
+            <div class="franja-bulk-actions" aria-label="Accions sobre franges seleccionades">
+              <button class="btn btn-sm btn-outline-secondary rotation-btn js-franja-bulk-clear-selection" type="button">Netejar seleccio</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="clear" type="button">Buidar</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="duplicate" type="button">Duplicar</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="shift" type="button">Desplaçar</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="duration" type="button">Durada</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="color" type="button">Color</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="type" type="button">Tipus</button>
+              <button class="btn btn-sm btn-outline-danger rotation-btn-danger js-franja-bulk-action" data-bulk-action="delete" type="button">Eliminar</button>
+            </div>
+            <div class="mini franja-bulk-status" id="franjaBulkStatus"></div>
+          </div>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
+          <div class="drawer-section-head">
+            <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
                 <span>Generar franges automaticament</span>
                 <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="control_temps" aria-label="Ajuda franges automatiques">?</button>

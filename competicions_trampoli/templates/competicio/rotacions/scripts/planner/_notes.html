@@ -1,0 +1,134 @@
+<script>
+(function(){
+  const NOTE_SAVE_URL = "{% url 'rotacions_franja_note_save' competicio.id %}";
+  let activeNoteFranjaId = null;
+  let franjaNotes = [];
+  try {
+    franjaNotes = JSON.parse(document.getElementById("franja-notes-data")?.textContent || "[]");
+  } catch (e) {
+    franjaNotes = [];
+  }
+
+  function escapeLocal(value){
+    if (typeof escapeHtml === "function") return escapeHtml(value);
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[ch]));
+  }
+
+  function renderNotesList(){
+    const wrap = document.getElementById("franjaNotesList");
+    if (!wrap) return;
+    const notes = franjaNotes.filter((item) => String(item.nota_interna || "").trim());
+    if (!notes.length) {
+      wrap.innerHTML = '<div class="franja-notes-empty">Encara no hi ha notes internes.</div>';
+      return;
+    }
+    wrap.innerHTML = notes.map((item) => `
+      <div class="franja-note-item">
+        <button type="button" class="franja-note-main js-franja-note-jump" data-franja-id="${item.franja_id}">
+          <span class="franja-note-title">${escapeLocal(item.label || "Franja")}</span>
+          <span class="mini">${escapeLocal(item.hora_inici || "")} - ${escapeLocal(item.hora_fi || "")}</span>
+          <span class="franja-note-preview">${escapeLocal(item.nota_interna || "")}</span>
+        </button>
+        <button type="button"
+                class="btn btn-sm btn-outline-secondary rotation-btn js-franja-note-open"
+                data-fr="${item.franja_id}"
+                data-label="${escapeLocal(item.label || "Franja")}"
+                data-note="${escapeLocal(item.nota_interna || "")}">
+          Editar
+        </button>
+      </div>
+    `).join("");
+  }
+
+  function openNoteModal(franjaId, label, note){
+    activeNoteFranjaId = String(franjaId || "");
+    const title = document.getElementById("franjaNoteTitle");
+    const text = document.getElementById("franjaNoteText");
+    const status = document.getElementById("franjaNoteStatus");
+    if (title) title.textContent = `Nota interna · ${label || "Franja"}`;
+    if (text) text.value = note || "";
+    if (status) status.textContent = "";
+    if (window.jQuery) window.jQuery("#franjaNoteModal").modal("show");
+  }
+
+  function upsertNote(franjaId, note){
+    const id = Number(franjaId);
+    let item = franjaNotes.find((entry) => Number(entry.franja_id) === id);
+    if (!item) {
+      const row = document.querySelector(`.js-franja-select[data-franja-id="${id}"]`);
+      item = {
+        franja_id: id,
+        label: row?.getAttribute("aria-label")?.replace(/^Seleccionar\s+/, "") || "Franja",
+        hora_inici: "",
+        hora_fi: "",
+        nota_interna: "",
+      };
+      franjaNotes.push(item);
+    }
+    item.nota_interna = note || "";
+    const btns = document.querySelectorAll(`.js-franja-note[data-fr="${id}"], .js-franja-note-open[data-fr="${id}"]`);
+    btns.forEach((btn) => btn.dataset.note = note || "");
+    const title = document.querySelector(`.js-franja-select[data-franja-id="${id}"]`)?.closest(".franja-title, .franja-head");
+    const head = title?.closest(".franja-head") || title;
+    if (head) {
+      let badge = head.querySelector(".franja-note-badge");
+      if (note && !badge) {
+        badge = document.createElement("span");
+        badge.className = "franja-note-badge";
+        badge.textContent = "Nota";
+        head.querySelector(".franja-title, .d-flex")?.appendChild(badge);
+      } else if (!note && badge) {
+        badge.remove();
+      }
+    }
+    renderNotesList();
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    renderNotesList();
+    document.addEventListener("click", (ev) => {
+      const openBtn = ev.target.closest(".js-franja-note, .js-franja-note-open");
+      if (openBtn) {
+        ev.preventDefault();
+        const franjaId = openBtn.dataset.fr;
+        const label = openBtn.dataset.label;
+        const note = openBtn.dataset.note || "";
+        window.setTimeout(() => openNoteModal(franjaId, label, note), 0);
+        return;
+      }
+      const jump = ev.target.closest(".js-franja-note-jump");
+      if (jump) {
+        highlightPlannerRow(jump.dataset.franjaId);
+      }
+    });
+    const saveBtn = document.getElementById("btnFranjaNoteSave");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        if (!activeNoteFranjaId) return;
+        const status = document.getElementById("franjaNoteStatus");
+        const text = document.getElementById("franjaNoteText");
+        if (status) status.textContent = "Desant...";
+        try {
+          const data = await postJSON(NOTE_SAVE_URL, {
+            franja_id: activeNoteFranjaId,
+            nota_interna: text ? text.value : "",
+          });
+          upsertNote(data.franja_id, data.nota_interna || "");
+          if (status) status.textContent = "Nota desada.";
+          if (window.jQuery) window.jQuery("#franjaNoteModal").modal("hide");
+        } catch (e) {
+          if (status) status.textContent = "Error desant la nota.";
+          if (typeof showAlert === "function") showAlert(e.message || e);
+          else window.alert(e.message || e);
+        }
+      });
+    }
+  });
+})();
+</script>

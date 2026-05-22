@@ -144,8 +144,9 @@ def build_visual_reorder_sequence(
 
 
 def serialize_time_change(change: TimeChange) -> Dict[str, object]:
+    franja_id = getattr(change.franja, "id", None)
     return {
-        "franja_id": int(change.franja.id),
+        "franja_id": int(franja_id) if franja_id else None,
         "title": str(change.franja.display_label or change.franja.tipus_label or "Franja"),
         "type": str(getattr(change.franja, "tipus", RotacioFranja.TIPUS_COMPETITION) or RotacioFranja.TIPUS_COMPETITION),
         "old_start": format_time(change.old_start),

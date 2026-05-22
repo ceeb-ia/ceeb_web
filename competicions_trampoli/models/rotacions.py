@@ -139,6 +139,7 @@ class RotacioFranja(models.Model):
     titol = models.CharField(max_length=120, blank=True, default="")
     tipus = models.CharField(max_length=20, choices=TIPUS_CHOICES, default=TIPUS_COMPETITION, db_index=True)
     color_fons = models.CharField(max_length=7, blank=True, default="")
+    nota_interna = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ["ordre", "id"]

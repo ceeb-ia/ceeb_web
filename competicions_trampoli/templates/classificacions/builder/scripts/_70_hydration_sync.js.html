@@ -866,12 +866,24 @@
     const cfg = currentCfg(); if (!cfg) return;
     ensureLegacyTipusOption(els.fTipus.value);
     cfg.tipus = els.fTipus.value;
+    syncTipusChoiceButtons(cfg.tipus);
     refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
     renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
     renderTieUI(readTieBuilderState(true));
     renderVictoryTieUI(readVictoryTieUI(true));
     syncAdvancedFromUI();
     renderList();
+  });
+  document.querySelectorAll("[data-classif-type-choice]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const value = String(btn.getAttribute("data-classif-type-choice") || "individual").trim() || "individual";
+      if (!els.fTipus || els.fTipus.value === value) {
+        syncTipusChoiceButtons(value);
+        return;
+      }
+      setTipusValue(value);
+      els.fTipus.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   });
   if (els.detailEnabled) {
     els.detailEnabled.addEventListener("change", () => {

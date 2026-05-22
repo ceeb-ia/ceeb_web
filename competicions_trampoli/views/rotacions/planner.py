@@ -367,6 +367,17 @@ def rotacions_planner(request, pk):
     for estacio in estacions:
         estacio.ui_logo_path = _rotacions_logo_path_for_app(getattr(estacio, "comp_aparell", None))
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre_visual", "id"))
+    franja_notes = [
+        {
+            "franja_id": int(franja.id),
+            "label": franja.display_label,
+            "hora_inici": franja.hora_inici.strftime("%H:%M"),
+            "hora_fi": franja.hora_fi.strftime("%H:%M"),
+            "nota_interna": franja.nota_interna,
+        }
+        for franja in franges
+        if str(getattr(franja, "nota_interna", "") or "").strip()
+    ]
     franja_type_options = [
         {"value": value, "label": label}
         for value, label in RotacioFranja.TIPUS_CHOICES
@@ -438,6 +449,7 @@ def rotacions_planner(request, pk):
         "franja_type_options": franja_type_options,
         "franja_type_options_json": json.dumps(franja_type_options, ensure_ascii=False),
         "franja_default_colors_json": json.dumps(RotacioFranja.DEFAULT_BACKGROUND_COLORS, ensure_ascii=False),
+        "franja_notes_json": json.dumps(franja_notes, ensure_ascii=False),
         "export_meta_json": json.dumps(export_meta, ensure_ascii=False),
         "export_participant_fields_json": json.dumps(export_participant_fields, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),

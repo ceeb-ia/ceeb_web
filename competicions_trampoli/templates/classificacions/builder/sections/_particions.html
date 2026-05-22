@@ -1,63 +1,91 @@
-              <section id="section-particions" class="builder-section builder-section--particions" data-builder-section>
-                <div class="builder-section__header">
-                  <div>
-                    <div class="builder-section__eyebrow">Estructura</div>
-                    <h4 class="builder-section__title">Particions <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="particions_overview" aria-label="Ajuda particions">?</button></h4>
-                    <p class="builder-section__desc">Divideixen el resultat final en blocs visibles. No són un filtre d'entrada.</p>
-                  </div>
-                  <div class="builder-help-badge">Jerarquia</div>
-                </div>
-                <div class="builder-section__body">
-                  <div class="builder-section__stack">
-                    <div class="builder-subsection">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Camps de partició</p>
-                          <p class="builder-subsection__desc">Selecciona i ordena els camps que separen la classificació en subgrups.</p>
-                        </div>
-                      </div>
+{% load static %}
 
-          <div class="border rounded p-2 mb-2" id="particionsFieldsBox">
-            <div class="small text-muted">Sense camps de partició disponibles.</div>
-          </div>
-          <div class="border rounded p-2 mb-2" id="particionsCustomBox">
-            <div class="small text-muted">Selecciona almenys un camp de partició per configurar grups custom.</div>
-          </div>
+<section id="section-particions" class="builder-section builder-section--particions" data-builder-section>
+  <div class="builder-section__header">
+    <div>
+      <div class="builder-section__eyebrow">Estructura</div>
+      <h4 class="builder-section__title">Particions <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="particions_overview" aria-label="Ajuda particions">?</button></h4>
+      <p class="builder-section__desc">Divideixen el resultat final en blocs visibles. No son un filtre d'entrada.</p>
+    </div>
+    <div class="builder-help-badge">Jerarquia</div>
+  </div>
 
-          <div class="border rounded p-2 mb-2" id="particionsDerivedBox" style="display:none;">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div>
-                <div class="small text-muted">Forquilles de data de naixement</div>
-                <div class="small text-muted">Configura els rangs que alimenten la partició derivada.</div>
+  <div class="builder-section__body">
+    <div class="builder-section__stack">
+      <div class="builder-subsection classif-partition-panel">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">01</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/particions/camps.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Camps de particio</p>
+                <p class="builder-subsection__desc">Selecciona i ordena els camps que separen la classificacio en subgrups.</p>
               </div>
-              <div class="builder-inline-note">Individual i equips</div>
             </div>
-            <div id="birthYearRangeConfigBox"></div>
           </div>
+        </div>
+        <div class="classif-partition-body" id="particionsFieldsBox">
+          <div class="small text-muted">Sense camps de particio disponibles.</div>
+        </div>
+      </div>
 
-          <div id="equipCfgBox" class="builder-subsection builder-subsection--muted" style="display:none;">
-            <div class="builder-subsection__head">
-              <div>
-                <p class="builder-subsection__title">Configuració d'equips <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="equips_overview" aria-label="Ajuda configuració d'equips">?</button></p>
-                <p class="builder-subsection__desc">Particions manuals i opcions addicionals quan la classificació treballa per equips.</p>
-              </div>
-              <div class="builder-inline-note">Només equips</div>
-            </div>
-
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="eqIncludeSenseEquip">
-              <label class="form-check-label" for="eqIncludeSenseEquip">Incloure participants sense equip <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_include_sense_equip" aria-label="Ajuda incloure participants sense equip">?</button></label>
-            </div>
-
-            <div class="border rounded p-2 mb-2">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <label class="m-0 small text-muted">Particions manuals <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_manual_particions" aria-label="Ajuda particions manuals d'equips">?</button></label>
-                <button type="button" class="btn btn-sm btn-outline-primary" id="btnEqManualAdd">+ Partició</button>
-              </div>
-              <div id="eqManualRows"></div>
-            </div>
-
+      <div class="builder-subsection classif-partition-panel">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">02</span>
+            <span>
+              <p class="builder-subsection__title">Particio personalitzada</p>
+              <p class="builder-subsection__desc">Agrupa valors detectats en etiquetes propies per simplificar la classificacio final.</p>
+            </span>
           </div>
+        </div>
+        <div class="classif-partition-body" id="particionsCustomBox">
+          <div class="small text-muted">Selecciona almenys un camp de particio per configurar grups personalitzats.</div>
+        </div>
+      </div>
 
+      <div class="builder-subsection classif-partition-panel" id="particionsDerivedBox" style="display:none;">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">03</span>
+            <span>
+              <p class="builder-subsection__title">Forquilles de data de naixement</p>
+              <p class="builder-subsection__desc">Configura els rangs que alimenten la particio derivada.</p>
+            </span>
+          </div>
+          <div class="builder-inline-note">Individual i equips</div>
+        </div>
+        <div id="birthYearRangeConfigBox"></div>
+      </div>
 
-              </section>
+      <div id="equipCfgBox" class="builder-subsection builder-subsection--muted classif-partition-panel" style="display:none;">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">04</span>
+            <span>
+              <p class="builder-subsection__title">Configuracio d'equips <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="equips_overview" aria-label="Ajuda configuracio d'equips">?</button></p>
+              <p class="builder-subsection__desc">Particions manuals i opcions addicionals quan la classificacio treballa per equips.</p>
+            </span>
+          </div>
+          <div class="builder-inline-note">Equips</div>
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="eqIncludeSenseEquip">
+          <label class="form-check-label" for="eqIncludeSenseEquip">Incloure participants sense equip <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_include_sense_equip" aria-label="Ajuda incloure participants sense equip">?</button></label>
+        </div>
+
+        <div class="classif-partition-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="m-0 small text-muted">Particions manuals <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_manual_particions" aria-label="Ajuda particions manuals d'equips">?</button></label>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnEqManualAdd">+ Particio</button>
+          </div>
+          <div id="eqManualRows"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

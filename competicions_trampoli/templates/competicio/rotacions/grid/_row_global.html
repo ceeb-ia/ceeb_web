@@ -7,8 +7,17 @@
                       <div class="franja-head">
                         <div class="franja-info">
                           <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                            <input type="checkbox"
+                                   class="franja-selection-check js-franja-select"
+                                   data-franja-id="{{ f.id }}"
+                                   data-franja-tipus="{{ f.tipus }}"
+                                   data-franja-competitive="0"
+                                   aria-label="Seleccionar {{ f.display_label|default:'Franja' }}">
                             <span class="franja-special-badge">{{ f.tipus_label }}</span>
                             <span class="franja-special-label"><span class="franja-visual-drag-handle" title="Arrossega per moure visualment">&#8942;&#8942;</span>{{ f.display_label }}</span>
+                            {% if f.nota_interna %}
+                              <span class="franja-note-badge" title="Te nota interna">Nota</span>
+                            {% endif %}
                           </div>
                           <div class="mini mt-1">{{ f.hora_inici }} - {{ f.hora_fi }}</div>
                         </div>
@@ -37,6 +46,14 @@
                                     type="button">
                               <span class="franja-action-icon" aria-hidden="true">+</span>
                               <span>Inserir despres</span>
+                            </button>
+                            <button class="dropdown-item js-franja-note"
+                                    data-fr="{{ f.id }}"
+                                    data-label="{{ f.display_label|default:'Franja'|escape }}"
+                                    data-note="{{ f.nota_interna|default_if_none:''|escape }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">N</span>
+                              <span>Nota interna</span>
                             </button>
                             <button class="dropdown-item text-danger js-del-fr"
                                     data-fr="{{ f.id }}"

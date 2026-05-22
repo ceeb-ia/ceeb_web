@@ -1,3 +1,9 @@
+  {% load static %}
+  const CLASSIF_TYPE_ICON_URLS = {
+    individual: "{% static 'classificacions/individual.png' %}",
+    equips: "{% static 'classificacions/team.png' %}",
+  };
+
   function normalizeContextCode(raw) {
     return String(raw || "native").trim() || "native";
   }
@@ -150,6 +156,52 @@
     };
   }
 
+  function typeLabel(tipus) {
+    const value = String(tipus || "individual").trim();
+    if (value === "equips") return "Equips";
+    if (value === "entitat") return "Per entitat";
+    return "Individual";
+  }
+
+  function teamModeLabel(mode) {
+    const value = normalizeTeamMode(mode);
+    if (value === TEAM_MODE_NATIVE) return "Nativa d'equip";
+    if (value === TEAM_MODE_DERIVED) return "Derivada d'individual";
+    return "";
+  }
+
+  function contextLabelFromCode(code) {
+    const clean = normalizeContextCode(code);
+    const contexts = Array.isArray(EQUIP_CONTEXTS) ? EQUIP_CONTEXTS : [];
+    const ctx = contexts.find(item => normalizeContextCode(item.code || item.value || item.id) === clean);
+    return String(ctx?.label || ctx?.nom || ctx?.name || clean || "native");
+  }
+
+  function cfgListMeta(cfg, cfgStatus) {
+    const tipus = String(cfg?.tipus || "individual").trim() || "individual";
+    const schema = cfg && typeof cfg.schema === "object" && !Array.isArray(cfg.schema) ? cfg.schema : {};
+    const equips = schema.equips && typeof schema.equips === "object" && !Array.isArray(schema.equips) ? schema.equips : {};
+    const assignment = equips.assignment_source && typeof equips.assignment_source === "object" && !Array.isArray(equips.assignment_source)
+      ? equips.assignment_source
+      : {};
+    const bits = [];
+    if (tipus === "equips") {
+      bits.push(teamModeLabel(equips.team_mode || cfgStatus.effective_team_mode || "") || "Classificacio d'equips");
+      bits.push(`Context ${contextLabelFromCode(assignment.context_code || equips.context_code || "native")}`);
+    } else {
+      bits.push(typeLabel(tipus));
+    }
+    if (cfgStatus.legacy_inferred) bits.push("Legacy");
+    if (cfgStatus.is_stale) bits.push("Revisar");
+    return bits.filter(Boolean).join(" · ");
+  }
+
+  function cfgListState(cfg) {
+    if (!cfg?.activa) return { label: "Inactiva", cls: "builder-cfg-state--inactive" };
+    if (cfg.publicada !== false) return { label: "Publica", cls: "builder-cfg-state--public" };
+    return { label: "Interna", cls: "" };
+  }
+
   function describeAppIds(appIds) {
     const ids = _uniquePositiveInts(appIds);
     if (!ids.length) return "cap";
@@ -285,6 +337,23 @@
     }).join("");
   }
 
+  function renderClassifMetaSummaryBadge(uiState, resolvedMode) {
+    const node = els.classifMetaSummaryBadge;
+    if (!node) return;
+    const cfg = currentCfg();
+    if (!cfg) {
+      node.style.display = "none";
+      node.textContent = "";
+      return;
+    }
+    const tip = currentTipus();
+    const text = tip === "equips"
+      ? `${teamModeLabel(resolvedMode || uiState?.effectiveTeamMode || TEAM_MODE_DERIVED) || "Classificacio d'equips"} · Context ${contextLabelFromCode(uiState?.contextCode || "native")}`
+      : typeLabel(tip);
+    node.textContent = text;
+    node.style.display = "";
+  }
+
   function getEquipsModeHintText(uiState) {
     const cap = uiState && uiState.contextCapability ? uiState.contextCapability : null;
     if (uiState && uiState.tipus !== "equips") {
@@ -390,9 +459,10 @@
       els.eqTeamModeHint.textContent = shouldShow ? getEquipsModeHintText({ ...uiState, tipus: tip }) : "";
     }
 
+    renderClassifMetaSummaryBadge(uiState, resolvedMode);
     const statusItems = [];
     const typeLabel = tip === "equips" ? "Equips" : "Individual";
-    if (cfg) {
+    if (false && cfg) {
       statusItems.push({
         variant: tip === "equips" ? "info" : "secondary",
         title: "Classificació",
@@ -408,14 +478,14 @@
         text: "Aquesta classificació s'ha inferit des del format antic i es desa ja en el contracte nou.",
       });
     }
-    if (uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
+    if (false && uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
       statusItems.push({
         variant: "secondary",
         title: "Resolució",
         text: `Mode resolt el ${uiState.cfgStatus.resolved_at}.`,
       });
     }
-    if (uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
+    if (false && uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
       statusItems.push({
         variant: "secondary",
         title: "Snapshot",
@@ -513,6 +583,16 @@
     if (els.fTipus) {
       els.fTipus.value = normalized;
     }
+    syncTipusChoiceButtons(normalized);
+  }
+
+  function syncTipusChoiceButtons(value) {
+    const normalized = String(value || (els.fTipus && els.fTipus.value) || "individual").trim() || "individual";
+    document.querySelectorAll("[data-classif-type-choice]").forEach(btn => {
+      const isSelected = String(btn.getAttribute("data-classif-type-choice") || "") === normalized;
+      btn.classList.toggle("is-selected", isSelected);
+      btn.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
   }
 
   function selectedTemplateId() {
@@ -648,6 +728,10 @@
       if (cfgStatus.is_stale) metaBits.push("stale");
       const metaLine = metaBits.join(" · ");
       const stateLabel = !cfg.activa ? "Inactiva" : (cfg.publicada !== false ? "Pública" : "Interna");
+      const tipus = String(cfg.tipus || "individual").trim() || "individual";
+      const typeIcon = CLASSIF_TYPE_ICON_URLS[tipus === "equips" ? "equips" : "individual"] || CLASSIF_TYPE_ICON_URLS.individual;
+      const displayMetaLine = cfgListMeta(cfg, cfgStatus);
+      const stateInfo = cfgListState(cfg);
       const disableUp = !reorderEnabled || state.reorderBusy || idx === 0;
       const disableDown = !reorderEnabled || state.reorderBusy || idx === items.length - 1;
       const moveUpTitle = disableUp ? (idx === 0 ? "Ja es la primera classificacio." : reorderTitle) : "Pujar classificacio";
@@ -658,9 +742,13 @@
         </div>` : "";
       row.innerHTML = `<div class="builder-cfg-row">
         <button type="button" class="builder-cfg-main" data-cfg-select="${esc(String(cfg.id))}">
-          <div class="d-flex justify-content-between">
-            <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${metaLine}</div></div>
-            <div class="small">${esc(stateLabel)}</div>
+          <div class="builder-cfg-main-layout">
+            <img class="builder-cfg-type-logo" src="${esc(typeIcon)}" alt="">
+            <div class="builder-cfg-copy">
+              <div class="builder-cfg-title">${esc(cfg.nom)}</div>
+              <div class="builder-cfg-meta">${esc(displayMetaLine)}</div>
+            </div>
+            <div class="builder-cfg-state ${esc(stateInfo.cls)}">${esc(stateInfo.label)}</div>
           </div>
         </button>
         ${controlsHtml}
@@ -1599,6 +1687,7 @@
   function refreshTipusUI(opts = {}) {
     const cfg = currentCfg();
     const tipus = (cfg && cfg.tipus) || (els.fTipus && els.fTipus.value) || "individual";
+    syncTipusChoiceButtons(tipus);
     const isEquips = (tipus === "equips");
     const isIndividual = (tipus === "individual");
     if (els.equipMetaBox) {

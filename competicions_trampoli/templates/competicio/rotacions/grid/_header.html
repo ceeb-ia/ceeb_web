@@ -1,8 +1,16 @@
 {% load static %}
               <tr>
                 <th class="rot-franja-col">
-                  <span class="rot-th-label">Franja</span>
-                  <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="aparell_rotacio" aria-label="Ajuda franges i estacions">?</button>
+                  <div class="rot-franja-head-cell">
+                    <span class="rot-th-label">Franja</span>
+                    <button type="button"
+                            class="franja-select-all-btn js-franja-select-all"
+                            aria-pressed="false"
+                            title="Seleccionar totes les franges visibles">
+                      Totes
+                    </button>
+                    <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="aparell_rotacio" aria-label="Ajuda franges i estacions">?</button>
+                  </div>
                 </th>
                 {% for a in estacions %}
                   <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}">

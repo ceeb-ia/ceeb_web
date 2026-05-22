@@ -278,6 +278,7 @@
     if (!entries.length) {
       html += `<div class="small text-muted border rounded p-2">Cap partició definida. Si no n'afegeixes cap, la classificació serà global.</div>`;
       els.particionsFieldsBox.innerHTML = html;
+      enhanceParticioStackChrome();
       return;
     }
 
@@ -329,7 +330,7 @@
                 <select class="form-control form-control-sm" data-part-entry="parent_values" multiple size="${Math.min(Math.max(parentChoices.length || 2, 2), 6)}">
                   ${parentOptionsHtml}
                 </select>
-                <div class="small text-muted mt-1">Es compara contra el valor resolt del nivell anterior, incloent grups custom.</div>
+                <div class="small text-muted mt-1">Es compara contra el valor resolt del nivell anterior, incloent grups personalitzats.</div>
               </div>
             </div>
           `}
@@ -338,6 +339,27 @@
     });
 
     els.particionsFieldsBox.innerHTML = html;
+    enhanceParticioStackChrome();
+  }
+
+  function enhanceParticioStackChrome() {
+    if (!els.particionsFieldsBox) return;
+    els.particionsFieldsBox.querySelectorAll("[data-part-entry-row]").forEach((row, idx) => {
+      row.classList.add("classif-part-entry-row");
+      const title = row.querySelector(".font-weight-bold.small");
+      if (!title || title.querySelector(".classif-step-index")) return;
+      const label = String(title.textContent || "").replace(/^\s*\d+\.\s*/, "").trim();
+      title.classList.remove("font-weight-bold");
+      title.classList.add("classif-part-entry-title");
+      title.innerHTML = `<span class="classif-step-index">${esc(String(idx + 1).padStart(2, "0"))}</span><span>${esc(label)}</span>`;
+    });
+    els.particionsFieldsBox.querySelectorAll(".small.text-muted").forEach(node => {
+      node.textContent = String(node.textContent || "")
+        .replace(/grups custom/g, "grups personalitzats")
+        .replace(/Cap particiÃ³ definida/g, "Cap particio definida")
+        .replace(/classificaciÃ³/g, "classificacio")
+        .replace(/serÃ /g, "sera");
+    });
   }
 
   function buildParticioFieldChecks() {
@@ -419,7 +441,8 @@
     const customMap = normalizeParticionsCustom(customMapRaw || {});
 
     if (!selected.length) {
-      els.particionsCustomBox.innerHTML = `<div class="small text-muted">Selecciona almenys un camp de partició per configurar grups custom.</div>`;
+      els.particionsCustomBox.innerHTML = `<div class="small text-muted">Selecciona almenys un camp de particio per configurar grups personalitzats.</div>`;
+      enhanceParticionsCustomChrome();
       return;
     }
 
@@ -475,7 +498,7 @@
             <div class="form-check m-0">
               <input class="form-check-input" type="checkbox" id="${esc(modeId)}"
                      data-part-custom="mode" ${customEnabled ? "checked" : ""}>
-              <label class="form-check-label small" for="${esc(modeId)}">Particio custom</label>
+              <label class="form-check-label small" for="${esc(modeId)}">Particio personalitzada</label>
             </div>
           </div>
           <div class="mt-2" data-part-custom="panel" style="display:${customEnabled ? "" : "none"};">
@@ -552,8 +575,31 @@
     });
 
     els.particionsCustomBox.innerHTML = html;
+    enhanceParticionsCustomChrome();
     els.particionsCustomBox.querySelectorAll("[data-part-custom-field]").forEach(refreshParticioCustomFieldDndState);
     initParticionsCustomSortables();
+  }
+
+  function enhanceParticionsCustomChrome() {
+    if (!els.particionsCustomBox) return;
+    els.particionsCustomBox.querySelectorAll("[data-part-custom-field]").forEach((field, idx) => {
+      field.classList.add("classif-part-custom-field");
+      const title = field.querySelector(".font-weight-bold.small");
+      if (!title || title.querySelector(".classif-step-index")) return;
+      const label = String(title.textContent || "").replace(/^\s*\d+\.\s*/, "").trim();
+      title.classList.remove("font-weight-bold");
+      title.classList.add("classif-part-entry-title");
+      title.innerHTML = `<span class="classif-step-index">${esc(String(idx + 1).padStart(2, "0"))}</span><span>${esc(label)}</span>`;
+    });
+    els.particionsCustomBox.querySelectorAll('label[for^="pc_mode_"]').forEach(label => {
+      label.textContent = "Particio personalitzada";
+    });
+    els.particionsCustomBox.querySelectorAll(".small.text-muted").forEach(node => {
+      node.textContent = String(node.textContent || "")
+        .replace(/grups custom/g, "grups personalitzats")
+        .replace(/Particio custom/g, "Particio personalitzada")
+        .replace(/Cap grup definit/g, "Cap grup definit");
+    });
   }
 
   function readParticionsCustomUI(selectedCodes) {

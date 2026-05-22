@@ -1,0 +1,443 @@
+<script>
+(function(){
+  const BULK_CLEAR_URL = "{% url 'rotacions_franges_bulk_clear' competicio.id %}";
+  const BULK_DELETE_URL = "{% url 'rotacions_franges_bulk_delete' competicio.id %}";
+  const BULK_UPDATE_URL = "{% url 'rotacions_franges_bulk_update' competicio.id %}";
+  const BULK_SHIFT_URL = "{% url 'rotacions_franges_bulk_shift' competicio.id %}";
+  const BULK_DURATION_URL = "{% url 'rotacions_franges_bulk_duration' competicio.id %}";
+  const BULK_DUPLICATE_URL = "{% url 'rotacions_franges_bulk_duplicate' competicio.id %}";
+
+  function alertBox(message){
+    if (typeof showAlert === "function") showAlert(message);
+    else window.alert(message);
+  }
+
+  function selectedIds(){
+    return window.RotacionsFranjaSelection?.selectedIds() || [];
+  }
+
+  function franjaIdForRow(row){
+    const input = row?.querySelector(".js-franja-select");
+    return String(input?.dataset?.franjaId || "");
+  }
+
+  function setStatus(message){
+    const el = document.getElementById("franjaBulkStatus");
+    if (el) el.textContent = message || "";
+  }
+
+  function modalParts(){
+    return {
+      modal: document.getElementById("franjaBulkActionModal"),
+      title: document.getElementById("franjaBulkActionTitle"),
+      body: document.getElementById("franjaBulkActionBody"),
+      error: document.getElementById("franjaBulkActionError"),
+      confirm: document.getElementById("btnFranjaBulkActionConfirm"),
+    };
+  }
+
+  function setBulkModalError(message){
+    const error = document.getElementById("franjaBulkActionError");
+    if (error) error.textContent = message || "";
+  }
+
+  function showBulkActionModal(options){
+    return new Promise((resolve) => {
+      const parts = modalParts();
+      if (!parts.modal || !parts.body || !parts.confirm || !window.jQuery) {
+        alertBox("No s'ha pogut obrir el modal d'accio.");
+        resolve(null);
+        return;
+      }
+      if (parts.modal.parentElement !== document.body) document.body.appendChild(parts.modal);
+      if (parts.title) parts.title.textContent = options.title || "Accio sobre franges";
+      parts.body.innerHTML = options.bodyHtml || "";
+      setBulkModalError("");
+      parts.confirm.textContent = options.confirmText || "Aplicar";
+      parts.confirm.className = `btn btn-sm ${options.danger ? "btn-danger" : "btn-primary"}`;
+      parts.confirm.disabled = false;
+
+      const $modal = window.jQuery(parts.modal);
+      let settled = false;
+      const cleanup = () => {
+        parts.confirm.onclick = null;
+        $modal.off("hidden.bs.modal.bulkAction");
+      };
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      parts.confirm.onclick = () => {
+        const value = typeof options.collect === "function" ? options.collect(parts.modal) : true;
+        if (value === false) return;
+        settle(value);
+        $modal.modal("hide");
+      };
+
+      $modal.off("hidden.bs.modal.bulkAction");
+      $modal.on("hidden.bs.modal.bulkAction", () => settle(null));
+      $modal.modal("show");
+      window.setTimeout(() => {
+        const focusTarget = parts.modal.querySelector("[data-bulk-autofocus]") || parts.confirm;
+        if (focusTarget && typeof focusTarget.focus === "function") focusTarget.focus();
+      }, 150);
+    });
+  }
+
+  function selectedCountLabel(count){
+    return `${count} franja${count === 1 ? "" : "s"} seleccionada${count === 1 ? "" : "es"}`;
+  }
+
+  function modalIntro(count, extra = ""){
+    return `
+      <div class="franja-bulk-modal-intro">
+        <strong>${selectedCountLabel(count)}</strong>
+        ${extra ? `<div class="mini mt-1">${extra}</div>` : ""}
+      </div>
+    `;
+  }
+
+  async function confirmBulkAction({title, message, confirmText, danger = false, count}){
+    return await showBulkActionModal({
+      title,
+      confirmText,
+      danger,
+      bodyHtml: modalIntro(count, message),
+    });
+  }
+
+  async function askColor(count){
+    return await showBulkActionModal({
+      title: "Canviar color",
+      confirmText: "Aplicar color",
+      bodyHtml: `
+        ${modalIntro(count, "Tria un color de fons o restableix el color per defecte del tipus de franja.")}
+        <label class="franja-bulk-field mt-3">
+          <span>Color</span>
+          <input type="color" class="form-control form-control-sm p-1" id="bulkColorValue" value="#DBEAFE" data-bulk-autofocus>
+        </label>
+        <label class="rotation-checkbox-row mt-2">
+          <input type="checkbox" id="bulkColorDefault">
+          Restablir color per defecte
+        </label>
+      `,
+      collect(){
+        const useDefault = document.getElementById("bulkColorDefault")?.checked;
+        const color = String(document.getElementById("bulkColorValue")?.value || "").trim();
+        return {color_fons: useDefault ? "" : color};
+      },
+    });
+  }
+
+  async function askType(count){
+    return await showBulkActionModal({
+      title: "Canviar tipus",
+      confirmText: "Aplicar tipus",
+      bodyHtml: `
+        ${modalIntro(count, "Si canvies a un tipus no competitiu, les franges amb assignacions quedaran bloquejades pel servidor.")}
+        <label class="franja-bulk-field mt-3">
+          <span>Tipus</span>
+          <select class="form-control form-control-sm" id="bulkFranjaType" data-bulk-autofocus>
+            {% for opt in franja_type_options %}
+              <option value="{{ opt.value }}">{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      `,
+      collect(){
+        return {tipus: String(document.getElementById("bulkFranjaType")?.value || "competition")};
+      },
+    });
+  }
+
+  async function askShift(count){
+    return await showBulkActionModal({
+      title: "Desplaçar franges",
+      confirmText: "Desplaçar",
+      bodyHtml: `
+        ${modalIntro(count, "Indica els minuts a sumar o restar. Pots usar valors negatius.")}
+        <label class="franja-bulk-field mt-3">
+          <span>Minuts</span>
+          <input type="number" class="form-control form-control-sm" id="bulkShiftMinutes" value="5" step="1" data-bulk-autofocus>
+        </label>
+      `,
+      collect(){
+        const minutes = parseInt(document.getElementById("bulkShiftMinutes")?.value || "", 10);
+        if (!Number.isFinite(minutes) || minutes === 0) {
+          setBulkModalError("Introdueix un nombre de minuts diferent de 0.");
+          return false;
+        }
+        return {minutes};
+      },
+    });
+  }
+
+  async function askDuration(count){
+    return await showBulkActionModal({
+      title: "Ajustar durada",
+      confirmText: "Ajustar",
+      bodyHtml: `
+        ${modalIntro(count, "Indica els minuts a sumar o restar a la durada. Si cal, les franges posteriors es desplacen endavant. Pots usar valors negatius.")}
+        <label class="franja-bulk-field mt-3">
+          <span>Canvi de durada (min)</span>
+          <input type="number" class="form-control form-control-sm" id="bulkDurationMinutes" value="5" step="1" data-bulk-autofocus>
+        </label>
+      `,
+      collect(){
+        const minutes = parseInt(document.getElementById("bulkDurationMinutes")?.value || "", 10);
+        if (!Number.isFinite(minutes) || minutes === 0) {
+          setBulkModalError("Introdueix un nombre de minuts diferent de 0.");
+          return false;
+        }
+        return {minutes};
+      },
+    });
+  }
+
+  async function askDuplicate(count){
+    return await showBulkActionModal({
+      title: "Duplicar franges",
+      confirmText: "Duplicar",
+      bodyHtml: `
+        ${modalIntro(count, "Les copies es crearan com un bloc compacte, despres de l'ultima franja seleccionada.")}
+        <label class="franja-bulk-field mt-3">
+          <span>Espai abans de la copia (min)</span>
+          <input type="number" class="form-control form-control-sm" id="bulkDuplicateOffset" value="0" step="1" data-bulk-autofocus>
+        </label>
+        <div class="mini mt-1">0 enganxa la primera copia just despres de l'ultima franja seleccionada.</div>
+        <label class="rotation-checkbox-row mt-2">
+          <input type="checkbox" id="bulkDuplicateCopyAssignments">
+          Copiar tambe les assignacions
+        </label>
+      `,
+      collect(){
+        const offset = parseInt(document.getElementById("bulkDuplicateOffset")?.value || "", 10);
+        if (!Number.isFinite(offset)) {
+          setBulkModalError("Introdueix una separacio valida.");
+          return false;
+        }
+        return {
+          offset_minutes: offset,
+          copy_assignments: !!document.getElementById("bulkDuplicateCopyAssignments")?.checked,
+        };
+      },
+    });
+  }
+
+  async function postWithPreview(url, payload){
+    const preview = await postJSON(url, {...payload, preview_only: true});
+    if (preview?.requires_confirmation) {
+      const accepted = await showFranjaReorderModal(preview);
+      if (!accepted) return null;
+      return await postJSON(url, {...payload, confirm_reorder: true});
+    }
+    return await postJSON(url, payload);
+  }
+
+  async function handleBulkAction(action){
+    const franjaIds = selectedIds();
+    if (!franjaIds.length) {
+      alertBox("Selecciona com a minim una franja.");
+      return;
+    }
+    try {
+      if (action === "clear") {
+        const accepted = await confirmBulkAction({
+          title: "Buidar franges",
+          message: "S'eliminaran les assignacions, pero les franges es conservaran.",
+          confirmText: "Buidar",
+          count: franjaIds.length,
+        });
+        if (!accepted) return;
+        setStatus("Buidant franges...");
+        await postJSON(BULK_CLEAR_URL, {franja_ids: franjaIds});
+        location.reload();
+        return;
+      }
+      if (action === "delete") {
+        const accepted = await confirmBulkAction({
+          title: "Eliminar franges",
+          message: "Aquesta accio no es pot desfer.",
+          confirmText: "Eliminar",
+          danger: true,
+          count: franjaIds.length,
+        });
+        if (!accepted) return;
+        setStatus("Eliminant franges...");
+        await postJSON(BULK_DELETE_URL, {franja_ids: franjaIds});
+        location.reload();
+        return;
+      }
+      if (action === "color") {
+        const value = await askColor(franjaIds.length);
+        if (!value) return;
+        setStatus("Actualitzant color...");
+        await postJSON(BULK_UPDATE_URL, {franja_ids: franjaIds, ...value});
+        location.reload();
+        return;
+      }
+      if (action === "type") {
+        const value = await askType(franjaIds.length);
+        if (!value) return;
+        setStatus("Actualitzant tipus...");
+        await postJSON(BULK_UPDATE_URL, {franja_ids: franjaIds, ...value});
+        location.reload();
+        return;
+      }
+      if (action === "shift") {
+        const value = await askShift(franjaIds.length);
+        if (!value) return;
+        setStatus("Desplaçant franges...");
+        const result = await postWithPreview(BULK_SHIFT_URL, {franja_ids: franjaIds, ...value});
+        if (result) location.reload();
+        return;
+      }
+      if (action === "duration") {
+        const value = await askDuration(franjaIds.length);
+        if (!value) return;
+        setStatus("Ajustant durada...");
+        const result = await postWithPreview(BULK_DURATION_URL, {franja_ids: franjaIds, ...value});
+        if (result) location.reload();
+        return;
+      }
+      if (action === "duplicate") {
+        const value = await askDuplicate(franjaIds.length);
+        if (!value) return;
+        setStatus("Duplicant franges...");
+        const result = await postWithPreview(BULK_DUPLICATE_URL, {
+          franja_ids: franjaIds,
+          ...value,
+        });
+        if (result) location.reload();
+      }
+    } catch (e) {
+      setStatus("");
+      alertBox(e.message || e);
+    }
+  }
+
+  function contextMenuHtml(){
+    return `
+      <div class="franja-bulk-context-title">Accions seleccio</div>
+      <button type="button" class="dropdown-item" data-bulk-context-action="clear">
+        <span class="franja-action-icon" aria-hidden="true">&#9003;</span>
+        <span>Buidar</span>
+      </button>
+      <button type="button" class="dropdown-item" data-bulk-context-action="duplicate">
+        <span class="franja-action-icon" aria-hidden="true">+</span>
+        <span>Duplicar</span>
+      </button>
+      <button type="button" class="dropdown-item" data-bulk-context-action="shift">
+        <span class="franja-action-icon" aria-hidden="true">&#8596;</span>
+        <span>Desplaçar</span>
+      </button>
+      <button type="button" class="dropdown-item" data-bulk-context-action="duration">
+        <span class="franja-action-icon" aria-hidden="true">&#8633;</span>
+        <span>Durada</span>
+      </button>
+      <button type="button" class="dropdown-item" data-bulk-context-action="color">
+        <span class="franja-action-icon" aria-hidden="true">C</span>
+        <span>Color</span>
+      </button>
+      <button type="button" class="dropdown-item" data-bulk-context-action="type">
+        <span class="franja-action-icon" aria-hidden="true">T</span>
+        <span>Tipus</span>
+      </button>
+      <button type="button" class="dropdown-item text-danger" data-bulk-context-action="delete">
+        <span class="franja-action-icon" aria-hidden="true">&#10005;</span>
+        <span>Eliminar</span>
+      </button>
+    `;
+  }
+
+  function contextMenuEl(){
+    let menu = document.getElementById("franjaBulkContextMenu");
+    if (!menu) {
+      menu = document.createElement("div");
+      menu.id = "franjaBulkContextMenu";
+      menu.className = "dropdown-menu franja-actions-menu franja-bulk-context-menu";
+      menu.innerHTML = contextMenuHtml();
+      document.body.appendChild(menu);
+    }
+    return menu;
+  }
+
+  function closeContextMenu(){
+    const menu = document.getElementById("franjaBulkContextMenu");
+    if (!menu) return;
+    menu.classList.remove("show");
+    menu.removeAttribute("style");
+  }
+
+  function openContextMenu(ev, row){
+    const franjaId = franjaIdForRow(row);
+    if (!franjaId) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const selection = window.RotacionsFranjaSelection;
+    const currentIds = selectedIds().map(String);
+    if (!currentIds.includes(String(franjaId))) {
+      if (selection?.setOnlyFranjaSelection) selection.setOnlyFranjaSelection(franjaId);
+      else {
+        selection?.clearFranjaSelection?.();
+        selection?.toggleFranjaSelection?.(franjaId, true);
+      }
+    }
+
+    const menu = contextMenuEl();
+    menu.classList.add("show");
+    menu.style.position = "fixed";
+    menu.style.display = "block";
+    menu.style.visibility = "hidden";
+    menu.style.zIndex = "3200";
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+
+    const rect = menu.getBoundingClientRect();
+    const gap = 8;
+    const width = rect.width || 190;
+    const height = rect.height || 0;
+    const left = Math.min(Math.max(gap, ev.clientX), Math.max(gap, window.innerWidth - width - gap));
+    const top = Math.min(Math.max(gap, ev.clientY), Math.max(gap, window.innerHeight - height - gap));
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+    menu.style.visibility = "";
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".js-franja-bulk-action").forEach((btn) => {
+      btn.addEventListener("click", () => handleBulkAction(btn.dataset.bulkAction || ""));
+    });
+    document.addEventListener("contextmenu", (ev) => {
+      if (ev.target.closest("button, a, input, select, textarea, summary, details, .franja-actions-menu")) return;
+      const row = ev.target.closest(".franja-row-competitive, .franja-row-global");
+      if (!row) return;
+      openContextMenu(ev, row);
+    });
+    document.addEventListener("click", (ev) => {
+      const actionBtn = ev.target.closest("[data-bulk-context-action]");
+      if (actionBtn) {
+        const action = actionBtn.dataset.bulkContextAction || "";
+        closeContextMenu();
+        handleBulkAction(action);
+        return;
+      }
+      if (!ev.target.closest("#franjaBulkContextMenu")) closeContextMenu();
+    }, true);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") closeContextMenu();
+    });
+    window.addEventListener("scroll", closeContextMenu, true);
+    window.addEventListener("resize", closeContextMenu);
+  });
+
+  window.RotacionsFranjaBulkActions = {
+    run: handleBulkAction,
+    closeContextMenu,
+  };
+})();
+</script>

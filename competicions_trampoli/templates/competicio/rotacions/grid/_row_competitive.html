@@ -7,7 +7,19 @@
                     <th class="franja-header-cell">
                       <div class="franja-head">
                         <div class="franja-info">
-                          <div class="franja-title"><span class="franja-drag-handle" title="Arrossega per reordenar">&#8942;&#8942;</span>{{ f.display_label|default:"Franja" }}</div>
+                          <div class="franja-title">
+                            <input type="checkbox"
+                                   class="franja-selection-check js-franja-select"
+                                   data-franja-id="{{ f.id }}"
+                                   data-franja-tipus="{{ f.tipus }}"
+                                   data-franja-competitive="1"
+                                   aria-label="Seleccionar {{ f.display_label|default:'Franja' }}">
+                            <span class="franja-drag-handle" title="Arrossega per reordenar">&#8942;&#8942;</span>
+                            <span>{{ f.display_label|default:"Franja" }}</span>
+                            {% if f.nota_interna %}
+                              <span class="franja-note-badge" title="Te nota interna">Nota</span>
+                            {% endif %}
+                          </div>
                           <div class="mini">{{ f.hora_inici }} - {{ f.hora_fi }}</div>
                           <div class="mini mt-1 franja-order-control">
                             <span class="franja-order-label">Ordre</span>
@@ -62,6 +74,14 @@
                                     type="button">
                               <span class="franja-action-icon" aria-hidden="true">&#8599;</span>
                               <span>Extrapolar</span>
+                            </button>
+                            <button class="dropdown-item js-franja-note"
+                                    data-fr="{{ f.id }}"
+                                    data-label="{{ f.display_label|default:'Franja'|escape }}"
+                                    data-note="{{ f.nota_interna|default_if_none:''|escape }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">N</span>
+                              <span>Nota interna</span>
                             </button>
                             <button class="dropdown-item text-danger js-del-fr"
                                     data-fr="{{ f.id }}"

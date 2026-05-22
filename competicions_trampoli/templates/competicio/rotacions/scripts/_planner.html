@@ -258,7 +258,8 @@ function showFranjaReorderModal(preview){
       });
       $modal.modal("show");
     } else {
-      resolve(window.confirm("Acceptar la reordenacio horaria de les franges competitives?"));
+      if (typeof showAlert === "function") showAlert("No s'ha pogut obrir el modal de confirmacio.");
+      resolve(false);
     }
   });
 }
@@ -843,6 +844,14 @@ function initEditModalPlacement(){
   const reorderModalEl = document.getElementById("franjaReorderModal");
   if (reorderModalEl && reorderModalEl.parentElement !== document.body){
     document.body.appendChild(reorderModalEl);
+  }
+  const noteModalEl = document.getElementById("franjaNoteModal");
+  if (noteModalEl && noteModalEl.parentElement !== document.body){
+    document.body.appendChild(noteModalEl);
+  }
+  const bulkActionModalEl = document.getElementById("franjaBulkActionModal");
+  if (bulkActionModalEl && bulkActionModalEl.parentElement !== document.body){
+    document.body.appendChild(bulkActionModalEl);
   }
 }
 
