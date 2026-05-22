@@ -15,7 +15,6 @@
                         <div class="dropdown franja-actions franja-actions--always">
                           <button class="btn btn-sm btn-light franja-menu-toggle"
                                   type="button"
-                                  data-toggle="dropdown"
                                   aria-haspopup="true"
                                   aria-expanded="false"
                                   title="Accions de franja">
@@ -29,13 +28,22 @@
                                     data-hf="{{ f.hora_fi|time:'H:i' }}"
                                     data-tipus="{{ f.tipus }}"
                                     data-color="{{ f.color_fons|default_if_none:'' }}"
-                                    type="button">Editar</button>
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#9998;</span>
+                              <span>Editar</span>
+                            </button>
                             <button class="dropdown-item js-insert-after"
                                     data-fr="{{ f.id }}"
-                                    type="button">Inserir despres</button>
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">+</span>
+                              <span>Inserir despres</span>
+                            </button>
                             <button class="dropdown-item text-danger js-del-fr"
                                     data-fr="{{ f.id }}"
-                                    type="button">Eliminar</button>
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#10005;</span>
+                              <span>Eliminar</span>
+                            </button>
                           </div>
                         </div>
                       </div>

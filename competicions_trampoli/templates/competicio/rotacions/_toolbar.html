@@ -3,7 +3,7 @@
 <section class="rotation-toolbar" id="rotation-toolbar" aria-label="Barra d'eines de rotacions">
   <div class="rotation-toolbar-strip">
     <div class="rotation-toolbar-brand">
-      <img class="rotation-toolbar-mark" src="{% static 'dock/rotacions.png' %}" alt="">
+      <img class="rotation-toolbar-mark" src="{% static 'rotacions/planner.png' %}" alt="">
       <div>
         <div class="rotation-toolbar-title">Planner</div>
         <div class="mini">Eines de programa, franges, vista i export</div>
@@ -12,22 +12,41 @@
 
     <nav class="rotation-toolbar-tabs" aria-label="Apartats del planner">
       <button type="button" class="planner-toolbar-nav-btn is-active" data-drawer-panel-target="programables" aria-pressed="true">
-        <span class="rotation-toolbar-tab-title">Programables</span>
-        <span class="rotation-toolbar-tab-meta">{{ grups_display|length }} grups</span>
+        <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/programables.png' %}" alt="">
+        <span class="rotation-toolbar-tab-copy">
+          <span class="rotation-toolbar-tab-title">Programables</span>
+          <span class="rotation-toolbar-tab-meta">{{ grups_display|length }} grups</span>
+        </span>
       </button>
       <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="franges" aria-pressed="false">
-        <span class="rotation-toolbar-tab-title">Franges</span>
-        <span class="rotation-toolbar-tab-meta">Crear i generar</span>
+        <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/franges.png' %}" alt="">
+        <span class="rotation-toolbar-tab-copy">
+          <span class="rotation-toolbar-tab-title">Franges</span>
+          <span class="rotation-toolbar-tab-meta">Crear i generar</span>
+        </span>
       </button>
       <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="globals" aria-pressed="false">
-        <span class="rotation-toolbar-tab-title">Eines</span>
-        <span class="rotation-toolbar-tab-meta">Vista i estructura</span>
+        <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/eines.png' %}" alt="">
+        <span class="rotation-toolbar-tab-copy">
+          <span class="rotation-toolbar-tab-title">Eines</span>
+          <span class="rotation-toolbar-tab-meta">Vista i estructura</span>
+        </span>
       </button>
       <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="export" aria-pressed="false">
-        <span class="rotation-toolbar-tab-title">Export</span>
-        <span class="rotation-toolbar-tab-meta">Excel i logo</span>
+        <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/export.png' %}" alt="">
+        <span class="rotation-toolbar-tab-copy">
+          <span class="rotation-toolbar-tab-title">Export</span>
+          <span class="rotation-toolbar-tab-meta">Excel i logo</span>
+        </span>
       </button>
     </nav>
+
+    <div class="rotation-toolbar-density" aria-label="Alçada de la barra" role="group">
+      <span class="rotation-toolbar-density-label">Alçada</span>
+      <button type="button" class="rotation-toolbar-density-btn" data-toolbar-height="compact">Compacte</button>
+      <button type="button" class="rotation-toolbar-density-btn is-active" data-toolbar-height="medium">Mitjà</button>
+      <button type="button" class="rotation-toolbar-density-btn" data-toolbar-height="large">Ampli</button>
+    </div>
 
     <button type="button"
             class="btn btn-sm btn-outline-secondary rotation-toolbar-collapse"

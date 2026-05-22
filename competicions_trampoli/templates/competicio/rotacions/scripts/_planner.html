@@ -4,85 +4,103 @@
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 <script>
-(function($){
-  if (!window.jQuery) return;
+(function(){
+  let activeFranjaMenu = null;
 
-  function placeMenu($btn, $menu){
-    var r = $btn[0].getBoundingClientRect();
-    $menu.css({
-      position: 'fixed',
-      top: (r.bottom + 4) + 'px',
-      left: (Math.max(8, r.right - $menu.outerWidth())) + 'px',
-      zIndex: 3000,
-      display: 'block'
-    });
-  }
-
-  function cleanup($dd){
-    var $menu = $dd.data('__menu');
-    var $parent = $dd.data('__parent');
-    var $next = $dd.data('__next');
-    var $btn = $dd.data('__btn');
-
-    if ($menu && $menu.length){
-      $menu.removeClass('show').attr('style','');
-      if ($parent && $parent.length){
-        if ($next && $next.length) $next.before($menu);
-        else $parent.append($menu);
-      }
+  function closeFranjaMenu(){
+    if (!activeFranjaMenu) return;
+    const {dropdown, btn, menu, marker} = activeFranjaMenu;
+    menu.classList.remove("show");
+    menu.removeAttribute("style");
+    dropdown.classList.remove("show");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+    if (marker && marker.parentNode) {
+      marker.parentNode.insertBefore(menu, marker);
+      marker.remove();
+    } else if (dropdown && dropdown.isConnected) {
+      dropdown.appendChild(menu);
+    } else {
+      menu.remove();
     }
-    $dd.removeClass('show');
-    if ($btn && $btn.length) $btn.attr('aria-expanded','false');
-
-    // desactiva listeners globals
-    $(document).off('mousedown.__griddd keydown.__griddd');
-    $(window).off('scroll.__griddd resize.__griddd');
+    activeFranjaMenu = null;
   }
 
-  // Quan s'obre: mou el menu a body i prepara "tancar"
-  $(document).on('show.bs.dropdown', '.grid-wrap .dropdown', function(){
-    var $dd = $(this);
-    var $btn = $dd.find('[data-toggle="dropdown"]').first();
-    var $menu = $dd.find('.dropdown-menu').first();
+  function positionFranjaMenu(btn, menu){
+    const btnRect = btn.getBoundingClientRect();
+    menu.style.position = "fixed";
+    menu.style.display = "block";
+    menu.style.visibility = "hidden";
+    menu.style.zIndex = "3000";
+    menu.style.right = "auto";
+    menu.style.bottom = "auto";
+    menu.style.float = "none";
+    menu.style.transform = "none";
+    menu.style.width = "max-content";
+    menu.style.minWidth = "190px";
+    menu.style.maxWidth = "min(260px, calc(100vw - 16px))";
 
-    // guarda referències exactes
-    $dd.data('__btn', $btn);
-    $dd.data('__menu', $menu);
-    $dd.data('__parent', $menu.parent());
-    $dd.data('__next', $menu.next());
+    const menuRect = menu.getBoundingClientRect();
+    const viewportGap = 8;
+    const width = menuRect.width || 180;
+    const height = menuRect.height || 0;
+    const left = Math.min(
+      Math.max(viewportGap, btnRect.right - width),
+      Math.max(viewportGap, window.innerWidth - width - viewportGap)
+    );
+    const fitsBelow = btnRect.bottom + height + viewportGap <= window.innerHeight;
+    const top = fitsBelow
+      ? btnRect.bottom + 4
+      : Math.max(viewportGap, btnRect.top - height - 4);
 
-    // mou a body
-    $menu.detach().appendTo(document.body);
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+    menu.style.visibility = "";
+  }
 
-    // força estat "show" (perquè BS4 ho espera)
-    $dd.addClass('show');
-    $btn.attr('aria-expanded','true');
-    $menu.addClass('show');
+  function openFranjaMenu(dropdown, btn){
+    const menu = dropdown.querySelector(".franja-actions-menu");
+    if (!menu) return;
+    closeFranjaMenu();
+    const marker = document.createComment("franja-actions-menu");
+    menu.parentNode.insertBefore(marker, menu);
+    document.body.appendChild(menu);
+    dropdown.classList.add("show");
+    menu.classList.add("show");
+    btn.setAttribute("aria-expanded", "true");
+    activeFranjaMenu = {dropdown, btn, menu, marker};
+    positionFranjaMenu(btn, menu);
+  }
 
-    placeMenu($btn, $menu);
+  document.addEventListener("click", (ev) => {
+    const toggle = ev.target.closest(".franja-menu-toggle");
+    if (toggle) {
+      const dropdown = toggle.closest(".franja-actions.dropdown");
+      if (!dropdown) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      if (activeFranjaMenu?.btn === toggle) {
+        closeFranjaMenu();
+      } else {
+        openFranjaMenu(dropdown, toggle);
+      }
+      return;
+    }
 
-    // tanca si fas click fora, ESC, scroll o resize
-    $(document).on('mousedown.__griddd', function(e){
-      if ($(e.target).closest($menu).length) return;         // clic dins el menú
-      if ($(e.target).closest($btn).length) return;          // clic al toggle (BS4 ho gestiona)
-      cleanup($dd);
-    });
+    if (!activeFranjaMenu) return;
+    if (activeFranjaMenu.menu.contains(ev.target)) {
+      if (ev.target.closest(".dropdown-item")) window.setTimeout(closeFranjaMenu, 0);
+      return;
+    }
+    closeFranjaMenu();
+  }, true);
 
-    $(document).on('keydown.__griddd', function(e){
-      if (e.key === 'Escape') cleanup($dd);
-    });
-
-    $(window).on('scroll.__griddd resize.__griddd', function(){
-      cleanup($dd);
-    });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeFranjaMenu();
   });
-
-  // Quan BS4 intenta tancar (p.ex. clic al toggle): reenganxa el menú i neteja
-  $(document).on('hide.bs.dropdown', '.grid-wrap .dropdown', function(){
-    cleanup($(this));
-  });
-
-})(window.jQuery);
+  window.addEventListener("scroll", closeFranjaMenu, true);
+  window.addEventListener("resize", closeFranjaMenu);
+})();
 /* =========================
    ROTACIONS PLANNER JS (BS4)
    - Un sol DOMContentLoaded
@@ -391,11 +409,34 @@ function itemAllowedInStation(itemKey, estacioId){
   return false;
 }
 
+function plannerProgramItemForKey(itemKey){
+  const key = String(itemKey || "");
+  if (!key) return null;
+  return getProgramSidebarItems().find((item) => String(item.key || "") === key) || null;
+}
+
+function plannerPillKindLabel(kind){
+  if (kind === "series") return "Equip";
+  if (kind === "program_unit") return "Fase";
+  return "Grup";
+}
+
 function cellHtml(fr, es, grups){
   if (!grups.length) return '<span class="pill empty">—</span>';
   return grups.map((g) => {
-    const label = escapeHtml(groupLabels[String(g)] || g);
-    return `<span class="pill">${label}<button type="button" class="pill-rm js-pill-remove" data-franja="${fr}" data-estacio="${es}" data-key="${escapeHtml(g)}" title="Eliminar element">×</button></span>`;
+    const item = plannerProgramItemForKey(g);
+    const kind = String(item?.kind || (String(g).startsWith("s:") ? "series" : (String(g).startsWith("pu:") ? "program_unit" : "group")));
+    const label = escapeHtml(item?.label || groupLabels[String(g)] || g);
+    const meta = escapeHtml(plannerPillKindLabel(kind));
+    return `
+      <span class="pill program-pill program-pill--${escapeHtml(kind)}" title="${label}">
+        <span class="program-pill-main">
+          <span class="program-pill-label">${label}</span>
+          <span class="program-pill-meta">${meta}</span>
+        </span>
+        <button type="button" class="pill-rm js-pill-remove" data-franja="${fr}" data-estacio="${es}" data-key="${escapeHtml(g)}" title="Eliminar element">×</button>
+      </span>
+    `;
   }).join("");
 }
 
@@ -820,7 +861,7 @@ function initReorderModalControls(){
 
 function defaultFranjaColor(tipus){
   const key = String(tipus || "competition");
-  return String(franjaDefaultColors[key] || franjaDefaultColors.competition || "#EFF6FF").toUpperCase();
+  return String(franjaDefaultColors[key] || franjaDefaultColors.competition || "#DBEAFE").toUpperCase();
 }
 
 function normalizeFranjaColorValue(value, tipus){
@@ -1557,34 +1598,23 @@ function setActiveStation(estacioId){
   syncActiveStationHighlights();
 }
 
+function toggleActiveStation(estacioId){
+  const nextId = estacioId ? String(estacioId) : null;
+  setActiveStation(nextId && String(programFilters.activeStationId || "") !== nextId ? nextId : null);
+}
+
 function clearActiveStation(){
   setActiveStation(null);
 }
 
 function syncActiveStationHighlights(){
   const activeStationId = String(programFilters.activeStationId || "").trim();
-  const activeStationBox = document.getElementById("activeStationBox");
-  const activeStationMeta = document.getElementById("activeStationMeta");
   document.querySelectorAll(".js-col-h").forEach((th) => {
     th.classList.toggle("is-active-station", !!activeStationId && th.dataset.estacio === activeStationId);
   });
   document.querySelectorAll(".js-cell").forEach((cell) => {
     cell.classList.toggle("is-active-station", !!activeStationId && cell.dataset.estacio === activeStationId);
   });
-  if (activeStationBox && activeStationMeta) {
-    if (!activeStationId) {
-      activeStationBox.classList.add("is-empty");
-      activeStationMeta.textContent = "Cap focus seleccionat.";
-      return;
-    }
-    const esc = (window.CSS && typeof CSS.escape === "function")
-      ? CSS.escape(activeStationId)
-      : activeStationId.replaceAll('"', '\\"');
-    const header = document.querySelector(`.js-col-h[data-estacio="${esc}"]`);
-    const label = header?.querySelector("span")?.textContent?.trim() || `Estació ${activeStationId}`;
-    activeStationBox.classList.remove("is-empty");
-    activeStationMeta.textContent = `${label} · només elements compatibles.`;
-  }
 }
 
 function updateFilterButtons(){
@@ -1708,66 +1738,51 @@ function initPlannerDrawerControls(){
   const toolbarCollapse = document.getElementById("rotation-toolbar-collapse");
   if (toolbarCollapse) toolbarCollapse.addEventListener("click", () => togglePlannerToolbar());
 
+  const toolbarStrip = document.querySelector(".rotation-toolbar-strip");
+  if (toolbarStrip) {
+    toolbarStrip.addEventListener("click", (ev) => {
+      if (ev.target.closest("button, a, input, select, textarea, summary, details, label")) return;
+      togglePlannerToolbar();
+    });
+  }
+
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       setPlannerToolbarOpen(false);
     }
   });
 
-  const searchInput = document.getElementById("programSearch");
-  if (searchInput) {
-    searchInput.addEventListener("input", () => {
-      programFilters.query = String(searchInput.value || "");
-      renderProgramables();
-      syncActiveStationHighlights();
-    });
-  }
-
   document.querySelectorAll("[data-drawer-panel-target]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      setPlannerDrawerPanel(btn.dataset.drawerPanelTarget || "programables");
+      const nextPanel = btn.dataset.drawerPanelTarget || "programables";
+      const isSamePanel = String(nextPanel) === String(activePlannerDrawerPanel || "programables");
+      if (isSamePanel && isPlannerToolbarOpen()) {
+        setPlannerToolbarOpen(false);
+        return;
+      }
+      setPlannerDrawerPanel(nextPanel);
     });
   });
 
-  document.querySelectorAll("[data-program-placement]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const value = String(btn.dataset.programPlacement || "all");
-      programFilters.placement = value;
-      renderProgramables();
-      syncActiveStationHighlights();
-    });
-  });
-
-  document.querySelectorAll("[data-program-kind]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      programFilters.kind = String(btn.dataset.programKind || "all");
-      renderProgramables();
-      syncActiveStationHighlights();
-    });
-  });
-
-  document.querySelectorAll("[data-program-non-empty]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      programFilters.nonEmptyOnly = !programFilters.nonEmptyOnly;
-      renderProgramables();
-      syncActiveStationHighlights();
-    });
-  });
-
-  const clearActive = document.getElementById("clearActiveStation");
-  if (clearActive) clearActive.addEventListener("click", () => clearActiveStation());
 }
 
 function initStationFocusHandlers(){
   document.querySelectorAll(".js-col-h").forEach((th) => {
     th.addEventListener("click", (ev) => {
       if (ev.target.closest(".js-del-es")) return;
-      setActiveStation(th.dataset.estacio || null);
+      toggleActiveStation(th.dataset.estacio || null);
     });
   });
 
   document.querySelectorAll(".js-cell").forEach((cell) => {
     cell.addEventListener("click", () => setActiveStation(cell.dataset.estacio || null));
+  });
+
+  document.addEventListener("click", (ev) => {
+    if (!programFilters.activeStationId) return;
+    if (ev.target.closest("table.rot")) return;
+    if (ev.target.closest(".rotation-toolbar")) return;
+    clearActiveStation();
   });
 }
 

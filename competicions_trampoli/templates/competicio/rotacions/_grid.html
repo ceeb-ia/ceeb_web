@@ -1,11 +1,19 @@
+{% load static %}
     <!-- Grid -->
     <div class="cardx cardx-main rotation-grid-card">
       <div class="cardx-h rotation-grid-titlebar">
-        <div class="rotation-grid-title">
-          <span>Programa (franges × estacions)</span>
-          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="ordre_sortida" aria-label="Ajuda programa">?</button>
+        <div class="rotation-grid-title-block">
+          <div class="rotation-grid-title">
+            <img class="rotation-grid-title-icon" src="{% static 'rotacions/planner.png' %}" alt="">
+            <span>Programa de rotacions</span>
+            <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="ordre_sortida" aria-label="Ajuda programa">?</button>
+          </div>
+          <div class="rotation-grid-subtitle">Franges, estacions i ordre operatiu de competició</div>
         </div>
-        <div class="mini rotation-grid-hint">Tip: arrossega “(Buit)” per esborrar una cel·la</div>
+        <div class="rotation-grid-meta">
+          <span>{{ franges|length }} franges</span>
+          <span>{{ estacions|length }} estacions</span>
+        </div>
       </div>
 
       <div class="cardx-b">

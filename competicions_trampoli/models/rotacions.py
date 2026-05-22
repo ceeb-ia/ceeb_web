@@ -11,10 +11,10 @@ from .inscripcions import GrupCompeticio
 
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DEFAULT_FRANJA_BACKGROUND_COLORS = {
-    "competition": "#EFF6FF",
-    "break": "#FFF7ED",
+    "competition": "#DBEAFE",
+    "break": "#DCFCE7",
     "awards": "#FEF3C7",
-    "separator": "#F1F5F9",
+    "separator": "#E5E7EB",
 }
 
 

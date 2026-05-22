@@ -1,0 +1,38 @@
+<script>
+(function(){
+  const STORAGE_KEY = "rotacions.toolbar.height";
+  const VALID_HEIGHTS = new Set(["compact", "medium", "large"]);
+
+  function resolveHeight(value){
+    return VALID_HEIGHTS.has(String(value || "")) ? String(value) : "medium";
+  }
+
+  function applyToolbarHeight(value){
+    const height = resolveHeight(value);
+    const toolbar = document.getElementById("rotation-toolbar");
+    if (!toolbar) return;
+    toolbar.classList.remove(
+      "rotation-toolbar-height-compact",
+      "rotation-toolbar-height-medium",
+      "rotation-toolbar-height-large"
+    );
+    toolbar.classList.add(`rotation-toolbar-height-${height}`);
+    document.querySelectorAll("[data-toolbar-height]").forEach((btn) => {
+      const active = String(btn.dataset.toolbarHeight || "") === height;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    applyToolbarHeight(localStorage.getItem(STORAGE_KEY));
+    document.querySelectorAll("[data-toolbar-height]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const height = resolveHeight(btn.dataset.toolbarHeight);
+        localStorage.setItem(STORAGE_KEY, height);
+        applyToolbarHeight(height);
+      });
+    });
+  });
+})();
+</script>

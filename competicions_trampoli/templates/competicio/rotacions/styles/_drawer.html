@@ -155,7 +155,19 @@
       gap: 12px;
       padding: 10px;
       border-bottom: 1px solid var(--rotation-neutral-border);
+      cursor: pointer;
       overflow-x: auto;
+    }
+
+    .rotation-toolbar-strip button,
+    .rotation-toolbar-strip a,
+    .rotation-toolbar-strip label {
+      cursor: pointer;
+    }
+
+    .rotation-toolbar-strip input,
+    .rotation-toolbar-strip select {
+      cursor: auto;
     }
 
     .rotation-toolbar-brand {
@@ -194,10 +206,10 @@
 
     .planner-toolbar-nav-btn {
       display: flex;
-      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      gap: 2px;
-      min-width: 116px;
+      gap: 8px;
+      min-width: 132px;
       padding: 8px 10px;
       border: 1px solid var(--rotation-neutral-border);
       border-radius: 8px;
@@ -222,6 +234,25 @@
       box-shadow: 0 8px 18px rgba(180, 83, 9, .18);
     }
 
+    .rotation-toolbar-tab-icon {
+      display: block;
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      padding: 3px;
+      border: 1px solid rgba(124, 45, 18, .12);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .76);
+      object-fit: contain;
+    }
+
+    .rotation-toolbar-tab-copy {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-width: 0;
+    }
+
     .rotation-toolbar-tab-title {
       font-size: .9rem;
       font-weight: 800;
@@ -239,6 +270,11 @@
       color: rgba(255, 255, 255, .82);
     }
 
+    .planner-toolbar-nav-btn.is-active .rotation-toolbar-tab-icon {
+      border-color: rgba(255, 255, 255, .32);
+      background: rgba(255, 255, 255, .92);
+    }
+
     .rotation-toolbar-collapse {
       flex: 0 0 auto;
       align-self: center;
@@ -247,11 +283,68 @@
       white-space: nowrap;
     }
 
+    .rotation-toolbar-density {
+      display: inline-flex;
+      align-items: center;
+      align-self: center;
+      gap: 4px;
+      flex: 0 0 auto;
+      padding: 4px;
+      border: 1px solid var(--rotation-neutral-border);
+      border-radius: 8px;
+      background: #F8FAFC;
+    }
+
+    .rotation-toolbar-density-label {
+      padding: 0 6px;
+      color: var(--rotation-muted);
+      font-size: .74rem;
+      font-weight: 800;
+    }
+
+    .rotation-toolbar-density-btn {
+      min-height: 28px;
+      padding: 4px 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--rotation-text-main);
+      font-size: .78rem;
+      font-weight: 750;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .rotation-toolbar-density-btn:hover,
+    .rotation-toolbar-density-btn:focus {
+      background: #FFFFFF;
+      color: var(--rotation-text);
+      outline: none;
+    }
+
+    .rotation-toolbar-density-btn.is-active {
+      background: var(--rotation-base);
+      color: #FFFFFF;
+      box-shadow: 0 4px 10px rgba(180, 83, 9, .16);
+    }
+
     .rotation-toolbar-panels {
       max-height: min(46vh, 460px);
       overflow: auto;
       padding: 12px;
       background: #F8FAFC;
+    }
+
+    .rotation-toolbar.rotation-toolbar-height-compact .rotation-toolbar-panels {
+      max-height: min(30vh, 300px);
+    }
+
+    .rotation-toolbar.rotation-toolbar-height-medium .rotation-toolbar-panels {
+      max-height: min(46vh, 460px);
+    }
+
+    .rotation-toolbar.rotation-toolbar-height-large .rotation-toolbar-panels {
+      max-height: min(68vh, 720px);
     }
 
     .rotation-toolbar.is-collapsed .rotation-toolbar-panels {

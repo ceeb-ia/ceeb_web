@@ -31,13 +31,13 @@
     }
 
     .grid-wrap {
-      border: 1px solid var(--rotation-neutral-border);
+      border: 0;
       border-radius: 8px;
-      background: #FFFFFF;
+      background: var(--rotation-soft);
     }
 
     table.rot {
-      background: #FFFFFF;
+      background: transparent;
     }
 
     table.rot th,
@@ -58,14 +58,14 @@
     }
 
     .cell {
-      border: 1px solid transparent;
-      background: #FFFFFF;
+      border: 1px solid rgba(255, 255, 255, .58);
+      background: rgba(255, 255, 255, .70);
       transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
     }
 
     .cell:hover {
       border-color: var(--rotation-border);
-      background: var(--rotation-soft);
+      background: rgba(255, 255, 255, .88);
     }
 
     .cell.is-over {
@@ -74,9 +74,10 @@
     }
 
     .pill {
-      border: 1px solid rgba(124, 45, 18, .18);
-      background: var(--rotation-text-main);
-      box-shadow: 0 4px 10px rgba(15, 23, 42, .10);
+      border: 1px solid var(--program-pill-border, rgba(124, 45, 18, .18));
+      background: var(--program-pill-bg, #FFFFFF);
+      color: var(--program-pill-fg, var(--rotation-text-main));
+      box-shadow: 0 4px 10px rgba(15, 23, 42, .08);
     }
 
     .pill.empty {
