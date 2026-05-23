@@ -37,7 +37,7 @@
         </style>
         {% endif %}
 </head>
-<body class="{% if is_competicions_app %}competicions-app{% endif %}{% if has_competition_dock and not hide_base_chrome %} has-competition-dock{% endif %}" data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% page_background_url %}');{% if is_competicions_app %} --competicio-font-family: {{ competicio_font_family_css }};{% endif %}">
+<body class="{% if is_competicions_app %}competicions-app competition-section-{{ competition_active_section|default:'general' }}{% endif %}{% if has_competition_dock and not hide_base_chrome %} has-competition-dock{% endif %}" data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% page_background_url %}');{% if is_competicions_app %} --competicio-font-family: {{ competicio_font_family_css }};{% endif %}">
     <div class="background-container"></div>
     {% if not hide_base_chrome %}
     <div class="hero_area">

@@ -136,6 +136,13 @@
       z-index: 14;
     }
 
+    table.rot thead th:not(:first-child),
+    table.rot tbody td {
+      width: var(--rotation-cell-width, 220px);
+      min-width: var(--rotation-cell-width, 220px);
+      max-width: var(--rotation-cell-width, 220px);
+    }
+
     table.rot tbody th {
       position: sticky;
       left: 0;
@@ -216,10 +223,14 @@
     .cell {
       display: flex;
       align-items: center;
-      justify-content: center;
-      align-content: center;
+      justify-content: flex-start;
+      align-content: flex-start;
       flex-wrap: wrap;
       gap: 6px;
+      width: 100%;
+      max-width: 100%;
+      max-height: var(--rotation-cell-max-height, 156px);
+      box-sizing: border-box;
       min-width: 150px;
       min-height: 62px;
       padding: 7px;
@@ -227,6 +238,7 @@
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.70);
       backdrop-filter: saturate(120%);
+      overflow: auto;
       transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
     }
 

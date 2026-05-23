@@ -28,6 +28,16 @@ body.competicions-app .live-font-scope {
   font-family: var(--competicio-font-family);
 }
 
+body.competicions-app main > .container-fluid.mt-4 > .card-surface,
+body.competicions-app .inscripcions-page-shell.card-surface,
+body.competicions-app .classif-builder-surface.card-surface {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 body.competicions-app.has-competition-dock main {
   padding-bottom: 108px;
 }

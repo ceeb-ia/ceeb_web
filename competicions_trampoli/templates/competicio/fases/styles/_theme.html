@@ -1,3 +1,4 @@
+  {% load static %}
   .phase-dashboard-shell {
     --phase-base: #2563EB;
     --phase-base-hover: #1D4ED8;
@@ -12,15 +13,35 @@
     --phase-drawer-width: clamp(560px, 38vw, 720px);
     --phase-drawer-top: 96px;
     --phase-drawer-gap: 26px;
+    --phase-wallpaper: url("{% static 'general/wallpapers/fases.png' %}");
+    position: relative;
+    isolation: isolate;
     width: calc(100% - 18px);
     max-width: none;
     margin: 9px auto 0;
     padding: 18px;
-    border: 1px solid var(--phase-neutral-border);
-    border-radius: 8px;
-    background: var(--phase-bg);
-    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.10);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     color: var(--phase-text-main);
+  }
+
+  .phase-dashboard-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--phase-wallpaper);
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;
+    pointer-events: none;
+  }
+
+  .phase-dashboard-shell > * {
+    position: relative;
+    z-index: 1;
   }
 
   .phase-dashboard-shell .btn-primary {

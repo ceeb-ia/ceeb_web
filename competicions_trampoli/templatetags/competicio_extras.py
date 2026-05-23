@@ -7,12 +7,72 @@ from competicions_trampoli.models import Competicio
 register = template.Library()
 
 DEFAULT_COMPETITION_BACKGROUND = "images/fondo.jpg"
+DEFAULT_COMPETITION_WALLPAPER = "general/wallpapers/general.png"
+COMPETITION_WALLPAPER_BY_SECTION = {
+    "general": DEFAULT_COMPETITION_WALLPAPER,
+    "home": DEFAULT_COMPETITION_WALLPAPER,
+    "config": DEFAULT_COMPETITION_WALLPAPER,
+    "inscripcions": "general/wallpapers/inscripcions.png",
+    "fases": "general/wallpapers/fases.png",
+    "rotacions": "general/wallpapers/rotacions.png",
+    "classificacions": "general/wallpapers/classificacions.png",
+    "notes": "general/wallpapers/notes.png",
+}
 COMPETITION_BACKGROUND_BY_TYPE = {
     Competicio.Tipus.NATACIO: "images/natacio.jpg",
     Competicio.Tipus.TRAMPOLI: "images/competicio_trampoli_ia.webp",
     Competicio.Tipus.PATINATGE: "images/patinatge.jpg",
     Competicio.Tipus.ARTISTICA: "images/artistica.jpg",
 }
+
+
+def _active_competition_section_from_url_name(url_name):
+    url_name = str(url_name or "")
+    if url_name in {"competicions_home", "created"}:
+        return "general"
+    if "inscripcio" in url_name or "inscripcions" in url_name or url_name == "import":
+        return "inscripcions"
+    if "rotacions" in url_name:
+        return "rotacions"
+    if "classificacio" in url_name or "classificacions" in url_name or "public_live" in url_name:
+        return "classificacions"
+    if (
+        "notes" in url_name
+        or "scoring" in url_name
+        or "judge" in url_name
+        or "token" in url_name
+        or url_name == "trampoli_save"
+    ):
+        return "notes"
+    if "aparell" in url_name or "fases" in url_name:
+        return "fases"
+    if url_name == "trampoli_config":
+        return "general"
+    return "general"
+
+
+def _is_competition_program_request(request):
+    if request is None:
+        return False
+    path = str(getattr(request, "path", "") or "")
+    return path.startswith((
+        "/competicions/",
+        "/competicio/",
+        "/trampoli/",
+        "/scoring/",
+        "/judge/",
+        "/public/live/",
+    ))
+
+
+def _resolve_competition_wallpaper_static_path(request):
+    resolver_match = getattr(request, "resolver_match", None)
+    url_name = getattr(resolver_match, "url_name", "") or ""
+    section = _active_competition_section_from_url_name(url_name)
+    candidate = COMPETITION_WALLPAPER_BY_SECTION.get(section, DEFAULT_COMPETITION_WALLPAPER)
+    if not finders.find(candidate):
+        return DEFAULT_COMPETITION_WALLPAPER
+    return candidate
 
 
 def _resolve_competicio_background_static_path(competicio_tipus):
@@ -43,6 +103,9 @@ def _get_active_competicio_id_from_request(request):
 
 
 def get_competicio_background_url_from_request(request):
+    if _is_competition_program_request(request):
+        return static(_resolve_competition_wallpaper_static_path(request))
+
     competicio_id = _get_active_competicio_id_from_request(request)
     if competicio_id is None:
         return static(DEFAULT_COMPETITION_BACKGROUND)

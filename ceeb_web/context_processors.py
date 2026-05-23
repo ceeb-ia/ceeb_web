@@ -303,6 +303,11 @@ def app_env(request):
         else []
     )
     is_competicions_app = _is_competicions_app(request)
+    resolver_match = getattr(request, "resolver_match", None)
+    url_name = getattr(resolver_match, "url_name", "") or ""
+    competition_active_section = _active_dock_section(url_name) if is_competicions_app else ""
+    if competition_active_section in {"", "home", "config"}:
+        competition_active_section = "general" if is_competicions_app else ""
     competition_dock_items = _build_competition_dock(request, is_competicions_app)
     competicions_font_config = _build_competicions_font_config(is_competicions_app)
     return {
@@ -314,6 +319,7 @@ def app_env(request):
         "has_active_internal_nav_app": any(app["active"] for app in internal_nav_apps),
         "has_any_internal_app_access": bool(internal_nav_apps),
         "is_competicions_app": is_competicions_app,
+        "competition_active_section": competition_active_section,
         "competition_dock_items": competition_dock_items,
         "has_competition_dock": bool(competition_dock_items),
         **competicions_font_config,

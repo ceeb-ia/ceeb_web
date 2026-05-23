@@ -2,6 +2,7 @@
       .rotation-dashboard-shell {
         --rotation-drawer-left-width: min(94vw, 560px);
         --rotation-drawer-export-width: min(92vw, 420px);
+        --rotation-cell-width: 210px;
         width: calc(100% - 12px);
         margin-top: 6px;
         padding: 12px;
@@ -91,6 +92,11 @@
     @media (max-width: 768px) {
       .rotation-dashboard-header {
         gap: 12px;
+      }
+
+      .rotation-dashboard-shell {
+        --rotation-cell-width: 190px;
+        --rotation-cell-max-height: 132px;
       }
 
       .rotation-header-actions {
