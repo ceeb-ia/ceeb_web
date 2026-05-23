@@ -1,92 +1,136 @@
-              <section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section>
-                <div class="builder-section__header">
-                  <div>
-                    <div class="builder-section__eyebrow">Entrada</div>
-                    <h4 class="builder-section__title">Filtres <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="filtres_overview" aria-label="Ajuda filtres">?</button></h4>
-                    <p class="builder-section__desc">Decideixen qui entra a la classificació abans de calcular resultats o mostrar particions.</p>
-                  </div>
-                  <div class="builder-help-badge">Abans del càlcul</div>
-                </div>
-                <div class="builder-section__body">
-                  <div class="builder-section__stack">
-                    <div class="builder-subsection">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Filtres simples</p>
-                          <p class="builder-subsection__desc">Combina entitats, categories, subcategories i grups per limitar la mostra de participants.</p>
-                        </div>
-                      </div>
-                      <div class="row">
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Entitats</label>
-                          <select class="form-control" id="fEntitats" multiple>
-                            {% for o in filter_choices.entitats %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Categories</label>
-                          <select class="form-control" id="fCategories" multiple>
-                            {% for o in filter_choices.categories %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Subcategories</label>
-                          <select class="form-control" id="fSubcategories" multiple>
-                            {% for o in filter_choices.subcategories %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Grups</label>
-                          <select class="form-control" id="fGrups" multiple>
-                            {% for o in filter_choices.grups %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+<section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section>
+  <div class="builder-section__header">
+    <div>
+      <div class="builder-section__eyebrow">Entrada</div>
+      <h4 class="builder-section__title">Filtres <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="filtres_overview" aria-label="Ajuda filtres">?</button></h4>
+      <p class="builder-section__desc">Decideixen qui entra a la classificacio abans de calcular resultats o mostrar particions.</p>
+    </div>
+    <div class="builder-help-badge">Abans del calcul</div>
+  </div>
 
-                    <div class="builder-subsection builder-subsection--muted" id="detailConfigBox">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Detall desplegable</p>
-                          <p class="builder-subsection__desc">Afegeix un segon nivell sota cada fila. Aquest detall es configura per seccions i, en les taules, per aparell.</p>
-                        </div>
-                      </div>
-                      <div id="detailScopeHint" class="alert alert-secondary py-2 px-3 small mb-3">
-                        Configura seccions desplegables sota cada fila, limitades al tipus de classificació actual.
-                      </div>
-                      <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="detailEnabled">
-                        <label class="form-check-label" for="detailEnabled">Activar detall desplegable</label>
-                      </div>
-                      <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" id="detailDefaultOpen">
-                        <label class="form-check-label" for="detailDefaultOpen">Obrir el detall per defecte</label>
-                      </div>
-                      <div class="d-flex flex-wrap gap-2 mb-2">
-                        <select class="form-control form-control-sm w-auto" id="detailSectionType"></select>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnDetailSectionAdd">+ Seccio</button>
-                      </div>
-                      <div id="detailConfigAlert" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;"></div>
-                      <div id="detailSectionsBox" class="mb-2"></div>
-                    </div>
+  <div class="builder-section__body">
+    <div class="builder-section__stack classif-filtres-flow">
+      <div class="builder-subsection classif-filtres-panel classif-filtres-panel--simple">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">01</span>
+            <span>
+              <p class="builder-subsection__title">Filtres simples</p>
+              <p class="builder-subsection__desc">Combina entitats, categories, subcategories i grups per limitar la mostra de participants.</p>
+            </span>
+          </div>
+          <div class="builder-inline-note">Mostra</div>
+        </div>
 
-                    <details class="builder-advanced">
-                      <summary class="small text-muted">Filtres avançats (JSON)</summary>
-                      <div class="mt-2">
-                        <textarea class="form-control" id="tFiltres" rows="3"></textarea>
-                        <div class="form-text text-muted">
-                          Exemple: {"categories_in":[1,2],"grups_in":["A"]}
-                        </div>
-                      </div>
-                    </details>
-                  </div>
-                </div>
-              </section>
+        <div class="row classif-filtres-grid">
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Entitats</label>
+              <select class="form-control" id="fEntitats" multiple>
+                {% for o in filter_choices.entitats %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Categories</label>
+              <select class="form-control" id="fCategories" multiple>
+                {% for o in filter_choices.categories %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Subcategories</label>
+              <select class="form-control" id="fSubcategories" multiple>
+                {% for o in filter_choices.subcategories %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Grups</label>
+              <select class="form-control" id="fGrups" multiple>
+                {% for o in filter_choices.grups %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted classif-filtres-panel classif-filtres-panel--detail" id="detailConfigBox">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">02</span>
+            <span>
+              <p class="builder-subsection__title">Detall desplegable</p>
+              <p class="builder-subsection__desc">Afegeix un segon nivell sota cada fila. Aquest detall es configura per seccions i, en les taules, per aparell.</p>
+            </span>
+          </div>
+          <div class="builder-inline-note">Sortida</div>
+        </div>
+
+        <div id="detailScopeHint" class="alert alert-secondary py-2 px-3 small mb-3 classif-filter-context-note">
+          Configura seccions desplegables sota cada fila, limitades al tipus de classificacio actual.
+        </div>
+
+        <div class="classif-detail-toggle-grid">
+          <label class="classif-switch-card" for="detailEnabled">
+            <input class="form-check-input" type="checkbox" id="detailEnabled">
+            <span class="classif-switch-control" aria-hidden="true"></span>
+            <span class="classif-switch-copy">
+              <strong>Activar detall</strong>
+              <small>Mostra seccions desplegables sota cada fila.</small>
+            </span>
+          </label>
+          <label class="classif-switch-card" for="detailDefaultOpen">
+            <input class="form-check-input" type="checkbox" id="detailDefaultOpen">
+            <span class="classif-switch-control" aria-hidden="true"></span>
+            <span class="classif-switch-copy">
+              <strong>Obert per defecte</strong>
+              <small>Les files mostren el detall directament.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="classif-detail-add-row">
+          <select class="form-control form-control-sm w-auto" id="detailSectionType"></select>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnDetailSectionAdd">+ Seccio</button>
+        </div>
+        <div id="detailConfigAlert" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;"></div>
+        <div id="detailSectionsBox" class="mb-2 classif-detail-sections-box"></div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted classif-filtres-panel classif-filtres-panel--advanced">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">03</span>
+            <span>
+              <p class="builder-subsection__title">Filtres avancats</p>
+              <p class="builder-subsection__desc">Acces directe al JSON dels filtres per manteniment o compatibilitat.</p>
+            </span>
+          </div>
+          <div class="builder-inline-note">JSON</div>
+        </div>
+
+        <details class="builder-advanced classif-filtres-advanced">
+          <summary class="small text-muted">Opcions avancades</summary>
+          <div class="mt-2">
+            <textarea class="form-control" id="tFiltres" rows="3"></textarea>
+            <div class="form-text text-muted">
+              Exemple: {"categories_in":[1,2],"grups_in":["A"]}
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</section>

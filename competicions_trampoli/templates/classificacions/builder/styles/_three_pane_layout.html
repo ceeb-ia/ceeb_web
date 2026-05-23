@@ -118,8 +118,8 @@
 
   .classif-builder-workspace {
     display: grid;
-    grid-template-columns: minmax(260px, 310px) minmax(205px, 245px) minmax(0, 1fr);
-    gap: 16px;
+    grid-template-columns: minmax(310px, 360px) minmax(178px, 210px) minmax(0, 1fr);
+    gap: 14px;
     align-items: start;
   }
 
@@ -200,7 +200,7 @@
 
   .builder-cfg-main-layout {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-columns: 34px minmax(0, 1fr);
     gap: 9px;
     align-items: center;
     min-width: 0;
@@ -225,8 +225,10 @@
     color: var(--classif-text-main);
     font-weight: 760;
     line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
   }
 
   .builder-cfg-meta {
@@ -235,11 +237,15 @@
     color: var(--classif-muted);
     font-size: 0.76rem;
     line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
   }
 
   .builder-cfg-state {
+    grid-column: 2;
+    justify-self: start;
     align-self: start;
     border: 1px solid var(--classif-neutral-border);
     border-radius: 999px;
@@ -326,13 +332,13 @@
   .classif-builder-editor-grid {
     grid-column: 2 / -1;
     display: grid;
-    grid-template-columns: minmax(205px, 245px) minmax(0, 1fr);
-    gap: 14px;
+    grid-template-columns: minmax(178px, 210px) minmax(0, 1fr);
+    gap: 12px;
     min-width: 0;
   }
 
   .builder-nav-card {
-    padding: 14px;
+    padding: 12px;
     background: #fff;
     box-shadow: none;
   }
@@ -340,20 +346,20 @@
   #classif-builder-v2 .builder-nav-links {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 7px;
     overflow: visible;
-    padding: 12px 0 0;
+    padding: 10px 0 0;
   }
 
   #classif-builder-v2 .builder-nav-link {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    gap: 9px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 8px;
     align-items: center;
     width: 100%;
     min-width: 0;
-    min-height: 62px;
-    padding: 9px 10px;
+    min-height: 56px;
+    padding: 8px;
     border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
@@ -377,8 +383,8 @@
   }
 
   #classif-builder-v2 .builder-nav-index {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border: 1px solid var(--classif-border);
     background: #fff;
     color: var(--classif-text);
@@ -400,16 +406,16 @@
 
   .builder-nav-media {
     display: grid;
-    grid-template-columns: 30px minmax(0, 1fr);
-    gap: 9px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 8px;
     align-items: center;
     min-width: 0;
   }
 
   .builder-nav-media img {
     display: block;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     object-fit: contain;
     border: 1px solid var(--classif-border);
     border-radius: 8px;
@@ -418,7 +424,7 @@
 
   .builder-nav-copy small {
     color: var(--classif-muted);
-    font-size: 0.74rem;
+    font-size: 0.71rem;
     font-weight: 560;
   }
 
@@ -483,12 +489,12 @@
 
   @media (max-width: 1199.98px) {
     .classif-builder-workspace {
-      grid-template-columns: minmax(235px, 285px) minmax(190px, 220px) minmax(0, 1fr);
+      grid-template-columns: minmax(290px, 330px) minmax(168px, 195px) minmax(0, 1fr);
       gap: 12px;
     }
 
     .classif-builder-editor-grid {
-      grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+      grid-template-columns: minmax(168px, 195px) minmax(0, 1fr);
       gap: 12px;
     }
   }

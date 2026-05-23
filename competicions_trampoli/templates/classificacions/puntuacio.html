@@ -8,13 +8,17 @@
     <div class="builder-help-badge">Bloc central</div>
   </div>
   <div class="builder-section__body">
-    <div class="builder-section__stack">
-      <div class="builder-subsection builder-subsection--muted">
+    <div class="builder-section__stack classif-puntuacio-flow">
+      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--base">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">Base del resultat <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda base del resultat">?</button></p>
-            <p class="builder-subsection__desc">Decideix si el resultat base es calcula per puntuacio normal o per victories, i quin ordre s'aplica a la classificacio final.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">01</span>
+            <span>
+              <p class="builder-subsection__title">Base del resultat <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda base del resultat">?</button></p>
+              <p class="builder-subsection__desc">Decideix si el resultat base es calcula per puntuacio normal o per victories, i quin ordre s'aplica a la classificacio final.</p>
+            </span>
           </div>
+          <div class="builder-inline-note">Entrada</div>
         </div>
         <div class="row">
           <div class="col-12 col-md-6 mb-3">
@@ -35,20 +39,23 @@
         </div>
       </div>
 
-      <div class="builder-subsection">
+      <div class="builder-subsection classif-puntuacio-panel classif-puntuacio-panel--input">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">Aparells que entren al calcul i tractament <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="seleccio_exercicis" aria-label="Ajuda conjunt de notes candidates">?</button></p>
-            <p class="builder-subsection__desc">Defineix quins aparells entren al calcul i si les notes es tracten individualment per aparell o dins d'un sac conjunt. En equips derivats, tambe si es tracten per membre o per equip conjuntament.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">02</span>
+            <span>
+              <p class="builder-subsection__title">Entrada del calcul <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="seleccio_exercicis" aria-label="Ajuda conjunt de notes candidates">?</button></p>
+              <p class="builder-subsection__desc">Defineix quins aparells entren al calcul i si les notes es tracten individualment per aparell o dins d'un sac conjunt. En equips derivats, tambe si es tracten per membre o per equip conjuntament.</p>
+            </span>
           </div>
         </div>
 
         <div class="row">
           <div class="col-12 mb-2">
-            <div class="font-weight-bold">1. Selecció d'aparells a incloure en aquest càlcul</div>
+            <div class="classif-puntuacio-mini-title">Aparells inclosos</div>
           </div>
           <div class="col-12" id="apSelBox">
-            <div class="border rounded p-2 mb-3">
+            <div class="classif-puntuacio-choice-shell mb-3">
               <div class="row" id="apChkList"></div>
             </div>
             <div id="appStaleBanner" class="builder-status-stack mb-3"></div>
@@ -56,7 +63,7 @@
         </div>
 
         {% if not is_global_builder %}
-        <div class="border rounded p-3 mb-3">
+        <div class="classif-puntuacio-inline-card mb-3">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
               <div class="font-weight-bold">Abast de fase</div>
@@ -69,10 +76,9 @@
         </div>
         {% endif %}
 
-
         <div class="row">
           <div class="col-12 col-md-6 mb-3">
-            <label class="font-weight-bold">2. Tractament dels Aparells</label>
+            <label class="font-weight-bold">Tractament dels aparells</label>
             <select class="form-control" id="sModeSeleccioExercicis">
               <option value="per_aparell_override">Notes per aparell per separat</option>
               <option value="global_pool">Totes les notes dels aparells junts</option>
@@ -90,28 +96,34 @@
         </div>
 
         <div id="candidateScopeHint" class="small text-muted"></div>
-
       </div>
 
-      <div class="builder-subsection">
+      <div class="builder-subsection classif-puntuacio-panel classif-puntuacio-panel--apps">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">3. Càlcul de la puntuacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda configuracio per aparell">?</button></p>
-            <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatoria, i pot afegir una configuracio extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">03</span>
+            <span>
+              <p class="builder-subsection__title">Configuracio dels aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda configuracio per aparell">?</button></p>
+              <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatoria, i pot afegir una configuracio extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
+            </span>
           </div>
         </div>
         <div id="perAppBox" class="mb-0 puntuacio-app-list"></div>
-        <div class="alert alert-warning py-2 px-3 small mt-3 mb-3">
-          Per al càlcul de <strong>Punts</strong>, els camps d'entrada nomes es tracten com a escalar si son escalar o matriu <strong>1x1</strong>. Matrius mes grans no son puntuables directament.
+        <div class="alert alert-warning py-2 px-3 small mt-3 mb-3 classif-puntuacio-warning">
+          Per al calcul de <strong>Punts</strong>, els camps d'entrada nomes es tracten com a escalar si son escalar o matriu <strong>1x1</strong>. Matrius mes grans no son puntuables directament.
         </div>
       </div>
 
-      <div class="builder-subsection" id="exerciseCriteriaCard">
+      <div class="builder-subsection classif-puntuacio-panel classif-puntuacio-panel--shared" id="exerciseCriteriaCard">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">3. Seleccio sobre el conjunt compartit <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
-            <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">04</span>
+            <span>
+              <p class="builder-subsection__title">Seleccio dins del sac compartit <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
+              <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
+            </span>
           </div>
+          <div class="builder-inline-note">Sac global</div>
         </div>
         <div id="globalExerciseCriteriaWrap">
           <label class="small text-muted mb-1" id="exerciseModeLabel">Criteri global d'exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda mode d'exercicis">?</button></label>
@@ -153,11 +165,14 @@
         </div>
       </div>
 
-      <div class="builder-subsection builder-subsection--muted" id="exerciseRestrictionsCard">
+      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--limits" id="exerciseRestrictionsCard">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">Restriccions</p>
-            <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">05</span>
+            <span>
+              <p class="builder-subsection__title">Limits i restriccions</p>
+              <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
+            </span>
           </div>
         </div>
         <div class="row">
@@ -172,11 +187,14 @@
         </div>
       </div>
 
-      <div class="builder-subsection builder-subsection--muted" id="appAggregationCard">
+      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--final" id="appAggregationCard">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">5. Combinacio final entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregacio entre aparells">?</button></p>
-            <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">06</span>
+            <span>
+              <p class="builder-subsection__title">Combinacio final entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregacio entre aparells">?</button></p>
+              <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
+            </span>
           </div>
         </div>
         <div class="row">
@@ -194,11 +212,14 @@
         </div>
       </div>
 
-      <div class="builder-subsection builder-subsection--highlight">
+      <div class="builder-subsection builder-subsection--highlight classif-puntuacio-panel classif-puntuacio-panel--summary">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">Resum viu</p>
-            <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>
+          <div class="classif-step-heading">
+            <span class="classif-step-index">07</span>
+            <span>
+              <p class="builder-subsection__title">Resum del calcul</p>
+              <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>
+            </span>
           </div>
         </div>
         <div class="builder-summary-box">
@@ -207,7 +228,7 @@
         </div>
       </div>
 
-      <div id="victoryConfigBox" class="builder-subsection builder-subsection--highlight" style="display:none;">
+      <div id="victoryConfigBox" class="builder-subsection builder-subsection--highlight classif-puntuacio-panel classif-puntuacio-panel--victories" style="display:none;">
         <div class="builder-subsection__head">
           <div>
             <p class="builder-subsection__title">Configuracio de victories <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victories_overview" aria-label="Ajuda configuracio de victories">?</button></p>
@@ -262,7 +283,7 @@
         </div>
       </div>
 
-      <div id="victoryTieBox" class="builder-subsection builder-subsection--muted" style="display:none;">
+      <div id="victoryTieBox" class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--victories" style="display:none;">
         <div class="builder-subsection__head">
           <div>
             <p class="builder-subsection__title">Desempat intern de comparacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda desempat intern de victories">?</button></p>

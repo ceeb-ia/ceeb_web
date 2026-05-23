@@ -213,7 +213,7 @@
 
   .competition-card-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(410px, 1fr));
     gap: 18px;
   }
 
@@ -221,7 +221,7 @@
   .competition-new-card {
     position: relative;
     min-width: 0;
-    min-height: 252px;
+    min-height: 304px;
     border: 1px solid rgba(219, 226, 239, 0.9);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.9);
@@ -232,7 +232,7 @@
   .competition-home-card {
     display: flex;
     flex-direction: column;
-    padding: 22px;
+    padding: 24px;
   }
 
   .competition-new-card {
@@ -254,18 +254,30 @@
     box-shadow: 0 18px 38px rgba(37, 99, 235, 0.14);
   }
 
-  .competition-new-plus {
-    display: inline-grid;
-    place-items: center;
-    width: 72px;
-    height: 72px;
+  .competition-new-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .competition-new-card .competition-new-plus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 92px;
+    height: 92px;
     margin-bottom: 18px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #dbeafe, #eff6ff);
-    color: #0b5bd3;
-    font-size: 48px;
-    font-weight: 350;
-    line-height: 1;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+  }
+
+  .competition-new-card .competition-new-plus img {
+    display: block;
+    width: 92px;
+    height: 92px;
+    object-fit: contain;
   }
 
   .competition-new-card strong {
@@ -275,7 +287,7 @@
     font-weight: 850;
   }
 
-  .competition-new-card span {
+  .competition-new-card .competition-new-description {
     display: block;
     max-width: 250px;
     margin: 10px auto 0;
@@ -296,13 +308,22 @@
   .competition-avatar {
     display: inline-grid;
     place-items: center;
-    width: 58px;
-    height: 58px;
+    width: 66px;
+    height: 66px;
     border-radius: 50%;
     color: #334155;
     font-size: 1.12rem;
     font-weight: 850;
     background: #f1f5f9;
+    overflow: hidden;
+  }
+
+  .competition-sport-logo {
+    display: block;
+    width: 58px;
+    height: 58px;
+    object-fit: contain;
+    border-radius: 50%;
   }
 
   .competition-avatar--trampoli {
@@ -404,9 +425,17 @@
 
   .competition-domain-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 8px;
     margin-top: auto;
+  }
+
+  .competition-domain-grid > * {
+    grid-column: span 2;
+  }
+
+  .competition-domain-grid > *:nth-child(n+4) {
+    grid-column: span 3;
   }
 
   .competition-domain-button {
@@ -418,15 +447,15 @@
     justify-content: center;
     gap: 7px;
     min-width: 0;
-    min-height: 42px;
-    padding: 8px 9px;
+    min-height: 52px;
+    padding: 9px 12px;
     border: 1px solid var(--domain-border);
     border-radius: 8px;
     background: var(--domain-bg);
     color: var(--domain-color);
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     font-weight: 850;
-    line-height: 1.1;
+    line-height: 1.15;
     text-align: center;
     text-decoration: none;
     overflow-wrap: anywhere;
@@ -434,6 +463,9 @@
 
   .competition-domain-button span {
     min-width: 0;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
   }
 
   .competition-domain-button:hover,
@@ -518,11 +550,7 @@
 
   @media (max-width: 1280px) {
     .competition-card-grid {
-      grid-template-columns: repeat(2, minmax(320px, 1fr));
-    }
-
-    .competition-domain-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(390px, 1fr));
     }
   }
 
@@ -575,6 +603,11 @@
 
     .competition-domain-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .competition-domain-grid > *,
+    .competition-domain-grid > *:nth-child(n+4) {
+      grid-column: span 1;
     }
   }
 </style>
@@ -674,10 +707,12 @@
     <div class="competition-card-grid" id="competitionCardGrid">
       {% if can_manage_global_competicions %}
       <a class="competition-new-card" href="{% url 'create' %}" data-static-card="true">
-        <span>
-          <span class="competition-new-plus" aria-hidden="true">+</span>
+        <span class="competition-new-content">
+          <span class="competition-new-plus" aria-hidden="true">
+            <img src="{% static 'general/new.png' %}" alt="">
+          </span>
           <strong>Nova competicio</strong>
-          <span>Crea una nova competicio i configura'n les fases i moduls.</span>
+          <span class="competition-new-description">Crea una nova competicio i configura'n les fases i moduls.</span>
         </span>
       </a>
       {% endif %}
@@ -692,7 +727,13 @@
         data-date="{% if c.data %}{{ c.data|date:'Y-m-d' }}{% endif %}"
         data-created="{{ c.created_at|date:'U' }}">
         <header class="competition-card-header">
-          <span class="competition-avatar competition-avatar--{{ c.tipus }}" aria-hidden="true">{{ c.nom|initials }}</span>
+          <span class="competition-avatar competition-avatar--{{ c.tipus }}" aria-hidden="true">
+            {% if c.home_sport_logo_path %}
+            <img class="competition-sport-logo" src="{% static c.home_sport_logo_path %}" alt="">
+            {% else %}
+            {{ c.nom|initials }}
+            {% endif %}
+          </span>
           <div class="competition-card-title">
             <h2>{{ c.nom }}</h2>
             <span class="competition-card-date">
@@ -729,60 +770,60 @@
 
         <div class="competition-domain-grid" aria-label="Dominis de {{ c.nom }}">
           {% if a and a.can_view_inscripcions %}
-          <a class="competition-domain-button competition-domain-button--inscripcions" href="{% url 'inscripcions_list' c.id %}">
+          <a class="competition-domain-button competition-domain-button--inscripcions" href="{% url 'inscripcions_list' c.id %}" aria-label="Inscripcions" title="Inscripcions">
             <img src="{% static 'dock/inscripcions.png' %}" alt="">
             <span>Inscripcions</span>
           </a>
           {% else %}
-          <span class="competition-domain-button competition-domain-button--inscripcions is-disabled">
+          <span class="competition-domain-button competition-domain-button--inscripcions is-disabled" aria-label="Inscripcions" title="Inscripcions">
             <img src="{% static 'dock/inscripcions.png' %}" alt="">
             <span>Inscripcions</span>
           </span>
           {% endif %}
 
           {% if a and a.can_view_fases %}
-          <a class="competition-domain-button competition-domain-button--fases" href="{% url 'trampoli_fases' c.id %}">
+          <a class="competition-domain-button competition-domain-button--fases" href="{% url 'trampoli_fases' c.id %}" aria-label="Fases i aparells" title="Fases i aparells">
             <img src="{% static 'dock/fases.png' %}" alt="">
-            <span>Fases i aparells</span>
+            <span>Fases</span>
           </a>
           {% else %}
-          <span class="competition-domain-button competition-domain-button--fases is-disabled">
+          <span class="competition-domain-button competition-domain-button--fases is-disabled" aria-label="Fases i aparells" title="Fases i aparells">
             <img src="{% static 'dock/fases.png' %}" alt="">
-            <span>Fases i aparells</span>
+            <span>Fases</span>
           </span>
           {% endif %}
 
           {% if a and a.can_view_rotacions %}
-          <a class="competition-domain-button competition-domain-button--rotacions" href="{% url 'rotacions_planner' c.id %}">
+          <a class="competition-domain-button competition-domain-button--rotacions" href="{% url 'rotacions_planner' c.id %}" aria-label="Rotacions" title="Rotacions">
             <img src="{% static 'dock/rotacions.png' %}" alt="">
             <span>Rotacions</span>
           </a>
           {% else %}
-          <span class="competition-domain-button competition-domain-button--rotacions is-disabled">
+          <span class="competition-domain-button competition-domain-button--rotacions is-disabled" aria-label="Rotacions" title="Rotacions">
             <img src="{% static 'dock/rotacions.png' %}" alt="">
             <span>Rotacions</span>
           </span>
           {% endif %}
 
           {% if a and a.can_view_classificacions %}
-          <a class="competition-domain-button competition-domain-button--classificacions" href="{% url 'classificacions_home' c.id %}">
+          <a class="competition-domain-button competition-domain-button--classificacions" href="{% url 'classificacions_home' c.id %}" aria-label="Classificacions" title="Classificacions">
             <img src="{% static 'dock/classificacions.png' %}" alt="">
             <span>Classificacions</span>
           </a>
           {% else %}
-          <span class="competition-domain-button competition-domain-button--classificacions is-disabled">
+          <span class="competition-domain-button competition-domain-button--classificacions is-disabled" aria-label="Classificacions" title="Classificacions">
             <img src="{% static 'dock/classificacions.png' %}" alt="">
             <span>Classificacions</span>
           </span>
           {% endif %}
 
           {% if c.te_notes and a and a.can_view_notes %}
-          <a class="competition-domain-button competition-domain-button--notes" href="{% url 'scoring_notes_home' c.id %}">
+          <a class="competition-domain-button competition-domain-button--notes" href="{% url 'scoring_notes_home' c.id %}" aria-label="Notes" title="Notes">
             <img src="{% static 'dock/notes.png' %}" alt="">
             <span>Notes</span>
           </a>
           {% else %}
-          <span class="competition-domain-button competition-domain-button--notes is-disabled">
+          <span class="competition-domain-button competition-domain-button--notes is-disabled" aria-label="Notes" title="Notes">
             <img src="{% static 'dock/notes.png' %}" alt="">
             <span>Notes</span>
           </span>

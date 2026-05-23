@@ -237,10 +237,18 @@ class AparellList(ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        aparells = list(ctx.get("aparells") or [])
+        ctx["aparells"] = aparells
         ctx["show_owner"] = (
             self.request.user.is_superuser
             or self.request.user.groups.filter(name="platform_admin").exists()
         )
+        ctx["aparell_catalog_stats"] = {
+            "total": len(aparells),
+            "active": sum(1 for aparell in aparells if aparell.actiu),
+            "used": sum(1 for aparell in aparells if getattr(aparell, "competicio_usage_count", 0)),
+            "with_schema": sum(1 for aparell in aparells if getattr(aparell, "has_scoring_schema", False)),
+        }
         return ctx
 
 

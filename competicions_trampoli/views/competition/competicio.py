@@ -1,5 +1,6 @@
-from django.shortcuts import get_object_or_404, redirect
+from django.contrib.staticfiles import finders
 from django.db.models import Count
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, DeleteView, ListView
@@ -15,6 +16,13 @@ class CompeticioDashboardMixin:
     template_name = "competicio/home.html"
     context_object_name = "competicions"
     paginate_by = None
+    sport_logo_by_type = {
+        Competicio.Tipus.ARTISTICA: "general/sports/artistica.png",
+        Competicio.Tipus.NATACIO: "general/sports/natacio.png",
+        Competicio.Tipus.PATINATGE: "general/sports/patinatge.png",
+        Competicio.Tipus.RITMICA: "general/sports/ritmica.png",
+        Competicio.Tipus.TRAMPOLI: "general/sports/trampoli.png",
+    }
 
     def get_queryset(self):
         user = self.request.user
@@ -31,6 +39,12 @@ class CompeticioDashboardMixin:
             return {"key": "finished", "label": "Finalitzada"}
         return {"key": "preparation", "label": "Preparacio"}
 
+    def _sport_logo_path(self, competicio):
+        candidate = self.sport_logo_by_type.get(competicio.tipus, "")
+        if candidate and finders.find(candidate):
+            return candidate
+        return ""
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         user = self.request.user
@@ -42,6 +56,7 @@ class CompeticioDashboardMixin:
             status = self._competition_status(comp)
             comp.home_status_key = status["key"]
             comp.home_status_label = status["label"]
+            comp.home_sport_logo_path = self._sport_logo_path(comp)
             status_counts[status["key"]] = status_counts.get(status["key"], 0) + 1
             total_participants += getattr(comp, "participant_count", 0) or 0
             actions[comp.id] = {

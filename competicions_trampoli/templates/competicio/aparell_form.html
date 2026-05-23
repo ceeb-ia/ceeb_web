@@ -1,72 +1,518 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{% if object %}Editar{% else %}Crear{% endif %} aparell{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <div class="card-surface">
+<style>
+  .apparatus-form-page {
+    min-height: calc(100vh - 190px);
+    padding: 32px clamp(16px, 4vw, 56px) 44px;
+    color: #0f172a;
+  }
 
-    <div class="d-flex justify-content-between align-items-start mb-3">
-      <div>
-        <h2 class="mb-1">{% if object %}Editar{% else %}Crear{% endif %} aparell</h2>
-        <div class="text-muted small">Aquest aparell apareixerà al desplegable quan afegeixis aparells a una competició.</div>
-      </div>
+  .apparatus-form-shell {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
 
+  .apparatus-form-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .apparatus-form-logo {
+    display: block;
+    width: 142px;
+    height: 62px;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  .apparatus-form-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.84);
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 750;
+    text-decoration: none;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .apparatus-form-back:hover,
+  .apparatus-form-back:focus {
+    color: #0f172a;
+    text-decoration: none;
+    background: #ffffff;
+  }
+
+  .apparatus-form-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+    gap: 24px;
+    align-items: stretch;
+    border: 1px solid rgba(219, 226, 239, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+    backdrop-filter: blur(12px);
+  }
+
+  .apparatus-form-main,
+  .apparatus-form-aside {
+    min-width: 0;
+    padding: clamp(22px, 3vw, 34px);
+  }
+
+  .apparatus-form-main {
+    border-right: 1px solid #e2e8f0;
+  }
+
+  .apparatus-form-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    color: #2563eb;
+    font-size: 0.85rem;
+    font-weight: 850;
+  }
+
+  .apparatus-form-kicker img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+  }
+
+  .apparatus-form-title {
+    margin: 0;
+    color: #071633;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
+
+  .apparatus-form-subtitle {
+    max-width: 580px;
+    margin: 10px 0 28px;
+    color: #64748b;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .apparatus-field-grid {
+    display: grid;
+    grid-template-columns: minmax(160px, 0.6fr) minmax(0, 1.4fr);
+    gap: 16px;
+  }
+
+  .apparatus-field {
+    margin-bottom: 20px;
+  }
+
+  .apparatus-field--full {
+    grid-column: 1 / -1;
+  }
+
+  .apparatus-field label {
+    display: block;
+    margin-bottom: 8px;
+    color: #334155;
+    font-size: 0.88rem;
+    font-weight: 850;
+  }
+
+  .apparatus-field input,
+  .apparatus-field select {
+    width: 100%;
+    min-height: 50px;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.98rem;
+    font-weight: 650;
+    box-shadow: none;
+  }
+
+  .apparatus-field input:focus,
+  .apparatus-field select:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  }
+
+  .apparatus-field input {
+    padding: 0 15px;
+  }
+
+  .apparatus-field select {
+    padding: 0 12px;
+  }
+
+  .apparatus-help-text {
+    margin-top: 7px;
+    color: #64748b;
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+
+  .apparatus-error {
+    margin-top: 7px;
+    color: #dc2626;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .apparatus-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+    padding: 12px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+
+  .apparatus-check input {
+    width: 18px;
+    height: 18px;
+    min-height: 18px;
+    padding: 0;
+  }
+
+  .apparatus-check label {
+    margin: 0;
+    color: #334155;
+    font-weight: 850;
+  }
+
+  .apparatus-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 28px;
+  }
+
+  .apparatus-form-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-weight: 800;
+    line-height: 1.15;
+    text-decoration: none;
+  }
+
+  .apparatus-form-btn:hover,
+  .apparatus-form-btn:focus {
+    color: #0f172a;
+    text-decoration: none;
+    background: #f8fafc;
+  }
+
+  .apparatus-form-btn--primary {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
+  }
+
+  .apparatus-form-btn--primary:hover,
+  .apparatus-form-btn--primary:focus {
+    color: #ffffff;
+    background: #1d4ed8;
+  }
+
+  .apparatus-form-btn--warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+  }
+
+  .apparatus-form-btn.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .apparatus-form-aside {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0.78), rgba(255, 255, 255, 0.9));
+  }
+
+  .apparatus-preview-card {
+    border: 1px solid rgba(219, 226, 239, 0.92);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.09);
+    padding: 22px;
+  }
+
+  .apparatus-preview-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .apparatus-preview-code {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    min-height: 64px;
+    max-width: 118px;
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.95rem;
+    font-weight: 900;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .apparatus-preview-title {
+    min-width: 0;
+  }
+
+  .apparatus-preview-title strong {
+    display: block;
+    overflow-wrap: anywhere;
+    color: #071633;
+    font-size: 1.16rem;
+    font-weight: 850;
+    line-height: 1.2;
+  }
+
+  .apparatus-preview-title span {
+    display: block;
+    margin-top: 7px;
+    color: #64748b;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .apparatus-preview-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .apparatus-preview-chip {
+    min-height: 54px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+
+  .apparatus-preview-chip span {
+    display: block;
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 850;
+  }
+
+  .apparatus-preview-chip strong {
+    display: block;
+    margin-top: 5px;
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 850;
+  }
+
+  .apparatus-aside-note {
+    margin-top: 16px;
+    color: #64748b;
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+
+  @media (max-width: 980px) {
+    .apparatus-form-panel,
+    .apparatus-field-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .apparatus-form-main {
+      border-right: 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .apparatus-form-brand {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .apparatus-form-back,
+    .apparatus-form-actions .apparatus-form-btn {
+      width: 100%;
+    }
+
+    .apparatus-form-actions {
+      flex-direction: column-reverse;
+    }
+
+    .apparatus-preview-meta {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<section class="apparatus-form-page">
+  <div class="apparatus-form-shell">
+    <div class="apparatus-form-brand">
+      <img class="apparatus-form-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
+      <a class="apparatus-form-back" href="{{ request.GET.next|default:'/' }}">Torna</a>
     </div>
 
-    <form method="post">
-      {% csrf_token %}
+    <div class="apparatus-form-panel">
+      <form method="post" class="apparatus-form-main">
+        {% csrf_token %}
 
-      <div class="row g-3">
-        <div class="col-12 col-md-4">
-          <label class="form-label" for="{{ form.codi.id_for_label }}">{{ form.codi.label }}</label>
-          {{ form.codi }}
-          {% if form.codi.errors %}<div class="text-danger small mt-1">{{ form.codi.errors }}</div>{% endif %}
-          {% if form.codi.help_text %}<div class="form-text">{{ form.codi.help_text }}</div>{% endif %}
+        <div class="apparatus-form-kicker">
+          <img src="{% static 'dock/fases.png' %}" alt="">
+          <span>Cataleg global d'aparells</span>
         </div>
+        <h1 class="apparatus-form-title">{% if object %}Editar aparell{% else %}Crear aparell{% endif %}</h1>
+        <p class="apparatus-form-subtitle">Defineix un aparell reutilitzable que despres podras afegir a les competicions i configurar amb puntuacio propia.</p>
 
-        <div class="col-12 col-md-8">
-          <label class="form-label" for="{{ form.nom.id_for_label }}">{{ form.nom.label }}</label>
-          {{ form.nom }}
-          {% if form.nom.errors %}<div class="text-danger small mt-1">{{ form.nom.errors }}</div>{% endif %}
-        </div>
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
 
-        <div class="col-12 col-md-4">
-          <label class="form-label" for="{{ form.competition_unit.id_for_label }}">{{ form.competition_unit.label }}</label>
-          {{ form.competition_unit }}
-          {% if form.competition_unit.errors %}<div class="text-danger small mt-1">{{ form.competition_unit.errors }}</div>{% endif %}
-          <div class="form-text">Defineix si l'aparell competeix globalment per inscripcio o per equip.</div>
-        </div>
+        <div class="apparatus-field-grid">
+          <div class="apparatus-field">
+            <label for="{{ form.codi.id_for_label }}">{{ form.codi.label }}</label>
+            {{ form.codi }}
+            {% if form.codi.errors %}<div class="apparatus-error">{{ form.codi.errors|striptags }}</div>{% endif %}
+            {% if form.codi.help_text %}<div class="apparatus-help-text">{{ form.codi.help_text }}</div>{% endif %}
+          </div>
 
-        <div class="col-12">
-          <div class="form-check">
-            {{ form.actiu }}
-            <label class="form-check-label" for="{{ form.actiu.id_for_label }}">{{ form.actiu.label }}</label>
+          <div class="apparatus-field">
+            <label for="{{ form.nom.id_for_label }}">{{ form.nom.label }}</label>
+            {{ form.nom }}
+            {% if form.nom.errors %}<div class="apparatus-error">{{ form.nom.errors|striptags }}</div>{% endif %}
+          </div>
+
+          <div class="apparatus-field">
+            <label for="{{ form.competition_unit.id_for_label }}">{{ form.competition_unit.label }}</label>
+            {{ form.competition_unit }}
+            {% if form.competition_unit.errors %}<div class="apparatus-error">{{ form.competition_unit.errors|striptags }}</div>{% endif %}
+            <div class="apparatus-help-text">Defineix si l'aparell competeix per inscripcio individual o per equip.</div>
+          </div>
+
+          <div class="apparatus-field">
+            <label>Disponibilitat</label>
+            <div class="apparatus-check">
+              {{ form.actiu }}
+              <label for="{{ form.actiu.id_for_label }}">{{ form.actiu.label }}</label>
+            </div>
+            {% if form.actiu.errors %}<div class="apparatus-error">{{ form.actiu.errors|striptags }}</div>{% endif %}
           </div>
         </div>
 
-        <div>
-
+        <div class="apparatus-form-actions">
+          <a class="apparatus-form-btn" href="{{ request.GET.next|default:'/' }}">Cancel·lar</a>
+          {% if object and object.pk %}
+          <a class="apparatus-form-btn apparatus-form-btn--warning" href="{% url 'aparell_scoring_schema_update' pk=object.pk %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
+          {% else %}
+          <span class="apparatus-form-btn apparatus-form-btn--warning is-disabled" title="Desa primer l'aparell">Puntuacio</span>
+          {% endif %}
+          <button class="apparatus-form-btn apparatus-form-btn--primary" type="submit">Desar aparell</button>
         </div>
+      </form>
 
-            <div class="d-flex flex-wrap gap-2 mt-3 col-12">
-        {% if object and object.pk %}
-          <a class="btn btn-outline-warning"
-            href="{% url 'aparell_scoring_schema_update' pk=object.pk %}?next={{ request.get_full_path|urlencode }}">
-            Puntuacio
-          </a>
-        {% else %}
-          <button type="button" class="btn btn-outline-warning" disabled title="Desa primer l aparell">
-            Puntuacio (desa primer)
-          </button>
-        {% endif %}
-      </div>
+      <aside class="apparatus-form-aside" aria-label="Previsualitzacio de l'aparell">
+        <div class="apparatus-preview-card">
+          <div class="apparatus-preview-header">
+            <span class="apparatus-preview-code" id="apparatusPreviewCode">CODI</span>
+            <div class="apparatus-preview-title">
+              <strong id="apparatusPreviewName">Nom de l'aparell</strong>
+              <span>Aparell global reutilitzable</span>
+            </div>
+          </div>
 
-      <div class="d-flex flex-wrap gap-2 mt-3">
-        <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary" href="{{ request.GET.next|default:'/' }}">Cancel·lar</a>
-      </div>
-    </form>
-
+          <div class="apparatus-preview-meta">
+            <div class="apparatus-preview-chip">
+              <span>Unitat</span>
+              <strong id="apparatusPreviewUnit">Individual</strong>
+            </div>
+            <div class="apparatus-preview-chip">
+              <span>Estat</span>
+              <strong id="apparatusPreviewStatus">Actiu</strong>
+            </div>
+          </div>
+        </div>
+        <p class="apparatus-aside-note">Aquest aparell apareixera com a opcio quan configuris els aparells locals d'una competicio.</p>
+      </aside>
+    </div>
   </div>
-</div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var codeInput = document.getElementById("{{ form.codi.id_for_label }}");
+    var nameInput = document.getElementById("{{ form.nom.id_for_label }}");
+    var unitSelect = document.getElementById("{{ form.competition_unit.id_for_label }}");
+    var activeInput = document.getElementById("{{ form.actiu.id_for_label }}");
+    var previewCode = document.getElementById("apparatusPreviewCode");
+    var previewName = document.getElementById("apparatusPreviewName");
+    var previewUnit = document.getElementById("apparatusPreviewUnit");
+    var previewStatus = document.getElementById("apparatusPreviewStatus");
+
+    function selectedUnitLabel() {
+      if (!unitSelect || unitSelect.selectedIndex < 0) {
+        return "Individual";
+      }
+      return unitSelect.options[unitSelect.selectedIndex].text || "Individual";
+    }
+
+    function updatePreview() {
+      previewCode.textContent = (codeInput.value || "").trim().toUpperCase() || "CODI";
+      previewName.textContent = (nameInput.value || "").trim() || "Nom de l'aparell";
+      previewUnit.textContent = selectedUnitLabel();
+      previewStatus.textContent = activeInput && activeInput.checked ? "Actiu" : "Inactiu";
+    }
+
+    [codeInput, nameInput, unitSelect, activeInput].forEach(function (element) {
+      if (!element) {
+        return;
+      }
+      element.addEventListener("input", updatePreview);
+      element.addEventListener("change", updatePreview);
+    });
+    updatePreview();
+  })();
+</script>
 {% endblock %}

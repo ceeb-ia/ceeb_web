@@ -1,90 +1,588 @@
 {% extends "base.html" %}
-{% block title %}Gestio d'aparells globals{% endblock %}
+{% load static %}
+{% block title %}Aparells globals{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <div class="card-surface">
+<style>
+  .apparatus-catalog {
+    min-height: calc(100vh - 190px);
+    padding: 28px clamp(16px, 3vw, 42px) 36px;
+    color: #0f172a;
+  }
 
-    <div class="d-flex justify-content-between align-items-start mb-3">
-      <div>
-        <h2 class="mb-1">Gestio d'aparells globals</h2>
-        <div class="text-muted small">Crea, edita, configura puntuacio i elimina aparells reutilitzables a competicions.</div>
-      </div>
+  .apparatus-catalog-shell {
+    max-width: 1480px;
+    margin: 0 auto;
+  }
 
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'created' %}?next={{ request.get_full_path|urlencode }}">Competicions</a>
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">Crear aparell</a>
+  .apparatus-catalog-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 22px;
+    margin-bottom: 26px;
+  }
+
+  .apparatus-catalog-logo {
+    display: block;
+    width: 150px;
+    height: 64px;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  .apparatus-catalog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .apparatus-action {
+    --action-color: #1d4ed8;
+    --action-bg: #ffffff;
+    --action-border: #bfdbfe;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--action-border);
+    border-radius: 8px;
+    background: var(--action-bg);
+    color: var(--action-color);
+    font-weight: 800;
+    line-height: 1.15;
+    text-decoration: none;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .apparatus-action:hover,
+  .apparatus-action:focus {
+    color: var(--action-color);
+    text-decoration: none;
+    background: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+  }
+
+  .apparatus-action--primary {
+    --action-color: #ffffff;
+    --action-bg: #2563eb;
+    --action-border: #2563eb;
+  }
+
+  .apparatus-action--primary:hover,
+  .apparatus-action--primary:focus {
+    color: #ffffff;
+    background: #1d4ed8;
+  }
+
+  .apparatus-action img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+
+  .apparatus-catalog-heading {
+    margin-bottom: 22px;
+  }
+
+  .apparatus-catalog-heading h1 {
+    margin: 0;
+    color: #071633;
+    font-size: clamp(2.15rem, 4vw, 3.35rem);
+    font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
+
+  .apparatus-catalog-heading p {
+    max-width: 760px;
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .apparatus-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+
+  .apparatus-summary-item {
+    min-height: 78px;
+    padding: 14px 16px;
+    border: 1px solid rgba(219, 226, 239, 0.82);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(12px);
+  }
+
+  .apparatus-summary-value {
+    display: block;
+    color: #071633;
+    font-size: 1.6rem;
+    font-weight: 850;
+    line-height: 1;
+  }
+
+  .apparatus-summary-label {
+    display: block;
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .apparatus-filters {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.3fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .apparatus-filter-control {
+    position: relative;
+    min-width: 0;
+  }
+
+  .apparatus-filter-control input,
+  .apparatus-filter-control select {
+    width: 100%;
+    min-height: 54px;
+    padding: 0 18px 0 48px;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #334155;
+    font-size: 0.96rem;
+    font-weight: 700;
+    outline: none;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+    appearance: none;
+  }
+
+  .apparatus-filter-control select {
+    padding-right: 46px;
+  }
+
+  .apparatus-filter-control input:focus,
+  .apparatus-filter-control select:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  }
+
+  .apparatus-filter-icon {
+    position: absolute;
+    left: 17px;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    transform: translateY(-50%);
+    color: #64748b;
+    pointer-events: none;
+  }
+
+  .apparatus-filter-chevron {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid #334155;
+    border-bottom: 2px solid #334155;
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
+  }
+
+  .apparatus-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+  }
+
+  .apparatus-card {
+    display: flex;
+    min-width: 0;
+    min-height: 258px;
+    flex-direction: column;
+    padding: 22px;
+    border: 1px solid rgba(219, 226, 239, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.09);
+    backdrop-filter: blur(12px);
+  }
+
+  .apparatus-card-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: start;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .apparatus-code-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 70px;
+    min-height: 52px;
+    max-width: 112px;
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.9rem;
+    font-weight: 900;
+    line-height: 1.05;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .apparatus-card-title {
+    min-width: 0;
+  }
+
+  .apparatus-card-title h2 {
+    margin: 3px 0 6px;
+    overflow-wrap: anywhere;
+    color: #0f172a;
+    font-size: 1.08rem;
+    font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
+  .apparatus-card-title span {
+    display: block;
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 750;
+  }
+
+  .apparatus-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 31px;
+    padding: 6px 11px;
+    border-radius: 8px;
+    font-size: 0.77rem;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+
+  .apparatus-status--active {
+    background: #dcfce7;
+    color: #15803d;
+  }
+
+  .apparatus-status--inactive {
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .apparatus-card-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 18px 0;
+  }
+
+  .apparatus-meta-item {
+    min-height: 64px;
+    padding: 10px 11px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+
+  .apparatus-meta-item span {
+    display: block;
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 850;
+    line-height: 1.15;
+  }
+
+  .apparatus-meta-item strong {
+    display: block;
+    margin-top: 6px;
+    color: #0f172a;
+    font-size: 0.9rem;
+    font-weight: 850;
+    line-height: 1.15;
+  }
+
+  .apparatus-owner {
+    margin: -6px 0 16px;
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .apparatus-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: auto;
+  }
+
+  .apparatus-card-actions .btn,
+  .apparatus-card-actions button {
+    min-height: 36px;
+    border-radius: 8px;
+    font-size: 0.84rem;
+    font-weight: 800;
+  }
+
+  .apparatus-card-actions form {
+    margin: 0;
+  }
+
+  .apparatus-empty-state {
+    grid-column: 1 / -1;
+    padding: 44px 24px;
+    border: 1px solid rgba(219, 226, 239, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    color: #64748b;
+    text-align: center;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.07);
+  }
+
+  @media (max-width: 900px) {
+    .apparatus-catalog-topbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .apparatus-catalog-actions {
+      justify-content: flex-start;
+      width: 100%;
+    }
+
+    .apparatus-summary,
+    .apparatus-filters,
+    .apparatus-card-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .apparatus-catalog {
+      padding-inline: 12px;
+    }
+
+    .apparatus-catalog-logo {
+      width: 126px;
+      height: 54px;
+    }
+
+    .apparatus-action,
+    .apparatus-card-actions .btn,
+    .apparatus-card-actions button {
+      width: 100%;
+    }
+
+    .apparatus-card-header,
+    .apparatus-card-meta {
+      grid-template-columns: 1fr;
+    }
+
+    .apparatus-status {
+      justify-self: start;
+    }
+  }
+</style>
+
+<section class="apparatus-catalog">
+  <div class="apparatus-catalog-shell">
+    <div class="apparatus-catalog-topbar">
+      <img class="apparatus-catalog-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
+
+      <div class="apparatus-catalog-actions" aria-label="Accions globals">
+
+        <a class="apparatus-action apparatus-action--primary" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">
+          <img src="{% static 'dock/fases.png' %}" alt="">
+          <span>Crear aparell</span>
+        </a>
       </div>
     </div>
 
-    <div class="table-responsive">
-      <table class="table table-sm table-bordered align-middle">
-        <thead class="table-light">
-          <tr>
-            <th style="width:120px;">Codi</th>
-            <th>Nom</th>
-            {% if show_owner %}
-            <th style="width:220px;">Creat per</th>
-            {% endif %}
-            <th style="width:90px;">Actiu</th>
-            <th style="width:140px;">En competicions</th>
-            <th style="width:190px;">Schema puntuacio</th>
-            <th style="width:320px;"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for a in aparells %}
-            <tr>
-              <td class="fw-semibold">{{ a.codi }}</td>
-              <td>{{ a.nom }}</td>
-              {% if show_owner %}
-              <td>
-                {% firstof a.created_by.get_full_name a.created_by.username %}
-                <div class="text-muted small">{{ a.created_by.email }}</div>
-              </td>
-              {% endif %}
-              <td class="text-center">
-                {% if a.actiu %}<span class="badge badge-success">Sí</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}
-              </td>
-              <td class="text-center">
-                {% if a.competicio_usage_count %}
-                  <span class="badge badge-info">{{ a.competicio_usage_count }}</span>
-                {% else %}
-                  <span class="text-muted">0</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if a.has_scoring_schema %}
-                  <div class="small">Configurat</div>
-                  <div class="text-muted small">Actualitzat: {{ a.scoring_schema_updated_at|date:"d/m/Y H:i" }}</div>
-                {% else %}
-                  <span class="text-muted small">Sense schema</span>
-                {% endif %}
-              </td>
-              <td class="text-right">
-                <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
-                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparell_update' a.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
-                  <a class="btn btn-sm btn-outline-warning" href="{% url 'aparell_scoring_schema_update' a.id %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
-                  {% if a.competicio_usage_count %}
-                    <button class="btn btn-sm btn-outline-danger" type="button" disabled title="Aparell en us a competicions">
-                      Eliminar
-                    </button>
-                  {% else %}
-                    <form method="post" action="{% url 'aparell_delete' a.id %}" class="d-inline" onsubmit="return confirm('Segur que vols eliminar aquest aparell global?');">
-                      {% csrf_token %}
-                      <button class="btn btn-sm btn-danger" type="submit">Eliminar</button>
-                    </form>
-                  {% endif %}
-                </div>
-              </td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="{% if show_owner %}7{% else %}6{% endif %}" class="text-muted">Encara no hi ha aparells.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="apparatus-catalog-heading">
+      <h1>Aparells globals</h1>
+      <p>Cataleg reutilitzable per configurar fases, participacio i schemas de puntuacio dins les competicions.</p>
     </div>
 
+    <div class="apparatus-summary" aria-label="Resum d'aparells globals">
+      <div class="apparatus-summary-item">
+        <span class="apparatus-summary-value">{{ aparell_catalog_stats.total|default:0 }}</span>
+        <span class="apparatus-summary-label">Aparells</span>
+      </div>
+      <div class="apparatus-summary-item">
+        <span class="apparatus-summary-value">{{ aparell_catalog_stats.active|default:0 }}</span>
+        <span class="apparatus-summary-label">Actius</span>
+      </div>
+      <div class="apparatus-summary-item">
+        <span class="apparatus-summary-value">{{ aparell_catalog_stats.used|default:0 }}</span>
+        <span class="apparatus-summary-label">En competicions</span>
+      </div>
+      <div class="apparatus-summary-item">
+        <span class="apparatus-summary-value">{{ aparell_catalog_stats.with_schema|default:0 }}</span>
+        <span class="apparatus-summary-label">Amb puntuacio</span>
+      </div>
+    </div>
+
+    <div class="apparatus-filters" aria-label="Filtres d'aparells">
+      <label class="apparatus-filter-control">
+        <span class="sr-only">Buscar aparell</span>
+        <svg class="apparatus-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.8-3.8"></path>
+        </svg>
+        <input id="apparatusSearch" type="search" autocomplete="off" placeholder="Buscar per nom o codi...">
+      </label>
+
+      <label class="apparatus-filter-control">
+        <span class="sr-only">Filtrar per estat</span>
+        <svg class="apparatus-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 6h16"></path>
+          <path d="M7 12h10"></path>
+          <path d="M10 18h4"></path>
+        </svg>
+        <select id="apparatusStatusFilter">
+          <option value="all">Tots</option>
+          <option value="active">Actius</option>
+          <option value="inactive">Inactius</option>
+        </select>
+        <span class="apparatus-filter-chevron" aria-hidden="true"></span>
+      </label>
+
+      <label class="apparatus-filter-control">
+        <span class="sr-only">Filtrar per puntuacio</span>
+        <svg class="apparatus-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 20V10"></path>
+          <path d="M18 20V4"></path>
+          <path d="M6 20v-6"></path>
+        </svg>
+        <select id="apparatusSchemaFilter">
+          <option value="all">Tota puntuacio</option>
+          <option value="schema">Amb schema</option>
+          <option value="missing">Sense schema</option>
+        </select>
+        <span class="apparatus-filter-chevron" aria-hidden="true"></span>
+      </label>
+    </div>
+
+    <div class="apparatus-card-grid" id="apparatusCardGrid">
+      {% for a in aparells %}
+      <article
+        class="apparatus-card"
+        data-apparatus-card="true"
+        data-name="{{ a.nom|lower }}"
+        data-code="{{ a.codi|lower }}"
+        data-status="{% if a.actiu %}active{% else %}inactive{% endif %}"
+        data-schema="{% if a.has_scoring_schema %}schema{% else %}missing{% endif %}">
+        <header class="apparatus-card-header">
+          <span class="apparatus-code-badge">{{ a.codi }}</span>
+          <div class="apparatus-card-title">
+            <h2>{{ a.nom }}</h2>
+            <span>{{ a.get_competition_unit_display }}</span>
+          </div>
+          {% if a.actiu %}
+          <span class="apparatus-status apparatus-status--active">Actiu</span>
+          {% else %}
+          <span class="apparatus-status apparatus-status--inactive">Inactiu</span>
+          {% endif %}
+        </header>
+
+        <div class="apparatus-card-meta">
+          <div class="apparatus-meta-item">
+            <span>Competicions</span>
+            <strong>{{ a.competicio_usage_count|default:0 }}</strong>
+          </div>
+          <div class="apparatus-meta-item">
+            <span>Puntuacio</span>
+            <strong>{% if a.has_scoring_schema %}Configurada{% else %}Pendent{% endif %}</strong>
+          </div>
+          <div class="apparatus-meta-item">
+            <span>Actualitzat</span>
+            <strong>{% if a.has_scoring_schema %}{{ a.scoring_schema_updated_at|date:"d/m/Y" }}{% else %}-{% endif %}</strong>
+          </div>
+        </div>
+
+        {% if show_owner %}
+        <div class="apparatus-owner">
+          Creat per {% firstof a.created_by.get_full_name a.created_by.username %}{% if a.created_by.email %} · {{ a.created_by.email }}{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="apparatus-card-actions">
+          <a class="btn btn-outline-secondary" href="{% url 'aparell_update' a.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+          <a class="btn btn-outline-warning" href="{% url 'aparell_scoring_schema_update' a.id %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
+          {% if a.competicio_usage_count %}
+            <button class="btn btn-outline-danger" type="button" disabled title="Aparell en us a competicions">Eliminar</button>
+          {% else %}
+            <form method="post" action="{% url 'aparell_delete' a.id %}" onsubmit="return confirm('Segur que vols eliminar aquest aparell global?');">
+              {% csrf_token %}
+              <button class="btn btn-danger" type="submit">Eliminar</button>
+            </form>
+          {% endif %}
+        </div>
+      </article>
+      {% empty %}
+      <div class="apparatus-empty-state">
+        Encara no hi ha aparells globals.
+      </div>
+      {% endfor %}
+    </div>
   </div>
-</div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    var searchInput = document.getElementById("apparatusSearch");
+    var statusFilter = document.getElementById("apparatusStatusFilter");
+    var schemaFilter = document.getElementById("apparatusSchemaFilter");
+    var grid = document.getElementById("apparatusCardGrid");
+    if (!searchInput || !statusFilter || !schemaFilter || !grid) {
+      return;
+    }
+
+    var cards = Array.prototype.slice.call(grid.querySelectorAll("[data-apparatus-card='true']"));
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function updateCards() {
+      var query = normalize(searchInput.value);
+      var status = statusFilter.value;
+      var schema = schemaFilter.value;
+      cards.forEach(function (card) {
+        var haystack = normalize(card.dataset.name) + " " + normalize(card.dataset.code);
+        var matchesSearch = !query || haystack.indexOf(query) !== -1;
+        var matchesStatus = status === "all" || card.dataset.status === status;
+        var matchesSchema = schema === "all" || card.dataset.schema === schema;
+        card.hidden = !(matchesSearch && matchesStatus && matchesSchema);
+      });
+    }
+
+    searchInput.addEventListener("input", updateCards);
+    statusFilter.addEventListener("change", updateCards);
+    schemaFilter.addEventListener("change", updateCards);
+    updateCards();
+  })();
+</script>
 {% endblock %}
