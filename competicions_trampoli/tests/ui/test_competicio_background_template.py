@@ -174,6 +174,26 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
 
         self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_WALLPAPER}"))
 
+    def test_uses_general_wallpaper_for_live_and_judge_portal_routes(self):
+        cases = (
+            "classificacions_live",
+            "classificacions_loop_live",
+            "public_live_portal",
+            "public_live_loop",
+            "judge_portal",
+            "judge_portal_assignment",
+            "qr_admin_home",
+            "judge_messages_hub",
+        )
+
+        for url_name in cases:
+            with self.subTest(url_name=url_name):
+                result = get_competicio_background_url_from_request(
+                    self._request_with_kwargs({}, url_name=url_name)
+                )
+
+                self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_WALLPAPER}"))
+
     def test_uses_general_wallpaper_when_no_active_competicio_exists(self):
         result = get_competicio_background_url_from_request(
             self._request_with_kwargs({}, path="/competicions/created/", url_name="created")

@@ -29,7 +29,6 @@
               Override actiu: {{ franja_override.titol|default:"Franja" }} - {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
             {% endif %}
           </div>
-          {% if exercicis|length > 1 %}
           <div class="judge-view-mode mt-2">
             <span class="judge-view-mode-label">Visualització</span>
             <select class="form-select form-select-sm judge-view-mode-select" id="portalViewModeSelect" aria-label="Canviar visualització del portal">
@@ -38,10 +37,13 @@
               {% endfor %}
             </select>
           </div>
-          {% endif %}
         </div>
       </div>
       <div class="judge-portal-actions d-flex align-items-center">
+        <a class="btn btn-sm judge-home-return-btn" href="{{ judge_portal_home_url|default:'#' }}">
+          <span aria-hidden="true">&larr;</span>
+          Home del QR
+        </a>
         {% if not judge_kiosk %}
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
         {% endif %}

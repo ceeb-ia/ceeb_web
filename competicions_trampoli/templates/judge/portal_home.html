@@ -1,49 +1,437 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Jurat - {{ competicio.nom }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4 judge-portal-page">
-  {% include "judge/portal/_styles.html" %}
+<div class="judge-home-page">
+  <style>
+    .judge-home-page {
+      --judge-home-bg: #f8fafc;
+      --judge-home-surface: #ffffff;
+      --judge-home-border: #dbe4f0;
+      --judge-home-soft: #f1f5f9;
+      --judge-home-text: #0f172a;
+      --judge-home-muted: #64748b;
+      --judge-home-blue: #2563eb;
+      --judge-home-green: #16a34a;
+      --judge-home-amber: #d97706;
+      --judge-home-violet: #7c3aed;
+      --judge-home-rose: #db2777;
+      --judge-home-cyan: #0284c7;
+      --judge-home-wallpaper: url("{% static 'general/wallpapers/general.png' %}");
+      position: relative;
+      min-height: 100vh;
+      padding: clamp(24px, 5vw, 58px) clamp(16px, 7vw, 120px);
+      background-image: var(--judge-home-wallpaper);
+      background-repeat: no-repeat;
+      background-position: center center;
+      background-size: cover;
+      color: var(--judge-home-text);
+      overflow: hidden;
+    }
+    .judge-home-page::before,
+    .judge-home-page::after {
+      content: none;
+    }
+    .judge-home-shell {
+      position: relative;
+      z-index: 1;
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+    .judge-home-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 26px;
+    }
+    .judge-home-title {
+      margin: 0;
+      color: #17233b;
+      font-size: clamp(2.1rem, 4vw, 3.2rem);
+      font-weight: 850;
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+    .judge-home-subtitle {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      margin-top: 12px;
+      color: var(--judge-home-muted);
+      font-size: 1rem;
+      line-height: 1.35;
+    }
+    .judge-home-subtitle-main {
+      color: #334155;
+      font-weight: 750;
+    }
+    .judge-home-qr-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      border: 1px solid #c7d7f2;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .82);
+      color: #1d4ed8;
+      padding: .55rem .8rem;
+      font-weight: 800;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, .08);
+      white-space: nowrap;
+    }
+    .judge-home-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .judge-home-refresh {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .42rem;
+      min-height: 42px;
+      border: 1px solid #c7d7f2;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .86);
+      color: #1d4ed8;
+      padding: .55rem .82rem;
+      font-weight: 850;
+      line-height: 1;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, .08);
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+      white-space: nowrap;
+    }
+    .judge-home-refresh:hover,
+    .judge-home-refresh:focus {
+      border-color: #93baf1;
+      background: #ffffff;
+      color: #1d4ed8;
+      box-shadow: 0 12px 26px rgba(37, 99, 235, .14);
+      transform: translateY(-1px);
+    }
+    .judge-home-refresh:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, .22);
+      outline-offset: 2px;
+    }
+    .judge-home-refresh-mark {
+      font-size: 1rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .judge-home-qr-mark {
+      display: inline-grid;
+      grid-template-columns: repeat(2, 6px);
+      grid-template-rows: repeat(2, 6px);
+      gap: 3px;
+    }
+    .judge-home-qr-mark span {
+      width: 6px;
+      height: 6px;
+      border: 2px solid currentColor;
+      border-radius: 2px;
+    }
+    .judge-home-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 16px;
+      max-width: 660px;
+      margin-bottom: 26px;
+    }
+    .judge-home-stat {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid var(--judge-home-border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .82);
+      padding: .8rem 1rem;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+    }
+    .judge-home-stat-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--judge-home-blue);
+    }
+    .judge-home-stat--open .judge-home-stat-dot,
+    .judge-home-stat--open .judge-home-stat-value { color: var(--judge-home-green); background: var(--judge-home-green); }
+    .judge-home-stat--blocked .judge-home-stat-dot,
+    .judge-home-stat--blocked .judge-home-stat-value { color: var(--judge-home-amber); background: var(--judge-home-amber); }
+    .judge-home-stat--apps .judge-home-stat-dot,
+    .judge-home-stat--apps .judge-home-stat-value { color: var(--judge-home-blue); background: var(--judge-home-blue); }
+    .judge-home-stat-value {
+      background: transparent !important;
+      font-size: 1.35rem;
+      font-weight: 850;
+      line-height: 1;
+    }
+    .judge-home-stat-label {
+      color: #334155;
+      font-weight: 650;
+      line-height: 1.15;
+    }
+    .judge-home-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .judge-home-card {
+      --card-accent: var(--judge-home-blue);
+      --card-soft: #eff6ff;
+      display: flex;
+      flex-direction: column;
+      min-height: 198px;
+      border: 1px solid var(--judge-home-border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .88);
+      box-shadow: 0 16px 34px rgba(15, 23, 42, .10);
+      padding: 1rem;
+      backdrop-filter: blur(6px);
+    }
+    .judge-home-card--tone-1 { --card-accent: var(--judge-home-rose); --card-soft: #fdf2f8; }
+    .judge-home-card--tone-2 { --card-accent: var(--judge-home-amber); --card-soft: #fff7ed; }
+    .judge-home-card--tone-3 { --card-accent: var(--judge-home-blue); --card-soft: #eff6ff; }
+    .judge-home-card--tone-4 { --card-accent: var(--judge-home-green); --card-soft: #ecfdf3; }
+    .judge-home-card--tone-5 { --card-accent: var(--judge-home-violet); --card-soft: #f5f3ff; }
+    .judge-home-card--tone-6 { --card-accent: var(--judge-home-cyan); --card-soft: #ecfeff; }
+    .judge-home-card.is-selected {
+      outline: 2px solid rgba(37, 99, 235, .24);
+      outline-offset: 3px;
+    }
+    .judge-home-card-head {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    .judge-home-card-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 58px;
+      height: 58px;
+      border: 1px solid color-mix(in srgb, var(--card-accent) 30%, #ffffff);
+      border-radius: 999px;
+      background: var(--card-soft);
+      color: var(--card-accent);
+      font-size: 1.1rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 7px rgba(255, 255, 255, .42);
+    }
+    .judge-home-card-title {
+      margin: .12rem 0 0;
+      color: #17233b;
+      font-size: 1.06rem;
+      font-weight: 850;
+      line-height: 1.22;
+      overflow-wrap: anywhere;
+    }
+    .judge-home-card-meta {
+      margin-top: .38rem;
+      color: var(--judge-home-muted);
+      font-size: .9rem;
+      font-weight: 600;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .judge-home-status {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #bfdbfe;
+      border-radius: 7px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      padding: .24rem .5rem;
+      font-size: .72rem;
+      font-weight: 850;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .judge-home-status--open {
+      border-color: #bbf7d0;
+      background: #ecfdf3;
+      color: #15803d;
+    }
+    .judge-home-status--blocked,
+    .judge-home-status--empty {
+      border-color: #fed7aa;
+      background: #fff7ed;
+      color: #c2410c;
+    }
+    .judge-home-status--closed {
+      border-color: #d8dee8;
+      background: #f1f5f9;
+      color: #475569;
+    }
+    .judge-home-card-body {
+      flex: 1 1 auto;
+      color: var(--judge-home-muted);
+      font-size: .92rem;
+      line-height: 1.45;
+    }
+    .judge-home-card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid #dbe4f0;
+    }
+    .judge-home-time {
+      color: #64748b;
+      font-size: .86rem;
+      font-weight: 650;
+    }
+    .judge-home-card .btn {
+      min-width: 104px;
+      border-radius: 8px;
+      font-weight: 800;
+    }
+    .judge-home-card .btn-primary {
+      border-color: #2563eb;
+      background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+      box-shadow: 0 10px 18px rgba(37, 99, 235, .22);
+    }
+    .judge-home-card .btn-outline-secondary:disabled {
+      border-color: #cbd5e1;
+      background: #f1f5f9;
+      color: #64748b;
+      opacity: 1;
+    }
+    .judge-home-empty {
+      border: 1px dashed var(--judge-home-border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .78);
+      color: var(--judge-home-muted);
+      padding: 1.2rem;
+      font-weight: 650;
+    }
+    .judge-home-footnote {
+      display: flex;
+      justify-content: center;
+      margin-top: 34px;
+      color: #64748b;
+      font-size: .88rem;
+      font-weight: 600;
+    }
+    @media (max-width: 1180px) {
+      .judge-home-grid {
+        grid-template-columns: repeat(2, minmax(260px, 1fr));
+      }
+    }
+    @media (max-width: 760px) {
+      .judge-home-page {
+        padding: 22px 14px;
+      }
+      .judge-home-header {
+        flex-direction: column;
+      }
+      .judge-home-stats,
+      .judge-home-grid {
+        grid-template-columns: 1fr;
+      }
+      .judge-home-qr-badge {
+        width: 100%;
+        justify-content: center;
+      }
+      .judge-home-actions,
+      .judge-home-refresh {
+        width: 100%;
+      }
+      .judge-home-card-head {
+        grid-template-columns: 54px minmax(0, 1fr);
+      }
+      .judge-home-card-icon {
+        width: 50px;
+        height: 50px;
+      }
+      .judge-home-card-head .judge-home-status {
+        grid-column: 1 / -1;
+        justify-self: start;
+      }
+    }
+  </style>
 
-  <div class="card-surface">
-    <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+  <div class="judge-home-shell">
+    <header class="judge-home-header">
       <div>
-        <h1 class="h4 mb-1">Portal de jutge</h1>
-        <div class="text-muted small">{{ competicio.nom }} · {{ token_obj.label|default:token_obj.id }}</div>
+        <h1 class="judge-home-title">Portal de jutge</h1>
+        <div class="judge-home-subtitle">
+          <span class="judge-home-subtitle-main">{{ competicio.nom }}</span>
+          <span>{{ token_obj.label|default:token_obj.id }}</span>
+        </div>
       </div>
-      <span class="badge badge-light border">QR actiu</span>
+      <div class="judge-home-actions">
+        <button class="judge-home-refresh" type="button" onclick="window.location.reload()" aria-label="Actualitzar el portal">
+          <span class="judge-home-refresh-mark" aria-hidden="true">&#8635;</span>
+          Actualitzar
+        </button>
+        <span class="judge-home-qr-badge" aria-label="QR actiu">
+          <span class="judge-home-qr-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          QR actiu
+        </span>
+      </div>
+    </header>
+
+    <div class="judge-home-stats" aria-label="Resum del QR">
+      <div class="judge-home-stat judge-home-stat--open">
+        <span class="judge-home-stat-dot" aria-hidden="true"></span>
+        <span class="judge-home-stat-value">{{ assignment_stats.open_count|default:0 }}</span>
+        <span class="judge-home-stat-label">accessos oberts</span>
+      </div>
+      <div class="judge-home-stat judge-home-stat--blocked">
+        <span class="judge-home-stat-dot" aria-hidden="true"></span>
+        <span class="judge-home-stat-value">{{ assignment_stats.blocked_count|default:0 }}</span>
+        <span class="judge-home-stat-label">bloquejats</span>
+      </div>
+      <div class="judge-home-stat judge-home-stat--apps">
+        <span class="judge-home-stat-dot" aria-hidden="true"></span>
+        <span class="judge-home-stat-value">{{ assignment_stats.app_count|default:0 }}</span>
+        <span class="judge-home-stat-label">aparells assignats</span>
+      </div>
     </div>
 
     {% if assignment_cards %}
-      <div class="row g-3">
+      <div class="judge-home-grid">
         {% for card in assignment_cards %}
-          <div class="col-12 col-md-6 col-xl-4">
-            <div class="border rounded p-3 h-100">
-              <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-                <div>
-                  <div class="fw-semibold">{{ card.label }}</div>
-                  <div class="text-muted small">{{ card.app_label }} · {{ card.phase_label }}</div>
-                </div>
-                <span class="badge {% if card.availability.is_open %}badge-success{% elif card.availability.state == 'closed' %}badge-secondary{% else %}badge-warning{% endif %}">
-                  {{ card.availability.label }}
-                </span>
+          <article class="judge-home-card judge-home-card--tone-{{ forloop.counter }}{% if selected_assignment_id and selected_assignment_id == card.assignment.id %} is-selected{% endif %}">
+            <div class="judge-home-card-head">
+              <span class="judge-home-card-icon" aria-hidden="true">{{ card.app_label|slice:":2" }}</span>
+              <div>
+                <h2 class="judge-home-card-title">{{ card.label }}</h2>
+                <div class="judge-home-card-meta">{{ card.app_label }} · {{ card.phase_label }}</div>
               </div>
+              <span class="judge-home-status judge-home-status--{{ card.availability.state }}">
+                {{ card.availability.label }}
+              </span>
+            </div>
+            <div class="judge-home-card-body">
               {% if card.availability.reason %}
-                <div class="text-muted small mb-3">{{ card.availability.reason }}</div>
+                {{ card.availability.reason }}
               {% else %}
-                <div class="text-muted small mb-3">Acces preparat per puntuar.</div>
+                Acces preparat per puntuar.
               {% endif %}
+            </div>
+            <div class="judge-home-card-foot">
+              <span class="judge-home-time">Acces assignat</span>
               {% if card.url %}
                 <a class="btn btn-sm btn-primary" href="{{ card.url }}">Entrar</a>
               {% else %}
                 <button class="btn btn-sm btn-outline-secondary" type="button" disabled>Bloquejat</button>
               {% endif %}
             </div>
-          </div>
+          </article>
         {% endfor %}
       </div>
+      <div class="judge-home-footnote">Els accessos depenen de l'estat publicat de cada fase.</div>
     {% else %}
-      <div class="text-muted">Aquest QR no te cap acces actiu configurat.</div>
+      <div class="judge-home-empty">Aquest QR no te cap acces actiu configurat.</div>
     {% endif %}
   </div>
 </div>

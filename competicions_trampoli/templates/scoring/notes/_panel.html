@@ -1,4 +1,5 @@
 {% load competicio_extras %}
+{% load static %}
 
   <style>
     .scoring-panel-dropdown { position: relative; }
@@ -7,14 +8,21 @@
 
   <div class="card-surface">
     <!-- CAPÇALERA -->
-    <div class="notes-page-header d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-      <div>
-        <h2 class="mb-1">Notes · Panell Central d'Organització</h2>
-        <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
-        <div class="text-muted small">Entrada i càlcul depenen del schema de cada aparell.</div>
+    <div class="notes-page-header mb-3">
+      <div class="notes-title-block">
+        <h1 class="notes-page-title">
+          <span class="notes-title-logo" aria-hidden="true">
+            <img src="{% static 'dock/notes.png' %}" alt="">
+          </span>
+          <span>Notes i QRs</span>
+        </h1>
+        <div class="notes-context-line">
+          <span class="notes-context-main">{{ competicio.nom }}</span>
+          <span>Panell central d'organització</span>
+          <span>Entrada i càlcul per schema d'aparell</span>
+        </div>
       </div>
-      <div class="d-flex flex-wrap justify-content-end gap-2">
-        <a class="btn btn-sm section-btn section-btn--inscripcions" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
+      <div class="notes-header-actions">
         <div class="btn-group scoring-panel-dropdown">
           <button type="button"
                   class="btn btn-sm section-btn section-btn--classificacions dropdown-toggle scoring-panel-dropdown-toggle"
@@ -124,33 +132,45 @@
         <div class="notes-toolbar">
           <div>
             <label for="notes-franja-select">Franja</label>
-            <select id="notes-franja-select" class="form-control form-control-sm" data-notes-franja-select="1"></select>
+            <div class="notes-select-shell">
+              <select id="notes-franja-select" class="form-control form-control-sm notes-filter-select" data-notes-franja-select="1"></select>
+            </div>
           </div>
           <div>
             <label for="notes-group-select">Unitat</label>
-            <select id="notes-group-select" class="form-control form-control-sm" data-notes-group-select="1"></select>
+            <div class="notes-select-shell">
+              <select id="notes-group-select" class="form-control form-control-sm notes-filter-select" data-notes-group-select="1"></select>
+            </div>
           </div>
           <div>
             <label for="notes-app-select">Aparell</label>
-            <select id="notes-app-select" class="form-control form-control-sm" data-notes-app-select="1"></select>
+            <div class="notes-select-shell">
+              <select id="notes-app-select" class="form-control form-control-sm notes-filter-select" data-notes-app-select="1"></select>
+            </div>
           </div>
           <div>
             <label for="notes-phase-select">Fase</label>
-            <select id="notes-phase-select" class="form-control form-control-sm" data-notes-phase-select="1"></select>
+            <div class="notes-select-shell">
+              <select id="notes-phase-select" class="form-control form-control-sm notes-filter-select" data-notes-phase-select="1"></select>
+            </div>
           </div>
           <div>
             <label for="notes-exercise-select">Exercici</label>
-            <select id="notes-exercise-select" class="form-control form-control-sm" data-notes-exercise-select="1"></select>
+            <div class="notes-select-shell">
+              <select id="notes-exercise-select" class="form-control form-control-sm notes-filter-select" data-notes-exercise-select="1"></select>
+            </div>
           </div>
           <div>
             <label for="notes-row-filter-select">Vista / files</label>
-            <select id="notes-row-filter-select" class="form-control form-control-sm" data-notes-row-filter-select="1">
-              <option value="all">Totes</option>
-              <option value="warnings">Amb avisos</option>
-              <option value="global-warnings">Tots els avisos</option>
-              <option value="counts">Jutges que compten</option>
-              <option value="absent">Jutges absents</option>
-            </select>
+            <div class="notes-select-shell">
+              <select id="notes-row-filter-select" class="form-control form-control-sm notes-filter-select" data-notes-row-filter-select="1">
+                <option value="all">Totes</option>
+                <option value="warnings">Amb avisos</option>
+                <option value="global-warnings">Tots els avisos</option>
+                <option value="counts">Jutges que compten</option>
+                <option value="absent">Jutges absents</option>
+              </select>
+            </div>
           </div>
           <div class="notes-search-wrap">
             <label for="notes-search-input">Cerca inscripcio</label>

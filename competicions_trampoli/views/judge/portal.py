@@ -188,6 +188,9 @@ def _assignment_cards(request, token_obj, assignments: list[EffectiveJudgeAssign
 
 def _render_judge_portal_home(request, token_obj, assignments, *, status=200, selected_assignment_id=None):
     cards = _assignment_cards(request, token_obj, assignments)
+    open_count = sum(1 for card in cards if card["availability"].get("is_open"))
+    blocked_count = sum(1 for card in cards if not card["availability"].get("is_open"))
+    app_count = len({str(card.get("app_label") or "") for card in cards if card.get("app_label")})
     return render(
         request,
         "judge/portal_home.html",
@@ -196,6 +199,12 @@ def _render_judge_portal_home(request, token_obj, assignments, *, status=200, se
             "token": str(token_obj.id),
             "competicio": token_obj.competicio,
             "assignment_cards": cards,
+            "assignment_stats": {
+                "open_count": open_count,
+                "blocked_count": blocked_count,
+                "app_count": app_count,
+                "total_count": len(cards),
+            },
             "selected_assignment_id": selected_assignment_id,
             "hide_base_chrome": True,
             "judge_kiosk": True,
@@ -296,6 +305,9 @@ def judge_portal(request, token, assignment_id=None):
 
     assignments = effective_assignments_for_token(tok)
     has_explicit_assignments = tok.portal_assignments.exists()
+    force_home = str(request.GET.get("home") or "").strip().lower() in {"1", "true", "yes"}
+    if force_home:
+        return _render_judge_portal_home(request, tok, assignments, selected_assignment_id=assignment_id)
     if assignment_id in (None, "", 0, "0"):
         if has_explicit_assignments:
             return _render_judge_portal_home(request, tok, assignments)
@@ -819,6 +831,7 @@ def judge_portal(request, token, assignment_id=None):
         "judge_service_worker_url": reverse("judge_service_worker", kwargs={"token": str(tok.id)}),
         "judge_service_worker_scope": reverse("judge_portal", kwargs={"token": str(tok.id)}),
         "judge_pwa_icon_apple_url": reverse("judge_pwa_icon", kwargs={"filename": "apple-touch-icon.png"}),
+        "judge_portal_home_url": f"{reverse('judge_portal', kwargs={'token': str(tok.id)})}?home=1",
     }
     return render(request, "judge/portal.html", ctx)
 

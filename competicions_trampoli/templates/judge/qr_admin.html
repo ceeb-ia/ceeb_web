@@ -4,6 +4,70 @@
 {% block content %}
 <div class="container-fluid mt-4">
   <style>
+    .qr-admin-surface {
+      --notes-base: #a16207;
+      --notes-base-hover: #854d0e;
+      --notes-bg: #fffbeb;
+      --notes-border: #fde68a;
+      --notes-text: #78350f;
+      --notes-soft-border: #f8e2a5;
+      --notes-muted: #7c5b24;
+      --notes-neutral-border: #e2e8f0;
+      --notes-neutral-text: #0f172a;
+      --notes-neutral-muted: #64748b;
+    }
+    .qr-admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding: 18px 12px 16px;
+      border-bottom: 1px solid var(--notes-neutral-border);
+    }
+    .qr-admin-title-block {
+      min-width: 0;
+      flex: 1 1 460px;
+    }
+    .qr-admin-title {
+      margin: 0;
+      color: var(--notes-text);
+      font-size: clamp(1.9rem, 3vw, 2.45rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    .qr-admin-context-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px 10px;
+      margin-top: 10px;
+      color: var(--notes-neutral-muted);
+      font-size: .9rem;
+      line-height: 1.35;
+    }
+    .qr-admin-context-line > span:not(:first-child)::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      margin-right: 10px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      vertical-align: middle;
+    }
+    .qr-admin-context-main {
+      color: var(--notes-neutral-text);
+      font-weight: 650;
+    }
+    .qr-admin-header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
     .qr-admin-layout {
       display: grid;
       grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
@@ -16,66 +80,400 @@
     }
     .qr-admin-panel,
     .qr-admin-row {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--notes-neutral-border);
       border-radius: 8px;
       background: #fff;
     }
     .qr-admin-panel {
+      position: relative;
+      overflow: hidden;
       padding: 1rem;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, .06);
+    }
+    .qr-admin-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: var(--notes-base);
+    }
+    .qr-admin-panel--create {
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+    }
+    .qr-admin-panel--list {
+      background: #fff;
+    }
+    .qr-admin-panel--detail {
+      min-height: 520px;
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+    }
+    .qr-admin-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .9rem;
+    }
+    .qr-admin-section-kicker {
+      display: inline-flex;
+      margin-bottom: .16rem;
+      color: var(--notes-base);
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .qr-admin-section-title {
+      margin: 0;
+      color: var(--notes-neutral-text);
+      font-size: 1.02rem;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+    .qr-admin-section-copy {
+      margin: .22rem 0 0;
+      color: var(--notes-neutral-muted);
+      font-size: .82rem;
+      line-height: 1.35;
     }
     .qr-admin-row {
+      position: relative;
       display: block;
-      padding: .75rem;
+      padding: .78rem .78rem .78rem .9rem;
       color: inherit;
       text-decoration: none;
+      transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .qr-admin-row::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 0 999px 999px 0;
+      background: transparent;
     }
     .qr-admin-row:hover {
-      background: #f8fafc;
+      background: #fffdf7;
+      border-color: var(--notes-soft-border);
       color: inherit;
       text-decoration: none;
+      transform: translateY(-1px);
     }
     .qr-admin-row.is-selected {
-      border-color: #0d6efd;
-      box-shadow: 0 0 0 1px #0d6efd inset;
+      border-color: var(--notes-base);
+      background: var(--notes-bg);
+      box-shadow: 0 0 0 1px rgba(161, 98, 7, .16) inset, 0 10px 22px rgba(161, 98, 7, .1);
+    }
+    .qr-admin-row.is-selected::before {
+      background: var(--notes-base);
+    }
+    .qr-admin-row.is-selected .qr-admin-row-title {
+      color: var(--notes-text);
     }
     .qr-token-id {
       max-width: 100%;
       overflow-wrap: anywhere;
     }
     .qr-assignment-card {
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      background: #f8fafc;
-      padding: .75rem;
+      border: 1px solid var(--notes-soft-border);
+      border-radius: 10px;
+      background: #fff;
+      padding: .65rem .7rem;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, .04);
+    }
+    .qr-assignment-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+      gap: .65rem;
+      align-items: start;
+    }
+    .qr-assignment-card__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .55rem;
+      padding-bottom: .45rem;
+      border-bottom: 1px solid rgba(248, 226, 165, .72);
+    }
+    .qr-assignment-card__title {
+      margin: 0;
+      color: var(--notes-text);
+      font-size: .92rem;
+      font-weight: 800;
+      line-height: 1.18;
+    }
+    .qr-assignment-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .3rem;
+      margin-top: .38rem;
+    }
+    .qr-assignment-meta-pill {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      border: 1px solid var(--notes-border);
+      border-radius: 999px;
+      background: #fffdf7;
+      color: var(--notes-muted);
+      font-size: .72rem;
+      font-weight: 700;
+      line-height: 1.2;
+      padding: .17rem .45rem;
+    }
+    .qr-assignment-card__permissions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .28rem;
+      margin-top: .55rem;
+    }
+    .qr-permission-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      border: 1px solid #ead9b9;
+      border-radius: 7px;
+      background: #fffaf2;
+      color: var(--notes-text);
+      font-size: .72rem;
+      font-weight: 700;
+      line-height: 1.2;
+      padding: .18rem .42rem;
+    }
+    .qr-assignment-card__actions {
+      margin-top: .55rem;
+    }
+    .qr-admin-detail-identity {
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: #fff;
+      padding: .85rem;
+      box-shadow: 0 8px 20px rgba(161, 98, 7, .07);
+    }
+    .qr-admin-empty-state {
+      border: 1px dashed var(--notes-border);
+      border-radius: 10px;
+      background: var(--notes-bg);
+      color: var(--notes-muted);
+      padding: 1rem;
+    }
+    .qr-admin-help {
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: var(--notes-bg);
+      color: var(--notes-muted);
+      padding: .65rem .75rem;
+      font-size: .82rem;
+      line-height: 1.4;
+    }
+    .qr-admin-option-box {
+      border: 1px solid var(--notes-border) !important;
+      border-radius: 10px !important;
+      background: #fffdf7;
+      padding: .65rem .75rem !important;
     }
     .permission-member-slot {
       min-width: 48px;
+      border-color: var(--notes-soft-border);
+      color: var(--notes-text);
     }
     .permission-member-slot.is-active {
-      background: #0d6efd;
+      background: var(--notes-base) !important;
+      color: #fff !important;
+      border-color: var(--notes-base) !important;
+    }
+    .qr-admin-surface .btn.btn-primary,
+    .qr-admin-surface .btn.btn-primary:not(:disabled):not(.disabled),
+    .qr-admin-surface label.btn.btn-primary {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-base) !important;
+      color: #fff !important;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(161, 98, 7, .16);
+    }
+    .qr-admin-surface .btn.btn-primary:hover,
+    .qr-admin-surface .btn.btn-primary:focus,
+    .qr-admin-surface label.btn.btn-primary:hover,
+    .qr-admin-surface label.btn.btn-primary:focus {
+      border-color: var(--notes-base-hover) !important;
+      background: var(--notes-base-hover) !important;
+      color: #fff !important;
+    }
+    .qr-admin-surface .btn.btn-outline-primary,
+    .qr-admin-surface label.btn.btn-outline-primary {
+      border-color: var(--notes-base) !important;
+      color: var(--notes-base) !important;
+      font-weight: 650;
+    }
+    .qr-admin-surface .btn.btn-outline-primary:hover,
+    .qr-admin-surface .btn.btn-outline-primary:focus,
+    .qr-admin-surface .btn.btn-outline-primary.active,
+    .qr-admin-surface label.btn.btn-outline-primary:hover,
+    .qr-admin-surface label.btn.btn-outline-primary:focus,
+    .qr-admin-surface label.btn.btn-outline-primary.active,
+    .qr-admin-surface .btn-check:checked + .btn-outline-primary {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-bg) !important;
+      color: var(--notes-text) !important;
+      box-shadow: none;
+    }
+    .qr-admin-surface .btn.btn-outline-secondary,
+    .qr-admin-surface .btn.btn-outline-warning {
+      border-color: var(--notes-soft-border) !important;
+      background: #fff !important;
+      color: var(--notes-text) !important;
+      font-weight: 650;
+    }
+    .qr-admin-surface .btn.btn-outline-secondary:hover,
+    .qr-admin-surface .btn.btn-outline-secondary:focus,
+    .qr-admin-surface .btn.btn-outline-warning:hover,
+    .qr-admin-surface .btn.btn-outline-warning:focus {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-bg) !important;
+      color: var(--notes-text) !important;
+      box-shadow: 0 0 0 .12rem rgba(161, 98, 7, .1);
+    }
+    .qr-admin-type-toggle {
+      padding: 4px;
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: #fffdf7;
+      gap: 4px;
+    }
+    .qr-admin-type-toggle .btn {
+      border-radius: 8px !important;
+      border-color: transparent;
+      font-weight: 750;
+    }
+    .qr-admin-type-toggle .btn.active {
+      background: var(--notes-base) !important;
+      border-color: var(--notes-base) !important;
+      color: #fff !important;
+      box-shadow: 0 6px 14px rgba(161, 98, 7, .16);
+    }
+    .qr-admin-surface .form-label,
+    .qr-admin-surface label.small.text-muted {
+      color: var(--notes-text) !important;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+    .qr-admin-surface .form-control,
+    .qr-admin-surface .form-select,
+    .qr-admin-surface select {
+      width: 100%;
+      min-height: 36px;
+      border-color: color-mix(in srgb, var(--notes-base) 34%, #cbd5e1) !important;
+      border-radius: 9px;
+      background-color: #fff;
+      color: var(--notes-neutral-text);
+      font-size: .88rem;
+      box-shadow: none;
+    }
+    .qr-admin-surface .form-control:focus,
+    .qr-admin-surface .form-select:focus,
+    .qr-admin-surface select:focus {
+      border-color: var(--notes-base) !important;
+      box-shadow: 0 0 0 .14rem rgba(161, 98, 7, .13) !important;
+    }
+    .qr-admin-surface select option:checked {
+      background: var(--notes-base);
       color: #fff;
-      border-color: #0d6efd;
+    }
+    .qr-admin-surface .table-responsive {
+      border: 1px solid var(--notes-neutral-border);
+      border-radius: 10px;
+      background: #fff;
+      overflow: auto;
+    }
+    .qr-admin-surface .table {
+      margin-bottom: 0;
+    }
+    .qr-admin-surface thead th {
+      border-top: 0;
+      border-bottom: 1px solid var(--notes-border);
+      background: var(--notes-bg);
+      color: var(--notes-text);
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .qr-admin-surface tbody td {
+      border-top-color: #edf1f5;
+      vertical-align: top;
+    }
+    .qr-admin-surface .badge.bg-light,
+    .qr-admin-surface .badge.badge-light {
+      background: #fffdf7 !important;
+      border-color: var(--notes-border) !important;
+      color: var(--notes-text) !important;
+    }
+    .qr-admin-assignment-form {
+      border-top: 1px solid var(--notes-border) !important;
     }
     #itemLabelsModal {
-      z-index: 200010;
+      z-index: 200030 !important;
+    }
+    #itemLabelsModal.show {
+      display: block;
+    }
+    #itemLabelsModal .modal-dialog {
+      z-index: 200031;
+      margin: 1.75rem auto;
+      max-width: 640px;
+    }
+    #itemLabelsModal .modal-content {
+      max-height: calc(100vh - 3.5rem);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--notes-border);
+      border-radius: 12px;
+      box-shadow: 0 24px 54px rgba(15, 23, 42, .28);
+    }
+    #itemLabelsModal .modal-header {
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+      border-bottom: 1px solid var(--notes-border);
+    }
+    #itemLabelsModal .modal-title {
+      color: var(--notes-text);
+      font-weight: 800;
+    }
+    #itemLabelsModal .modal-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      max-height: calc(100vh - 220px);
     }
     .modal-backdrop.show {
-      z-index: 200000;
+      z-index: 200020 !important;
     }
     @media (max-width: 991.98px) {
       .qr-admin-layout {
         grid-template-columns: 1fr;
       }
+      .qr-admin-header,
+      .qr-admin-header-actions,
+      .qr-admin-header-actions .btn {
+        align-items: stretch;
+        width: 100%;
+      }
+      .qr-admin-header-actions .btn {
+        flex: 1 1 auto;
+      }
     }
   </style>
 
-  <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-      <div>
-        <h2 class="mb-1">Administrador QRs</h2>
-        <div class="text-muted small">Crea QRs, selecciona'n un i configura els seus accessos.</div>
+  <div class="card-surface qr-admin-surface">
+    <div class="qr-admin-header">
+      <div class="qr-admin-title-block">
+        <h1 class="qr-admin-title">Administrador QRs</h1>
+        <div class="qr-admin-context-line">
+          <span class="qr-admin-context-main">{{ competicio.nom }}</span>
+          <span>Extensio del panell de Notes</span>
+          <span>Crea QRs, selecciona'n un i configura accessos</span>
+        </div>
       </div>
-      <div class="d-flex flex-wrap gap-2">
+      <div class="qr-admin-header-actions">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
         <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
         <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_print' competicio.id %}" target="_blank">Imprimir jutges</a>
@@ -93,8 +491,14 @@
 
     <div class="qr-admin-layout">
       <div class="qr-admin-stack">
-        <section class="qr-admin-panel">
-          <h5 class="mb-3">Crear QR</h5>
+        <section class="qr-admin-panel qr-admin-panel--create">
+          <div class="qr-admin-section-head">
+            <div>
+              <div class="qr-admin-section-kicker">Creacio</div>
+              <h2 class="qr-admin-section-title">Crear QR</h2>
+              <p class="qr-admin-section-copy">Tria el tipus i genera un nou acces.</p>
+            </div>
+          </div>
           {% if create_form.non_field_errors %}
             <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
           {% endif %}
@@ -104,7 +508,7 @@
 
             <div class="mb-2">
               <label class="form-label small text-muted mb-1">Tipus</label>
-              <div class="btn-group btn-group-sm d-flex" role="group" aria-label="Tipus de QR">
+              <div class="btn-group btn-group-sm d-flex qr-admin-type-toggle" role="group" aria-label="Tipus de QR">
                 <input class="btn-check d-none" type="radio" name="qr_access_type" id="qrTypeJudge" value="judge" checked>
                 <label class="btn btn-outline-primary flex-fill" for="qrTypeJudge">Jutge</label>
                 {% if can_manage_public_live %}
@@ -123,7 +527,7 @@
             </div>
 
             <div class="form-group mb-2" data-create-option="judge">
-              <div class="border rounded p-2">
+              <div class="qr-admin-option-box">
                 <div class="custom-control custom-checkbox mb-0">
                   <input type="checkbox"
                          class="custom-control-input"
@@ -140,7 +544,7 @@
 
             {% if can_manage_public_live %}
               <div class="form-group mb-2 d-none" data-create-option="public">
-                <div class="border rounded p-2">
+                <div class="qr-admin-option-box">
                   <div class="custom-control custom-checkbox mb-0">
                     <input class="custom-control-input" type="checkbox" id="create_can_view_media" name="can_view_media" value="1">
                     <label class="custom-control-label small" for="create_can_view_media">Permetre media publica</label>
@@ -149,11 +553,11 @@
               </div>
             {% endif %}
 
-            <div class="text-muted small mb-3" data-create-help="judge">
+            <div class="qr-admin-help mb-3" data-create-help="judge">
               El QR de jutge es crea sense accessos. Selecciona'l despres per afegir aparell, fase i permisos.
             </div>
             {% if can_manage_public_live %}
-              <div class="text-muted small mb-3 d-none" data-create-help="public">
+              <div class="qr-admin-help mb-3 d-none" data-create-help="public">
                 El QR public obre directament les classificacions publicades.
               </div>
             {% endif %}
@@ -164,18 +568,27 @@
           </form>
         </section>
 
-        <section class="qr-admin-panel">
-          <h5 class="mb-3">Llistat de QRs</h5>
+        <section class="qr-admin-panel qr-admin-panel--list">
+          <div class="qr-admin-section-head">
+            <div>
+              <div class="qr-admin-section-kicker">Llistat</div>
+              <h2 class="qr-admin-section-title">Llistat de QRs</h2>
+              <p class="qr-admin-section-copy">L'element seleccionat queda marcat i alimenta el detall.</p>
+            </div>
+            <span class="badge bg-light text-dark border">{{ token_rows|length }} totals</span>
+          </div>
           <div class="qr-admin-stack">
             {% for row in token_rows %}
               <a class="qr-admin-row {% if row.is_selected %}is-selected{% endif %}"
                  href="{{ row.url }}">
                 <div class="d-flex justify-content-between gap-2">
                   <div>
-                    <div class="fw-semibold">{{ row.label }}</div>
+                    <div class="fw-semibold qr-admin-row-title">{{ row.label }}</div>
                     <div class="text-muted small qr-token-id">{{ row.id }}</div>
                   </div>
-                  <span class="badge bg-light text-dark border">{{ row.kind|title }}</span>
+                  <div class="d-flex flex-column align-items-end gap-1">
+                    <span class="badge bg-light text-dark border">{{ row.kind|title }}</span>
+                  </div>
                 </div>
                 <div class="mt-2 d-flex flex-wrap gap-1">
                   {% if row.is_active %}
@@ -195,11 +608,17 @@
         </section>
       </div>
 
-      <section class="qr-admin-panel">
-        <h5 class="mb-3">Detall del QR</h5>
+      <section class="qr-admin-panel qr-admin-panel--detail">
+        <div class="qr-admin-section-head">
+          <div>
+            <div class="qr-admin-section-kicker">Detall</div>
+            <h2 class="qr-admin-section-title">Detall del QR</h2>
+            <p class="qr-admin-section-copy">Consulta l'estat i afegeix accessos o permisos.</p>
+          </div>
+        </div>
 
         {% if selected_token %}
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 qr-admin-detail-identity">
             <div>
               <div class="fw-semibold">{{ selected_token.label|default:"(sense etiqueta)" }}</div>
               <div class="text-muted small qr-token-id">{{ selected_token.id }}</div>
@@ -236,13 +655,16 @@
               <div class="fw-semibold">Accessos configurats</div>
               <span class="text-muted small">{{ selected_assignments|length }} totals</span>
             </div>
-            <div class="qr-admin-stack">
+            <div class="qr-assignment-grid">
               {% for row in selected_assignments %}
                 <div class="qr-assignment-card">
-                  <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="qr-assignment-card__head">
                     <div>
-                      <div class="fw-semibold">{{ row.assignment.label|default:"Acces" }}</div>
-                      <div class="text-muted small">{{ row.app_label }} / {{ row.phase_label }}</div>
+                      <h4 class="qr-assignment-card__title">{{ row.assignment.label|default:"Acces" }}</h4>
+                      <div class="qr-assignment-card__meta">
+                        <span class="qr-assignment-meta-pill">Aparell: {{ row.app_label }}</span>
+                        <span class="qr-assignment-meta-pill">Fase: {{ row.phase_label }}</span>
+                      </div>
                     </div>
                     {% if row.assignment.is_active %}
                       <span class="badge bg-success">Actiu</span>
@@ -250,15 +672,15 @@
                       <span class="badge bg-secondary">Inactiu</span>
                     {% endif %}
                   </div>
-                  <div class="mt-2 d-flex flex-wrap gap-1">
+                  <div class="qr-assignment-card__permissions" aria-label="Permisos configurats">
                     {% for p in row.permission_summaries %}
-                      <span class="badge bg-light text-dark border">{{ p.label }} / J{{ p.judge_index }}</span>
+                      <span class="qr-permission-chip">{{ p.label }} / J{{ p.judge_index }}</span>
                     {% empty %}
                       <span class="text-muted small">Sense permisos.</span>
                     {% endfor %}
                   </div>
                   {% if row.assignment.is_active %}
-                    <form method="post" class="mt-2">
+                    <form method="post" class="qr-assignment-card__actions">
                       {% csrf_token %}
                       <input type="hidden" name="action" value="deactivate_assignment">
                       <input type="hidden" name="assignment_id" value="{{ row.assignment.id }}">
@@ -273,8 +695,14 @@
           </div>
 
           {% if selected_token.is_active and not selected_token.revoked_at %}
-            <div class="border-top pt-3">
-              <h6 class="mb-3">Afegir acces de jutge</h6>
+            <div class="qr-admin-assignment-form pt-3">
+              <div class="qr-admin-section-head">
+                <div>
+                  <div class="qr-admin-section-kicker">Assignacio</div>
+                  <h3 class="qr-admin-section-title">Afegir acces de jutge</h3>
+                  <p class="qr-admin-section-copy">Defineix aparell, fase i els camps que podra puntuar aquest QR.</p>
+                </div>
+              </div>
               {% if assignment_formset.non_form_errors %}
                 <div class="alert alert-danger py-2">{{ assignment_formset.non_form_errors }}</div>
               {% endif %}
@@ -426,7 +854,7 @@
             </div>
           {% endif %}
         {% elif selected_public_token %}
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 qr-admin-detail-identity">
             <div>
               <div class="fw-semibold">{{ selected_public_token.label|default:"(sense etiqueta)" }}</div>
               <div class="text-muted small qr-token-id">{{ selected_public_token.id }}</div>
@@ -460,11 +888,11 @@
               {% endif %}
             </div>
           </div>
-          <div class="text-muted small">
+          <div class="qr-admin-help">
             Aquest QR public no te pantalla intermedia: obre directament les classificacions live publicades.
           </div>
         {% else %}
-          <div class="text-muted">Selecciona un QR del llistat o crea'n un de nou.</div>
+          <div class="qr-admin-empty-state">Selecciona un QR del llistat o crea'n un de nou.</div>
         {% endif %}
       </section>
     </div>
@@ -554,6 +982,9 @@
     const itemLabelsTitleEl = document.getElementById("itemLabelsModalTitle");
     const itemLabelsMetaEl = document.getElementById("itemLabelsModalMeta");
     const itemLabelsRowsEl = document.getElementById("itemLabelsRows");
+    if (itemLabelsModalEl && itemLabelsModalEl.parentElement !== document.body) {
+      document.body.appendChild(itemLabelsModalEl);
+    }
     const itemLabelsModal = (window.jQuery && itemLabelsModalEl) ? window.jQuery(itemLabelsModalEl) : null;
 
     function currentApp() {
