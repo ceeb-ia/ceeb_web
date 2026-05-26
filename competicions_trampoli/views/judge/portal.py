@@ -10,7 +10,13 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from ...models import Inscripcio
-from ...models.competicio import InscripcioAparellExclusio
+from ...models.competicio import (
+    CompeticioAparell,
+    CompeticioAparellFase,
+    InscripcioAparellExclusio,
+    ProgramUnit,
+    ProgramUnitSlot,
+)
 from ...models.judging import JudgeDeviceToken, PublicLiveToken
 from ...models.rotacions import RotacioAssignacio, RotacioFranja
 from ...models.scoring import ScoreEntryVideo
@@ -34,6 +40,18 @@ from ...services.rotacions.rotacions_ordering import (
     unique_ordered,
 )
 from ...services.scoring.scoring_subjects import subject_entry_model
+from ...services.judging.assignments import (
+    EffectiveJudgeAssignment,
+    effective_assignments_for_token,
+    resolve_effective_assignment,
+)
+from ...services.scoring.notes_units import effective_exercise_count
+from ...services.scoring.phase_eligibility import (
+    is_phase_published,
+    is_program_unit_scoreable,
+    scoreable_slot_statuses,
+    scoreable_slots_qs,
+)
 from ...services.scoring.team_scoring import (
     build_team_subjects_for_comp_aparell,
     is_team_context_app,
@@ -84,21 +102,239 @@ def _judge_portal_query_string(request):
     return urlencode(params)
 
 
+def _assignment_url(token_obj, assignment: EffectiveJudgeAssignment):
+    if assignment.id is None:
+        return reverse("judge_portal", kwargs={"token": str(token_obj.id)})
+    return reverse(
+        "judge_portal_assignment",
+        kwargs={"token": str(token_obj.id), "assignment_id": assignment.id},
+    )
+
+
+def _assignment_availability(assignment: EffectiveJudgeAssignment, phase: CompeticioAparellFase | None) -> dict:
+    if not assignment.is_active:
+        return {"state": "inactive", "label": "Inactiu", "is_open": False, "reason": "Aquest acces no esta actiu."}
+    if assignment.fase_id is None:
+        return {"state": "open", "label": "Obert", "is_open": True, "reason": ""}
+    if phase is None:
+        return {"state": "missing", "label": "No disponible", "is_open": False, "reason": "La fase no existeix."}
+    if phase.estat == CompeticioAparellFase.Estat.CLOSED:
+        return {"state": "closed", "label": "Tancada", "is_open": False, "reason": "La fase esta tancada."}
+
+    qs = scoreable_slots_qs().filter(
+        unit__fase=phase,
+        unit__fase__comp_aparell_id=assignment.comp_aparell_id,
+    )
+    if is_phase_published(phase):
+        has_scoreable_slots = qs.exists()
+    else:
+        has_scoreable_slots = qs.filter(unit__status=ProgramUnit.Status.PUBLISHED).exists()
+    if has_scoreable_slots:
+        return {"state": "open", "label": "Obert", "is_open": True, "reason": ""}
+    if phase.estat != CompeticioAparellFase.Estat.PUBLISHED:
+        return {
+            "state": "blocked",
+            "label": "Bloquejada",
+            "is_open": False,
+            "reason": "La fase encara no esta publicada.",
+        }
+    return {
+        "state": "empty",
+        "label": "Pendent",
+        "is_open": False,
+        "reason": "La fase no te slots puntuables.",
+    }
+
+
+def _assignment_cards(request, token_obj, assignments: list[EffectiveJudgeAssignment]) -> list[dict]:
+    app_ids = {item.comp_aparell_id for item in assignments}
+    phase_ids = {item.fase_id for item in assignments if item.fase_id}
+    apps = {
+        int(app.id): app
+        for app in (
+            CompeticioAparell.objects
+            .filter(competicio=token_obj.competicio, id__in=app_ids)
+            .select_related("aparell")
+        )
+    }
+    phases = {
+        int(phase.id): phase
+        for phase in (
+            CompeticioAparellFase.objects
+            .filter(competicio=token_obj.competicio, id__in=phase_ids)
+            .select_related("comp_aparell", "comp_aparell__aparell")
+        )
+    }
+    cards = []
+    for assignment in assignments:
+        app = apps.get(assignment.comp_aparell_id)
+        phase = phases.get(assignment.fase_id) if assignment.fase_id else None
+        availability = _assignment_availability(assignment, phase)
+        app_label = str(getattr(app, "display_nom", "") or getattr(getattr(app, "aparell", None), "nom", "") or "Aparell")
+        phase_label = str(getattr(phase, "nom", "") or "Preliminar")
+        label = assignment.label or f"{app_label} / {phase_label}"
+        cards.append({
+            "assignment": assignment,
+            "app": app,
+            "phase": phase,
+            "app_label": app_label,
+            "phase_label": phase_label,
+            "label": label,
+            "availability": availability,
+            "url": _assignment_url(token_obj, assignment) if availability["is_open"] else "",
+        })
+    return cards
+
+
+def _render_judge_portal_home(request, token_obj, assignments, *, status=200, selected_assignment_id=None):
+    cards = _assignment_cards(request, token_obj, assignments)
+    return render(
+        request,
+        "judge/portal_home.html",
+        {
+            "token_obj": token_obj,
+            "token": str(token_obj.id),
+            "competicio": token_obj.competicio,
+            "assignment_cards": cards,
+            "selected_assignment_id": selected_assignment_id,
+            "hide_base_chrome": True,
+            "judge_kiosk": True,
+        },
+        status=status,
+    )
+
+
+def _phase_subjects_for_portal(competicio, comp_aparell, phase):
+    subject_kind = "team_unit" if is_team_context_app(comp_aparell) else "inscripcio"
+    units = (
+        ProgramUnit.objects
+        .filter(fase=phase)
+        .prefetch_related("slots")
+        .order_by("ordre", "id")
+    )
+    slots_by_unit = {}
+    subject_ids = []
+    statuses = scoreable_slot_statuses()
+    for unit in units:
+        if not is_program_unit_scoreable(unit):
+            continue
+        unit_slots = [
+            slot
+            for slot in unit.slots.all()
+            if slot.status in statuses
+            and slot.subject_id
+            and str(slot.subject_kind or "").strip().lower() == subject_kind
+        ]
+        if not unit_slots:
+            continue
+        slots_by_unit[unit] = unit_slots
+        subject_ids.extend(int(slot.subject_id) for slot in unit_slots)
+
+    if subject_kind == "team_unit":
+        registry = build_team_subject_registry(competicio, comp_aparell)
+        subjects_by_id = {int(item["subject_id"]): dict(item) for item in registry["subjects"]}
+    else:
+        excluded_ins_ids = set(
+            InscripcioAparellExclusio.objects
+            .filter(comp_aparell=comp_aparell)
+            .values_list("inscripcio_id", flat=True)
+        )
+        subjects_by_id = {
+            int(ins.id): ins
+            for ins in (
+                Inscripcio.objects
+                .filter(competicio=competicio, id__in=subject_ids)
+                .exclude(id__in=excluded_ins_ids)
+                .select_related("grup_competicio")
+            )
+        }
+
+    base_subjects = []
+    unit_keys = []
+    unit_labels = {}
+    for unit, slots in slots_by_unit.items():
+        unit_key = f"phase:{phase.id}:unit:{unit.id}"
+        unit_keys.append(unit_key)
+        unit_labels[unit_key] = unit.nom or f"Unitat {unit.ordre}"
+        for index, slot in enumerate(slots, start=1):
+            subject = subjects_by_id.get(int(slot.subject_id))
+            if subject is None:
+                continue
+            if subject_kind == "team_unit":
+                item = dict(subject)
+                item.setdefault("id", int(subject.get("subject_id") or slot.subject_id))
+                item.setdefault("subject_id", int(subject.get("subject_id") or slot.subject_id))
+                item.setdefault("subject_kind", "team_unit")
+                item.setdefault("nom_i_cognoms", item.get("name") or "")
+                item.setdefault("ordre_sortida", item.get("order") or index)
+                item["group"] = unit_key
+                item["group_label"] = unit_labels[unit_key]
+            else:
+                item = {
+                    "id": int(subject.id),
+                    "subject_id": int(subject.id),
+                    "subject_kind": "inscripcio",
+                    "name": getattr(subject, "nom_i_cognoms", "") or "",
+                    "nom_i_cognoms": getattr(subject, "nom_i_cognoms", "") or "",
+                    "order": getattr(subject, "ordre_competicio", None) or getattr(subject, "ordre_sortida", None) or index,
+                    "ordre_sortida": getattr(subject, "ordre_sortida", None),
+                    "group": unit_key,
+                    "group_label": unit_labels[unit_key],
+                    "meta": "",
+                }
+            base_subjects.append(item)
+    return base_subjects, unit_keys, unit_labels
+
+
 @require_http_methods(["GET"])
-def judge_portal(request, token):
+def judge_portal(request, token, assignment_id=None):
     tok = get_object_or_404(JudgeDeviceToken, pk=token)
     if not tok.is_valid():
         return render(request, "judge/invalid_token.html", {"token": tok}, status=403)
 
     tok.touch()
 
-    comp_aparell = tok.comp_aparell
+    assignments = effective_assignments_for_token(tok)
+    if assignment_id in (None, "", 0, "0"):
+        if len(assignments) != 1:
+            return _render_judge_portal_home(request, tok, assignments)
+        selected_assignment = assignments[0]
+        selected_cards = _assignment_cards(request, tok, [selected_assignment])
+        if not selected_cards or not selected_cards[0]["availability"]["is_open"]:
+            return _render_judge_portal_home(request, tok, assignments)
+    else:
+        selected_assignment = resolve_effective_assignment(tok, assignment_id)
+        if selected_assignment is None:
+            raise Http404("Assignacio de jutge no trobada")
+        selected_cards = _assignment_cards(request, tok, [selected_assignment])
+        if not selected_cards or not selected_cards[0]["availability"]["is_open"]:
+            return _render_judge_portal_home(
+                request,
+                tok,
+                assignments,
+                status=403,
+                selected_assignment_id=assignment_id,
+            )
+
+    comp_aparell = get_object_or_404(
+        CompeticioAparell.objects.select_related("aparell"),
+        pk=selected_assignment.comp_aparell_id,
+        competicio=tok.competicio,
+    )
+    phase = None
+    if selected_assignment.fase_id:
+        phase = get_object_or_404(
+            CompeticioAparellFase,
+            pk=selected_assignment.fase_id,
+            competicio=tok.competicio,
+            comp_aparell=comp_aparell,
+        )
     competicio = tok.competicio
     video_capture_enabled = _judge_video_capture_enabled_for_token(tok)
 
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
 
-    permissions = _normalize_permissions(tok.permissions)
+    permissions = _normalize_permissions(selected_assignment.permissions)
 
     franja_modes = get_rotacions_order_modes(competicio)
 
@@ -200,7 +436,19 @@ def judge_portal(request, token):
         franja_override_id = None
     franja_override = franges_by_id.get(franja_override_id) if franja_override_id else None
 
-    if team_subject_mode:
+    phase_unit_keys = []
+    phase_unit_labels = {}
+    if phase is not None:
+        base_subjects, phase_unit_keys, phase_unit_labels = _phase_subjects_for_portal(
+            competicio,
+            comp_aparell,
+            phase,
+        )
+        if team_subject_mode:
+            schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, base_subjects)
+        else:
+            schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell)
+    elif team_subject_mode:
         registry = build_team_subject_registry(competicio, comp_aparell)
         raw_subjects = list(registry["subjects"])
         schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, raw_subjects)
@@ -243,13 +491,29 @@ def judge_portal(request, token):
                 "meta": "",
             })
 
+    if phase is not None:
+        app_unit_keys = list(phase_unit_keys)
+        app_units_by_key = {
+            key: {
+                "key": key,
+                "member_keys": [key],
+                "first_franja_id": None,
+                "candidates_by_franja": {},
+            }
+            for key in app_unit_keys
+        }
+        app_units_by_franja = {}
+        app_programmed_group_ids = list(phase_unit_keys)
+
     # El portal mostra totes les unitats programades de l'aparell. Una unitat
     # pot ser un sol grup o una cel-la de rotacio amb diversos grups que han
     # de competir com un bloc conjunt.
     subject_list = []
     grouped = {}
     for subject in base_subjects:
-        if team_subject_mode:
+        if phase is not None:
+            key = str(subject.get("group") or "")
+        elif team_subject_mode:
             key = str(subject.get("group") or team_subject_bucket_key(subject, comp_aparell.id))
         else:
             key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
@@ -288,6 +552,8 @@ def judge_portal(request, token):
         return default_fid
 
     def group_label_for(group_id) -> str:
+        if group_id in phase_unit_labels:
+            return phase_unit_labels[group_id]
         if team_subject_mode:
             items = grouped.get(group_id, [])
             if items:
@@ -413,8 +679,11 @@ def judge_portal(request, token):
     entry_filters = {
         "competicio": competicio,
         "comp_aparell": comp_aparell,
-        "fase__isnull": True,
     }
+    if phase is not None:
+        entry_filters["fase"] = phase
+    else:
+        entry_filters["fase__isnull"] = True
     if team_subject_mode:
         entry_filters["team_subject_id__in"] = subject_ids
     else:
@@ -429,9 +698,13 @@ def judge_portal(request, token):
 
     # Construïm un “snapshot” dels inputs rellevants per inscripció/exercici
     # Per simplicitat: assumim exercici=1 si al teu flux n’hi ha més, ho pots estendre.
-    max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+    max_ex = effective_exercise_count(comp_aparell, phase=phase)
     exercicis = list(range(1, max_ex + 1))
-    exercici_default = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("ex"))
+    try:
+        exercici_default = int(request.GET.get("ex") or 1)
+    except Exception:
+        exercici_default = 1
+    exercici_default = max(1, min(max_ex, exercici_default))
     portal_display_mode = _sanitize_judge_portal_display_mode(request.GET.get("view_mode"))
     scores_payload = {}
     for item in subject_list:
@@ -468,6 +741,30 @@ def judge_portal(request, token):
         except NoReverseMatch:
             updates_url = save_url.replace("/api/save/", "/api/updates/")
 
+    def scoped_api_url(url):
+        if selected_assignment.id is None:
+            return url
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}assignment_id={selected_assignment.id}"
+
+    save_url = scoped_api_url(save_url)
+    updates_url = scoped_api_url(updates_url)
+    video_status_url = (
+        scoped_api_url(reverse("judge_video_status", kwargs={"token": str(tok.id)}))
+        if video_capture_enabled
+        else ""
+    )
+    video_upload_url = (
+        scoped_api_url(reverse("judge_video_upload", kwargs={"token": str(tok.id)}))
+        if video_capture_enabled
+        else ""
+    )
+    video_delete_url = (
+        scoped_api_url(reverse("judge_video_delete", kwargs={"token": str(tok.id)}))
+        if video_capture_enabled
+        else ""
+    )
+
     query_string = _judge_portal_query_string(request)
 
     ctx = {
@@ -475,6 +772,10 @@ def judge_portal(request, token):
         "token": str(tok.id),
         "competicio": competicio,
         "comp_aparell": comp_aparell,
+        "judge_assignment": selected_assignment,
+        "judge_assignment_id": selected_assignment.id,
+        "fase": phase,
+        "fase_id": phase.id if phase is not None else None,
         "hide_base_chrome": True,
         "judge_kiosk": True,
         "schema": schema,
@@ -493,21 +794,9 @@ def judge_portal(request, token):
         "updates_url": updates_url,
         "updates_cursor_init": timezone.now().isoformat(),
         "video_capture_enabled": video_capture_enabled,
-        "video_status_url": (
-            reverse("judge_video_status", kwargs={"token": str(tok.id)})
-            if video_capture_enabled
-            else ""
-        ),
-        "video_upload_url": (
-            reverse("judge_video_upload", kwargs={"token": str(tok.id)})
-            if video_capture_enabled
-            else ""
-        ),
-        "video_delete_url": (
-            reverse("judge_video_delete", kwargs={"token": str(tok.id)})
-            if video_capture_enabled
-            else ""
-        ),
+        "video_status_url": video_status_url,
+        "video_upload_url": video_upload_url,
+        "video_delete_url": video_delete_url,
         "video_max_duration_seconds": ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS,
         "video_max_size_bytes": ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES,
         "exercicis": exercicis,

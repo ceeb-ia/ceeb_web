@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Jurat - {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 judge-portal-page">
+  {% include "judge/portal/_styles.html" %}
+
+  <div class="card-surface">
+    <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+      <div>
+        <h1 class="h4 mb-1">Portal de jutge</h1>
+        <div class="text-muted small">{{ competicio.nom }} · {{ token_obj.label|default:token_obj.id }}</div>
+      </div>
+      <span class="badge badge-light border">QR actiu</span>
+    </div>
+
+    {% if assignment_cards %}
+      <div class="row g-3">
+        {% for card in assignment_cards %}
+          <div class="col-12 col-md-6 col-xl-4">
+            <div class="border rounded p-3 h-100">
+              <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                <div>
+                  <div class="fw-semibold">{{ card.label }}</div>
+                  <div class="text-muted small">{{ card.app_label }} · {{ card.phase_label }}</div>
+                </div>
+                <span class="badge {% if card.availability.is_open %}badge-success{% elif card.availability.state == 'closed' %}badge-secondary{% else %}badge-warning{% endif %}">
+                  {{ card.availability.label }}
+                </span>
+              </div>
+              {% if card.availability.reason %}
+                <div class="text-muted small mb-3">{{ card.availability.reason }}</div>
+              {% else %}
+                <div class="text-muted small mb-3">Acces preparat per puntuar.</div>
+              {% endif %}
+              {% if card.url %}
+                <a class="btn btn-sm btn-primary" href="{{ card.url }}">Entrar</a>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary" type="button" disabled>Bloquejat</button>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">Aquest QR no te cap acces actiu configurat.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

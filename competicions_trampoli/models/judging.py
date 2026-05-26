@@ -1,10 +1,11 @@
 import uuid
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
 from .base import Competicio
-from .competicio import CompeticioAparell
+from .competicio import CompeticioAparell, CompeticioAparellFase
 
 
 class JudgeDeviceToken(models.Model):
@@ -42,6 +43,96 @@ class JudgeDeviceToken(models.Model):
 
     def __str__(self):
         return f"{self.competicio_id} / {self.comp_aparell_id} / {self.label or self.id}"
+
+
+class JudgePortalAssignment(models.Model):
+    """
+    Acces puntuable concret dins d'un QR de jutge.
+
+    El token identifica el dispositiu/jutge; aquesta fila identifica que pot
+    puntuar en un moment concret: aparell local, fase opcional i camps.
+    """
+
+    judge_token = models.ForeignKey(
+        JudgeDeviceToken,
+        on_delete=models.CASCADE,
+        related_name="portal_assignments",
+    )
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="judge_portal_assignments",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="judge_portal_assignments",
+    )
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="judge_portal_assignments",
+    )
+    label = models.CharField(max_length=160, blank=True, default="")
+    ordre = models.PositiveSmallIntegerField(default=1)
+    permissions = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["judge_token_id", "ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["judge_token", "ordre"],
+                name="uniq_judge_assignment_token_ordre",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell"], name="judgeassign_comp_app_idx"),
+            models.Index(fields=["judge_token", "is_active"], name="judgeassign_token_active_idx"),
+            models.Index(fields=["fase", "is_active"], name="judgeassign_fase_active_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.label = str(self.label or "").strip()
+        if self.judge_token_id and self.competicio_id and self.judge_token.competicio_id != self.competicio_id:
+            errors["competicio"] = "L'assignacio ha de pertanyer a la mateixa competicio que el token."
+        if self.comp_aparell_id and self.competicio_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = "L'aparell no pertany a la mateixa competicio."
+        if self.fase_id:
+            if self.competicio_id and self.fase.competicio_id != self.competicio_id:
+                errors["fase"] = "La fase no pertany a la mateixa competicio."
+            elif self.comp_aparell_id and self.fase.comp_aparell_id != self.comp_aparell_id:
+                errors["fase"] = "La fase no pertany a aquest aparell local."
+        if not isinstance(self.permissions, list):
+            errors["permissions"] = "Els permisos de l'assignacio han de ser una llista JSON."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            kwargs["update_fields"] = update_fields
+        self.label = str(self.label or "").strip()
+        if self.judge_token_id and not self.competicio_id:
+            self.competicio_id = self.judge_token.competicio_id
+            if update_fields is not None:
+                update_fields.add("competicio")
+        super().save(*args, **kwargs)
+
+    @property
+    def is_preliminary(self) -> bool:
+        return self.fase_id is None
+
+    def __str__(self):
+        phase = self.fase_id or "preliminar"
+        return f"{self.judge_token_id} / {self.comp_aparell_id} / {phase} / {self.label or self.ordre}"
 
 
 class PublicLiveToken(models.Model):

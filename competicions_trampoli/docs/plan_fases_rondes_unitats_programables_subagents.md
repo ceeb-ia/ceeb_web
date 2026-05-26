@@ -1496,40 +1496,335 @@
 ## Fase 9. Portal De Jutges Amb Home De Fases
 
 ### Objectiu
-- Fer que el portal de jutges mostri fases disponibles per puntuar.
+- Fer que el QR/token de jutge deixi de representar directament un acces unic a
+  `CompeticioAparell + camps`, i passi a representar un dispositiu o jutge dins
+  una competicio.
+- Fer que cada token pugui tenir multiples accessos puntuables, cadascun amb el
+  seu aparell local, fase opcional i permisos de camps.
+- Crear una home del portal de jutges que mostri aquests accessos com a entrades
+  separades, amb estat obert/bloquejat segons fase, unitats publicades i permisos.
+- Reutilitzar el portal actual com a pantalla de puntuacio d'un acces concret,
+  no com a desti directe del token.
 
 ### Write set principal
 - `models/judging.py`
 - `views/judge/portal.py`
 - `views/judge/admin.py`
+- `views/judge/save.py`
+- `views/judge/updates.py`
+- `views/judge/video.py`
 - templates de portal
 - tests de jutges
 
+### Decisio de model
+- `JudgeDeviceToken` passa a ser la identitat estable del dispositiu/jutge:
+  - un QR fisic
+  - una competicio
+  - etiqueta de dispositiu/jutge
+  - estat actiu/revocat
+- Els permisos de puntuacio han de passar a una entitat filla nova, per exemple:
+  - `JudgePortalAssignment`
+  - o `JudgeTokenScope`
+- Cada assignacio representa un acces puntuable concret:
+  - `judge_token`
+  - `competicio`
+  - `comp_aparell`
+  - `fase = null` per preliminar/legacy implicit
+  - `permissions`
+  - `label`
+  - `ordre`
+  - `is_active`
+  - camps opcionals de visibilitat o notes internes si cal.
+- Els camps actuals `JudgeDeviceToken.comp_aparell` i
+  `JudgeDeviceToken.permissions` queden com a legacy temporal.
+- Un token antic equival semanticament a una assignacio implicita:
+  - mateix `comp_aparell`
+  - `fase = null`
+  - mateixos `permissions`.
+
+### UX prevista
+- Obrir el QR porta a una home del jutge.
+- La home mostra accessos separats, per exemple:
+  - `Trampoli A / Preliminar`
+  - `Trampoli A / Final`
+  - `Equip B / Preliminar`
+- Cada acces mostra estat:
+  - obert si es puntuable
+  - bloquejat si la fase encara no esta publicada o no te unitats puntuables
+  - no disponible si l'assignacio esta inactiva o el token no te permis.
+- Entrar en un acces obert porta al portal actual, scoped per assignacio:
+  - `token`
+  - `assignment_id`
+  - `comp_aparell`
+  - `fase_id` opcional
+  - `permissions` propis de l'assignacio.
+- La preliminar legacy continua sent `fase = null`.
+
 ### Tasques
-- Evolucionar permisos de token:
-  - per aparell local
-  - per fase
-  - per conjunt de fases
-- Crear home de portal:
-  - llista fases puntuables
-  - estat de cada fase
-  - acces a unitats publicades
-- Permetre que una fase aparegui quan:
-  - esta `published`
-  - te unitats amb slots puntuables
-  - el token te permis
-- Mantenir deep links legacy quan token apunta a un sol aparell/fase.
+1. Afegir model d'assignacio de portal de jutges.
+   - Crear la taula filla del token amb `comp_aparell`, `fase`, `permissions`,
+     `label`, `ordre` i `is_active`.
+   - Validar que `fase`, si existeix, pertany a la mateixa competicio i al mateix
+     `comp_aparell`.
+   - Validar que l'assignacio pertany a la mateixa competicio que el token.
+
+2. Mantenir compatibilitat legacy.
+   - Els tokens existents han de continuar funcionant sense migracio destructiva.
+   - Si un token no te assignacions filles, el sistema ha de construir una
+     assignacio implicita a partir de `token.comp_aparell` i `token.permissions`.
+   - Els deep links antics `judge_portal(token)` han de continuar entrant al flux
+     legacy si nomes hi ha una assignacio implicita o una sola assignacio oberta.
+
+3. Crear admin/UI de configuracio d'assignacions.
+   - L'admin de QRs ha de permetre definir varies assignacions per un mateix QR.
+   - Cada assignacio pot tenir camps de puntuacio diferents.
+   - La UI ha de permetre preparar assignacions futures encara bloquejades per
+     estat de fase.
+   - Exemple valid:
+     - mateix QR
+     - preliminar aparell A amb camps `E`
+     - final aparell A amb camps `D/E`
+     - preliminar aparell d'equip B amb camps propis d'equip.
+
+4. Crear home del portal.
+   - `judge_portal(token)` ha de renderitzar una home quan hi ha mes d'un acces,
+     o quan el producte decideixi mostrar sempre la home.
+   - La home calcula accessos disponibles a partir de les assignacions.
+   - Cada targeta/link mostra aparell, fase, label, estat i motiu de bloqueig.
+   - Una fase avancada nomes pot aparèixer com a oberta si:
+     - la fase esta `published`, o la `ProgramUnit` concreta esta `published`
+       segons el contracte de `phase_eligibility`
+     - hi ha slots puntuables (`filled` o `manual`)
+     - l'assignacio esta activa.
+   - Una assignacio legacy/preliminar (`fase = null`) continua oberta si el token
+     es valid i l'aparell te subjectes puntuables pel flux legacy.
+
+5. Fer que el portal actual treballi scoped per assignacio.
+   - Afegir ruta o parametre estable per entrar a una assignacio concreta.
+   - El portal actual ha de resoldre `assignment_id` i usar:
+     - `assignment.comp_aparell`
+     - `assignment.fase`
+     - `assignment.permissions`
+   - El portal no ha de llegir `token.comp_aparell` ni `token.permissions` si hi
+     ha assignacio explicita.
+   - Els subjectes del portal han de sortir dels slots de fase quan `fase != null`
+     i del flux legacy quan `fase = null`.
+
+6. Adaptar guardat, updates i video.
+   - `judge_save_partial` i equivalents han de rebre/resoldre l'assignacio.
+   - El guardat ha d'enviar `fase_id` quan l'assignacio apunta a fase.
+   - El guardat ha de rebutjar subjectes fora dels slots puntuables de la fase.
+   - `judge_updates` ha de filtrar per `fase_id` de l'assignacio, no sempre per
+     `fase__isnull=True`.
+   - Els endpoints de video han de carregar i crear videos del score scoped per
+     fase quan pertoqui.
+
+7. Ajustar permissos de camps.
+   - Els permisos efectius venen de l'assignacio.
+   - El mateix token pot tenir camps diferents en assignacions diferents.
+   - La resolucio de permisos per subjecte/equip ha de reutilitzar la logica
+     actual, pero amb `assignment.permissions`.
+
+8. Polir bloquejos i missatges.
+   - Si una fase esta pendent, la home pot mostrar-la com a bloquejada.
+   - Si una fase esta publicada pero no te slots puntuables, mostrar-la com a
+     pendent de participants/unitats.
+   - Si una assignacio esta inactiva, no ha d'obrir el portal.
+   - Si una fase es tanca, decidir si la home la mostra com a tancada o l'amaga;
+     recomanacio inicial: mostrar-la com a tancada si l'assignacio existeix.
+
+9. Migracio final posterior.
+   - Quan el flux nou estigui estable, migrar tokens legacy a assignacions reals.
+   - Despres d'una o mes versions, plantejar retirar l'us directe de
+     `JudgeDeviceToken.comp_aparell` i `JudgeDeviceToken.permissions` del runtime.
 
 ### Guardrails
 - No mostrar fases pendents com puntuables.
 - No deixar que un jutge entri a slots `empty` o `pending_decision`.
 - Els tokens antics han de continuar sent utilitzables en el flux inicial/preliminar implicit.
+- No duplicar QRs per resoldre canvis de fase/aparell: el QR representa el
+  dispositiu, les assignacions representen que pot puntuar.
+- No fer que publicar una fase crei o modifiqui assignacions de jutge
+  automaticament.
+- No barrejar permisos de camps entre assignacions diferents del mateix token.
 
 ### Tests
-- Portal home mostra preliminar oberta.
-- Semifinal pendent no es puntuable.
-- Semifinal apareix despres de confirmacio/publicacio.
+- Token legacy sense assignacions continua obrint el portal preliminar actual.
+- Token amb una assignacio explicita preliminar obre el portal amb `fase = null`.
+- Token amb multiples assignacions mostra home.
+- Home mostra preliminar oberta.
+- Home mostra fase final pendent com a bloquejada abans de publicacio.
+- Fase final apareix oberta despres de confirmacio/publicacio i slots puntuables.
 - Token restringit a una fase no veu altres fases.
+- Mateix token pot tenir permisos de camps diferents per cada assignacio.
+- Guardat de jutge en assignacio de fase crea/actualitza `ScoreEntry` o
+  `TeamScoreEntry` amb `fase_id`.
+- Guardat de jutge rebutja subjecte fora dels slots puntuables de la fase.
+- `judge_updates` no barreja notes legacy amb notes de fase.
+- Video de jutge es vincula al score de la fase correcta.
+
+### Tancament Iteracio 1 - Model I Compatibilitat
+- Estat: completada la base de dades i el contracte intern de resolucio, sense
+  canviar encara el portal visible.
+- Implementacio feta:
+  - Afegit model `JudgePortalAssignment`.
+  - Cada assignacio queda vinculada a:
+    - `judge_token`
+    - `competicio`
+    - `comp_aparell`
+    - `fase` opcional (`null` = preliminar/legacy)
+    - `permissions`
+    - `label`
+    - `ordre`
+    - `is_active`
+  - Afegides validacions de consistencia:
+    - assignacio i token dins la mateixa competicio
+    - aparell local dins la mateixa competicio
+    - fase dins la mateixa competicio i el mateix aparell local
+    - `permissions` com a llista JSON.
+  - Afegit registre basic a admin per `JudgeDeviceToken` i
+    `JudgePortalAssignment`.
+  - Afegit servei `services/judging/assignments.py` amb:
+    - `EffectiveJudgeAssignment`
+    - `effective_assignments_for_token(token)`
+    - `resolve_effective_assignment(token, assignment_id)`
+  - El servei manté compatibilitat legacy:
+    - si un token no te assignacions explicites, retorna una assignacio
+      implicita amb `token.comp_aparell`, `token.permissions` i `fase = null`.
+    - si hi ha assignacions explicites, aquestes substitueixen el fallback
+      legacy.
+    - si el token esta inactiu o revocat, no hi ha assignacions efectives.
+- Migracio:
+  - `0068_judgeportalassignment.py`.
+- Tests afegits:
+  - `competicions_trampoli.tests.scoring.judge.test_portal_assignments`.
+  - Cobertura de fallback legacy.
+  - Cobertura d'assignacions explicites amb permisos i fases diferents.
+  - Cobertura d'assignacions inactives sense retorn al legacy.
+  - Cobertura de token inactiu.
+  - Cobertura de validacions de model.
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_portal_assignments --verbosity 1`
+  - `docker compose run --rm web python -m compileall competicions_trampoli/models/judging.py competicions_trampoli/services/judging competicions_trampoli/tests/scoring/judge/test_portal_assignments.py`
+- Fora d'aquesta iteracio:
+  - Home visual del portal.
+  - Rutes amb `assignment_id`.
+  - Adaptacio de `judge_save_partial`, `judge_updates` i video.
+  - Migracio de tokens existents a assignacions reals.
+
+### Tancament Iteracio 2 - Home I Portal Scoped
+- Estat: completada la navegacio de portal per assignacio i la home del QR.
+- Implementacio feta:
+  - Afegida ruta:
+    - `judge/<token>/assignment/<assignment_id>/`
+  - `judge_portal(token)` ara resol assignacions efectives del token.
+  - Si el token no te assignacions explicites, continua obrint el portal legacy
+    directament amb l'assignacio implicita.
+  - Si el token te multiples assignacions, renderitza una home de QR.
+  - Si una assignacio unica esta bloquejada, renderitza la home en comptes
+    d'entrar al portal de puntuacio.
+  - Afegit template `judge/portal_home.html`.
+  - La home mostra cada acces amb:
+    - label
+    - aparell local
+    - fase o preliminar
+    - estat obert/bloquejat/tancat/pendent
+    - motiu de bloqueig
+    - link d'entrada nomes quan l'acces es puntuable.
+  - El portal actual pot obrir una assignacio explicita i usar:
+    - `assignment.comp_aparell`
+    - `assignment.fase`
+    - `assignment.permissions`
+  - En assignacions de fase, el render inicial del portal carrega subjectes dels
+    `ProgramUnitSlot` puntuables (`filled` o `manual`) de la fase.
+  - Les notes inicials mostrades pel portal es filtren per `fase` quan
+    l'assignacio apunta a una fase, o per `fase = null` en preliminar/legacy.
+  - Les assignacions de fase pendents queden bloquejades fins que la fase o les
+    seves unitats siguin puntuables segons `phase_eligibility`.
+- Tests afegits/ampliats:
+  - token legacy sense assignacions obre `judge/portal.html`.
+  - token amb multiples assignacions mostra `judge/portal_home.html`.
+  - assignacio a fase pendent surt bloquejada i el link directe retorna home amb
+    `403`.
+  - `assignment_id` obre portal scoped amb aparell, fase i permisos de
+    l'assignacio.
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_portal_assignments --verbosity 1`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_item_labels competicions_trampoli.tests.scoring.judge.test_exclusions_and_partial_save --verbosity 1`
+  - `docker compose run --rm web python -m compileall competicions_trampoli/views/judge/portal.py competicions_trampoli/urls/judge.py competicions_trampoli/tests/scoring/judge/test_portal_assignments.py`
+- Fora d'aquesta iteracio i pendent per Iteracio 3:
+  - `judge_save_partial` encara ha de resoldre l'assignacio i persistir
+    `fase_id`.
+  - `judge_updates` encara ha de filtrar per assignacio/fase.
+  - Els endpoints de video encara han de vincular-se al score scoped de la fase.
+  - La PWA/manifest continua apuntant al token base; si cal, es podra ajustar
+    quan el runtime complet d'assignacions estigui tancat.
+
+### Tancament Iteracio 3 - Runtime Scoped I Tancament Oficial Fase 9
+- Estat: Fase 9 tancada funcionalment. El QR ja representa el dispositiu/jutge i
+  el runtime de puntuacio treballa contra l'assignacio efectiva quan n'hi ha una.
+- Implementacio feta:
+  - Afegit helper intern `views/judge/_assignment_scope.py` per resoldre, de forma
+    comuna, el scope efectiu de cada endpoint:
+    - assignacio
+    - competicio
+    - aparell local
+    - fase opcional
+    - permisos efectius.
+  - El portal injecta `assignment_id` als endpoints API de l'assignacio:
+    - guardat parcial
+    - feed incremental d'updates
+    - estat de video
+    - upload de video
+    - delete de video.
+  - El bootstrap JS exposa `JUDGE_ASSIGNMENT_ID` i `JUDGE_FASE_ID`.
+  - El guardat parcial del jutge:
+    - resol l'assignacio efectiva
+    - usa `assignment.permissions`
+    - usa `assignment.comp_aparell`
+    - persisteix `ScoreEntry`/`TeamScoreEntry` amb `fase=assignment.fase`
+      quan correspon
+    - rebutja subjectes que no estan en slots puntuables de la fase.
+  - `judge_updates`:
+    - resol l'assignacio efectiva
+    - filtra per `fase=assignment.fase` o `fase__isnull=True` en legacy
+    - manté el filtre de permisos de camps segons l'assignacio.
+  - Els endpoints de video:
+    - `judge_video_status`
+    - `judge_video_upload`
+    - `judge_video_delete`
+    - `judge_video_file`
+    ara carreguen o creen el video del score scoped per fase quan l'assignacio
+    apunta a una fase.
+  - Les URLs de fitxer de video incorporen `assignment_id` quan el video ve d'una
+    assignacio explicita, evitant caure al score legacy.
+- Compatibilitat:
+  - Tokens antics sense `JudgePortalAssignment` continuen funcionant com abans:
+    `token.comp_aparell`, `token.permissions`, `fase = null`.
+  - Si un token te assignacions explicites, els endpoints requereixen un scope
+    resoluble; amb multiples assignacions no hi ha fallback implicit ambigu.
+- Tests afegits/ampliats:
+  - Guardat en assignacio de fase crea `ScoreEntry` amb `fase_id`.
+  - Guardat en assignacio de fase rebutja subjecte fora dels slots puntuables.
+  - `judge_updates` separa notes de fase i notes legacy.
+  - Video status d'assignacio de fase retorna el video del score de fase i URL
+    amb `assignment_id`.
+  - El portal scoped exposa URLs API amb `assignment_id`.
+- Verificacio executada:
+  - `docker compose run --rm web python -m compileall competicions_trampoli/views/judge competicions_trampoli/tests/scoring/judge/test_portal_assignments.py`
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_portal_assignments --verbosity 1`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_exclusions_and_partial_save competicions_trampoli.tests.scoring.judge.test_video_api --verbosity 1`
+- Residual no bloquejant per fases futures:
+  - La UI administrativa d'assignacions pot polir-se per fer mes comoda la gestio
+    massiva de QRs i assignacions.
+  - La PWA/manifest encara te scope base del token; funcionalment no bloqueja la
+    Fase 9, pero es pot especialitzar si es vol instal.lar cada assignacio com a
+    entrada independent.
+  - La migracio massiva de tokens legacy cap a assignacions explicites queda per
+    la migracio final posterior descrita a la tasca 9.
 
 ## Fase 10. Publicacio, Estat I Recalculs
 

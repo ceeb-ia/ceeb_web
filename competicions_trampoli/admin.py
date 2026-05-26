@@ -12,7 +12,7 @@ from .models.competicio import (
     ProgramUnitSlot,
     QualificationRun,
 )
-from .models.judging import JudgeConversation, JudgeConversationMessage
+from .models.judging import JudgeConversation, JudgeConversationMessage, JudgeDeviceToken, JudgePortalAssignment
 from .models.rotacions import RotacioAssignacioProgramUnit
 
 
@@ -112,6 +112,24 @@ class ClassificacioTemplateGlobalAdmin(admin.ModelAdmin):
     list_filter = ("tipus", "activa")
     search_fields = ("nom", "slug", "descripcio")
     readonly_fields = ("version", "uses_count", "last_used_at", "created_at", "updated_at")
+
+
+@admin.register(JudgeDeviceToken)
+class JudgeDeviceTokenAdmin(admin.ModelAdmin):
+    list_display = ("id", "label", "competicio", "comp_aparell", "is_active", "revoked_at", "last_used_at")
+    list_filter = ("is_active", "competicio", "comp_aparell")
+    search_fields = ("id", "label", "competicio__nom", "comp_aparell__nom_local", "comp_aparell__codi_local")
+    autocomplete_fields = ("competicio", "comp_aparell")
+    readonly_fields = ("created_at", "last_used_at")
+
+
+@admin.register(JudgePortalAssignment)
+class JudgePortalAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("judge_token", "competicio", "comp_aparell", "fase", "label", "ordre", "is_active")
+    list_filter = ("is_active", "competicio", "comp_aparell")
+    search_fields = ("judge_token__label", "judge_token__id", "label", "comp_aparell__nom_local")
+    autocomplete_fields = ("judge_token", "competicio", "comp_aparell", "fase")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(JudgeConversation)

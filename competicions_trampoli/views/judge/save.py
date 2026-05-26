@@ -5,8 +5,6 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_POST
 
-from ...models import Competicio
-from ...models.competicio import CompeticioAparell
 from ...models.judging import JudgeDeviceToken
 from ...scoring_engine import ScoringEngine, ScoringError
 from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
@@ -28,7 +26,13 @@ from ...services.scoring.team_scoring import (
     runtime_inputs_to_logical_team_inputs,
     runtime_schema_for_comp_aparell,
 )
-from ._shared import _clamp_exercici_for_aparell, _filter_inputs_for_allowed_codes
+from ._assignment_scope import (
+    assignment_id_from_request,
+    clamp_exercici_for_scope,
+    ensure_subject_scoreable_for_scope,
+    resolve_assignment_scope_for_request,
+)
+from ._shared import _filter_inputs_for_allowed_codes
 from .permissions import (
     _allowed_input_codes_from_permissions,
     _apply_sanitized_patch,
@@ -51,6 +55,10 @@ def judge_save_partial(request, token):
     except Exception:
         return JsonResponse({"ok": False, "error": "JSON invàlid"}, status=400)
 
+    scope, scope_error = resolve_assignment_scope_for_request(tok, assignment_id_from_request(request, payload))
+    if scope_error is not None:
+        return scope_error
+
     subject_payload = {
         "subject_kind": payload.get("subject_kind"),
         "subject_id": payload.get("subject_id"),
@@ -58,16 +66,16 @@ def judge_save_partial(request, token):
     }
     exercici_raw = payload.get("exercici")
     inputs_patch = payload.get("inputs_patch", {})
-    competicio: Competicio = tok.competicio
-    comp_aparell: CompeticioAparell = tok.comp_aparell
-    exercici = _clamp_exercici_for_aparell(comp_aparell, exercici_raw)
+    competicio = scope.competicio
+    comp_aparell = scope.comp_aparell
+    exercici = clamp_exercici_for_scope(scope, exercici_raw)
 
     if not subject_payload.get("subject_id") and not subject_payload.get("inscripcio_id"):
         return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
     if not isinstance(inputs_patch, dict):
         return JsonResponse({"ok": False, "error": "inputs_patch ha de ser objecte JSON"}, status=400)
 
-    permissions = _normalize_permissions(tok.permissions)
+    permissions = _normalize_permissions(scope.permissions)
 
     team_ids = None
     if is_team_context_app(comp_aparell):
@@ -84,6 +92,9 @@ def judge_save_partial(request, token):
     )
     if error_response is not None:
         return error_response
+    scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
+    if scope_subject_error is not None:
+        return scope_subject_error
 
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
     team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None
@@ -104,6 +115,7 @@ def judge_save_partial(request, token):
         comp_aparell=comp_aparell,
         exercici=exercici,
         subject=subject,
+        fase=scope.phase,
         defaults={"inputs": {}, "outputs": {}, "total": 0},
     )
 
@@ -161,6 +173,7 @@ def judge_save_partial(request, token):
         ),
         "outputs": entry.outputs or {},
         "total": float(entry.total),
+        "assignment_id": scope.assignment_id,
         "fase_id": entry.fase_id,
         "updated_at": entry.updated_at.isoformat(),
     })

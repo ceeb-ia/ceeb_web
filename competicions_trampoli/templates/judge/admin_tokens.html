@@ -60,7 +60,7 @@
       <div>
         <h2 class="mb-1">Jurat · QRs</h2>
         <div class="text-muted small">
-          Gestiona tokens i permisos de puntuació (sense admin).
+          Gestiona QRs de jutge i assignacions per fase, aparell i camps.
         </div>
       </div>
       <div class="d-flex flex-wrap gap-2">
@@ -77,6 +77,7 @@
       <div class="col-auto">
         <label class="form-label small text-muted mb-1">Aparell</label>
         <select class="form-select form-select-sm" name="comp_aparell" onchange="this.form.submit()">
+          <option value="" {% if not comp_aparell %}selected{% endif %}>Tots els aparells</option>
           {% for ca in comp_aparell_qs %}
             <option value="{{ ca.id }}" {% if comp_aparell and ca.id == comp_aparell.id %}selected{% endif %}>
               {{ ca.display_nom }}
@@ -85,20 +86,29 @@
         </select>
       </div>
 
-      {% if comp_aparell %}
       <div class="col-auto">
         <a class="btn btn-sm btn-outline-primary"
-           href="{% url 'judges_qr_print' competicio.id %}?comp_aparell={{ comp_aparell.id }}"
+           href="{% url 'judges_qr_print' competicio.id %}{% if comp_aparell %}?comp_aparell={{ comp_aparell.id }}{% endif %}"
            target="_blank">
           Imprimir QRs
         </a>
       </div>
-      {% endif %}
     </form>
 
-    {% if not comp_aparell %}
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} py-2 small">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    {% if not base_comp_aparell %}
       <div class="text-muted">No hi ha aparells actius configurats.</div>
     {% else %}
+      {% if not comp_aparell %}
+      <div class="alert alert-info py-2 small">
+        Vista global de QRs. Selecciona un aparell al filtre per crear assignacions i configurar camps.
+      </div>
+      {% endif %}
       {% if is_team_context_mode %}
       <div class="alert alert-info py-2 small">
         Aquest aparell treballa per equips. Els permisos poden ser `Compartit` o `Individual`.
@@ -108,7 +118,7 @@
         <!-- Crear token -->
         <div class="col-12 col-lg-6">
           <div class="card-surface">
-            <h5 class="mb-2">Crear token</h5>
+            <h5 class="mb-2">{% if comp_aparell %}Crear QR amb assignacio{% else %}Crear QR general{% endif %}</h5>
 
             {% if token_form.non_field_errors %}
               <div class="alert alert-danger py-2">
@@ -123,7 +133,7 @@
 
             <form method="post" id="judgeTokenCreateForm">
               {% csrf_token %}
-              <input type="hidden" name="action" value="create"/>
+              <input type="hidden" name="action" value="{% if comp_aparell %}create{% else %}create_device{% endif %}"/>
 
               <div class="mb-2">
                 <label class="form-label small text-muted mb-1">Etiqueta</label>
@@ -154,6 +164,7 @@
                 {% endif %}
               </div>
 
+              {% if comp_aparell %}
               <div class="mb-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                   <div class="text-muted small">Permisos (pots posar varis camps al mateix token):</div>
@@ -322,9 +333,14 @@
                   Màxim {{ max_permissions }} permisos per token.
                 </div>
               </div>
+              {% else %}
+              <div class="text-muted small mb-2">
+                El QR general es crea sense assignacions. Selecciona un aparell al filtre per afegir-li permisos de fase/aparell.
+              </div>
+              {% endif %}
 
               <div class="d-flex justify-content-end gap-2">
-                <button type="submit" class="btn btn-sm btn-primary">Crear token</button>
+                <button type="submit" class="btn btn-sm btn-primary">{% if comp_aparell %}Crear QR i assignacio{% else %}Crear QR general{% endif %}</button>
               </div>
             </form>
 
@@ -373,7 +389,7 @@
                   <thead>
                     <tr class="text-muted small">
                       <th>Etiqueta</th>
-                      <th>Permisos</th>
+                      <th>Assignacions</th>
                       <th>QR</th>
                       <th class="text-end">Accions</th>
                     </tr>
@@ -398,18 +414,77 @@
                           {% endif %}
                         </td>
 
-                        <td class="text-muted small" style="min-width:220px;">
-                          {% for p in t.permission_summaries %}
-                            <div>
-                              <span class="badge bg-light text-dark">{{ p.label }}</span>
-                              <span class="badge bg-light text-dark">J{{ p.judge_index }}</span>
-                              {% if p.item_count %}
-                                <span class="badge bg-light text-dark">{{ p.item_start }}..{{ p.item_start|add:p.item_count|add:"-1" }}</span>
+                        <td class="text-muted small" style="min-width:280px;">
+                          {% for row in t.assignment_summaries %}
+                            <div class="border rounded p-2 mb-1 bg-light">
+                              <div class="fw-semibold text-dark">{{ row.assignment.label|default:row.app_label }}</div>
+                              <div>{{ row.app_label }} · {{ row.phase_label }}</div>
+                              <div class="mt-1">
+                                {% for p in row.permission_summaries %}
+                                  <span class="badge bg-white text-dark border">{{ p.label }} · J{{ p.judge_index }}</span>
+                                {% empty %}
+                                  <span class="text-muted">Sense permisos</span>
+                                {% endfor %}
+                              </div>
+                              {% if not row.assignment.is_active %}
+                                <span class="badge bg-secondary mt-1">Assignacio inactiva</span>
                               {% endif %}
                             </div>
                           {% empty %}
-                            —
+                            <div class="text-muted">Sense assignacions explicites</div>
+                            {% if t.permission_summaries %}
+                              <div class="mt-1">Legacy:</div>
+                              {% for p in t.permission_summaries %}
+                                <span class="badge bg-light text-dark">{{ p.label }} · J{{ p.judge_index }}</span>
+                              {% endfor %}
+                            {% endif %}
                           {% endfor %}
+                          {% if comp_aparell and t.is_active and not t.revoked_at %}
+                            <details class="mt-2">
+                              <summary class="btn btn-sm btn-outline-primary">Afegir assignacio a {{ comp_aparell.display_nom }}</summary>
+                              <form method="post" class="mt-2 border rounded p-2 bg-white">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="add_assignment"/>
+                                <input type="hidden" name="token_id" value="{{ t.id }}"/>
+                                <div class="row g-2 mb-2">
+                                  <div class="col-12 col-md-5">
+                                    <label class="form-label small text-muted mb-1">Etiqueta</label>
+                                    <input class="form-control form-control-sm" name="assignment_label" placeholder="{{ comp_aparell.display_nom }}">
+                                  </div>
+                                  <div class="col-8 col-md-5">
+                                    <label class="form-label small text-muted mb-1">Fase</label>
+                                    <select class="form-select form-select-sm" name="fase_id">
+                                      <option value="">Preliminar / sense fase</option>
+                                      {% for phase in phase_choices %}
+                                        <option value="{{ phase.id }}">{{ phase.nom }}</option>
+                                      {% endfor %}
+                                    </select>
+                                  </div>
+                                  <div class="col-4 col-md-2">
+                                    <label class="form-label small text-muted mb-1">Ordre</label>
+                                    <input class="form-control form-control-sm" name="ordre" type="number" min="1" value="1">
+                                  </div>
+                                </div>
+                                {{ formset.management_form }}
+                                <div class="table-responsive">
+                                  <table class="table table-sm mb-2">
+                                    <tbody>
+                                      {% for f in formset.forms %}
+                                      <tr>
+                                        <td>{{ f.field_code }}{% if not is_team_context_mode %}{{ f.scope.as_hidden }}{{ f.member_mode.as_hidden }}{{ f.member_slots }}{% endif %}</td>
+                                        {% if is_team_context_mode %}<td>{{ f.scope }}</td><td>{{ f.member_mode }}{{ f.member_slots }}</td>{% endif %}
+                                        <td>{{ f.judge_index }}</td>
+                                        <td>{{ f.item_start }}</td>
+                                        <td>{{ f.item_count }}</td>
+                                      </tr>
+                                      {% endfor %}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <button class="btn btn-sm btn-primary" type="submit">Afegir assignacio</button>
+                              </form>
+                            </details>
+                          {% endif %}
                         </td>
 
                         <td>
@@ -441,7 +516,7 @@
                 </table>
               </div>
             {% else %}
-              <div class="text-muted">Encara no hi ha tokens per aquest aparell.</div>
+              <div class="text-muted">Encara no hi ha QRs{% if comp_aparell %} per aquest aparell{% endif %}.</div>
             {% endif %}
           </div>
         </div>

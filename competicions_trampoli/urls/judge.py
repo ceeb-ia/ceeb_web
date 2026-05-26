@@ -82,6 +82,7 @@ urlpatterns = [
     path("judge/<uuid:token>/manifest.json", views_judge.judge_manifest, name="judge_manifest"),
     path("judge/<uuid:token>/sw.js", views_judge.judge_service_worker, name="judge_service_worker"),
     path("judge/pwa/<str:filename>", views_judge.judge_pwa_icon, name="judge_pwa_icon"),
+    path("judge/<uuid:token>/assignment/<int:assignment_id>/", views_judge.judge_portal, name="judge_portal_assignment"),
     path("judge/<uuid:token>/", views_judge.judge_portal, name="judge_portal"),
     path("judge/<uuid:token>/qr.png", views_judge.judge_qr_png, name="judge_qr_png"),
     path("judge/<uuid:token>/api/save/", views_judge.judge_save_partial, name="judge_save_partial"),

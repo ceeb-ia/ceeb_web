@@ -1,6 +1,7 @@
 import json
 
 from django.contrib import messages
+from django.db import models
 from django.forms import formset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -9,8 +10,8 @@ from django.views.decorators.http import require_http_methods
 
 from ...forms_judge import JudgeTokenCreateForm, PermissionRowForm
 from ...models import Competicio
-from ...models.competicio import CompeticioAparell
-from ...models.judging import JudgeDeviceToken, PublicLiveToken
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase
+from ...models.judging import JudgeDeviceToken, JudgePortalAssignment, PublicLiveToken
 from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.team_scoring import (
     build_permission_label,
@@ -115,6 +116,48 @@ def _permission_summary_rows(perms):
     return rows
 
 
+def _redirect_qr_home(competicio, comp_aparell=None):
+    url = reverse("judges_qr_home", kwargs={"competicio_id": competicio.id})
+    if comp_aparell is not None:
+        return f"{url}?comp_aparell={comp_aparell.id}"
+    return url
+
+
+def _build_permissions_from_formset(formset, schema_by_code, comp_aparell, *, team_context_mode=False):
+    perms = []
+    for f in formset.cleaned_data:
+        if not f or f.get("DELETE"):
+            continue
+        if not f.get("field_code"):
+            continue
+        perm = _validate_permission_row(
+            schema_by_code,
+            f,
+            team_context_mode=team_context_mode,
+        )
+        perm["runtime_field_code"] = permission_runtime_code(perm, comp_aparell)
+        perms.append(perm)
+    if len(perms) > MAX_TOKEN_PERMISSIONS:
+        raise ValueError(f"Maxim {MAX_TOKEN_PERMISSIONS} permisos per assignacio.")
+    if not perms:
+        raise ValueError("Has d'afegir almenys un permis (camp + jutge).")
+    return perms
+
+
+def _assignment_summary_rows(assignments):
+    rows = []
+    for assignment in assignments:
+        phase = getattr(assignment, "fase", None)
+        comp_aparell = getattr(assignment, "comp_aparell", None)
+        rows.append({
+            "assignment": assignment,
+            "app_label": getattr(comp_aparell, "display_nom", None) or str(comp_aparell or ""),
+            "phase_label": getattr(phase, "nom", None) or "Preliminar",
+            "permission_summaries": _permission_summary_rows(assignment.permissions),
+        })
+    return rows
+
+
 def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mode: bool = False):
     """
     Normalitza i limita judge_index / items segons schema real.
@@ -198,17 +241,15 @@ def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mo
 def judges_qr_home(request, competicio_id):
     competicio = get_object_or_404(Competicio, pk=competicio_id)
 
-    # aparell seleccionat
     comp_aparell_qs = CompeticioAparell.objects.filter(competicio=competicio, actiu=True).select_related("aparell")
     comp_aparell_id = request.GET.get("comp_aparell")
     comp_aparell = None
     if comp_aparell_id:
         comp_aparell = get_object_or_404(comp_aparell_qs, pk=comp_aparell_id)
-    else:
-        comp_aparell = comp_aparell_qs.first()
+    base_comp_aparell = comp_aparell or comp_aparell_qs.first()
 
-    if comp_aparell:
-        max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+    if base_comp_aparell:
+        max_ex = max(1, int(getattr(base_comp_aparell, "nombre_exercicis", 1) or 1))
         exercicis = list(range(1, max_ex + 1))
         try:
             exercici = int(request.GET.get("ex") or 1)
@@ -235,6 +276,13 @@ def judges_qr_home(request, competicio_id):
     field_choices = _schema_field_choices(schema)
     schema_by_code = _schema_field_by_code(schema)
     member_slot_choices = _member_slot_choices(competicio, comp_aparell)
+    phase_choices = []
+    if comp_aparell:
+        phase_choices = list(
+            CompeticioAparellFase.objects
+            .filter(competicio=competicio, comp_aparell=comp_aparell)
+            .order_by("ordre", "id")
+        )
 
     PermissionFS = formset_factory(
         PermissionRowForm,
@@ -252,10 +300,31 @@ def judges_qr_home(request, competicio_id):
             tok.revoked_at = timezone.now()
             tok.is_active = False
             tok.save(update_fields=["revoked_at", "is_active"])
-            return redirect(
-                f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                f"?comp_aparell={comp_aparell.id}"
-            )
+            return redirect(_redirect_qr_home(competicio, comp_aparell))
+
+        if action == "deactivate_assignment":
+            assignment_id = request.POST.get("assignment_id")
+            assignment = get_object_or_404(JudgePortalAssignment, pk=assignment_id, competicio=competicio)
+            assignment.is_active = False
+            assignment.save(update_fields=["is_active", "updated_at"])
+            messages.success(request, "Assignacio desactivada.")
+            return redirect(_redirect_qr_home(competicio, comp_aparell))
+
+        if action == "create_device":
+            token_form = JudgeTokenCreateForm(request.POST)
+            if not base_comp_aparell:
+                token_form.add_error(None, "Cal tenir almenys un aparell actiu per crear un QR.")
+            if token_form.is_valid() and not token_form.errors:
+                JudgeDeviceToken.objects.create(
+                    competicio=competicio,
+                    comp_aparell=base_comp_aparell,
+                    label=token_form.cleaned_data.get("label") or "",
+                    permissions=[],
+                    can_record_video=bool(token_form.cleaned_data.get("can_record_video")),
+                    is_active=True,
+                )
+                messages.success(request, "QR general creat.")
+                return redirect(_redirect_qr_home(competicio, comp_aparell))
 
         if action == "save_item_labels":
             if not comp_aparell:
@@ -307,10 +376,55 @@ def judges_qr_home(request, competicio_id):
 
             _save_comp_aparell_item_labels(comp_aparell, field_code, clean_labels)
             messages.success(request, "Noms d'items desats.")
-            return redirect(
-                f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                f"?comp_aparell={comp_aparell.id}"
-            )
+            return redirect(_redirect_qr_home(competicio, comp_aparell))
+
+        if action == "add_assignment":
+            if not comp_aparell:
+                messages.error(request, "Selecciona un aparell per afegir una assignacio.")
+                return redirect(_redirect_qr_home(competicio))
+            token_id = request.POST.get("token_id")
+            tok = get_object_or_404(JudgeDeviceToken, pk=token_id, competicio=competicio)
+            formset = PermissionFS(request.POST, form_kwargs={"field_choices": field_choices})
+            if formset.is_valid():
+                try:
+                    perms = _build_permissions_from_formset(
+                        formset,
+                        schema_by_code,
+                        comp_aparell,
+                        team_context_mode=team_context_mode,
+                    )
+                    raw_phase_id = request.POST.get("fase_id")
+                    phase = None
+                    if raw_phase_id not in (None, "", "0"):
+                        phase = get_object_or_404(
+                            CompeticioAparellFase,
+                            pk=raw_phase_id,
+                            competicio=competicio,
+                            comp_aparell=comp_aparell,
+                        )
+                    try:
+                        ordre = int(request.POST.get("ordre") or 1)
+                    except Exception:
+                        ordre = 1
+                    ordre = max(1, ordre)
+                    while JudgePortalAssignment.objects.filter(judge_token=tok, ordre=ordre).exists():
+                        ordre += 1
+                    JudgePortalAssignment.objects.create(
+                        judge_token=tok,
+                        competicio=competicio,
+                        comp_aparell=comp_aparell,
+                        fase=phase,
+                        label=str(request.POST.get("assignment_label") or "").strip(),
+                        ordre=ordre,
+                        permissions=perms,
+                        is_active=True,
+                    )
+                    messages.success(request, "Assignacio afegida al QR.")
+                    return redirect(_redirect_qr_home(competicio, comp_aparell))
+                except ValueError as e:
+                    messages.error(request, str(e))
+            else:
+                messages.error(request, "Revisa els errors marcats a la taula de permisos.")
 
         # create token
         token_form = JudgeTokenCreateForm(request.POST)
@@ -348,7 +462,7 @@ def judges_qr_home(request, competicio_id):
             if not token_form.errors:
                 label = token_form.cleaned_data.get("label") or ""
                 can_record_video = bool(token_form.cleaned_data.get("can_record_video"))
-                JudgeDeviceToken.objects.create(
+                token_obj = JudgeDeviceToken.objects.create(
                     competicio=competicio,
                     comp_aparell=comp_aparell,
                     label=label,
@@ -356,6 +470,17 @@ def judges_qr_home(request, competicio_id):
                     can_record_video=can_record_video,
                     is_active=True,
                 )
+                if not token_obj.portal_assignments.exists():
+                    JudgePortalAssignment.objects.create(
+                        judge_token=token_obj,
+                        competicio=competicio,
+                        comp_aparell=comp_aparell,
+                        fase=None,
+                        label=label or getattr(comp_aparell, "display_nom", ""),
+                        ordre=1,
+                        permissions=perms,
+                        is_active=True,
+                    )
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
                     f"?comp_aparell={comp_aparell.id}"
@@ -366,18 +491,37 @@ def judges_qr_home(request, competicio_id):
         token_form = JudgeTokenCreateForm()
         formset = PermissionFS(form_kwargs={"field_choices": field_choices})
 
-    tokens = []
+    tokens_qs = (
+        JudgeDeviceToken.objects
+        .filter(competicio=competicio)
+        .prefetch_related("portal_assignments__comp_aparell", "portal_assignments__fase")
+        .order_by("-created_at")
+    )
     if comp_aparell:
-        tokens = (JudgeDeviceToken.objects
-                  .filter(competicio=competicio, comp_aparell=comp_aparell)
-                  .order_by("-created_at"))
-        for token in tokens:
-            token.permission_summaries = _permission_summary_rows(token.permissions)
+        assignment_token_ids = (
+            JudgePortalAssignment.objects
+            .filter(competicio=competicio, comp_aparell=comp_aparell)
+            .values_list("judge_token_id", flat=True)
+        )
+        tokens_qs = (
+            tokens_qs
+            .filter(models.Q(comp_aparell=comp_aparell) | models.Q(id__in=assignment_token_ids))
+            .distinct()
+        )
+    tokens = list(tokens_qs)
+    for token in tokens:
+        assignments = list(token.portal_assignments.all())
+        if comp_aparell:
+            assignments = [item for item in assignments if item.comp_aparell_id == comp_aparell.id]
+        token.permission_summaries = _permission_summary_rows(token.permissions)
+        token.assignment_summaries = _assignment_summary_rows(assignments)
 
     ctx = {
         "competicio": competicio,
         "comp_aparell": comp_aparell,
+        "base_comp_aparell": base_comp_aparell,
         "comp_aparell_qs": comp_aparell_qs,
+        "phase_choices": phase_choices,
         "schema": schema,
         "runtime_schema": runtime_schema,
         "tokens": tokens,
@@ -397,22 +541,34 @@ def judges_qr_home(request, competicio_id):
 def judges_qr_print(request, competicio_id):
     competicio = get_object_or_404(Competicio, pk=competicio_id)
     comp_aparell_id = request.GET.get("comp_aparell")
-    comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    comp_aparell = None
+    if comp_aparell_id not in (None, ""):
+        comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
     raw_franja = request.GET.get("franja")
     try:
         franja_id = int(raw_franja) if raw_franja not in (None, "") else None
     except Exception:
         franja_id = None
-    max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+    max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)) if comp_aparell else 1
     try:
         exercici = int(request.GET.get("ex") or 1)
     except Exception:
         exercici = 1
     exercici = max(1, min(max_ex, exercici))
 
-    tokens = (JudgeDeviceToken.objects
-              .filter(competicio=competicio, comp_aparell=comp_aparell, is_active=True, revoked_at__isnull=True)
-              .order_by("label", "created_at"))
+    tokens = JudgeDeviceToken.objects.filter(
+        competicio=competicio,
+        is_active=True,
+        revoked_at__isnull=True,
+    )
+    if comp_aparell:
+        assignment_token_ids = (
+            JudgePortalAssignment.objects
+            .filter(competicio=competicio, comp_aparell=comp_aparell, is_active=True)
+            .values_list("judge_token_id", flat=True)
+        )
+        tokens = tokens.filter(models.Q(comp_aparell=comp_aparell) | models.Q(id__in=assignment_token_ids)).distinct()
+    tokens = tokens.order_by("label", "created_at")
     for token in tokens:
         token.permission_summaries = _permission_summary_rows(token.permissions)
 

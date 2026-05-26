@@ -104,6 +104,8 @@
     url.searchParams.set("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
     url.searchParams.set("subject_id", String(subject.subject_id || insId));
     url.searchParams.set("exercici", String(exercici));
+    if(JUDGE_ASSIGNMENT_ID) url.searchParams.set("assignment_id", String(JUDGE_ASSIGNMENT_ID));
+    if(JUDGE_FASE_ID) url.searchParams.set("fase_id", String(JUDGE_FASE_ID));
     const els = getVideoEls(insId, exercici);
     if(!els.recBtn) return;
 
@@ -294,6 +296,8 @@
     fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
     fd.append("subject_id", String(subject.subject_id || insId));
     fd.append("exercici", String(exercici));
+    if(JUDGE_ASSIGNMENT_ID) fd.append("assignment_id", String(JUDGE_ASSIGNMENT_ID));
+    if(JUDGE_FASE_ID) fd.append("fase_id", String(JUDGE_FASE_ID));
     if(st.pendingDuration) fd.append("duration_seconds", String(st.pendingDuration));
     if(st.pendingMimeType) fd.append("mime_type", st.pendingMimeType);
     fd.append("original_filename", filename);
@@ -355,6 +359,8 @@
     fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
     fd.append("subject_id", String(subject.subject_id || insId));
     fd.append("exercici", String(exercici));
+    if(JUDGE_ASSIGNMENT_ID) fd.append("assignment_id", String(JUDGE_ASSIGNMENT_ID));
+    if(JUDGE_FASE_ID) fd.append("fase_id", String(JUDGE_FASE_ID));
 
     try{
       const res = await fetch(VIDEO_DELETE_URL, {

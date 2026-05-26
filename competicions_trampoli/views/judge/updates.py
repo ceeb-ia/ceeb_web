@@ -18,7 +18,13 @@ from ...services.scoring.team_subject_contract import (
     filter_team_subject_ids_for_serie,
 )
 from ...services.scoring.update_payloads import build_score_update_payload
-from ._shared import _clamp_exercici_for_aparell, _filter_inputs_for_allowed_codes
+from ._assignment_scope import (
+    assignment_id_from_request,
+    clamp_exercici_for_scope,
+    entry_phase_filter,
+    resolve_assignment_scope_for_request,
+)
+from ._shared import _filter_inputs_for_allowed_codes
 from .permissions import (
     _allowed_input_codes_from_permissions,
     _normalize_permissions,
@@ -47,8 +53,12 @@ def judge_updates(request, token):
             }
         )
 
-    competicio = tok.competicio
-    comp_aparell = tok.comp_aparell
+    scope, scope_error = resolve_assignment_scope_for_request(tok, assignment_id_from_request(request))
+    if scope_error is not None:
+        return scope_error
+
+    competicio = scope.competicio
+    comp_aparell = scope.comp_aparell
     raw_exercicis = request.GET.getlist("exercici")
     serie_id = request.GET.get("serie_id")
     if not raw_exercicis:
@@ -56,12 +66,12 @@ def judge_updates(request, token):
         raw_exercicis = [single_exercici] if single_exercici not in (None, "") else []
     if raw_exercicis:
         exercicis = unique_ordered(
-            _clamp_exercici_for_aparell(comp_aparell, raw_exercici)
+            clamp_exercici_for_scope(scope, raw_exercici)
             for raw_exercici in raw_exercicis
         )
     else:
-        exercicis = [_clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))]
-    permissions = _normalize_permissions(tok.permissions)
+        exercicis = [clamp_exercici_for_scope(scope, request.GET.get("exercici") or request.GET.get("ex"))]
+    permissions = _normalize_permissions(scope.permissions)
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
 
     if is_team_context_app(comp_aparell):
@@ -75,7 +85,7 @@ def judge_updates(request, token):
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
                 team_subject_id__in=allowed_team_ids,
-                fase__isnull=True,
+                **entry_phase_filter(scope),
             )
             .select_related("team_subject")
             .order_by("updated_at", "id")
@@ -93,7 +103,7 @@ def judge_updates(request, token):
                 competicio=competicio,
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
-                fase__isnull=True,
+                **entry_phase_filter(scope),
             )
             .exclude(inscripcio_id__in=excluded_ins_ids)
             .order_by("updated_at", "id")
