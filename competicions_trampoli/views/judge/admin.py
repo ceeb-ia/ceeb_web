@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from ...access import user_has_competicio_capability
 from ...forms_judge import JudgeTokenCreateForm, PermissionRowForm
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell, CompeticioAparellFase
@@ -117,9 +118,21 @@ def _permission_summary_rows(perms):
 
 
 def _redirect_qr_home(competicio, comp_aparell=None):
-    url = reverse("judges_qr_home", kwargs={"competicio_id": competicio.id})
+    url = reverse("qr_admin_home", kwargs={"competicio_id": competicio.id})
     if comp_aparell is not None:
         return f"{url}?comp_aparell={comp_aparell.id}"
+    return url
+
+
+def _qr_admin_url(competicio, *, selected_judge=None, selected_public=None):
+    url = reverse("qr_admin_home", kwargs={"competicio_id": competicio.id})
+    if selected_judge is not None:
+        return reverse(
+            "qr_admin_detail",
+            kwargs={"competicio_id": competicio.id, "token_id": selected_judge.id},
+        )
+    if selected_public is not None:
+        return f"{url}?public_token={selected_public.id}"
     return url
 
 
@@ -156,6 +169,58 @@ def _assignment_summary_rows(assignments):
             "permission_summaries": _permission_summary_rows(assignment.permissions),
         })
     return rows
+
+
+def _schema_context_for_app(competicio, comp_aparell):
+    if not comp_aparell:
+        return {
+            "schema": {},
+            "runtime_schema": {},
+            "field_catalog": [],
+            "field_choices": _schema_field_choices({}),
+            "schema_by_code": {},
+            "team_context_mode": False,
+            "member_slot_choices": [],
+            "phase_choices": [],
+        }
+    _schema_obj, schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
+    team_context_mode = bool(is_team_context_app(comp_aparell))
+    return {
+        "schema": schema,
+        "runtime_schema": runtime_schema_for_comp_aparell(schema, comp_aparell),
+        "field_catalog": _schema_field_catalog(
+            schema,
+            comp_aparell=comp_aparell,
+            team_context_mode=team_context_mode,
+        ),
+        "field_choices": _schema_field_choices(schema),
+        "schema_by_code": _schema_field_by_code(schema),
+        "team_context_mode": team_context_mode,
+        "member_slot_choices": _member_slot_choices(competicio, comp_aparell),
+        "phase_choices": list(
+            CompeticioAparellFase.objects
+            .filter(competicio=competicio, comp_aparell=comp_aparell)
+            .order_by("ordre", "id")
+        ),
+    }
+
+
+def _app_catalog_for_template(competicio, comp_aparells):
+    catalog = {}
+    for comp_aparell in comp_aparells:
+        app_context = _schema_context_for_app(competicio, comp_aparell)
+        catalog[str(comp_aparell.id)] = {
+            "id": comp_aparell.id,
+            "label": getattr(comp_aparell, "display_nom", "") or str(comp_aparell),
+            "fields": app_context["field_catalog"],
+            "phases": [
+                {"id": phase.id, "label": phase.nom}
+                for phase in app_context["phase_choices"]
+            ],
+            "team_context": app_context["team_context_mode"],
+            "member_slots": app_context["member_slot_choices"],
+        }
+    return catalog
 
 
 def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mode: bool = False):
@@ -238,15 +303,16 @@ def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mo
 
 
 @require_http_methods(["GET", "POST"])
-def judges_qr_home(request, competicio_id):
+def qr_admin_home(request, competicio_id, token_id=None):
     competicio = get_object_or_404(Competicio, pk=competicio_id)
 
     comp_aparell_qs = CompeticioAparell.objects.filter(competicio=competicio, actiu=True).select_related("aparell")
+    comp_aparells = list(comp_aparell_qs)
     comp_aparell_id = request.GET.get("comp_aparell")
     comp_aparell = None
     if comp_aparell_id:
         comp_aparell = get_object_or_404(comp_aparell_qs, pk=comp_aparell_id)
-    base_comp_aparell = comp_aparell or comp_aparell_qs.first()
+    base_comp_aparell = comp_aparell or (comp_aparells[0] if comp_aparells else None)
 
     if base_comp_aparell:
         max_ex = max(1, int(getattr(base_comp_aparell, "nombre_exercicis", 1) or 1))
@@ -260,29 +326,16 @@ def judges_qr_home(request, competicio_id):
         exercicis = [1]
         exercici = 1
 
-    schema = {}
-    runtime_schema = {}
-    field_catalog = []
-    team_context_mode = bool(comp_aparell and is_team_context_app(comp_aparell))
-    if comp_aparell:
-        _schema_obj, schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
-        runtime_schema = runtime_schema_for_comp_aparell(schema, comp_aparell)
-        field_catalog = _schema_field_catalog(
-            schema,
-            comp_aparell=comp_aparell,
-            team_context_mode=team_context_mode,
-        )
-
-    field_choices = _schema_field_choices(schema)
-    schema_by_code = _schema_field_by_code(schema)
-    member_slot_choices = _member_slot_choices(competicio, comp_aparell)
-    phase_choices = []
-    if comp_aparell:
-        phase_choices = list(
-            CompeticioAparellFase.objects
-            .filter(competicio=competicio, comp_aparell=comp_aparell)
-            .order_by("ordre", "id")
-        )
+    assignment_comp_aparell = base_comp_aparell
+    app_context = _schema_context_for_app(competicio, assignment_comp_aparell)
+    schema = app_context["schema"]
+    runtime_schema = app_context["runtime_schema"]
+    field_catalog = app_context["field_catalog"]
+    field_choices = app_context["field_choices"]
+    schema_by_code = app_context["schema_by_code"]
+    team_context_mode = app_context["team_context_mode"]
+    member_slot_choices = app_context["member_slot_choices"]
+    phase_choices = app_context["phase_choices"]
 
     PermissionFS = formset_factory(
         PermissionRowForm,
@@ -294,13 +347,46 @@ def judges_qr_home(request, competicio_id):
 
     if request.method == "POST":
         action = str(request.POST.get("action") or "").strip().lower()
-        if action == "revoke":
+        if action in {"create_public_live", "create_public_qr", "create_public"}:
+            if not user_has_competicio_capability(request.user, competicio, "public_live.manage"):
+                messages.error(request, "No tens permisos per gestionar QRs publics.")
+                return redirect(_redirect_qr_home(competicio, comp_aparell))
+            label = (request.POST.get("label") or "").strip()
+            can_view_media = str(request.POST.get("can_view_media") or "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            tok = PublicLiveToken.objects.create(
+                competicio=competicio,
+                label=label,
+                can_view_media=can_view_media,
+                is_active=True,
+            )
+            messages.success(request, "QR public creat.")
+            return redirect(_qr_admin_url(competicio, selected_public=tok))
+
+        if action in {"revoke_public_live", "revoke_public_qr", "revoke_public"}:
+            if not user_has_competicio_capability(request.user, competicio, "public_live.manage"):
+                messages.error(request, "No tens permisos per gestionar QRs publics.")
+                return redirect(_redirect_qr_home(competicio, comp_aparell))
+            token_id = request.POST.get("token_id")
+            tok = get_object_or_404(PublicLiveToken, pk=token_id, competicio=competicio)
+            tok.revoked_at = timezone.now()
+            tok.is_active = False
+            tok.save(update_fields=["revoked_at", "is_active"])
+            messages.success(request, "QR public revocat.")
+            return redirect(_qr_admin_url(competicio, selected_public=tok))
+
+        if action in {"revoke", "revoke_judge_qr", "revoke_judge"}:
             token_id = request.POST.get("token_id")
             tok = get_object_or_404(JudgeDeviceToken, pk=token_id, competicio=competicio)
             tok.revoked_at = timezone.now()
             tok.is_active = False
             tok.save(update_fields=["revoked_at", "is_active"])
-            return redirect(_redirect_qr_home(competicio, comp_aparell))
+            messages.success(request, "QR de jutge revocat.")
+            return redirect(_qr_admin_url(competicio, selected_judge=tok))
 
         if action == "deactivate_assignment":
             assignment_id = request.POST.get("assignment_id")
@@ -308,14 +394,14 @@ def judges_qr_home(request, competicio_id):
             assignment.is_active = False
             assignment.save(update_fields=["is_active", "updated_at"])
             messages.success(request, "Assignacio desactivada.")
-            return redirect(_redirect_qr_home(competicio, comp_aparell))
+            return redirect(_qr_admin_url(competicio, selected_judge=assignment.judge_token))
 
-        if action == "create_device":
+        if action in {"create_device", "create_judge_qr", "create_judge"}:
             token_form = JudgeTokenCreateForm(request.POST)
             if not base_comp_aparell:
                 token_form.add_error(None, "Cal tenir almenys un aparell actiu per crear un QR.")
             if token_form.is_valid() and not token_form.errors:
-                JudgeDeviceToken.objects.create(
+                token_obj = JudgeDeviceToken.objects.create(
                     competicio=competicio,
                     comp_aparell=base_comp_aparell,
                     label=token_form.cleaned_data.get("label") or "",
@@ -324,13 +410,19 @@ def judges_qr_home(request, competicio_id):
                     is_active=True,
                 )
                 messages.success(request, "QR general creat.")
-                return redirect(_redirect_qr_home(competicio, comp_aparell))
+                return redirect(_qr_admin_url(competicio, selected_judge=token_obj))
 
         if action == "save_item_labels":
-            if not comp_aparell:
+            raw_item_app_id = request.POST.get("item_labels_comp_aparell_id") or request.POST.get("comp_aparell_id")
+            item_comp_aparell = comp_aparell
+            if raw_item_app_id not in (None, ""):
+                item_comp_aparell = get_object_or_404(comp_aparell_qs, pk=raw_item_app_id)
+            if not item_comp_aparell:
                 messages.error(request, "No hi ha cap aparell seleccionat.")
                 return redirect(reverse("judges_qr_home", kwargs={"competicio_id": competicio.id}))
 
+            item_context = _schema_context_for_app(competicio, item_comp_aparell)
+            schema_by_code = item_context["schema_by_code"]
             field_code = str(request.POST.get("field_code") or "").strip()
             raw_labels_json = request.POST.get("item_labels_json") or "[]"
             field = schema_by_code.get(field_code)
@@ -338,13 +430,13 @@ def judges_qr_home(request, competicio_id):
                 messages.error(request, "El camp seleccionat no existeix al schema.")
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}"
+                    f"?comp_aparell={item_comp_aparell.id}"
                 )
             if str(field.get("type") or "number").strip().lower() != "matrix":
                 messages.error(request, "Nomes es poden configurar noms d'items per camps matrix.")
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}"
+                    f"?comp_aparell={item_comp_aparell.id}"
                 )
             try:
                 raw_labels = json.loads(raw_labels_json)
@@ -352,13 +444,13 @@ def judges_qr_home(request, competicio_id):
                 messages.error(request, "El format dels noms d'items no es valid.")
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}"
+                    f"?comp_aparell={item_comp_aparell.id}"
                 )
             if not isinstance(raw_labels, list):
                 messages.error(request, "Els noms d'items han de ser una llista.")
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}"
+                    f"?comp_aparell={item_comp_aparell.id}"
                 )
 
             max_items = _field_items_count(field)
@@ -366,7 +458,7 @@ def judges_qr_home(request, competicio_id):
                 messages.error(request, f"No es poden desar mes de {max_items} noms d'items.")
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}"
+                    f"?comp_aparell={item_comp_aparell.id}"
                 )
 
             clean_labels = []
@@ -374,14 +466,31 @@ def judges_qr_home(request, competicio_id):
                 raw_label = raw_labels[idx] if idx < len(raw_labels) else ""
                 clean_labels.append("" if raw_label in (None, "") else str(raw_label).strip())
 
-            _save_comp_aparell_item_labels(comp_aparell, field_code, clean_labels)
+            _save_comp_aparell_item_labels(item_comp_aparell, field_code, clean_labels)
             messages.success(request, "Noms d'items desats.")
-            return redirect(_redirect_qr_home(competicio, comp_aparell))
+            return redirect(_redirect_qr_home(competicio, item_comp_aparell))
 
         if action == "add_assignment":
-            if not comp_aparell:
+            raw_assignment_app_id = (
+                request.POST.get("assignment_comp_aparell_id")
+                or request.POST.get("comp_aparell_id")
+                or request.GET.get("comp_aparell")
+            )
+            assignment_comp_aparell = None
+            if raw_assignment_app_id not in (None, ""):
+                assignment_comp_aparell = get_object_or_404(comp_aparell_qs, pk=raw_assignment_app_id)
+            if not assignment_comp_aparell:
                 messages.error(request, "Selecciona un aparell per afegir una assignacio.")
                 return redirect(_redirect_qr_home(competicio))
+            app_context = _schema_context_for_app(competicio, assignment_comp_aparell)
+            schema = app_context["schema"]
+            runtime_schema = app_context["runtime_schema"]
+            field_catalog = app_context["field_catalog"]
+            field_choices = app_context["field_choices"]
+            schema_by_code = app_context["schema_by_code"]
+            team_context_mode = app_context["team_context_mode"]
+            member_slot_choices = app_context["member_slot_choices"]
+            phase_choices = app_context["phase_choices"]
             token_id = request.POST.get("token_id")
             tok = get_object_or_404(JudgeDeviceToken, pk=token_id, competicio=competicio)
             formset = PermissionFS(request.POST, form_kwargs={"field_choices": field_choices})
@@ -390,7 +499,7 @@ def judges_qr_home(request, competicio_id):
                     perms = _build_permissions_from_formset(
                         formset,
                         schema_by_code,
-                        comp_aparell,
+                        assignment_comp_aparell,
                         team_context_mode=team_context_mode,
                     )
                     raw_phase_id = request.POST.get("fase_id")
@@ -400,7 +509,7 @@ def judges_qr_home(request, competicio_id):
                             CompeticioAparellFase,
                             pk=raw_phase_id,
                             competicio=competicio,
-                            comp_aparell=comp_aparell,
+                            comp_aparell=assignment_comp_aparell,
                         )
                     try:
                         ordre = int(request.POST.get("ordre") or 1)
@@ -412,7 +521,7 @@ def judges_qr_home(request, competicio_id):
                     JudgePortalAssignment.objects.create(
                         judge_token=tok,
                         competicio=competicio,
-                        comp_aparell=comp_aparell,
+                        comp_aparell=assignment_comp_aparell,
                         fase=phase,
                         label=str(request.POST.get("assignment_label") or "").strip(),
                         ordre=ordre,
@@ -420,7 +529,7 @@ def judges_qr_home(request, competicio_id):
                         is_active=True,
                     )
                     messages.success(request, "Assignacio afegida al QR.")
-                    return redirect(_redirect_qr_home(competicio, comp_aparell))
+                    return redirect(_qr_admin_url(competicio, selected_judge=tok))
                 except ValueError as e:
                     messages.error(request, str(e))
             else:
@@ -481,10 +590,7 @@ def judges_qr_home(request, competicio_id):
                         permissions=perms,
                         is_active=True,
                     )
-                return redirect(
-                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}"
-                )
+                return redirect(_qr_admin_url(competicio, selected_judge=token_obj))
         elif token_form_valid and not formset_valid:
             token_form.add_error(None, "Revisa els errors marcats a la taula de permisos.")
     else:
@@ -497,44 +603,82 @@ def judges_qr_home(request, competicio_id):
         .prefetch_related("portal_assignments__comp_aparell", "portal_assignments__fase")
         .order_by("-created_at")
     )
-    if comp_aparell:
-        assignment_token_ids = (
-            JudgePortalAssignment.objects
-            .filter(competicio=competicio, comp_aparell=comp_aparell)
-            .values_list("judge_token_id", flat=True)
-        )
-        tokens_qs = (
-            tokens_qs
-            .filter(models.Q(comp_aparell=comp_aparell) | models.Q(id__in=assignment_token_ids))
-            .distinct()
-        )
     tokens = list(tokens_qs)
     for token in tokens:
         assignments = list(token.portal_assignments.all())
-        if comp_aparell:
-            assignments = [item for item in assignments if item.comp_aparell_id == comp_aparell.id]
         token.permission_summaries = _permission_summary_rows(token.permissions)
         token.assignment_summaries = _assignment_summary_rows(assignments)
+
+    public_tokens = list(
+        PublicLiveToken.objects
+        .filter(competicio=competicio)
+        .order_by("-created_at")
+    )
+    assignable_judge_tokens = [
+        token
+        for token in tokens
+        if token.is_active and not token.revoked_at
+    ]
+    selected_judge_token = None
+    selected_public_token = None
+    raw_selected_kind = str(request.GET.get("selected_kind") or "").strip().lower()
+    raw_selected_id = request.GET.get("selected_id")
+    raw_selected_judge = token_id or request.GET.get("selected_judge") or request.POST.get("token_id")
+    raw_selected_public = request.GET.get("selected_public")
+    if raw_selected_kind == "judge" and raw_selected_id:
+        raw_selected_judge = raw_selected_id
+    elif raw_selected_kind == "public" and raw_selected_id:
+        raw_selected_public = raw_selected_id
+    if raw_selected_judge:
+        selected_judge_token = next((token for token in tokens if str(token.id) == str(raw_selected_judge)), None)
+    if selected_judge_token is None and raw_selected_public:
+        selected_public_token = next((token for token in public_tokens if str(token.id) == str(raw_selected_public)), None)
+    if selected_judge_token is None and selected_public_token is None and tokens:
+        selected_judge_token = tokens[0]
+    selected_kind = "judge" if selected_judge_token is not None else ("public" if selected_public_token is not None else "")
+    selected_id = str(
+        getattr(selected_judge_token or selected_public_token, "id", "") or ""
+    )
+    selected_assignment_rows = list(getattr(selected_judge_token, "assignment_summaries", []) or [])
+    app_catalog = _app_catalog_for_template(competicio, comp_aparells)
 
     ctx = {
         "competicio": competicio,
         "comp_aparell": comp_aparell,
+        "assignment_comp_aparell": assignment_comp_aparell,
         "base_comp_aparell": base_comp_aparell,
-        "comp_aparell_qs": comp_aparell_qs,
+        "comp_aparell_qs": comp_aparells,
         "phase_choices": phase_choices,
         "schema": schema,
         "runtime_schema": runtime_schema,
         "tokens": tokens,
+        "judge_tokens": tokens,
+        "assignable_judge_tokens": assignable_judge_tokens,
+        "public_tokens": public_tokens,
+        "comp_aparells": comp_aparells,
+        "selected_judge_token": selected_judge_token,
+        "selected_public_token": selected_public_token,
+        "selected_kind": selected_kind,
+        "selected_id": selected_id,
+        "selected_assignment_rows": selected_assignment_rows,
         "token_form": token_form,
         "formset": formset,
+        "assignment_formset": formset,
         "max_permissions": MAX_TOKEN_PERMISSIONS,
         "exercicis": exercicis,
         "exercici": exercici,
         "is_team_context_mode": team_context_mode,
         "member_slot_choices": member_slot_choices,
         "schema_field_catalog": field_catalog,
+        "app_catalog": app_catalog,
+        "can_manage_public_live": user_has_competicio_capability(request.user, competicio, "public_live.manage"),
+        "can_manage_judge_tokens": True,
     }
     return render(request, "judge/admin_tokens.html", ctx)
+
+
+def judges_qr_home(request, competicio_id):
+    return qr_admin_home(request, competicio_id)
 
 
 @require_http_methods(["GET"])

@@ -7,7 +7,7 @@ from django.urls import reverse
 
 from ...base import _BaseTrampoliDataMixin
 from ....models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
-from ....models.judging import JudgeDeviceToken, JudgePortalAssignment
+from ....models.judging import JudgeDeviceToken, JudgePortalAssignment, PublicLiveToken
 from ....models.scoring import ScoreEntry, ScoreEntryVideo, ScoringSchema
 from ....services.judging.assignments import (
     effective_assignments_for_token,
@@ -307,6 +307,28 @@ class JudgePortalAssignmentPortalTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "Final")
         self.assertContains(response, "Bloquejada")
 
+    def test_single_explicit_assignment_token_still_shows_home(self):
+        phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
+        self._add_phase_slot(phase)
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            fase=phase,
+            label="Final unica",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 2}],
+        )
+
+        response = self.client.get(reverse("judge_portal", kwargs={"token": self.token.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "judge/portal_home.html")
+        self.assertContains(response, "Final unica")
+        self.assertContains(
+            response,
+            reverse("judge_portal_assignment", kwargs={"token": self.token.id, "assignment_id": assignment.id}),
+        )
+
     def test_assignment_id_scopes_portal_to_assignment_app_phase_and_permissions(self):
         phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
         self._add_phase_slot(phase)
@@ -589,8 +611,7 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
         response = self.client.get(reverse("judges_qr_home", kwargs={"competicio_id": self.competicio.id}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tots els aparells")
-        self.assertContains(response, "Crear QR general")
+        self.assertContains(response, "Crear QR")
 
         create = self.client.post(
             reverse("judges_qr_home", kwargs={"competicio_id": self.competicio.id}),
@@ -653,3 +674,234 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(assignment.ordre, 2)
         self.assertEqual(assignment.permissions[0]["field_code"], "E")
         self.assertEqual(assignment.permissions[0]["item_count"], 3)
+
+    def test_judges_qr_home_adds_assignment_from_global_view_using_posted_app(self):
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge general",
+            permissions=[],
+        )
+        phase = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Final",
+            codi="FINAL",
+            ordre=1,
+        )
+
+        response = self.client.post(
+            reverse("judges_qr_home", kwargs={"competicio_id": self.competicio.id}),
+            data={
+                "action": "add_assignment",
+                "token_id": str(token.id),
+                "assignment_comp_aparell_id": str(self.comp_aparell.id),
+                "assignment_label": "Final global",
+                "fase_id": str(phase.id),
+                "ordre": "1",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "15",
+                "form-0-field_code": "E",
+                "form-0-scope": "shared",
+                "form-0-member_mode": "all",
+                "form-0-member_slots": "",
+                "form-0-judge_index": "1",
+                "form-0-item_start": "1",
+                "form-0-item_count": "2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        assignment = JudgePortalAssignment.objects.get(judge_token=token)
+        self.assertEqual(assignment.comp_aparell_id, self.comp_aparell.id)
+        self.assertEqual(assignment.fase_id, phase.id)
+        self.assertEqual(assignment.label, "Final global")
+        self.assertEqual(assignment.permissions[0]["item_count"], 2)
+
+    def test_judges_qr_home_rejects_assignment_phase_from_other_app(self):
+        other_aparell = self._create_aparell("DMT_QR", "Doble mini QR")
+        other_comp_aparell = self._create_comp_aparell(self.competicio, other_aparell, ordre=2)
+        other_phase = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=other_comp_aparell,
+            nom="Final DMT",
+            codi="FINAL_DMT",
+            ordre=1,
+        )
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge general",
+            permissions=[],
+        )
+
+        response = self.client.post(
+            reverse("judges_qr_home", kwargs={"competicio_id": self.competicio.id}),
+            data={
+                "action": "add_assignment",
+                "token_id": str(token.id),
+                "assignment_comp_aparell_id": str(self.comp_aparell.id),
+                "assignment_label": "Fase incorrecta",
+                "fase_id": str(other_phase.id),
+                "ordre": "1",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "15",
+                "form-0-field_code": "E",
+                "form-0-scope": "shared",
+                "form-0-member_mode": "all",
+                "form-0-member_slots": "",
+                "form-0-judge_index": "1",
+                "form-0-item_start": "1",
+                "form-0-item_count": "2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(JudgePortalAssignment.objects.filter(judge_token=token).exists())
+
+    def test_judges_qr_home_creates_public_live_token_from_unified_screen(self):
+        response = self.client.post(
+            reverse("judges_qr_home", kwargs={"competicio_id": self.competicio.id}),
+            data={
+                "action": "create_public_live",
+                "label": "Pantalla principal",
+                "can_view_media": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        token = PublicLiveToken.objects.get(competicio=self.competicio, label="Pantalla principal")
+        self.assertTrue(token.can_view_media)
+        self.assertTrue(token.is_active)
+
+    def test_qr_admin_creates_judge_qr_and_selects_detail(self):
+        response = self.client.post(
+            reverse("qr_admin_home", kwargs={"competicio_id": self.competicio.id}),
+            data={
+                "action": "create_judge_qr",
+                "label": "Jutge QR admin",
+                "can_record_video": "1",
+            },
+        )
+
+        token = JudgeDeviceToken.objects.get(competicio=self.competicio, label="Jutge QR admin")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}))
+        self.assertEqual(token.permissions, [])
+        self.assertFalse(token.portal_assignments.exists())
+        self.assertTrue(token.can_record_video)
+
+    def test_qr_admin_renders_list_and_selected_judge_detail(self):
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge detall",
+            permissions=[],
+        )
+        JudgePortalAssignment.objects.create(
+            judge_token=token,
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Preliminar E1",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+        )
+
+        response = self.client.get(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "judge/qr_admin.html")
+        self.assertContains(response, "Crear QR")
+        self.assertContains(response, "Llistat de QRs")
+        self.assertContains(response, "Detall del QR")
+        self.assertContains(response, "Preliminar E1")
+
+    def test_qr_admin_adds_assignment_to_selected_judge_qr(self):
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge QR admin",
+            permissions=[],
+        )
+        phase = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Final",
+            codi="FINAL",
+            ordre=1,
+        )
+
+        response = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}),
+            data={
+                "action": "add_assignment",
+                "token_id": str(token.id),
+                "assignment_comp_aparell_id": str(self.comp_aparell.id),
+                "assignment_label": "Final QR admin",
+                "fase_id": str(phase.id),
+                "ordre": "1",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "15",
+                "form-0-field_code": "E",
+                "form-0-scope": "shared",
+                "form-0-member_mode": "all",
+                "form-0-member_slots": "",
+                "form-0-judge_index": "1",
+                "form-0-item_start": "1",
+                "form-0-item_count": "4",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}))
+        assignment = JudgePortalAssignment.objects.get(judge_token=token)
+        self.assertEqual(assignment.comp_aparell_id, self.comp_aparell.id)
+        self.assertEqual(assignment.fase_id, phase.id)
+        self.assertEqual(assignment.permissions[0]["item_count"], 4)
+
+    def test_qr_admin_revokes_whole_qr_and_deactivates_single_assignment(self):
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge QR admin",
+            permissions=[],
+        )
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=token,
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Preliminar",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+        )
+
+        deactivate = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}),
+            data={
+                "action": "deactivate_assignment",
+                "assignment_id": str(assignment.id),
+            },
+        )
+        assignment.refresh_from_db()
+
+        self.assertEqual(deactivate.status_code, 302)
+        self.assertFalse(assignment.is_active)
+
+        revoke = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}),
+            data={
+                "action": "revoke_judge_qr",
+                "token_id": str(token.id),
+            },
+        )
+        token.refresh_from_db()
+
+        self.assertEqual(revoke.status_code, 302)
+        self.assertFalse(token.is_active)
+        self.assertIsNotNone(token.revoked_at)

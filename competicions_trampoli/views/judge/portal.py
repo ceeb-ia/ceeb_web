@@ -295,7 +295,10 @@ def judge_portal(request, token, assignment_id=None):
     tok.touch()
 
     assignments = effective_assignments_for_token(tok)
+    has_explicit_assignments = tok.portal_assignments.exists()
     if assignment_id in (None, "", 0, "0"):
+        if has_explicit_assignments:
+            return _render_judge_portal_home(request, tok, assignments)
         if len(assignments) != 1:
             return _render_judge_portal_home(request, tok, assignments)
         selected_assignment = assignments[0]

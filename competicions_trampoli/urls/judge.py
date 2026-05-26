@@ -3,10 +3,29 @@ from django.urls import path
 from ..views import judge as views_judge
 from ..views.judge import admin as views_judge_admin
 from ..views.judge import messages as views_judge_messages
+from ..views.judge import qr_admin as views_qr_admin
 from .base import competition_view
 
 
 urlpatterns = [
+    path(
+        "scoring/<int:competicio_id>/qr-admin/",
+        competition_view(
+            views_qr_admin.qr_admin_home,
+            "judge_tokens.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="qr_admin_home",
+    ),
+    path(
+        "scoring/<int:competicio_id>/qr-admin/<uuid:token_id>/",
+        competition_view(
+            views_qr_admin.qr_admin_home,
+            "judge_tokens.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="qr_admin_detail",
+    ),
     path(
         "scoring/<int:competicio_id>/judges-qr/",
         competition_view(

@@ -1,0 +1,796 @@
+{% extends "base.html" %}
+{% block title %}Administrador QRs - {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .qr-admin-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: start;
+    }
+    .qr-admin-stack {
+      display: grid;
+      gap: 1rem;
+    }
+    .qr-admin-panel,
+    .qr-admin-row {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .qr-admin-panel {
+      padding: 1rem;
+    }
+    .qr-admin-row {
+      display: block;
+      padding: .75rem;
+      color: inherit;
+      text-decoration: none;
+    }
+    .qr-admin-row:hover {
+      background: #f8fafc;
+      color: inherit;
+      text-decoration: none;
+    }
+    .qr-admin-row.is-selected {
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 1px #0d6efd inset;
+    }
+    .qr-token-id {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    .qr-assignment-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: .75rem;
+    }
+    .permission-member-slot {
+      min-width: 48px;
+    }
+    .permission-member-slot.is-active {
+      background: #0d6efd;
+      color: #fff;
+      border-color: #0d6efd;
+    }
+    #itemLabelsModal {
+      z-index: 200010;
+    }
+    .modal-backdrop.show {
+      z-index: 200000;
+    }
+    @media (max-width: 991.98px) {
+      .qr-admin-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div>
+        <h2 class="mb-1">Administrador QRs</h2>
+        <div class="text-muted small">Crea QRs, selecciona'n un i configura els seus accessos.</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_print' competicio.id %}" target="_blank">Imprimir jutges</a>
+        {% if can_manage_public_live %}
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_qr_print' competicio.id %}" target="_blank">Imprimir publics</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} py-2 small">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    <div class="qr-admin-layout">
+      <div class="qr-admin-stack">
+        <section class="qr-admin-panel">
+          <h5 class="mb-3">Crear QR</h5>
+          {% if create_form.non_field_errors %}
+            <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
+          {% endif %}
+          <form method="post" id="qrCreateForm">
+            {% csrf_token %}
+            <input type="hidden" name="action" id="qrCreateAction" value="create_judge_qr">
+
+            <div class="mb-2">
+              <label class="form-label small text-muted mb-1">Tipus</label>
+              <div class="btn-group btn-group-sm d-flex" role="group" aria-label="Tipus de QR">
+                <input class="btn-check d-none" type="radio" name="qr_access_type" id="qrTypeJudge" value="judge" checked>
+                <label class="btn btn-outline-primary flex-fill" for="qrTypeJudge">Jutge</label>
+                {% if can_manage_public_live %}
+                  <input class="btn-check d-none" type="radio" name="qr_access_type" id="qrTypePublic" value="public">
+                  <label class="btn btn-outline-primary flex-fill" for="qrTypePublic">Public</label>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label small text-muted mb-1">Etiqueta</label>
+              {{ create_form.label }}
+              {% if create_form.label.errors %}
+                <div class="text-danger small mt-1">{{ create_form.label.errors }}</div>
+              {% endif %}
+            </div>
+
+            <div class="form-group mb-2" data-create-option="judge">
+              <div class="border rounded p-2">
+                <div class="custom-control custom-checkbox mb-0">
+                  <input type="checkbox"
+                         class="custom-control-input"
+                         id="{{ create_form.can_record_video.id_for_label }}"
+                         name="{{ create_form.can_record_video.html_name }}"
+                         value="1"
+                         {% if create_form.can_record_video.value %}checked{% endif %}>
+                  <label class="custom-control-label small" for="{{ create_form.can_record_video.id_for_label }}">
+                    Permetre boto "Gravar"
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {% if can_manage_public_live %}
+              <div class="form-group mb-2 d-none" data-create-option="public">
+                <div class="border rounded p-2">
+                  <div class="custom-control custom-checkbox mb-0">
+                    <input class="custom-control-input" type="checkbox" id="create_can_view_media" name="can_view_media" value="1">
+                    <label class="custom-control-label small" for="create_can_view_media">Permetre media publica</label>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+
+            <div class="text-muted small mb-3" data-create-help="judge">
+              El QR de jutge es crea sense accessos. Selecciona'l despres per afegir aparell, fase i permisos.
+            </div>
+            {% if can_manage_public_live %}
+              <div class="text-muted small mb-3 d-none" data-create-help="public">
+                El QR public obre directament les classificacions publicades.
+              </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-sm btn-primary">Crear QR</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="qr-admin-panel">
+          <h5 class="mb-3">Llistat de QRs</h5>
+          <div class="qr-admin-stack">
+            {% for row in token_rows %}
+              <a class="qr-admin-row {% if row.is_selected %}is-selected{% endif %}"
+                 href="{{ row.url }}">
+                <div class="d-flex justify-content-between gap-2">
+                  <div>
+                    <div class="fw-semibold">{{ row.label }}</div>
+                    <div class="text-muted small qr-token-id">{{ row.id }}</div>
+                  </div>
+                  <span class="badge bg-light text-dark border">{{ row.kind|title }}</span>
+                </div>
+                <div class="mt-2 d-flex flex-wrap gap-1">
+                  {% if row.is_active %}
+                    <span class="badge bg-success">Actiu</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactiu</span>
+                  {% endif %}
+                  {% if row.kind == "judge" %}
+                    <span class="badge bg-light text-dark border">{{ row.assignment_count }} accessos</span>
+                  {% endif %}
+                </div>
+              </a>
+            {% empty %}
+              <div class="text-muted small">Encara no hi ha cap QR creat.</div>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+
+      <section class="qr-admin-panel">
+        <h5 class="mb-3">Detall del QR</h5>
+
+        {% if selected_token %}
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+            <div>
+              <div class="fw-semibold">{{ selected_token.label|default:"(sense etiqueta)" }}</div>
+              <div class="text-muted small qr-token-id">{{ selected_token.id }}</div>
+              <div class="mt-2 d-flex flex-wrap gap-1">
+                <span class="badge bg-light text-dark border">Jutge</span>
+                {% if selected_token.revoked_at %}
+                  <span class="badge bg-danger">Revocat</span>
+                {% elif not selected_token.is_active %}
+                  <span class="badge bg-secondary">Inactiu</span>
+                {% else %}
+                  <span class="badge bg-success">Actiu</span>
+                {% endif %}
+                {% if selected_token.can_record_video %}
+                  <span class="badge bg-info text-dark">Video</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-1">
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' selected_token.id %}" target="_blank">Obrir</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' selected_token.id %}" target="_blank">QR</a>
+              {% if not selected_token.revoked_at and selected_token.is_active %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke_judge_qr">
+                  <input type="hidden" name="token_id" value="{{ selected_token.id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Revocar QR</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-semibold">Accessos configurats</div>
+              <span class="text-muted small">{{ selected_assignments|length }} totals</span>
+            </div>
+            <div class="qr-admin-stack">
+              {% for row in selected_assignments %}
+                <div class="qr-assignment-card">
+                  <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                      <div class="fw-semibold">{{ row.assignment.label|default:"Acces" }}</div>
+                      <div class="text-muted small">{{ row.app_label }} / {{ row.phase_label }}</div>
+                    </div>
+                    {% if row.assignment.is_active %}
+                      <span class="badge bg-success">Actiu</span>
+                    {% else %}
+                      <span class="badge bg-secondary">Inactiu</span>
+                    {% endif %}
+                  </div>
+                  <div class="mt-2 d-flex flex-wrap gap-1">
+                    {% for p in row.permission_summaries %}
+                      <span class="badge bg-light text-dark border">{{ p.label }} / J{{ p.judge_index }}</span>
+                    {% empty %}
+                      <span class="text-muted small">Sense permisos.</span>
+                    {% endfor %}
+                  </div>
+                  {% if row.assignment.is_active %}
+                    <form method="post" class="mt-2">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="deactivate_assignment">
+                      <input type="hidden" name="assignment_id" value="{{ row.assignment.id }}">
+                      <button class="btn btn-sm btn-outline-secondary" type="submit">Desactivar acces</button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% empty %}
+                <div class="text-muted small">Aquest QR encara no te cap acces. Afegeix-ne un amb el formulari inferior.</div>
+              {% endfor %}
+            </div>
+          </div>
+
+          {% if selected_token.is_active and not selected_token.revoked_at %}
+            <div class="border-top pt-3">
+              <h6 class="mb-3">Afegir acces de jutge</h6>
+              {% if assignment_formset.non_form_errors %}
+                <div class="alert alert-danger py-2">{{ assignment_formset.non_form_errors }}</div>
+              {% endif %}
+              {% if comp_aparells %}
+                <form method="post" id="judgeAssignmentForm">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="add_assignment">
+                  <input type="hidden" name="token_id" value="{{ selected_token.id }}">
+
+                  <div class="row g-2 mb-2">
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small text-muted mb-1">Aparell</label>
+                      <select class="form-select form-select-sm" name="assignment_comp_aparell_id" id="assignmentAppSelect" required>
+                        {% for ca in comp_aparells %}
+                          <option value="{{ ca.id }}" {% if assignment_comp_aparell and ca.id == assignment_comp_aparell.id %}selected{% endif %}>
+                            {{ ca.display_nom }}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small text-muted mb-1">Fase</label>
+                      <select class="form-select form-select-sm" name="fase_id" id="assignmentPhaseSelect">
+                        <option value="">Preliminar / sense fase</option>
+                        {% for phase in phase_choices %}
+                          <option value="{{ phase.id }}">{{ phase.nom }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-8">
+                      <label class="form-label small text-muted mb-1">Etiqueta d'acces</label>
+                      <input class="form-control form-control-sm" name="assignment_label" placeholder="Ex: Final E1">
+                    </div>
+                    <div class="col-12 col-md-4">
+                      <label class="form-label small text-muted mb-1">Ordre</label>
+                      <input class="form-control form-control-sm" name="ordre" type="number" min="1" value="1">
+                    </div>
+                  </div>
+
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="text-muted small">Permisos</div>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                      <span class="text-muted small"><span id="permCounter">0/{{ max_permissions }}</span></span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="permAddBtn">Afegir camp</button>
+                    </div>
+                  </div>
+
+                  {{ assignment_formset.management_form }}
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                      <thead>
+                        <tr class="text-muted small">
+                          <th style="min-width:220px;">Camp</th>
+                          <th data-team-column="1">Abast</th>
+                          <th style="min-width:220px;" data-team-column="1">Membres</th>
+                          <th>Jutge</th>
+                          <th>Start</th>
+                          <th>Count</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="permTbody" data-max-permissions="{{ max_permissions }}">
+                        {% for f in assignment_formset.forms %}
+                          <tr class="perm-row">
+                            <td>
+                              {{ f.field_code }}
+                              <div class="mt-1 d-none" data-item-labels-controls="1">
+                                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-item-labels-trigger="1">Noms d'items</button>
+                                <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
+                              </div>
+                              {% if f.field_code.errors %}<div class="text-danger small mt-1">{{ f.field_code.errors }}</div>{% endif %}
+                            </td>
+                            <td data-team-column="1">
+                              {{ f.scope }}
+                              {% if f.scope.errors %}<div class="text-danger small mt-1">{{ f.scope.errors }}</div>{% endif %}
+                            </td>
+                            <td data-team-column="1">
+                              <div data-member-target="1">
+                                <div class="mb-1">{{ f.member_mode }}</div>
+                                {{ f.member_slots }}
+                                <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                                {% if f.member_mode.errors %}<div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>{% endif %}
+                                {% if f.member_slots.errors %}<div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>{% endif %}
+                              </div>
+                            </td>
+                            <td>
+                              {{ f.judge_index }}
+                              {% if f.judge_index.errors %}<div class="text-danger small mt-1">{{ f.judge_index.errors }}</div>{% endif %}
+                            </td>
+                            <td>
+                              {{ f.item_start }}
+                              {% if f.item_start.errors %}<div class="text-danger small mt-1">{{ f.item_start.errors }}</div>{% endif %}
+                            </td>
+                            <td>
+                              {{ f.item_count }}
+                              {% if f.item_count.errors %}<div class="text-danger small mt-1">{{ f.item_count.errors }}</div>{% endif %}
+                            </td>
+                            <td class="text-end">
+                              <div class="form-check">
+                                {{ f.DELETE }}
+                                <label class="form-check-label small text-muted">Eliminar</label>
+                              </div>
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <template id="permRowTemplate">
+                    <tr class="perm-row">
+                      <td>
+                        {{ assignment_formset.empty_form.field_code }}
+                        <div class="mt-1 d-none" data-item-labels-controls="1">
+                          <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-item-labels-trigger="1">Noms d'items</button>
+                          <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
+                        </div>
+                      </td>
+                      <td data-team-column="1">{{ assignment_formset.empty_form.scope }}</td>
+                      <td data-team-column="1">
+                        <div data-member-target="1">
+                          <div class="mb-1">{{ assignment_formset.empty_form.member_mode }}</div>
+                          {{ assignment_formset.empty_form.member_slots }}
+                          <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                        </div>
+                      </td>
+                      <td>{{ assignment_formset.empty_form.judge_index }}</td>
+                      <td>{{ assignment_formset.empty_form.item_start }}</td>
+                      <td>{{ assignment_formset.empty_form.item_count }}</td>
+                      <td class="text-end">
+                        <div class="form-check">
+                        {{ assignment_formset.empty_form.DELETE }}
+                          <label class="form-check-label small text-muted">Eliminar</label>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+
+                  <div class="text-muted small mb-3">
+                    Start/Count limita items en camps matrix. Els camps i fases canvien segons l'aparell seleccionat.
+                  </div>
+                  <div class="d-flex justify-content-end">
+                    <button class="btn btn-sm btn-primary" type="submit">Afegir acces</button>
+                  </div>
+                </form>
+              {% else %}
+                <div class="text-muted small">Cal tenir almenys un aparell actiu per afegir accessos.</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% elif selected_public_token %}
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+            <div>
+              <div class="fw-semibold">{{ selected_public_token.label|default:"(sense etiqueta)" }}</div>
+              <div class="text-muted small qr-token-id">{{ selected_public_token.id }}</div>
+              <div class="mt-2 d-flex flex-wrap gap-1">
+                <span class="badge bg-light text-dark border">Public</span>
+                {% if selected_public_token.revoked_at %}
+                  <span class="badge bg-danger">Revocat</span>
+                {% elif not selected_public_token.is_active %}
+                  <span class="badge bg-secondary">Inactiu</span>
+                {% else %}
+                  <span class="badge bg-success">Actiu</span>
+                {% endif %}
+                {% if selected_public_token.can_view_media %}
+                  <span class="badge bg-success">Media publica</span>
+                {% else %}
+                  <span class="badge bg-secondary">Sense media</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-1">
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_portal' selected_public_token.id %}" target="_blank">Obrir</a>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_loop' selected_public_token.id %}" target="_blank">Loop</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'public_live_qr_png' selected_public_token.id %}" target="_blank">QR</a>
+              {% if not selected_public_token.revoked_at and selected_public_token.is_active %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke_public_qr">
+                  <input type="hidden" name="token_id" value="{{ selected_public_token.id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Revocar QR</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+          <div class="text-muted small">
+            Aquest QR public no te pantalla intermedia: obre directament les classificacions live publicades.
+          </div>
+        {% else %}
+          <div class="text-muted">Selecciona un QR del llistat o crea'n un de nou.</div>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="itemLabelsModal" tabindex="-1" aria-labelledby="itemLabelsModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" id="itemLabelsForm">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_item_labels">
+        <input type="hidden" name="item_labels_comp_aparell_id" id="itemLabelsCompAparellId">
+        <input type="hidden" name="field_code" id="itemLabelsFieldCode">
+        <input type="hidden" name="item_labels_json" id="itemLabelsJson">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-1" id="itemLabelsModalTitle">Noms d'items</h5>
+            <div class="text-muted small" id="itemLabelsModalMeta"></div>
+          </div>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Tancar">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-light border small">Aquesta configuracio es global per aparell i camp.</div>
+          <div id="itemLabelsRows"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-sm btn-primary">Desar noms</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ app_catalog|json_script:"judge-app-catalog" }}
+{{ schema_field_catalog|json_script:"judge-schema-field-catalog" }}
+<script>
+  (function () {
+    const createForm = document.getElementById("qrCreateForm");
+    if (createForm) {
+      const actionInput = document.getElementById("qrCreateAction");
+      const typeInputs = Array.from(createForm.querySelectorAll('input[name="qr_access_type"]'));
+      function refreshCreateType() {
+        const selected = (typeInputs.find((input) => input.checked) || {}).value || "judge";
+        if (actionInput) actionInput.value = selected === "public" ? "create_public_qr" : "create_judge_qr";
+        typeInputs.forEach((input) => {
+          const label = createForm.querySelector(`label[for="${input.id}"]`);
+          if (label) label.classList.toggle("active", input.checked);
+        });
+        Array.from(createForm.querySelectorAll("[data-create-option], [data-create-help]")).forEach((el) => {
+          const key = el.getAttribute("data-create-option") || el.getAttribute("data-create-help");
+          el.classList.toggle("d-none", key !== selected);
+        });
+      }
+      typeInputs.forEach((input) => input.addEventListener("change", refreshCreateType));
+      refreshCreateType();
+    }
+
+    const assignmentForm = document.getElementById("judgeAssignmentForm");
+    const appSelect = document.getElementById("assignmentAppSelect");
+    const phaseSelect = document.getElementById("assignmentPhaseSelect");
+    const tbody = document.getElementById("permTbody");
+    const addBtn = document.getElementById("permAddBtn");
+    const counter = document.getElementById("permCounter");
+    const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
+    const rowTemplate = document.getElementById("permRowTemplate");
+    const catalogEl = document.getElementById("judge-app-catalog");
+    if (!assignmentForm || !appSelect || !phaseSelect || !tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate || !catalogEl) return;
+
+    let appCatalog = {};
+    try {
+      appCatalog = JSON.parse(catalogEl.textContent || "{}");
+    } catch (_err) {
+      appCatalog = {};
+    }
+    const maxPermissions = Number(tbody.dataset.maxPermissions || "15");
+    const itemLabelsModalEl = document.getElementById("itemLabelsModal");
+    const itemLabelsForm = document.getElementById("itemLabelsForm");
+    const itemLabelsCompAparellIdInput = document.getElementById("itemLabelsCompAparellId");
+    const itemLabelsFieldCodeInput = document.getElementById("itemLabelsFieldCode");
+    const itemLabelsJsonInput = document.getElementById("itemLabelsJson");
+    const itemLabelsTitleEl = document.getElementById("itemLabelsModalTitle");
+    const itemLabelsMetaEl = document.getElementById("itemLabelsModalMeta");
+    const itemLabelsRowsEl = document.getElementById("itemLabelsRows");
+    const itemLabelsModal = (window.jQuery && itemLabelsModalEl) ? window.jQuery(itemLabelsModalEl) : null;
+
+    function currentApp() {
+      return appCatalog[String(appSelect.value || "")] || { fields: [], phases: [], member_slots: [], team_context: false };
+    }
+
+    function fieldMeta(fieldCode) {
+      const code = String(fieldCode || "").trim();
+      return (currentApp().fields || []).find((item) => String(item.code) === code) || null;
+    }
+
+    function normalizeItemLabels(rawValue, itemsCount) {
+      const rawItems = Array.isArray(rawValue) ? rawValue : [];
+      const out = [];
+      for (let idx = 0; idx < itemsCount; idx += 1) {
+        const value = idx < rawItems.length ? rawItems[idx] : "";
+        out.push(String(value == null ? "" : value).trim());
+      }
+      return out;
+    }
+
+    function itemLabelsSummary(meta) {
+      const itemsCount = Math.max(1, Number((meta && meta.items_count) || 1));
+      const configured = normalizeItemLabels(meta && meta.item_labels, itemsCount).filter((item) => item).length;
+      return configured ? `${configured}/${itemsCount} noms configurats` : `Sense noms personalitzats (${itemsCount} items)`;
+    }
+
+    function parseSlotsValue(rawValue) {
+      if (!rawValue) return [];
+      return String(rawValue)
+        .split(/[\s,;]+/)
+        .map((item) => String(item || "").trim().toUpperCase().replace(/^M/, ""))
+        .map((item) => Number(item))
+        .filter((item, idx, arr) => Number.isFinite(item) && item > 0 && arr.indexOf(item) === idx);
+    }
+
+    function setSelectOptions(select, options, placeholder, keepValue) {
+      const previous = keepValue == null ? select.value : String(keepValue);
+      select.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = placeholder;
+      select.appendChild(empty);
+      options.forEach((option) => {
+        const el = document.createElement("option");
+        el.value = String(option.value);
+        el.textContent = option.label;
+        select.appendChild(el);
+      });
+      if (previous && Array.from(select.options).some((option) => option.value === previous)) {
+        select.value = previous;
+      }
+    }
+
+    function refreshPhases() {
+      const phases = (currentApp().phases || []).map((phase) => ({ value: phase.id, label: phase.label }));
+      setSelectOptions(phaseSelect, phases, "Preliminar / sense fase");
+    }
+
+    function refreshFieldChoices(row) {
+      const select = row.querySelector('select[name$="-field_code"]');
+      if (!select) return;
+      const fields = (currentApp().fields || []).map((field) => ({
+        value: field.code,
+        label: `${field.code} - ${field.label || field.code}`,
+      }));
+      setSelectOptions(select, fields, "-");
+    }
+
+    function renderMemberSlots(row) {
+      const picker = row.querySelector('[data-member-slot-picker="1"]');
+      if (!picker) return [];
+      picker.innerHTML = "";
+      const slots = currentApp().member_slots || [];
+      slots.forEach((slot) => {
+        const label = document.createElement("label");
+        label.className = "btn btn-sm btn-outline-secondary permission-member-slot";
+        label.setAttribute("data-member-slot-label", "1");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "d-none";
+        input.value = String(slot);
+        input.setAttribute("data-member-slot-check", "1");
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(`M${slot}`));
+        picker.appendChild(label);
+      });
+      return Array.from(row.querySelectorAll('[data-member-slot-check="1"]'));
+    }
+
+    function openItemLabelsModal(fieldCode) {
+      const meta = fieldMeta(fieldCode);
+      const cleanCode = String(fieldCode || "").trim();
+      if (!cleanCode || !meta || String(meta.type || "") !== "matrix" || !itemLabelsRowsEl) return;
+      const itemsCount = Math.max(1, Number(meta.items_count || 1));
+      const itemLabels = normalizeItemLabels(meta.item_labels, itemsCount);
+      if (itemLabelsCompAparellIdInput) itemLabelsCompAparellIdInput.value = String(appSelect.value || "");
+      if (itemLabelsFieldCodeInput) itemLabelsFieldCodeInput.value = cleanCode;
+      if (itemLabelsTitleEl) itemLabelsTitleEl.textContent = `Noms d'items - ${meta.label || cleanCode}`;
+      if (itemLabelsMetaEl) itemLabelsMetaEl.textContent = `${currentApp().label || ""} - ${cleanCode} - ${itemsCount} items`;
+      itemLabelsRowsEl.innerHTML = "";
+      for (let idx = 0; idx < itemsCount; idx += 1) {
+        const group = document.createElement("div");
+        group.className = "form-group";
+        const label = document.createElement("label");
+        label.className = "form-label small text-muted mb-1";
+        label.textContent = `Item ${idx + 1}`;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.value = itemLabels[idx] || "";
+        input.placeholder = `Item ${idx + 1}`;
+        input.setAttribute("data-item-label-input", "1");
+        group.appendChild(label);
+        group.appendChild(input);
+        itemLabelsRowsEl.appendChild(group);
+      }
+      if (itemLabelsModal) itemLabelsModal.modal("show");
+    }
+
+    function syncItemLabelsJson() {
+      if (!itemLabelsJsonInput || !itemLabelsRowsEl) return;
+      itemLabelsJsonInput.value = JSON.stringify(
+        Array.from(itemLabelsRowsEl.querySelectorAll('[data-item-label-input="1"]'))
+          .map((input) => String(input.value || "").trim())
+      );
+    }
+
+    function bindPermissionRow(row) {
+      if (!row) return;
+      refreshFieldChoices(row);
+      const fieldSelect = row.querySelector('select[name$="-field_code"]');
+      const scopeSelect = row.querySelector('select[name$="-scope"]');
+      const modeSelect = row.querySelector('select[name$="-member_mode"]');
+      const slotsInput = row.querySelector('input[name$="-member_slots"]');
+      const targetWrap = row.querySelector('[data-member-target="1"]');
+      const itemLabelsControls = row.querySelector('[data-item-labels-controls="1"]');
+      const itemLabelsTrigger = row.querySelector('[data-item-labels-trigger="1"]');
+      const itemLabelsSummaryEl = row.querySelector('[data-item-labels-summary="1"]');
+      if (!fieldSelect || !scopeSelect || !modeSelect || !slotsInput) return;
+
+      function syncLabels() {
+        Array.from(row.querySelectorAll('[data-member-slot-label="1"]')).forEach((label) => {
+          const check = label.querySelector('[data-member-slot-check="1"]');
+          const checked = !!(check && check.checked);
+          label.classList.toggle("is-active", checked);
+          label.classList.toggle("btn-outline-secondary", !checked);
+          label.classList.toggle("btn-primary", checked);
+        });
+      }
+
+      function syncFromInput() {
+        const selected = parseSlotsValue(slotsInput.value);
+        Array.from(row.querySelectorAll('[data-member-slot-check="1"]')).forEach((check) => {
+          check.checked = selected.includes(Number(check.value || "0"));
+        });
+        syncLabels();
+      }
+
+      function syncToInput() {
+        let selected = Array.from(row.querySelectorAll('[data-member-slot-check="1"]'))
+          .filter((check) => check.checked)
+          .map((check) => Number(check.value || "0"))
+          .filter((slot) => Number.isFinite(slot) && slot > 0);
+        if (modeSelect.value === "all") {
+          selected = [];
+        } else if (modeSelect.value === "single" && selected.length > 1) {
+          selected = [selected[selected.length - 1]];
+        }
+        Array.from(row.querySelectorAll('[data-member-slot-check="1"]')).forEach((check) => {
+          check.checked = selected.includes(Number(check.value || "0"));
+        });
+        slotsInput.value = selected.join(",");
+        syncLabels();
+      }
+
+      function refreshVisibility() {
+        const app = currentApp();
+        const meta = fieldMeta(fieldSelect.value);
+        const scope = String((meta && meta.scope) || (app.team_context ? "member" : "shared")).toLowerCase();
+        const isMember = !!app.team_context && scope === "member";
+        scopeSelect.value = isMember ? "member" : "shared";
+        Array.from(scopeSelect.options).forEach((option) => {
+          option.disabled = option.value !== scopeSelect.value;
+        });
+        if (targetWrap) targetWrap.classList.toggle("d-none", !isMember);
+        if (!isMember) {
+          modeSelect.value = "all";
+          slotsInput.value = "";
+        }
+        const checks = renderMemberSlots(row);
+        checks.forEach((check) => check.addEventListener("change", syncToInput));
+        syncFromInput();
+        const canConfigureItems = !!(meta && String(meta.type || "") === "matrix");
+        if (itemLabelsControls) itemLabelsControls.classList.toggle("d-none", !canConfigureItems);
+        if (itemLabelsSummaryEl) itemLabelsSummaryEl.textContent = canConfigureItems ? itemLabelsSummary(meta) : "";
+      }
+
+      fieldSelect.addEventListener("change", refreshVisibility);
+      modeSelect.addEventListener("change", syncToInput);
+      if (itemLabelsTrigger) itemLabelsTrigger.addEventListener("click", () => openItemLabelsModal(fieldSelect.value));
+      refreshVisibility();
+    }
+
+    function refreshTeamColumns() {
+      const hasTeam = !!currentApp().team_context;
+      Array.from(document.querySelectorAll('[data-team-column="1"]')).forEach((el) => {
+        el.classList.toggle("d-none", !hasTeam);
+      });
+    }
+
+    function refreshCounter() {
+      const total = Number(totalFormsInput.value || "0");
+      counter.textContent = `${total}/${maxPermissions}`;
+      addBtn.disabled = total >= maxPermissions;
+    }
+
+    addBtn.addEventListener("click", function () {
+      const total = Number(totalFormsInput.value || "0");
+      if (total >= maxPermissions) return;
+      tbody.insertAdjacentHTML("beforeend", rowTemplate.innerHTML.replace(/__prefix__/g, String(total)));
+      totalFormsInput.value = String(total + 1);
+      bindPermissionRow(tbody.lastElementChild);
+      refreshCounter();
+    });
+
+    appSelect.addEventListener("change", function () {
+      refreshPhases();
+      refreshTeamColumns();
+      Array.from(tbody.querySelectorAll(".perm-row")).forEach(bindPermissionRow);
+    });
+    if (itemLabelsForm) itemLabelsForm.addEventListener("submit", syncItemLabelsJson);
+
+    refreshPhases();
+    refreshTeamColumns();
+    Array.from(tbody.querySelectorAll(".perm-row")).forEach(bindPermissionRow);
+    refreshCounter();
+  })();
+</script>
+{% endblock %}

@@ -45,8 +45,8 @@
 
           <div class="dropdown-menu">
             <a class="dropdown-item"
-              href="{% url 'judges_qr_home' competicio.id %}">
-              Jurat / QRs
+              href="{% url 'qr_admin_home' competicio.id %}">
+              Administrador QRs
             </a>
 
             <a class="dropdown-item"
@@ -169,7 +169,7 @@
           </div>
           <div class="d-flex flex-wrap justify-content-end" style="gap:6px;">
             <a class="btn btn-sm btn-outline-secondary d-none" href="#" data-notes-schema-link="1">Camps i funcions</a>
-            <a class="btn btn-sm btn-outline-primary d-none" href="#" data-notes-judges-link="1">Jurat / QRs</a>
+            <a class="btn btn-sm btn-outline-primary d-none" href="#" data-notes-judges-link="1">Administrador QRs</a>
           </div>
         </div>
         <div class="notes-status mb-2" data-notes-status="1">Preparant el programa...</div>
@@ -291,8 +291,8 @@
                                 Camps i funcions
                               </a>
                               <a class="btn btn-sm btn-outline-primary"
-                                href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
-                                Jurat / QRs
+                                href="{% url 'qr_admin_home' competicio.id %}">
+                                Administrador QRs
                               </a>
                             </div>
                           </div>
@@ -399,8 +399,8 @@
                                 Camps i funcions
                               </a>
                               <a class="btn btn-sm btn-outline-primary"
-                                href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
-                                Jurat / QRs
+                                href="{% url 'qr_admin_home' competicio.id %}">
+                                Administrador QRs
                               </a>
                             </div>
                           </div>
