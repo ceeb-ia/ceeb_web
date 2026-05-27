@@ -4,6 +4,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from ...base import _BaseTrampoliDataMixin
 from ....models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
@@ -306,6 +307,41 @@ class JudgePortalAssignmentPortalTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "Preliminar")
         self.assertContains(response, "Final")
         self.assertContains(response, "Bloquejada")
+
+    def test_token_home_exposes_ia_score_pwa_metadata(self):
+        JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            label="Preliminar",
+            ordre=1,
+            permissions=[{"field_code": "E", "judge_index": 1}],
+        )
+
+        response = self.client.get(reverse("judge_portal", kwargs={"token": self.token.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "judge/portal_home.html")
+        self.assertEqual(response.context["judge_pwa_app_name"], "IA Score")
+        self.assertContains(
+            response,
+            f'rel="manifest" href="{reverse("judge_manifest", kwargs={"token": self.token.id})}"',
+        )
+        self.assertContains(response, 'name="apple-mobile-web-app-title" content="IA Score"')
+
+    def test_judge_manifest_launches_from_token_home(self):
+        manifest_url = reverse("judge_manifest", kwargs={"token": self.token.id})
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+
+        response = self.client.get(f"{manifest_url}?ex=2&franja=99&view_mode=competition_order")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["name"], "IA Score")
+        self.assertEqual(payload["short_name"], "IA Score")
+        self.assertEqual(payload["id"], portal_url)
+        self.assertEqual(payload["start_url"], f"{portal_url}?home=1")
+        self.assertEqual(payload["scope"], portal_url)
+        self.assertIn(reverse("judge_pwa_icon", kwargs={"filename": "icon-192.png"}), payload["icons"][0]["src"])
 
     def test_single_explicit_assignment_token_still_shows_home(self):
         phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
@@ -820,6 +856,73 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "Llistat de QRs")
         self.assertContains(response, "Detall del QR")
         self.assertContains(response, "Preliminar E1")
+        self.assertContains(response, 'data-qr-label-edit-toggle')
+        self.assertContains(response, 'id="judgeQrLabelForm" class="qr-admin-title-edit-form d-none')
+        self.assertContains(response, "Imprimir QRs")
+        self.assertNotContains(response, "Imprimir jutges")
+        self.assertNotContains(response, "Imprimir publics")
+
+    def test_qr_print_page_includes_judge_and_public_qrs(self):
+        judge_token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge imprimible",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+        )
+        public_token = PublicLiveToken.objects.create(
+            competicio=self.competicio,
+            label="Public imprimible",
+            can_view_media=True,
+        )
+
+        response = self.client.get(reverse("judges_qr_print", kwargs={"competicio_id": self.competicio.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "judge/print_tokens.html")
+        self.assertContains(response, "Jutges")
+        self.assertContains(response, "Publics")
+        self.assertContains(response, "Jutge imprimible")
+        self.assertContains(response, "Public imprimible")
+        self.assertContains(response, reverse("judge_qr_png", kwargs={"token": judge_token.id}))
+        self.assertContains(response, reverse("public_live_qr_png", kwargs={"token": public_token.id}))
+
+    def test_qr_admin_updates_generated_qr_titles(self):
+        judge_token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge antic",
+            permissions=[],
+        )
+        public_token = PublicLiveToken.objects.create(
+            competicio=self.competicio,
+            label="Public antic",
+        )
+
+        judge_response = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": judge_token.id}),
+            data={
+                "action": "update_judge_qr_label",
+                "token_id": str(judge_token.id),
+                "label": "Jutge nou",
+            },
+        )
+        public_response = self.client.post(
+            f"{reverse('qr_admin_home', kwargs={'competicio_id': self.competicio.id})}?public_token={public_token.id}",
+            data={
+                "action": "update_public_qr_label",
+                "token_id": str(public_token.id),
+                "label": "Public nou",
+            },
+        )
+        judge_token.refresh_from_db()
+        public_token.refresh_from_db()
+
+        self.assertEqual(judge_response.status_code, 302)
+        self.assertEqual(judge_response.url, reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": judge_token.id}))
+        self.assertEqual(judge_token.label, "Jutge nou")
+        self.assertEqual(public_response.status_code, 302)
+        self.assertEqual(public_response.url, f"{reverse('qr_admin_home', kwargs={'competicio_id': self.competicio.id})}?public_token={public_token.id}")
+        self.assertEqual(public_token.label, "Public nou")
 
     def test_qr_admin_adds_assignment_to_selected_judge_qr(self):
         token = JudgeDeviceToken.objects.create(
@@ -905,3 +1008,78 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(revoke.status_code, 302)
         self.assertFalse(token.is_active)
         self.assertIsNotNone(token.revoked_at)
+
+    def test_qr_admin_deletes_revoked_qr_and_inactive_assignment_only(self):
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Jutge eliminable",
+            permissions=[],
+        )
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=token,
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            label="Acces eliminable",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+            is_active=False,
+        )
+
+        delete_active = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}),
+            data={
+                "action": "delete_judge_qr",
+                "token_id": str(token.id),
+            },
+        )
+        token.refresh_from_db()
+
+        self.assertEqual(delete_active.status_code, 302)
+        self.assertTrue(token.is_active)
+
+        delete_assignment = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}),
+            data={
+                "action": "delete_assignment",
+                "assignment_id": str(assignment.id),
+            },
+        )
+
+        self.assertEqual(delete_assignment.status_code, 302)
+        self.assertFalse(JudgePortalAssignment.objects.filter(pk=assignment.id).exists())
+
+        token.revoked_at = timezone.now()
+        token.is_active = False
+        token.save(update_fields=["revoked_at", "is_active"])
+
+        delete_token = self.client.post(
+            reverse("qr_admin_detail", kwargs={"competicio_id": self.competicio.id, "token_id": token.id}),
+            data={
+                "action": "delete_judge_qr",
+                "token_id": str(token.id),
+            },
+        )
+
+        self.assertEqual(delete_token.status_code, 302)
+        self.assertEqual(delete_token.url, reverse("qr_admin_home", kwargs={"competicio_id": self.competicio.id}))
+        self.assertFalse(JudgeDeviceToken.objects.filter(pk=token.id).exists())
+
+    def test_qr_admin_deletes_revoked_public_qr(self):
+        token = PublicLiveToken.objects.create(
+            competicio=self.competicio,
+            label="Public eliminable",
+            is_active=False,
+            revoked_at=timezone.now(),
+        )
+
+        response = self.client.post(
+            f"{reverse('qr_admin_home', kwargs={'competicio_id': self.competicio.id})}?public_token={token.id}",
+            data={
+                "action": "delete_public_qr",
+                "token_id": str(token.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("qr_admin_home", kwargs={"competicio_id": self.competicio.id}))
+        self.assertFalse(PublicLiveToken.objects.filter(pk=token.id).exists())

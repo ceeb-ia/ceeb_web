@@ -150,6 +150,12 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
             ("rotacions_planner", "rotacions"),
             ("classificacions_home", "classificacions"),
             ("scoring_notes_home", "notes"),
+            ("qr_admin_home", "notes"),
+            ("qr_admin_detail", "notes"),
+            ("judges_qr_home", "notes"),
+            ("judges_qr_print", "notes"),
+            ("public_live_qr_home", "notes"),
+            ("public_live_qr_print", "notes"),
         )
 
         for url_name, wallpaper_name in cases:
@@ -182,7 +188,6 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
             "public_live_loop",
             "judge_portal",
             "judge_portal_assignment",
-            "qr_admin_home",
             "judge_messages_hub",
         )
 

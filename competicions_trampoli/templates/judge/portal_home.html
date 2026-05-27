@@ -2,6 +2,19 @@
 {% load static %}
 {% block title %}Jurat - {{ competicio.nom }}{% endblock %}
 
+{% block extra_head %}
+  {{ block.super }}
+  {% if judge_pwa_enabled %}
+    <link rel="manifest" href="{{ judge_manifest_url }}">
+    <meta name="theme-color" content="{{ judge_pwa_theme_color }}">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="{{ judge_pwa_app_name }}">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="{{ judge_pwa_icon_apple_url }}">
+  {% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="judge-home-page">
   <style>
@@ -116,6 +129,98 @@
       outline: 3px solid rgba(37, 99, 235, .22);
       outline-offset: 2px;
     }
+    .judge-home-sos {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .42rem;
+      min-height: 42px;
+      border: 1px solid #9a3412;
+      border-radius: 10px;
+      background: #9a3412;
+      color: #ffffff;
+      padding: .55rem .82rem;
+      font-weight: 900;
+      line-height: 1;
+      box-shadow: 0 10px 24px rgba(154, 52, 18, .16);
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+      white-space: nowrap;
+    }
+    .judge-home-sos:hover,
+    .judge-home-sos:focus {
+      border-color: #7c2d12;
+      background: #7c2d12;
+      color: #ffffff;
+      box-shadow: 0 12px 26px rgba(154, 52, 18, .22);
+      transform: translateY(-1px);
+    }
+    .judge-home-sos:focus-visible {
+      outline: 3px solid rgba(154, 52, 18, .25);
+      outline-offset: 2px;
+    }
+    .judge-support-toggle-badge {
+      position: absolute;
+      top: -6px;
+      right: -5px;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #dc2626;
+      color: #ffffff;
+      font-size: .68rem;
+      line-height: 18px;
+      text-align: center;
+      padding: 0 4px;
+      font-weight: 800;
+    }
+    .judge-support-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 1046; display: none; }
+    .judge-support-backdrop.show { display: block; }
+    .judge-support-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: min(88vw, 360px);
+      height: 100vh;
+      background: #ffffff;
+      z-index: 1056;
+      transform: translateX(-100%);
+      transition: transform .2s ease;
+      border-right: 1px solid #e9ecef;
+      display: flex;
+      flex-direction: column;
+    }
+    .judge-support-drawer.show { transform: translateX(0); }
+    .judge-support-drawer-head {
+      padding: .8rem;
+      border-bottom: 1px solid #e9ecef;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+    }
+    .judge-support-drawer-body { padding: .7rem; overflow: auto; }
+    .judge-support-thread {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid #e9ecef;
+      border-radius: .5rem;
+      background: #fcfdff;
+      padding: .5rem;
+    }
+    .judge-support-empty { color: #6c757d; font-size: .85rem; }
+    .judge-support-bubble {
+      max-width: 85%;
+      border-radius: .55rem;
+      padding: .42rem .55rem;
+      margin-bottom: .35rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .judge-support-bubble.judge { background: #fff3cd; margin-right: auto; }
+    .judge-support-bubble.organization { background: #d1e7dd; margin-left: auto; }
+    .judge-support-bubble.system { background: #e9ecef; margin-left: auto; margin-right: auto; }
+    .judge-support-meta { color: #6c757d; font-size: .72rem; margin-top: .1rem; display: block; }
     .judge-home-refresh-mark {
       font-size: 1rem;
       font-weight: 900;
@@ -341,7 +446,8 @@
         justify-content: center;
       }
       .judge-home-actions,
-      .judge-home-refresh {
+      .judge-home-refresh,
+      .judge-home-sos {
         width: 100%;
       }
       .judge-home-card-head {
@@ -368,6 +474,18 @@
         </div>
       </div>
       <div class="judge-home-actions">
+        <button
+          class="judge-home-sos"
+          type="button"
+          id="supportNavToggle"
+          aria-label="Obrir suport tecnic"
+          aria-controls="supportNavDrawer"
+          aria-expanded="false"
+          title="Suport"
+        >
+          SOS
+          <span id="supportUnreadBadge" class="judge-support-toggle-badge" style="display:none;"></span>
+        </button>
         <button class="judge-home-refresh" type="button" onclick="window.location.reload()" aria-label="Actualitzar el portal">
           <span class="judge-home-refresh-mark" aria-hidden="true">&#8635;</span>
           Actualitzar
@@ -434,5 +552,41 @@
       <div class="judge-home-empty">Aquest QR no te cap acces actiu configurat.</div>
     {% endif %}
   </div>
+  {% include "judge/portal/_support_drawer.html" %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+{% csrf_token %}
+<script>
+  const CSRF_TOKEN = "{{ csrf_token }}";
+  const JUDGE_ASSIGNMENT_ID = "";
+  const JUDGE_REQUEST_SUPPORT_URL = "{% url 'judge_request_support' token_obj.id %}";
+  const JUDGE_SEND_MESSAGE_URL = "{% url 'judge_send_message' token_obj.id %}";
+  const JUDGE_MESSAGES_UPDATES_URL = "{% url 'judge_messages_updates' token_obj.id %}";
+  const SUPPORT_DEFAULT_COOLDOWN_SECONDS = 30;
+  let supportSince = null;
+  let supportAfterId = "";
+  let supportConversation = null;
+  let supportBusy = false;
+  let supportCooldownRemaining = 0;
+  let supportInitialLoaded = false;
+  let supportLocalUnread = 0;
+  const supportMessages = [];
+  {% include "judge/portal/scripts/_30_support.js.html" %}
+  initSupportUi();
+</script>
+{% if judge_pwa_enabled %}
+<script>
+  (function(){
+    if(!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    const swUrl = "{{ judge_service_worker_url }}";
+    const swScope = "{{ judge_service_worker_scope }}";
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register(swUrl, {scope: swScope}).catch(function(){});
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

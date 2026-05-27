@@ -32,12 +32,6 @@ GENERAL_WALLPAPER_URL_NAMES = {
     "public_live_classificacions_data",
     "classificacions_live_data",
     "classificacions_live_export_excel",
-    "qr_admin_home",
-    "qr_admin_detail",
-    "judges_qr_home",
-    "judges_qr_print",
-    "public_live_qr_home",
-    "public_live_qr_print",
     "public_live_qr_png",
     "judge_messages_hub",
     "judge_messages_updates_org",
@@ -59,12 +53,22 @@ GENERAL_WALLPAPER_URL_NAMES = {
     "judge_send_message",
     "judge_messages_updates",
 }
+NOTES_WALLPAPER_URL_NAMES = {
+    "qr_admin_home",
+    "qr_admin_detail",
+    "judges_qr_home",
+    "judges_qr_print",
+    "public_live_qr_home",
+    "public_live_qr_print",
+}
 
 
 def _active_competition_section_from_url_name(url_name):
     url_name = str(url_name or "")
     if url_name in GENERAL_WALLPAPER_URL_NAMES:
         return "general"
+    if url_name in NOTES_WALLPAPER_URL_NAMES:
+        return "notes"
     if url_name in {"competicions_home", "created"}:
         return "general"
     if "inscripcio" in url_name or "inscripcions" in url_name or url_name == "import":

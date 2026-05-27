@@ -36,6 +36,7 @@ from ....models.judging import (
     JudgeConversation,
     JudgeConversationMessage,
     JudgeDeviceToken,
+    JudgePortalAssignment,
     PublicLiveToken,
 )
 from ....models.classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
@@ -61,6 +62,7 @@ from ....models.scoring import (
 from ....models.competicio import (
     Aparell,
     CompeticioAparell,
+    CompeticioAparellFase,
     CompeticioAparellEquipContextSource,
     InscripcioAparellExclusio,
 )
@@ -183,6 +185,81 @@ class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(msg.message_type, JudgeConversationMessage.MessageType.SUPPORT_REQUEST_QUICK)
         self.assertIn("assistencia", (msg.text or "").lower())
 
+    def test_support_conversation_is_device_scoped_with_assignment_context(self):
+        other_app = self._create_aparell("DMT_MSG", "Doble Mini Msg")
+        other_comp_app = self._create_comp_aparell(self.comp, other_app, ordre=2, actiu=True)
+        phase = CompeticioAparellFase.objects.create(
+            competicio=self.comp,
+            comp_aparell=other_comp_app,
+            nom="Final",
+            codi="FINAL",
+            ordre=1,
+        )
+        first = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_app,
+            label="Taula A",
+            ordre=1,
+            permissions=[{"field_code": "E", "judge_index": 1}],
+        )
+        second = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=other_comp_app,
+            fase=phase,
+            label="Taula B",
+            ordre=2,
+            permissions=[{"field_code": "D", "judge_index": 1}],
+        )
+        support_url = reverse("judge_request_support", kwargs={"token": self.token.id})
+        send_url = reverse("judge_send_message", kwargs={"token": self.token.id})
+
+        support_res = self.client.post(
+            support_url,
+            data=json.dumps({"quick": True, "assignment_id": second.id}),
+            content_type="application/json",
+        )
+        send_res = self.client.post(
+            send_url,
+            data=json.dumps({"text": "Missatge des del mateix QR.", "assignment_id": first.id}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(support_res.status_code, 200)
+        self.assertEqual(send_res.status_code, 200)
+        self.assertEqual(JudgeConversation.objects.filter(judge_token=self.token).count(), 1)
+        conv = JudgeConversation.objects.get(judge_token=self.token)
+        self.assertEqual(conv.comp_aparell_id, self.comp_app.id)
+        support_msg = JudgeConversationMessage.objects.get(
+            conversation=conv,
+            message_type=JudgeConversationMessage.MessageType.SUPPORT_REQUEST_QUICK,
+        )
+        reply_msg = JudgeConversationMessage.objects.get(
+            conversation=conv,
+            message_type=JudgeConversationMessage.MessageType.REPLY,
+        )
+        self.assertEqual(support_msg.payload.get("assignment_id"), second.id)
+        self.assertEqual(support_msg.payload.get("assignment_app_label"), "Doble Mini Msg")
+        self.assertEqual(reply_msg.payload.get("assignment_id"), first.id)
+
+        updates_res = self.client.get(reverse("judge_messages_updates", kwargs={"token": self.token.id}))
+        conversation_payload = updates_res.json()["conversation"]
+        self.assertEqual(conversation_payload["assignments_count"], 2)
+        self.assertIn("Taula A", conversation_payload["assignment_summary"])
+        self.assertFalse(conversation_payload["assignment_context_is_legacy"])
+
+    def test_token_home_exposes_sos_support_for_device_qr(self):
+        response = self.client.get(
+            reverse("judge_portal", kwargs={"token": self.token.id}),
+            {"home": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "judge/portal_home.html")
+        self.assertContains(response, 'id="supportNavToggle"')
+        self.assertContains(response, 'id="supportNavDrawer"')
+        self.assertContains(response, reverse("judge_request_support", kwargs={"token": self.token.id}))
+        self.assertContains(response, 'const JUDGE_ASSIGNMENT_ID = "";')
+
     def test_quick_support_has_cooldown(self):
         url = reverse("judge_request_support", kwargs={"token": self.token.id})
         first = self.client.post(url, data=json.dumps({}), content_type="application/json")
@@ -229,6 +306,32 @@ class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.client.force_login(self.readonly_user)
         denied_res = self.client.get(hub_url)
         self.assertEqual(denied_res.status_code, 403)
+
+    def test_org_hub_lists_qr_device_assignment_summary(self):
+        other_app = self._create_aparell("TUM_MSG", "Tumbling Msg")
+        other_comp_app = self._create_comp_aparell(self.comp, other_app, ordre=2, actiu=True)
+        JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_app,
+            label="Taula A",
+            ordre=1,
+            permissions=[{"field_code": "E", "judge_index": 1}],
+        )
+        JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=other_comp_app,
+            label="Taula B",
+            ordre=2,
+            permissions=[{"field_code": "D", "judge_index": 1}],
+        )
+
+        self.client.force_login(self.manager_user)
+        response = self.client.get(reverse("judge_messages_hub", kwargs={"competicio_id": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Destinatari (QR dispositiu)")
+        self.assertContains(response, "Taula A - Trampoli Msg")
+        self.assertContains(response, "Taula B - Tumbling Msg")
 
     def test_org_can_open_conversation_by_token_and_mark_resolved(self):
         send_url = reverse("judge_messages_send_org", kwargs={"competicio_id": self.comp.id})

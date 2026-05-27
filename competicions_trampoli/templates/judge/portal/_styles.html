@@ -9,7 +9,17 @@
     }
     .judge-card-head{ gap:.65rem; min-width:0; }
     .judge-card-main{ min-width:0; flex:1 1 auto; }
+    .judge-entry-name{
+      display:inline-flex;
+      align-items:center;
+      max-width:100%;
+      color:#1d4ed8;
+      font-weight:900;
+      line-height:1.22;
+      overflow-wrap:anywhere;
+    }
     .judge-card-main .fw-semibold,
+    .judge-card-main .judge-entry-name,
     .judge-card-main .judge-meta{ overflow-wrap:anywhere; }
     .judge-card.flash{ box-shadow: 0 0 0 2px rgba(13,110,253,.25), 0 3px 12px rgba(37,99,235,.06); transition: box-shadow .2s ease; }
     .judge-meta{ color:#6c757d; font-size:.85rem; }
@@ -556,8 +566,59 @@
     .judge-exercise-actions{ display:flex; justify-content:flex-end; flex-wrap:wrap; gap:.5rem; margin-top:.75rem; }
     .judge-video-disabled{ margin-top:.5rem; }
     .judge-view-mode{ display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; }
-    .judge-view-mode-label{ font-size:.8rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.04em; }
-    .judge-view-mode-select{ width:auto; min-width:220px; }
+    .judge-view-mode--center{
+      flex-direction:column;
+      justify-content:center;
+      width:min(100%, 760px);
+      margin-left:auto;
+      margin-right:auto;
+      gap:.4rem;
+    }
+    .judge-view-mode-label,
+    .judge-view-mode-title{ font-size:.8rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.04em; }
+    .judge-view-mode-title{
+      width:100%;
+      text-align:center;
+      color:#1d4ed8;
+      font-size:.78rem;
+      font-weight:900;
+      line-height:1.1;
+    }
+    .judge-view-mode-toggle{
+      display:inline-flex;
+      gap:.35rem;
+      padding:.24rem;
+      border:1px solid #bfdbfe;
+      border-radius:.8rem;
+      background:#eff6ff;
+      box-shadow:0 10px 22px rgba(15,23,42,.07);
+      width:min(100%, 440px);
+    }
+    .judge-view-mode-toggle .btn{
+      flex:1 1 0;
+      min-width:0;
+      border-radius:.62rem !important;
+      border-color:transparent;
+      background:transparent;
+      color:#1d4ed8;
+      font-weight:850;
+      line-height:1.15;
+      white-space:normal;
+    }
+    .judge-view-mode-toggle .btn:hover,
+    .judge-view-mode-toggle .btn:focus{
+      border-color:#93c5fd;
+      background:#ffffff;
+      color:#1d4ed8;
+    }
+    .judge-view-mode-toggle .btn-check:checked + .btn,
+    .judge-view-mode-toggle .btn.active{
+      border-color:#1d4ed8 !important;
+      background:linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
+      color:#ffffff !important;
+      box-shadow:0 12px 22px rgba(37,99,235,.34), inset 0 1px 0 rgba(255,255,255,.24) !important;
+      transform:translateY(-1px);
+    }
     .judge-competition-exercise-band{ margin-bottom:1rem; }
     .judge-competition-exercise-title{
       position:sticky;
@@ -698,8 +759,11 @@
         width:100%;
       }
       .judge-view-mode-label{ width:100%; }
-      .judge-view-mode-select{
+      .judge-view-mode-toggle{
         width:100%;
+      }
+      .judge-view-mode-toggle .btn{
+        flex:1 1 0;
         min-width:0;
       }
       .judge-group-switcher{

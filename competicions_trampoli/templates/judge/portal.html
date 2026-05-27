@@ -5,10 +5,10 @@
   {{ block.super }}
   {% if judge_pwa_enabled %}
     <link rel="manifest" href="{{ judge_manifest_url }}">
-    <meta name="theme-color" content="#0f766e">
+    <meta name="theme-color" content="{{ judge_pwa_theme_color }}">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Jurat CEEB">
+    <meta name="apple-mobile-web-app-title" content="{{ judge_pwa_app_name }}">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="{{ judge_pwa_icon_apple_url }}">
   {% endif %}
@@ -22,12 +22,7 @@
     {% include "judge/portal/_header.html" %}
 
     {% if permissions %}
-      <div class="sticky-top-lite">
-        <div class="judge-meta mb-2">
-          Camps puntuats:
-          <span id="permText" data-perm-text></span>
-        </div>
-      </div>
+
 
       <div id="listWrap">
         {% include "judge/portal/_group_tabs.html" %}

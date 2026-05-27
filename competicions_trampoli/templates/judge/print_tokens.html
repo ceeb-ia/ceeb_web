@@ -10,18 +10,21 @@
     .card { border:1px solid #ddd; border-radius: 12px; padding: 12px; display:flex; gap: 12px; align-items:center; }
     .meta { font-size: 13px; color:#444; }
     .label { font-weight: 650; }
+    .section-title { margin: 20px 0 10px; font-size: 18px; }
     img { width: 150px; height: 150px; }
     @media print {
       body { margin: 0; }
       .card { break-inside: avoid; }
+      .section-title { break-after: avoid; }
     }
   </style>
 </head>
 <body>
   <h2>QRs · {{ competicio.nom }}{% if comp_aparell %} · {{ comp_aparell.display_nom }} · Exercici {{ exercici }}{% endif %}</h2>
-  <div class="meta">Imprimeix i retalla (2 per fila).</div>
+  <div class="meta">QRs de jutges i publics actius. Imprimeix i retalla (2 per fila).</div>
   <hr/>
 
+  <h3 class="section-title">Jutges</h3>
   <div class="grid">
     {% for t in tokens %}
       <div class="card">
@@ -36,8 +39,29 @@
           </div>
         </div>
       </div>
+    {% empty %}
+      <div class="meta">No hi ha QRs de jutge actius.</div>
     {% endfor %}
   </div>
+
+  {% if public_tokens %}
+    <h3 class="section-title">Publics</h3>
+    <div class="grid">
+      {% for t in public_tokens %}
+        <div class="card">
+          <img src="{% url 'public_live_qr_png' t.id %}" alt="QR"/>
+          <div>
+            <div class="label">{{ t.label|default:"(sense etiqueta)" }}</div>
+            <div class="meta">{{ t.id }}</div>
+            <div class="meta" style="margin-top:6px;">Classificacions Live (mode public)</div>
+            {% if t.can_view_media %}
+              <div class="meta">Media publica activada</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 
   <script>
     // optional: auto print

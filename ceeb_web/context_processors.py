@@ -65,6 +65,15 @@ def _active_dock_section(url_name):
     url_name = str(url_name or "")
     if url_name in {"competicions_home", "created"}:
         return "home"
+    if url_name in {
+        "qr_admin_home",
+        "qr_admin_detail",
+        "judges_qr_home",
+        "judges_qr_print",
+        "public_live_qr_home",
+        "public_live_qr_print",
+    }:
+        return "notes"
     if "inscripcio" in url_name or "inscripcions" in url_name or url_name == "import":
         return "inscripcions"
     if "rotacions" in url_name:

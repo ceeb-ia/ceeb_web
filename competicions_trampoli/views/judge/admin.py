@@ -716,10 +716,19 @@ def judges_qr_print(request, competicio_id):
     for token in tokens:
         token.permission_summaries = _permission_summary_rows(token.permissions)
 
+    public_tokens = []
+    if user_has_competicio_capability(request.user, competicio, "public_live.manage"):
+        public_tokens = list(
+            PublicLiveToken.objects
+            .filter(competicio=competicio, is_active=True, revoked_at__isnull=True)
+            .order_by("label", "created_at")
+        )
+
     ctx = {
         "competicio": competicio,
         "comp_aparell": comp_aparell,
         "tokens": tokens,
+        "public_tokens": public_tokens,
         "exercici": exercici,
         "franja_id": franja_id,
     }

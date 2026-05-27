@@ -1,5 +1,4 @@
 from pathlib import Path
-from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -83,6 +82,8 @@ from .permissions import (
 
 JUDGE_PWA_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "pwa" / "judge"
 JUDGE_PWA_ICON_FILENAMES = {"apple-touch-icon.png", "icon-192.png", "icon-512.png"}
+JUDGE_PWA_APP_NAME = "IA Score"
+JUDGE_PWA_THEME_COLOR = "#0f766e"
 
 
 def _is_competitive_franja(franja):
@@ -93,13 +94,21 @@ def _absolute_icon_url(request, filename):
     return request.build_absolute_uri(reverse("judge_pwa_icon", kwargs={"filename": filename}))
 
 
-def _judge_portal_query_string(request):
-    params = {}
-    for key in ("ex", "franja", "view_mode"):
-        value = request.GET.get(key)
-        if value not in (None, ""):
-            params[key] = value
-    return urlencode(params)
+def _judge_portal_home_url(token_obj):
+    return f"{reverse('judge_portal', kwargs={'token': str(token_obj.id)})}?home=1"
+
+
+def _judge_pwa_context(token_obj):
+    return {
+        "judge_pwa_enabled": True,
+        "judge_pwa_app_name": JUDGE_PWA_APP_NAME,
+        "judge_pwa_theme_color": JUDGE_PWA_THEME_COLOR,
+        "judge_manifest_url": reverse("judge_manifest", kwargs={"token": str(token_obj.id)}),
+        "judge_service_worker_url": reverse("judge_service_worker", kwargs={"token": str(token_obj.id)}),
+        "judge_service_worker_scope": reverse("judge_portal", kwargs={"token": str(token_obj.id)}),
+        "judge_pwa_icon_apple_url": reverse("judge_pwa_icon", kwargs={"filename": "apple-touch-icon.png"}),
+        "judge_portal_home_url": _judge_portal_home_url(token_obj),
+    }
 
 
 def _assignment_url(token_obj, assignment: EffectiveJudgeAssignment):
@@ -208,6 +217,7 @@ def _render_judge_portal_home(request, token_obj, assignments, *, status=200, se
             "selected_assignment_id": selected_assignment_id,
             "hide_base_chrome": True,
             "judge_kiosk": True,
+            **_judge_pwa_context(token_obj),
         },
         status=status,
     )
@@ -780,8 +790,6 @@ def judge_portal(request, token, assignment_id=None):
         else ""
     )
 
-    query_string = _judge_portal_query_string(request)
-
     ctx = {
         "token_obj": tok,
         "token": str(tok.id),
@@ -823,15 +831,7 @@ def judge_portal(request, token, assignment_id=None):
         ],
         "team_subject_mode": team_subject_mode,
         "franges": competition_franges,
-        "judge_pwa_enabled": True,
-        "judge_manifest_url": (
-            reverse("judge_manifest", kwargs={"token": str(tok.id)})
-            + (f"?{query_string}" if query_string else "")
-        ),
-        "judge_service_worker_url": reverse("judge_service_worker", kwargs={"token": str(tok.id)}),
-        "judge_service_worker_scope": reverse("judge_portal", kwargs={"token": str(tok.id)}),
-        "judge_pwa_icon_apple_url": reverse("judge_pwa_icon", kwargs={"filename": "apple-touch-icon.png"}),
-        "judge_portal_home_url": f"{reverse('judge_portal', kwargs={'token': str(tok.id)})}?home=1",
+        **_judge_pwa_context(tok),
     }
     return render(request, "judge/portal.html", ctx)
 
@@ -843,21 +843,17 @@ def judge_manifest(request, token):
         return JsonResponse({"error": "invalid token"}, status=403)
 
     portal_url = reverse("judge_portal", kwargs={"token": str(tok.id)})
-    query_string = _judge_portal_query_string(request)
-    if query_string:
-        portal_url = f"{portal_url}?{query_string}"
 
-    name = f"Jurat - {tok.competicio.nom}"
     payload = {
-        "name": name,
-        "short_name": "Jurat CEEB",
-        "description": "Portal de puntuacio per a jutges CEEB.",
-        "id": reverse("judge_portal", kwargs={"token": str(tok.id)}),
-        "start_url": portal_url,
+        "name": JUDGE_PWA_APP_NAME,
+        "short_name": JUDGE_PWA_APP_NAME,
+        "description": "Portal de puntuacio IA Score.",
+        "id": portal_url,
+        "start_url": _judge_portal_home_url(tok),
         "scope": reverse("judge_portal", kwargs={"token": str(tok.id)}),
         "display": "standalone",
         "background_color": "#f8fafc",
-        "theme_color": "#0f766e",
+        "theme_color": JUDGE_PWA_THEME_COLOR,
         "icons": [
             {
                 "src": _absolute_icon_url(request, "icon-192.png"),

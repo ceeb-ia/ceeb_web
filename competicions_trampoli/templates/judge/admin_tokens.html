@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}QRs i accessos · {{ competicio.nom }}{% endblock %}
 
 {% block content %}
@@ -88,13 +89,9 @@
         <a class="btn btn-sm btn-outline-primary"
            href="{% url 'judges_qr_print' competicio.id %}{% if comp_aparell %}?comp_aparell={{ comp_aparell.id }}{% endif %}"
            target="_blank">
-          Imprimir jutges
+          <img src="{% static 'notes/QRs/imprimir.png' %}" alt="" style="width:15px;height:15px;object-fit:contain;vertical-align:-2px;margin-right:.32rem;">
+          Imprimir QRs
         </a>
-        {% if can_manage_public_live %}
-          <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_qr_print' competicio.id %}" target="_blank">
-            Imprimir publics
-          </a>
-        {% endif %}
       </div>
     </div>
 

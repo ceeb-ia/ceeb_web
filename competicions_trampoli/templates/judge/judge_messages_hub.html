@@ -36,7 +36,7 @@
       <div class="col-12 col-lg-4">
         <div class="msg-card p-2 mb-3">
           <div class="fw-semibold mb-2">Instruccio puntual</div>
-          <label for="newTokenSelect" class="msg-muted d-block mb-1">Destinatari (token)</label>
+          <label for="newTokenSelect" class="msg-muted d-block mb-1">Destinatari (QR dispositiu)</label>
           <select id="newTokenSelect" class="form-select form-select-sm mb-2"></select>
           <label for="newInstructionInput" class="msg-muted d-block mb-1">Missatge</label>
           <textarea id="newInstructionInput" class="form-control form-control-sm mb-2" rows="3" maxlength="500" placeholder="Escriu una instruccio..."></textarea>
@@ -147,7 +147,7 @@
     elTokenSelect.innerHTML = '<option value="">Selecciona token...</option>';
     TOKENS.forEach((t) => {
       const label = (t.label || "").trim() || String(t.id);
-      const app = (((t.comp_aparell || {}).aparell || {}).nom || "").trim();
+      const app = (t.assignment_summary || (((t.comp_aparell || {}).aparell || {}).nom || "")).trim();
       const option = document.createElement("option");
       option.value = String(t.id);
       option.textContent = app ? `${label} · ${app}` : label;

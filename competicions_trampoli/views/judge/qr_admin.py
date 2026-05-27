@@ -172,6 +172,17 @@ def qr_admin_home(request, competicio_id, token_id=None):
             messages.success(request, "QR de jutge revocat.")
             return redirect(_qr_admin_url(competicio, token))
 
+        elif action == "update_judge_qr_label":
+            token = get_object_or_404(JudgeDeviceToken, pk=request.POST.get("token_id"), competicio=competicio)
+            label = str(request.POST.get("label") or "").strip()
+            if len(label) > 120:
+                messages.error(request, "El titol del QR no pot superar 120 caracters.")
+                return redirect(_qr_admin_url(competicio, token))
+            token.label = label
+            token.save(update_fields=["label"])
+            messages.success(request, "Titol del QR actualitzat.")
+            return redirect(_qr_admin_url(competicio, token))
+
         elif action == "revoke_public_qr":
             if not can_manage_public_live:
                 messages.error(request, "No tens permisos per gestionar QRs publics.")
@@ -183,6 +194,41 @@ def qr_admin_home(request, competicio_id, token_id=None):
             messages.success(request, "QR public revocat.")
             return redirect(f"{_qr_admin_url(competicio)}?public_token={token.id}")
 
+        elif action == "update_public_qr_label":
+            if not can_manage_public_live:
+                messages.error(request, "No tens permisos per gestionar QRs publics.")
+                return redirect(_qr_admin_url(competicio, selected_token))
+            token = get_object_or_404(PublicLiveToken, pk=request.POST.get("token_id"), competicio=competicio)
+            label = str(request.POST.get("label") or "").strip()
+            if len(label) > 120:
+                messages.error(request, "El titol del QR public no pot superar 120 caracters.")
+                return redirect(f"{_qr_admin_url(competicio)}?public_token={token.id}")
+            token.label = label
+            token.save(update_fields=["label"])
+            messages.success(request, "Titol del QR public actualitzat.")
+            return redirect(f"{_qr_admin_url(competicio)}?public_token={token.id}")
+
+        elif action == "delete_judge_qr":
+            token = get_object_or_404(JudgeDeviceToken, pk=request.POST.get("token_id"), competicio=competicio)
+            if token.is_active and not token.revoked_at:
+                messages.error(request, "Primer cal revocar el QR de jutge abans d'eliminar-lo.")
+                return redirect(_qr_admin_url(competicio, token))
+            token.delete()
+            messages.success(request, "QR de jutge eliminat.")
+            return redirect(_qr_admin_url(competicio))
+
+        elif action == "delete_public_qr":
+            if not can_manage_public_live:
+                messages.error(request, "No tens permisos per gestionar QRs publics.")
+                return redirect(_qr_admin_url(competicio, selected_token))
+            token = get_object_or_404(PublicLiveToken, pk=request.POST.get("token_id"), competicio=competicio)
+            if token.is_active and not token.revoked_at:
+                messages.error(request, "Primer cal revocar el QR public abans d'eliminar-lo.")
+                return redirect(f"{_qr_admin_url(competicio)}?public_token={token.id}")
+            token.delete()
+            messages.success(request, "QR public eliminat.")
+            return redirect(_qr_admin_url(competicio))
+
         elif action == "deactivate_assignment":
             assignment = get_object_or_404(
                 JudgePortalAssignment,
@@ -193,6 +239,20 @@ def qr_admin_home(request, competicio_id, token_id=None):
             assignment.save(update_fields=["is_active", "updated_at"])
             messages.success(request, "Assignacio desactivada.")
             return redirect(_qr_admin_url(competicio, assignment.judge_token))
+
+        elif action == "delete_assignment":
+            assignment = get_object_or_404(
+                JudgePortalAssignment,
+                pk=request.POST.get("assignment_id"),
+                competicio=competicio,
+            )
+            token = assignment.judge_token
+            if assignment.is_active:
+                messages.error(request, "Primer cal desactivar l'acces abans d'eliminar-lo.")
+                return redirect(_qr_admin_url(competicio, token))
+            assignment.delete()
+            messages.success(request, "Acces eliminat.")
+            return redirect(_qr_admin_url(competicio, token))
 
         elif action == "add_assignment":
             token = get_object_or_404(JudgeDeviceToken, pk=request.POST.get("token_id"), competicio=competicio)

@@ -25,7 +25,7 @@
       <div class="notes-header-actions">
         <div class="btn-group scoring-panel-dropdown">
           <button type="button"
-                  class="btn btn-sm section-btn section-btn--classificacions dropdown-toggle scoring-panel-dropdown-toggle"
+                  class="btn btn-sm section-btn section-btn--notes dropdown-toggle scoring-panel-dropdown-toggle"
                   aria-haspopup="true"
                   aria-expanded="false">
             Classificacions
@@ -43,26 +43,8 @@
             </a>
           </div>
         </div>
-        <div class="btn-group scoring-panel-dropdown">
-          <button type="button"
-                  class="btn btn-sm section-btn section-btn--notes dropdown-toggle scoring-panel-dropdown-toggle"
-                  aria-haspopup="true"
-                  aria-expanded="false">
-            QRs
-          </button>
-
-          <div class="dropdown-menu">
-            <a class="dropdown-item"
-              href="{% url 'qr_admin_home' competicio.id %}">
-              Administrador QRs
-            </a>
-
-            <a class="dropdown-item"
-              href="{% url 'public_live_qr_home' competicio.id %}">
-              QR públic
-            </a>
-          </div>
-        </div>
+        
+        <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'qr_admin_home' competicio.id %}">Administrador QRs</a>
         <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       </div>

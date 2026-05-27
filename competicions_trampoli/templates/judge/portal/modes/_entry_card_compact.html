@@ -2,7 +2,7 @@
 <div id="off-program-card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripció' }}">
   <div class="judge-card-head d-flex justify-content-between align-items-center">
     <div class="judge-card-main">
-      <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
+      <div class="judge-entry-name">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
       <div class="judge-meta">
         Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
       </div>
@@ -25,7 +25,7 @@
 <div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.name|default:'Inscripció' }}">
   <div class="judge-card-head d-flex justify-content-between align-items-center">
     <div class="judge-card-main">
-      <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
+      <div class="judge-entry-name">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
       <div class="judge-meta">
         {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
       </div>
