@@ -9,99 +9,126 @@
   </div>
   <div class="builder-section__body">
     <div class="builder-section__stack classif-puntuacio-flow">
-      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--base">
+      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--setup">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">01</span>
             <span>
-              <p class="builder-subsection__title">Base del resultat <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda base del resultat">?</button></p>
-              <p class="builder-subsection__desc">Decideix si el resultat base es calcula per puntuacio normal o per victories, i quin ordre s'aplica a la classificacio final.</p>
+              <p class="builder-subsection__title">Context del calcul <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda context del calcul">?</button></p>
+              <p class="builder-subsection__desc">Defineix la base, els aparells, la fase font i com es tracten les notes abans d'editar cada aparell.</p>
             </span>
           </div>
           <div class="builder-inline-note">Entrada</div>
         </div>
-        <div class="row">
-          <div class="col-12 col-md-6 mb-3">
-            <label class="font-weight-bold">Base de puntuacio</label>
-            <select class="form-control" id="sModeResultatAparells">
-              <option value="score">Score</option>
-              <option value="victories">Victories</option>
-            </select>
-            <div class="small text-muted mt-1">En mode victories, cada aparell compara participants entre si abans de combinar el resultat final.</div>
-          </div>
-          <div class="col-12 col-md-6 mb-3">
-            <label class="font-weight-bold">Ordre principal <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="ordre_principal" aria-label="Ajuda ordre principal">?</button></label>
-            <select class="form-control" id="sOrdre">
-              <option value="desc">Desc (mes es millor)</option>
-              <option value="asc">Asc (menys es millor)</option>
-            </select>
-          </div>
-        </div>
-      </div>
 
-      <div class="builder-subsection classif-puntuacio-panel classif-puntuacio-panel--input">
-        <div class="builder-subsection__head">
-          <div class="classif-step-heading">
-            <span class="classif-step-index">02</span>
-            <span>
-              <p class="builder-subsection__title">Entrada del calcul <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="seleccio_exercicis" aria-label="Ajuda conjunt de notes candidates">?</button></p>
-              <p class="builder-subsection__desc">Defineix quins aparells entren al calcul i si les notes es tracten individualment per aparell o dins d'un sac conjunt. En equips derivats, tambe si es tracten per membre o per equip conjuntament.</p>
-            </span>
-          </div>
-        </div>
-
-        <div class="row">
-          <div class="col-12 mb-2">
-            <div class="classif-puntuacio-mini-title">Aparells inclosos</div>
-          </div>
-          <div class="col-12" id="apSelBox">
-            <div class="classif-puntuacio-choice-shell mb-3">
-              <div class="row" id="apChkList"></div>
+        <div class="classif-puntuacio-context-flow">
+          <div class="classif-puntuacio-context-card classif-puntuacio-context-card--base">
+            <div class="classif-puntuacio-context-card__head">
+              <span class="classif-step-index">1</span>
+              <span>
+                <span class="classif-puntuacio-context-card__title">Base i ordre</span>
+                <span class="classif-puntuacio-context-card__desc">Com es calcula i ordena el resultat.</span>
+              </span>
             </div>
-            <div id="appStaleBanner" class="builder-status-stack mb-3"></div>
-          </div>
-        </div>
-
-        {% if not is_global_builder %}
-        <div class="classif-puntuacio-inline-card mb-3">
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <div>
-              <div class="font-weight-bold">Abast de fase</div>
-              <div class="small text-muted">Sense fase explicita, la classificacio usa la preliminar implicita i el comportament actual.</div>
+            <div class="classif-puntuacio-choice-pairs">
+              <div>
+                <label class="font-weight-bold">Base <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda base del resultat">?</button></label>
+                <select class="form-control classif-hidden-native-select" id="sModeResultatAparells" aria-hidden="true" tabindex="-1">
+                  <option value="score">Score</option>
+                  <option value="victories">Victories</option>
+                </select>
+                <div class="classif-inline-choice-grid" role="group" aria-label="Base de puntuacio">
+                  <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sModeResultatAparells" data-value="score">
+                    <span>
+                      <strong>Score</strong>
+                      <small>Puntuacio normal.</small>
+                    </span>
+                  </button>
+                  <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sModeResultatAparells" data-value="victories">
+                    <span>
+                      <strong>Victories</strong>
+                      <small>Comparacio per aparell.</small>
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="font-weight-bold">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="ordre_principal" aria-label="Ajuda ordre principal">?</button></label>
+                <select class="form-control classif-hidden-native-select" id="sOrdre" aria-hidden="true" tabindex="-1">
+                  <option value="desc">Desc (mes es millor)</option>
+                  <option value="asc">Asc (menys es millor)</option>
+                </select>
+                <div class="classif-inline-choice-grid" role="group" aria-label="Ordre principal">
+                  <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sOrdre" data-value="desc">
+                    <span>
+                      <strong>Mes es millor</strong>
+                      <small>Ordre descendent.</small>
+                    </span>
+                  </button>
+                  <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sOrdre" data-value="asc">
+                    <span>
+                      <strong>Menys es millor</strong>
+                      <small>Ordre ascendent.</small>
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="builder-inline-note">Fase 5</div>
           </div>
-          <div id="phaseScopeRows" class="mb-2"></div>
-          <div class="small text-muted" id="phaseScopeHint"></div>
-        </div>
-        {% endif %}
 
-        <div class="row">
-          <div class="col-12 col-md-6 mb-3">
-            <label class="font-weight-bold">Tractament dels aparells</label>
-            <select class="form-control" id="sModeSeleccioExercicis">
-              <option value="per_aparell_override">Notes per aparell per separat</option>
-              <option value="global_pool">Totes les notes dels aparells junts</option>
-            </select>
-            <div class="small text-muted mt-1">Defineix si cada aparell resol els seus exercicis pel seu compte o si es crea una sola bossa amb els aparells seleccionats.</div>
+          <div class="classif-puntuacio-context-card classif-puntuacio-context-card--apps">
+            <div class="classif-puntuacio-context-card__head">
+              <span class="classif-step-index">2</span>
+              <span>
+                <span class="classif-puntuacio-context-card__title">Aparells i fase font</span>
+                <span class="classif-puntuacio-context-card__desc">Quins aparells entren i d'on surten les notes.</span>
+              </span>
+            </div>
+            <div id="apSelBox">
+              <div class="classif-puntuacio-choice-shell mb-2">
+                <div class="row" id="apChkList"></div>
+              </div>
+              <div id="appStaleBanner" class="builder-status-stack"></div>
+              {% if not is_global_builder %}
+              <div id="phaseScopeRows" class="classif-phase-scope-host"></div>
+              <div class="small text-muted mt-2" id="phaseScopeHint"></div>
+              {% endif %}
+            </div>
           </div>
-          <div class="col-12 col-md-6 mb-3" id="exerciseSelectionScopeWrap" style="display:none;">
-            <label class="font-weight-bold">Membres de l'equip</label>
-            <select class="form-control" id="sExerciseSelectionScope">
-              <option value="per_member">Notes per membre per separat</option>
-              <option value="team_pool">Totes les notes de l'equip juntes</option>
-            </select>
-            <div class="small text-muted mt-1">Nomes s'aplica en classificacions d'equips derivades d'individuals.</div>
+
+          <div class="classif-puntuacio-context-card classif-puntuacio-context-card--treatment">
+            <div class="classif-puntuacio-context-card__head">
+              <span class="classif-step-index">3</span>
+              <span>
+                <span class="classif-puntuacio-context-card__title">Tractament</span>
+                <span class="classif-puntuacio-context-card__desc">Per aparell, sac global i membres.</span>
+              </span>
+            </div>
+            <div class="classif-puntuacio-context-card__stack">
+              <div>
+                <label class="font-weight-bold">Aparells</label>
+                <select class="form-control" id="sModeSeleccioExercicis">
+                  <option value="per_aparell_override">Notes per aparell per separat</option>
+                  <option value="global_pool">Totes les notes dels aparells junts</option>
+                </select>
+              </div>
+              <div id="exerciseSelectionScopeWrap" style="display:none;">
+                <label class="font-weight-bold">Membres</label>
+                <select class="form-control" id="sExerciseSelectionScope">
+                  <option value="per_member">Notes per membre per separat</option>
+                  <option value="team_pool">Totes les notes de l'equip juntes</option>
+                </select>
+              </div>
+            </div>
+            <div id="candidateScopeHint" class="small text-muted mt-2"></div>
           </div>
         </div>
-
-        <div id="candidateScopeHint" class="small text-muted"></div>
       </div>
 
       <div class="builder-subsection classif-puntuacio-panel classif-puntuacio-panel--apps">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">03</span>
+            <span class="classif-step-index">02</span>
             <span>
               <p class="builder-subsection__title">Configuracio dels aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda configuracio per aparell">?</button></p>
               <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatoria, i pot afegir una configuracio extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
@@ -117,7 +144,7 @@
       <div class="builder-subsection classif-puntuacio-panel classif-puntuacio-panel--shared" id="exerciseCriteriaCard">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">04</span>
+            <span class="classif-step-index">03</span>
             <span>
               <p class="builder-subsection__title">Seleccio dins del sac compartit <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
               <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
@@ -168,7 +195,7 @@
       <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--limits" id="exerciseRestrictionsCard">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">05</span>
+            <span class="classif-step-index">04</span>
             <span>
               <p class="builder-subsection__title">Limits i restriccions</p>
               <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
@@ -190,7 +217,7 @@
       <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--final" id="appAggregationCard">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">06</span>
+            <span class="classif-step-index">05</span>
             <span>
               <p class="builder-subsection__title">Combinacio final entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregacio entre aparells">?</button></p>
               <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
@@ -215,7 +242,7 @@
       <div class="builder-subsection builder-subsection--highlight classif-puntuacio-panel classif-puntuacio-panel--summary">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">07</span>
+            <span class="classif-step-index">06</span>
             <span>
               <p class="builder-subsection__title">Resum del calcul</p>
               <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>

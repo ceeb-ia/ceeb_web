@@ -1481,6 +1481,68 @@
     `;
   }
 
+  function _puntuacioAppTabSummary(selectedCodes, campsMode, showExOverride, isGlobalPool) {
+    const parts = [];
+    const fieldCount = Array.isArray(selectedCodes) ? selectedCodes.length : 0;
+    parts.push(`${fieldCount || 0} camp${fieldCount === 1 ? "" : "s"}`);
+    if (_normalizePerAppCampsMode(campsMode) === "per_exercici") parts.push("per exercici");
+    if (isGlobalPool) parts.push("sac global");
+    else if (showExOverride) parts.push("seleccio propia");
+    return parts.join(" | ");
+  }
+
+  function setActivePuntuacioAppTab(shell, activeKey) {
+    if (!shell || !activeKey) return;
+    shell.querySelectorAll("[data-puntuacio-app-tab]").forEach(tab => {
+      const isActive = String(tab.getAttribute("data-puntuacio-app-tab")) === String(activeKey);
+      tab.classList.toggle("is-active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    shell.querySelectorAll("[data-puntuacio-app-panel]").forEach(panel => {
+      const isActive = String(panel.getAttribute("data-puntuacio-app-panel")) === String(activeKey);
+      panel.classList.toggle("is-active", isActive);
+      panel.hidden = !isActive;
+    });
+  }
+
+  function syncPuntuacioSelectChoiceButtons() {
+    document.querySelectorAll("[data-puntuacio-select-choice]").forEach(btn => {
+      const selectId = String(btn.getAttribute("data-puntuacio-select-choice") || "").trim();
+      const value = String(btn.getAttribute("data-value") || "").trim();
+      const select = selectId ? document.getElementById(selectId) : null;
+      const option = select ? Array.from(select.options || []).find(opt => String(opt.value || "") === value) : null;
+      const selected = !!select && String(select.value || "") === value;
+      btn.classList.toggle("is-selected", selected);
+      btn.disabled = !!option?.disabled;
+      btn.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+  }
+
+  function bindPuntuacioSelectChoiceButtons() {
+    document.querySelectorAll("[data-puntuacio-select-choice]").forEach(btn => {
+      if (btn.dataset.puntuacioChoiceBound === "1") return;
+      btn.dataset.puntuacioChoiceBound = "1";
+      btn.addEventListener("click", () => {
+        const selectId = String(btn.getAttribute("data-puntuacio-select-choice") || "").trim();
+        const value = String(btn.getAttribute("data-value") || "").trim();
+        const select = selectId ? document.getElementById(selectId) : null;
+        const option = select ? Array.from(select.options || []).find(opt => String(opt.value || "") === value) : null;
+        if (option?.disabled) {
+          syncPuntuacioSelectChoiceButtons();
+          return;
+        }
+        if (!select || String(select.value || "") === value) {
+          syncPuntuacioSelectChoiceButtons();
+          return;
+        }
+        select.value = value;
+        syncPuntuacioSelectChoiceButtons();
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
+    syncPuntuacioSelectChoiceButtons();
+  }
+
   function refreshPerAppExCardUI(card){
     const modeSel = card.querySelector("[data-app-ex-mode]");
     if (!modeSel) return;
@@ -1622,8 +1684,35 @@
     const appCount = appIds.length;
     const modeSel = getModeSeleccioExercicisFromUI() || _puntuacioNormalizeModeSelection(punt.mode_seleccio_exercicis || "per_aparell_override", appCount);
     const showExOverride = modeSel === "per_aparell_override" || appCount <= 1;
+    const isGlobalPool = modeSel === "global_pool" && appCount > 1;
     const showMemberSelection = isMemberSelectionAggregationAvailable();
     els.perAppBox.innerHTML = "";
+    if (!appIds.length) {
+      els.perAppBox.innerHTML = `
+        <div class="puntuacio-app-empty">
+          Selecciona almenys un aparell per configurar els camps i el flux de puntuacio.
+        </div>
+      `;
+      return;
+    }
+
+    const validKeys = appIds.map(id => String(id));
+    const activeKey = validKeys.includes(String(state.puntuacioActiveAppId || ""))
+      ? String(state.puntuacioActiveAppId)
+      : validKeys[0];
+    state.puntuacioActiveAppId = activeKey;
+
+    const shell = document.createElement("div");
+    shell.className = "puntuacio-app-tabs-shell";
+    const tabs = document.createElement("div");
+    tabs.className = "puntuacio-app-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "Aparells de puntuacio");
+    const panels = document.createElement("div");
+    panels.className = "puntuacio-app-panels";
+    shell.appendChild(tabs);
+    shell.appendChild(panels);
+    els.perAppBox.appendChild(shell);
 
     appIds.forEach(id => {
       const key = String(id);
@@ -1643,6 +1732,24 @@
       if (appCode && appCode !== appName) metaParts.push(appCode);
       metaParts.push(`ID ${key}`);
       const toneClass = `puntuacio-app-card--tone-${appIds.indexOf(id) % 4}`;
+      const isActive = key === activeKey;
+      const tabSummary = _puntuacioAppTabSummary(selectedCodes, campsMode, showExOverride, isGlobalPool);
+
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = `puntuacio-app-tab ${isActive ? "is-active" : ""}`;
+      tab.setAttribute("data-puntuacio-app-tab", key);
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+      tab.innerHTML = `
+        <span class="puntuacio-app-tab__name">${esc(appName)}</span>
+        <span class="puntuacio-app-tab__meta">${esc(tabSummary)}</span>
+      `;
+      tab.addEventListener("click", () => {
+        state.puntuacioActiveAppId = key;
+        setActivePuntuacioAppTab(shell, key);
+      });
+      tabs.appendChild(tab);
 
       const card = document.createElement("div");
       card.className = `puntuacio-app-card ${toneClass}`;
@@ -1655,16 +1762,33 @@
           </div>
         </div>
         <div class="puntuacio-app-card__body">
-          ${perAppFieldsHTML(key, selectedCodes)}
-          ${perAppAggCampsHTML(key, aggCamps)}
-          ${perAppFieldModeHTML(key, campsMode)}
-          ${perAppExerciseFieldsHTML(key, campsMode, punt)}
-          ${isCandidateSourceAvailable() ? perAppCandidateSourceHTML(key, candidateSourceEntry) : ""}
-          ${isTeamPoolPerExerciseConfigurationAvailable() ? `${perAppTeamPoolModeHTML(key, perAppTeamPoolMode)}${perAppTeamPoolPerExerciseHTML(key, perAppTeamPoolMode, punt)}` : ""}
-          ${showExOverride ? `${perAppExercicisHTML(key, perAppExCfg)}${perAppAggExercicisHTML(key, perAppAggEx)}${showMemberSelection ? perAppParticipantsHTML(key, perAppParticipantsCfg, perAppAggParticipants) : ""}` : perAppGlobalPoolContextHTML(key)}
+          <div class="puntuacio-app-workflow">
+            <div class="puntuacio-app-workflow__row puntuacio-app-workflow__row--fields" aria-label="Flux de camps">
+              ${perAppFieldsHTML(key, selectedCodes)}
+              ${perAppAggCampsHTML(key, aggCamps)}
+              ${perAppFieldModeHTML(key, campsMode)}
+            </div>
+            <div class="puntuacio-app-workflow__expansions puntuacio-app-workflow__expansions--fields" aria-label="Configuracio detallada de camps per exercici">
+              ${perAppExerciseFieldsHTML(key, campsMode, punt)}
+            </div>
+            <div class="puntuacio-app-workflow__row puntuacio-app-workflow__row--notes" aria-label="Flux d'exercicis i conjunt candidat">
+              ${isCandidateSourceAvailable() ? perAppCandidateSourceHTML(key, candidateSourceEntry) : ""}
+              ${isTeamPoolPerExerciseConfigurationAvailable() ? perAppTeamPoolModeHTML(key, perAppTeamPoolMode) : ""}
+              ${showExOverride ? `${perAppExercicisHTML(key, perAppExCfg)}${perAppAggExercicisHTML(key, perAppAggEx)}${showMemberSelection ? perAppParticipantsHTML(key, perAppParticipantsCfg, perAppAggParticipants) : ""}` : perAppGlobalPoolContextHTML(key)}
+            </div>
+            <div class="puntuacio-app-workflow__expansions puntuacio-app-workflow__expansions--team-pool" aria-label="Configuracio detallada de bosses per exercici">
+              ${isTeamPoolPerExerciseConfigurationAvailable() ? perAppTeamPoolPerExerciseHTML(key, perAppTeamPoolMode, punt) : ""}
+            </div>
+          </div>
         </div>
       `;
-      els.perAppBox.appendChild(card);
+      const panel = document.createElement("div");
+      panel.className = `puntuacio-app-panel ${isActive ? "is-active" : ""}`;
+      panel.setAttribute("data-puntuacio-app-panel", key);
+      panel.setAttribute("role", "tabpanel");
+      panel.hidden = !isActive;
+      panel.appendChild(card);
+      panels.appendChild(panel);
 
       refreshPerAppAggCampsCardUI(card);
       refreshPerAppExerciseFieldOverridesCardUI(card, punt);
@@ -2071,6 +2195,7 @@
       els.sExerciseSelectionScope.value = normalizeExerciseSelectionScope(punt.exercise_selection_scope);
     }
     bindPuntuacioEvents();
+    syncPuntuacioSelectChoiceButtons();
     renderPuntuacioSection(currentSchema);
   }
 
@@ -2170,6 +2295,7 @@
     _applyPuntuacioScopeCopy();
     refreshMainExercicisUI();
     refreshVictoryTieVisibility();
+    syncPuntuacioSelectChoiceButtons();
     _renderPuntuacioSummary(currentSchema);
   }
 
@@ -2178,4 +2304,5 @@
     puntuacioUiBound = true;
     _applyPuntuacioModeCopy(_puntuacioSelectedAppCount());
     _applyPuntuacioScopeCopy();
+    bindPuntuacioSelectChoiceButtons();
   }

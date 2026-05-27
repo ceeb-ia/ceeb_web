@@ -654,6 +654,8 @@
       renderTieUI(readTieBuilderState(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
+    } else if (e.target && e.target.matches("select[data-phase-scope-app]")) {
+      syncAdvancedFromUI();
     }
   });
 

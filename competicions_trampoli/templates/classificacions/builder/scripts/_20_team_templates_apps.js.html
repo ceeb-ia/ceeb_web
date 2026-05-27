@@ -903,29 +903,36 @@
     const selectedApps = selectedAparellIdsFromUI();
     if (els.phaseScopeRows) {
       els.phaseScopeRows.innerHTML = "";
+      document.querySelectorAll("[data-app-phase-slot]").forEach(slot => {
+        slot.innerHTML = "";
+      });
       selectedApps.forEach(appId => {
         const app = getAparellById(appId);
         const appScope = phaseScopeForApp(scope, appId);
         const row = document.createElement("div");
-        row.className = "row align-items-center mb-2";
-        const labelCol = document.createElement("div");
-        labelCol.className = "col-12 col-md-4 small font-weight-bold";
-        labelCol.textContent = app?.nom || `Aparell ${appId}`;
-        const selectCol = document.createElement("div");
-        selectCol.className = "col-12 col-md-8";
+        row.className = "classif-app-phase-control";
         const select = document.createElement("select");
-        select.className = "form-control form-control-sm";
+        const appPhaseChoices = phaseChoicesForApp(appId);
+        const selectedPhase = appScope.fase_id ? getPhaseById(appScope.fase_id) : null;
+        const showStaticImplicit = !appPhaseChoices.length && !selectedPhase;
+        const useChoiceCards = appPhaseChoices.length > 0 && appPhaseChoices.length <= 4;
+        select.className = (useChoiceCards || showStaticImplicit)
+          ? "form-control form-control-sm classif-hidden-native-select"
+          : "form-control form-control-sm classif-phase-native-select";
+        if (useChoiceCards || showStaticImplicit) {
+          select.setAttribute("aria-hidden", "true");
+          select.setAttribute("tabindex", "-1");
+        }
         select.dataset.phaseScopeApp = String(appId);
         select.innerHTML = '<option value="">Preliminar implicita</option>';
         const seen = new Set();
-        phaseChoicesForApp(appId).forEach(phase => {
+        appPhaseChoices.forEach(phase => {
           seen.add(String(phase.id));
           const opt = document.createElement("option");
           opt.value = String(phase.id);
           opt.textContent = phase.nom || `Fase ${phase.id}`;
           select.appendChild(opt);
         });
-        const selectedPhase = appScope.fase_id ? getPhaseById(appScope.fase_id) : null;
         if (selectedPhase && !seen.has(String(selectedPhase.id))) {
           const opt = document.createElement("option");
           opt.value = String(selectedPhase.id);
@@ -933,10 +940,58 @@
           select.appendChild(opt);
         }
         select.value = appScope.fase_id ? String(appScope.fase_id) : "";
-        selectCol.appendChild(select);
-        row.appendChild(labelCol);
-        row.appendChild(selectCol);
-        els.phaseScopeRows.appendChild(row);
+        row.appendChild(select);
+        const title = document.createElement("div");
+        title.className = "classif-app-phase-title";
+        title.textContent = "Fase font";
+        row.appendChild(title);
+        if (showStaticImplicit) {
+          const implicit = document.createElement("div");
+          implicit.className = "classif-app-phase-static";
+          implicit.textContent = "Preliminar implicita";
+          row.appendChild(implicit);
+        } else if (useChoiceCards) {
+          const choiceGrid = document.createElement("div");
+          choiceGrid.className = "classif-phase-choice-grid";
+          choiceGrid.setAttribute("role", "group");
+          choiceGrid.setAttribute("aria-label", `Fase font de ${app?.nom || `Aparell ${appId}`}`);
+          const choiceItems = [
+            { value: "", title: "Preliminar", desc: "Implicita" },
+            ...appPhaseChoices.map(phase => ({
+              value: String(phase.id),
+              title: phase.nom || `Fase ${phase.id}`,
+              desc: phase.comp_aparell_nom || app?.nom || "",
+            })),
+          ];
+          choiceItems.forEach(item => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `classif-type-choice classif-type-choice--compact classif-phase-choice${String(select.value || "") === item.value ? " is-selected" : ""}`;
+            btn.setAttribute("aria-pressed", String(select.value || "") === item.value ? "true" : "false");
+            btn.dataset.phaseScopeChoice = String(appId);
+            btn.dataset.value = item.value;
+            btn.innerHTML = `
+              <span>
+                <strong>${esc(item.title)}</strong>
+                <small>${esc(item.desc || "Fase font")}</small>
+              </span>
+            `;
+            btn.addEventListener("click", () => {
+              select.value = item.value;
+              choiceGrid.querySelectorAll("[data-phase-scope-choice]").forEach(node => {
+                const selected = String(node.getAttribute("data-value") || "") === String(select.value || "");
+                node.classList.toggle("is-selected", selected);
+                node.setAttribute("aria-pressed", selected ? "true" : "false");
+              });
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+            choiceGrid.appendChild(btn);
+          });
+          row.appendChild(choiceGrid);
+        }
+        const slot = document.querySelector(`[data-app-phase-slot="${String(appId)}"]`);
+        if (slot) slot.appendChild(row);
+        else els.phaseScopeRows.appendChild(row);
       });
       if (!selectedApps.length) {
         els.phaseScopeRows.innerHTML = "<div class=\"small text-muted\">Selecciona un aparell per definir l'abast.</div>";
@@ -974,7 +1029,7 @@
   function readPhaseScopeFromUI() {
     if (els.phaseScopeRows) {
       const selectedApps = selectedAparellIdsFromUI();
-      const selects = Array.from(els.phaseScopeRows.querySelectorAll("select[data-phase-scope-app]"));
+      const selects = Array.from(document.querySelectorAll("select[data-phase-scope-app]"));
       if (selectedApps.length <= 1) {
         return normalizeSinglePhaseScope({ fase_id: selects[0]?.value || "" });
       }
@@ -1263,9 +1318,12 @@
       const col = document.createElement("div");
       col.className = "col-6 col-md-4 mb-1";
       col.innerHTML = `
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${esc(a.id)}">
-          <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}${a.stale ? ' <span class="text-muted">(no disponible)</span>' : ""}</label>
+        <div class="classif-app-phase-row">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${esc(a.id)}">
+            <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}${a.stale ? ' <span class="text-muted">(no disponible)</span>' : ""}</label>
+          </div>
+          <div class="classif-app-phase-slot" data-app-phase-slot="${esc(a.id)}"></div>
         </div>`;
       els.apChkList.appendChild(col);
     });
@@ -1723,6 +1781,7 @@
       pruneSchemaAppReferences(cfg.schema, selectedIds);
     }
     renderAppStaleWarningBanner(cfg && cfg.schema ? cfg.schema : {}, selectedIds);
+    renderPhaseScopeSelect(cfg && cfg.schema ? cfg.schema.scope : DEFAULT_SCHEMA.scope);
     renderDerivedPartitionConfigUI(readParticionsConfigUI(), selectedParticioCodesFromUI());
     renderPuntuacioSection(cfg && cfg.schema ? cfg.schema : DEFAULT_SCHEMA);
     return selectedIds;

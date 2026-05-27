@@ -357,11 +357,22 @@
     transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, color .16s ease;
   }
 
+  .classif-type-choice--compact {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 58px;
+    padding: 9px 10px;
+  }
+
   .classif-type-choice:hover,
   .classif-type-choice:focus {
     border-color: var(--classif-border);
     background: var(--classif-soft);
     outline: none;
+  }
+
+  .classif-type-choice:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
   }
 
   .classif-type-choice.is-selected {
@@ -528,6 +539,7 @@
   }
 
   #classif-builder-v2 .classif-puntuacio-panel--base,
+  #classif-builder-v2 .classif-puntuacio-panel--setup,
   #classif-builder-v2 .classif-puntuacio-panel--summary,
   #classif-builder-v2 .classif-puntuacio-panel--victories {
     background: linear-gradient(180deg, #fff 0%, var(--classif-soft) 100%);
@@ -622,8 +634,264 @@
     box-shadow: inset 3px 0 0 var(--classif-base);
   }
 
+  #classif-builder-v2 .classif-puntuacio-context-flow {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.55fr) minmax(250px, 0.9fr);
+    gap: 10px;
+    overflow-x: auto;
+    padding: 1px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card {
+    min-width: 0;
+    border: 1px solid var(--classif-border);
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px;
+    box-shadow: inset 3px 0 0 rgba(159, 18, 57, 0.22);
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 9px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card__title,
+  #classif-builder-v2 .classif-puntuacio-context-card__desc {
+    display: block;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card__title {
+    color: var(--classif-text-main);
+    font-size: 0.86rem;
+    font-weight: 820;
+    line-height: 1.2;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card__desc {
+    color: var(--classif-muted);
+    font-size: 0.72rem;
+    line-height: 1.25;
+    margin-top: 2px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-choice-pairs {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  #classif-builder-v2 .classif-inline-choice-grid,
+  #classif-builder-v2 .classif-phase-choice-grid {
+    display: grid;
+    gap: 8px;
+  }
+
+  #classif-builder-v2 .classif-inline-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #classif-builder-v2 .classif-phase-choice-grid {
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  }
+
+  #classif-builder-v2 .classif-phase-native-select {
+    min-height: 40px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card label {
+    margin-bottom: 4px;
+    font-size: 0.76rem;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card .form-control {
+    min-height: 36px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card .classif-puntuacio-choice-shell {
+    padding: 8px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card--apps #apChkList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card--apps #apChkList > [class*="col-"] {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  #classif-builder-v2 .classif-app-phase-row {
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+  }
+
+  #classif-builder-v2 .classif-app-phase-row .form-check {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    min-height: 0;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card #apChkList .form-check {
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card--apps #apChkList .classif-app-phase-row .form-check {
+    min-height: 0;
+    padding: 0;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card--apps #apChkList .form-check-label {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  #classif-builder-v2 .classif-app-phase-slot:empty {
+    display: none;
+  }
+
+  #classif-builder-v2 .classif-app-phase-control {
+    margin-top: 8px;
+    border-top: 1px solid var(--classif-neutral-border);
+    padding-top: 8px;
+  }
+
+  #classif-builder-v2 .classif-app-phase-title {
+    margin-bottom: 5px;
+    color: var(--classif-muted);
+    font-size: 0.68rem;
+    font-weight: 820;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  #classif-builder-v2 .classif-app-phase-static {
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #F8FAFC;
+    color: var(--classif-text);
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    font-weight: 760;
+  }
+
+  #classif-builder-v2 .classif-puntuacio-context-card #appStaleBanner:empty,
+  #classif-builder-v2 .classif-puntuacio-context-card #phaseScopeRows:empty,
+  #classif-builder-v2 .classif-puntuacio-context-card #candidateScopeHint:empty,
+  #classif-builder-v2 .classif-puntuacio-context-card #phaseScopeHint:empty {
+    display: none;
+  }
+
   #classif-builder-v2 .puntuacio-app-list {
     gap: 12px;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tabs-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tab {
+    flex: 0 0 220px;
+    min-width: 168px;
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--classif-text-main);
+    padding: 9px 10px;
+    text-align: left;
+    box-shadow: none;
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tab:hover,
+  #classif-builder-v2 .puntuacio-app-tab:focus {
+    border-color: var(--classif-border);
+    background: var(--classif-soft);
+    outline: none;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tab.is-active {
+    border-color: var(--classif-base);
+    background: var(--classif-soft);
+    box-shadow: inset 0 -3px 0 var(--classif-base);
+  }
+
+  #classif-builder-v2 .puntuacio-app-tab__name,
+  #classif-builder-v2 .puntuacio-app-tab__meta {
+    display: block;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tab__name {
+    overflow: hidden;
+    color: var(--classif-text-main);
+    font-size: 0.84rem;
+    font-weight: 820;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #classif-builder-v2 .puntuacio-app-tab__meta {
+    margin-top: 3px;
+    color: var(--classif-muted);
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  #classif-builder-v2 .puntuacio-app-panels {
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .puntuacio-app-panel[hidden] {
+    display: none !important;
+  }
+
+  #classif-builder-v2 .puntuacio-app-empty {
+    border: 1px dashed var(--classif-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--classif-muted);
+    padding: 12px;
+    font-size: 0.84rem;
   }
 
   #classif-builder-v2 .puntuacio-app-card {
@@ -664,6 +932,48 @@
   #classif-builder-v2 .puntuacio-app-card__body {
     gap: 8px;
     padding: 10px 12px 12px;
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow__row {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(230px, 1fr);
+    gap: 10px;
+    overflow-x: auto;
+    padding: 1px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow__row--fields {
+    grid-auto-columns: minmax(220px, 1fr);
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow__row--notes {
+    grid-auto-columns: minmax(250px, 1fr);
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow__row > .puntuacio-step-card {
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow__expansions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .puntuacio-app-workflow__expansions > .puntuacio-step-card {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
   }
 
   #classif-builder-v2 .puntuacio-step-card {
@@ -756,6 +1066,55 @@
     border-color: var(--classif-neutral-border) !important;
     border-radius: 8px !important;
     background: rgba(255, 255, 255, 0.74);
+  }
+
+  #classif-builder-v2 .puntuacio-step-card[data-app-exercise-fields-box],
+  #classif-builder-v2 .puntuacio-step-card[data-app-team-pool-exercise-box] {
+    background: #fff;
+    align-self: stretch;
+  }
+
+  #classif-builder-v2 .puntuacio-step-card[data-app-exercise-fields-box] .puntuacio-step-card__body,
+  #classif-builder-v2 .puntuacio-step-card[data-app-team-pool-exercise-box] .puntuacio-step-card__body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+    gap: 10px;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  #classif-builder-v2 .puntuacio-step-card[data-app-exercise-fields-box] .puntuacio-step-card__body > .small.text-muted:first-child,
+  #classif-builder-v2 .puntuacio-step-card[data-app-team-pool-exercise-box] .puntuacio-step-card__body > .small.text-muted:first-child {
+    grid-column: 1 / -1;
+  }
+
+  #classif-builder-v2 [data-app-exercise-fields-row],
+  #classif-builder-v2 [data-app-team-pool-exercise-row] {
+    border-color: rgba(159, 18, 57, 0.24) !important;
+    background: linear-gradient(180deg, #fff 0%, rgba(255, 241, 242, 0.42) 100%) !important;
+    box-shadow: inset 3px 0 0 rgba(159, 18, 57, 0.28);
+    margin-bottom: 0 !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 [data-app-exercise-fields-row] > .row,
+  #classif-builder-v2 [data-app-team-pool-exercise-row] > .row {
+    margin-left: 0;
+    margin-right: 0;
+    gap: 8px;
+  }
+
+  #classif-builder-v2 [data-app-exercise-fields-row] > .row > [class*="col-"],
+  #classif-builder-v2 [data-app-team-pool-exercise-row] > .row > [class*="col-"] {
+    flex: 1 1 100%;
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  #classif-builder-v2 [data-app-exercise-fields-row] select[multiple] {
+    min-height: 170px;
   }
 
   #classif-builder-v2 #exerciseCriteriaCard {
