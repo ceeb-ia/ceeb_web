@@ -1,5 +1,11 @@
   .phase-tree-panel {
-    padding: 14px;
+    position: relative;
+    padding: 16px;
+    border: 1px solid var(--phase-border);
+    border-left: 4px solid var(--phase-base);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 14px 32px rgba(37, 99, 235, 0.12);
   }
 
   .phase-tree-base,
@@ -12,6 +18,7 @@
     color: var(--phase-text-main);
     padding: 10px 12px;
     text-decoration: none;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   }
 
   .phase-tree-base:hover,
@@ -24,7 +31,11 @@
   .phase-tree-base.is-selected,
   .phase-tree-node.is-selected {
     border-color: var(--phase-base);
-    box-shadow: inset 3px 0 0 var(--phase-base);
+    background: var(--phase-soft);
+    box-shadow:
+      inset 4px 0 0 var(--phase-base),
+      0 0 0 3px rgba(37, 99, 235, 0.10),
+      0 8px 22px rgba(37, 99, 235, 0.12);
   }
 
   .phase-tree-base-title,
@@ -74,7 +85,7 @@
     left: 0;
     top: -10px;
     bottom: 14px;
-    border-left: 2px solid var(--phase-border);
+    border-left: 2px solid rgba(37, 99, 235, 0.42);
   }
 
   .phase-tree-li {
@@ -87,7 +98,7 @@
     left: -18px;
     top: 22px;
     width: 18px;
-    border-top: 2px solid var(--phase-border);
+    border-top: 2px solid rgba(37, 99, 235, 0.42);
   }
 
   .phase-tree-base,
@@ -326,6 +337,25 @@
     justify-content: space-between;
     gap: 10px;
     flex-wrap: wrap;
+  }
+
+  .phase-base-summary-grid {
+    grid-template-columns: minmax(260px, 1fr) minmax(260px, 0.9fr) minmax(260px, 0.9fr);
+  }
+
+  .phase-base-detail-form,
+  .phase-base-action-stack {
+    display: grid;
+    gap: 8px;
+  }
+
+  .phase-base-detail-form {
+    grid-template-columns: minmax(180px, 1fr) auto;
+    align-items: end;
+  }
+
+  .phase-base-action-stack .phase-child-create {
+    margin: 0;
   }
 
   .phase-status-stack {
@@ -1008,7 +1038,7 @@
     position: relative;
     min-height: 58px;
     border-color: #D7E3F8;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   }
 
   .phase-tree-base-link,
@@ -1061,7 +1091,7 @@
     left: 0;
     top: -14px;
     bottom: 31px;
-    border-left: 2px solid var(--phase-border);
+    border-left: 2px solid rgba(37, 99, 235, 0.42);
   }
 
   .phase-tree-children {
@@ -1074,7 +1104,7 @@
     left: 0;
     top: -12px;
     bottom: 31px;
-    border-left: 2px solid var(--phase-border);
+    border-left: 2px solid rgba(37, 99, 235, 0.42);
   }
 
   .phase-tree-list > .phase-tree-li::before,
@@ -1082,7 +1112,7 @@
     left: -24px;
     top: 29px;
     width: 24px;
-    border-top: 2px solid var(--phase-border);
+    border-top: 2px solid rgba(37, 99, 235, 0.42);
   }
 
   .phase-child-create {

@@ -19,10 +19,10 @@
   #classif-builder-v2 .classif-builder-surface {
     min-height: calc(100vh - 118px);
     padding: 22px 24px 24px;
-    border: 1px solid var(--classif-neutral-border);
-    border-radius: 8px;
-    background: var(--classif-bg);
-    box-shadow: var(--classif-shadow);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   #classif-builder-v2 .btn-primary {
@@ -121,6 +121,11 @@
     grid-template-columns: minmax(310px, 360px) minmax(178px, 210px) minmax(0, 1fr);
     gap: 14px;
     align-items: start;
+    padding: 16px;
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: var(--classif-bg);
+    box-shadow: var(--classif-shadow);
   }
 
   .classif-builder-pane,
@@ -516,6 +521,10 @@
     .classif-builder-workspace,
     .classif-builder-editor-grid {
       grid-template-columns: 1fr;
+    }
+
+    .classif-builder-workspace {
+      padding: 12px;
     }
 
     .classif-builder-editor-grid,

@@ -28,7 +28,7 @@
             <span class="phase-tree-node-main">
               <span class="phase-tree-title-line">
                 <img class="phase-tree-phase-logo" src="{% static 'fases/preliminar.png' %}" alt="">
-                <span class="phase-tree-base-title">Preliminar implicita</span>
+                <span class="phase-tree-base-title">Preliminar implícita</span>
               </span>
               <span class="phase-tree-base-meta">Arrel visual - DEFAULT reservat - {{ comp_aparell.nombre_exercicis }} exercici(s)</span>
             </span>
@@ -78,5 +78,7 @@
       </div>
       {% include "competicio/fases/_phase_node.html" with phase=selected_phase %}
     </section>
+  {% else %}
+    {% include "competicio/fases/_base_phase_detail.html" %}
   {% endif %}
 </section>

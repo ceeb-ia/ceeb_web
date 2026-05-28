@@ -184,6 +184,17 @@
     object-fit: contain;
   }
 
+  .classif-panel-icon--compact {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
+  }
+
+  .classif-panel-icon--compact img {
+    width: 19px;
+    height: 19px;
+  }
+
   #classif-builder-v2 .classif-partition-panel {
     border-color: var(--classif-border);
     background: #fff;
@@ -590,10 +601,10 @@
   #classif-builder-v2 #apChkList .form-check {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 11px;
     min-height: 42px;
     margin: 0;
-    padding: 8px 10px;
+    padding: 9px 11px;
     border: 1px solid var(--classif-neutral-border);
     border-radius: 8px;
     background: #fff;
@@ -748,7 +759,7 @@
     border: 1px solid var(--classif-neutral-border);
     border-radius: 8px;
     background: #fff;
-    padding: 8px;
+    padding: 12px;
   }
 
   #classif-builder-v2 .classif-app-phase-row .form-check {
@@ -761,12 +772,12 @@
 
   #classif-builder-v2 .classif-puntuacio-context-card #apChkList .form-check {
     min-height: 36px;
-    padding: 6px 8px;
+    padding: 7px 9px;
   }
 
   #classif-builder-v2 .classif-puntuacio-context-card--apps #apChkList .classif-app-phase-row .form-check {
     min-height: 0;
-    padding: 0;
+    padding: 2px 3px 3px;
   }
 
   #classif-builder-v2 .classif-puntuacio-context-card--apps #apChkList .form-check-label {
@@ -779,18 +790,33 @@
   }
 
   #classif-builder-v2 .classif-app-phase-control {
+    display: grid;
+    gap: 7px;
     margin-top: 8px;
     border-top: 1px solid var(--classif-neutral-border);
-    padding-top: 8px;
+    padding-top: 10px;
   }
 
   #classif-builder-v2 .classif-app-phase-title {
-    margin-bottom: 5px;
+    order: 1;
+    margin-bottom: 0;
     color: var(--classif-muted);
     font-size: 0.68rem;
     font-weight: 820;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+  }
+
+  #classif-builder-v2 .classif-app-phase-control .classif-phase-native-select,
+  #classif-builder-v2 .classif-app-phase-control .classif-phase-choice-grid,
+  #classif-builder-v2 .classif-app-phase-control .classif-app-phase-static {
+    order: 2;
+  }
+
+  #classif-builder-v2 .classif-app-phase-control .classif-phase-native-select {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
   }
 
   #classif-builder-v2 .classif-app-phase-static {
@@ -1050,6 +1076,18 @@
     font-weight: 820;
   }
 
+  #classif-builder-v2 .puntuacio-step-card__icon {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+  }
+
+  #classif-builder-v2 .puntuacio-step-card__icon img {
+    width: 17px;
+    height: 17px;
+  }
+
   #classif-builder-v2 .puntuacio-step-card__badge {
     border-color: var(--classif-border);
     background: #fff;
@@ -1202,6 +1240,12 @@
   #classif-builder-v2 .classif-desempat-table-shell {
     border-color: var(--classif-border);
     background: #fff;
+  }
+
+  #classif-builder-v2 .classif-desempat-cell-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
   }
 
   #classif-builder-v2 .classif-desempat-table {
@@ -1504,8 +1548,329 @@
   }
 
   #classif-builder-v2 .classif-detail-sections-box {
+    display: block;
+  }
+
+  #classif-builder-v2 .classif-partition-presentation-box {
     display: grid;
+    gap: 8px;
+  }
+
+  #classif-builder-v2 .classif-partition-presentation-row {
+    display: grid;
+    grid-template-columns: auto minmax(160px, 1.3fr) minmax(110px, 0.7fr) minmax(150px, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    padding: 9px;
+  }
+
+  #classif-builder-v2 .classif-partition-presentation-index {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--classif-border);
+    border-radius: 999px;
+    background: var(--classif-soft);
+    color: var(--classif-base);
+    font-size: 0.72rem;
+    font-weight: 850;
+  }
+
+  #classif-builder-v2 .classif-partition-presentation-field {
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-partition-presentation-actions {
+    display: inline-flex;
+    gap: 5px;
+    justify-content: flex-end;
+  }
+
+  #classif-builder-v2 .classif-partition-presentation-actions .btn {
+    min-height: 30px;
+  }
+
+  #classif-builder-v2 .classif-live-row-style-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
     gap: 10px;
+    margin: 16px 0 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--classif-neutral-border);
+  }
+
+  #classif-builder-v2 .classif-rank-style-box {
+    display: grid;
+    gap: 8px;
+  }
+
+  #classif-builder-v2 .classif-rank-style-row {
+    display: grid;
+    grid-template-columns: auto minmax(110px, 0.6fr) minmax(140px, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    padding: 9px;
+  }
+
+  #classif-builder-v2 .classif-rank-style-index {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--classif-border);
+    border-radius: 999px;
+    background: var(--classif-soft);
+    color: var(--classif-base);
+    font-size: 0.72rem;
+    font-weight: 850;
+  }
+
+  #classif-builder-v2 .classif-rank-style-field {
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-rank-style-actions {
+    display: inline-flex;
+    justify-content: flex-end;
+  }
+
+  #classif-builder-v2 #columnsBox,
+  #classif-builder-v2 #detailSectionsBox [data-k="columns_box"] {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 2px 10px;
+    scrollbar-width: thin;
+    scroll-snap-type: x proximity;
+  }
+
+  #classif-builder-v2 .classif-column-card {
+    flex: 0 0 320px;
+    width: 320px;
+    max-width: min(320px, calc(100vw - 72px));
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
+    scroll-snap-align: start;
+  }
+
+  #classif-builder-v2 .classif-column-card__banner {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--classif-border);
+    background: var(--classif-soft);
+  }
+
+  #classif-builder-v2 .classif-column-card__type,
+  #classif-builder-v2 .classif-column-card__app-name {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 8px;
+    border: 1px solid var(--classif-border);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--classif-text);
+    font-size: 0.68rem;
+    font-weight: 840;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+
+  #classif-builder-v2 .classif-column-card__app-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--classif-muted);
+    text-overflow: ellipsis;
+  }
+
+  #classif-builder-v2 .classif-column-card__app-select {
+    min-width: 0;
+    height: 30px;
+    min-height: 30px;
+    padding-top: 0.22rem;
+    padding-bottom: 0.22rem;
+    font-size: 0.76rem;
+  }
+
+  #classif-builder-v2 .classif-column-card__actions {
+    display: inline-flex;
+    align-items: center;
+    justify-self: end;
+    gap: 5px;
+  }
+
+  #classif-builder-v2 .classif-column-card__actions .btn {
+    min-width: 30px;
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 8px;
+    line-height: 1;
+  }
+
+  #classif-builder-v2 .classif-column-card__body {
+    display: grid;
+    gap: 9px;
+    padding: 10px;
+    background: #fff;
+  }
+
+  #classif-builder-v2 .classif-detail-layout-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  #classif-builder-v2 .classif-detail-layout-row label {
+    margin-bottom: 0 !important;
+    color: var(--classif-muted);
+    font-weight: 820;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  #classif-builder-v2 .classif-column-card__row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #classif-builder-v2 .classif-column-card__field {
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-column-card__field--full {
+    grid-column: 1 / -1;
+  }
+
+  #classif-builder-v2 .classif-column-card label {
+    color: var(--classif-text);
+    font-size: 0.7rem;
+    font-weight: 820;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  #classif-builder-v2 .classif-presentacio-flow {
+    position: relative;
+  }
+
+  #classif-builder-v2 .classif-presentacio-flow::before {
+    content: "";
+    position: absolute;
+    left: 26px;
+    top: 28px;
+    bottom: 28px;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(159, 18, 57, 0.24), rgba(159, 18, 57, 0.05));
+    pointer-events: none;
+  }
+
+  #classif-builder-v2 .classif-presentacio-panel {
+    position: relative;
+    border-color: var(--classif-border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: inset 4px 0 0 rgba(159, 18, 57, 0.12);
+  }
+
+  #classif-builder-v2 .classif-presentacio-panel--rules,
+  #classif-builder-v2 .classif-presentacio-panel--detail,
+  #classif-builder-v2 .classif-presentacio-panel--preview {
+    background: linear-gradient(180deg, #fff 0%, var(--classif-soft) 100%);
+  }
+
+  #classif-builder-v2 .classif-detail-tabs-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-detail-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  #classif-builder-v2 .classif-detail-tab {
+    flex: 0 0 220px;
+    min-width: 168px;
+    border: 1px solid var(--classif-neutral-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--classif-text-main);
+    padding: 9px 10px;
+    text-align: left;
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+  }
+
+  #classif-builder-v2 .classif-detail-tab:hover,
+  #classif-builder-v2 .classif-detail-tab:focus {
+    border-color: var(--classif-border);
+    background: var(--classif-soft);
+    outline: none;
+  }
+
+  #classif-builder-v2 .classif-detail-tab.is-active {
+    border-color: var(--classif-base);
+    background: var(--classif-soft);
+    box-shadow: inset 0 -3px 0 var(--classif-base);
+  }
+
+  #classif-builder-v2 .classif-detail-tab__name,
+  #classif-builder-v2 .classif-detail-tab__meta {
+    display: block;
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-detail-tab__name {
+    overflow: hidden;
+    color: var(--classif-text-main);
+    font-size: 0.84rem;
+    font-weight: 820;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #classif-builder-v2 .classif-detail-tab__meta {
+    margin-top: 3px;
+    color: var(--classif-muted);
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  #classif-builder-v2 .classif-detail-panels {
+    min-width: 0;
+  }
+
+  #classif-builder-v2 .classif-detail-section-panel[hidden] {
+    display: none !important;
   }
 
   #classif-builder-v2 #detailSectionsBox [data-section-idx] {
@@ -1533,11 +1898,6 @@
     font-weight: 820;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-  }
-
-  #classif-builder-v2 #detailSectionsBox [data-k="columns_box"] {
-    display: grid;
-    gap: 8px;
   }
 
   #classif-builder-v2 #detailSectionsBox .col-row {
@@ -1571,5 +1931,40 @@
 
     #classif-builder-v2 .classif-detail-toggle-grid {
       grid-template-columns: 1fr;
+    }
+
+    #classif-builder-v2 .classif-partition-presentation-row {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    #classif-builder-v2 .classif-partition-presentation-field,
+    #classif-builder-v2 .classif-partition-presentation-actions {
+      grid-column: 1 / -1;
+    }
+
+    #classif-builder-v2 .classif-partition-presentation-actions {
+      justify-content: flex-start;
+    }
+
+    #classif-builder-v2 .classif-live-row-style-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    #classif-builder-v2 .classif-rank-style-row {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    #classif-builder-v2 .classif-rank-style-field,
+    #classif-builder-v2 .classif-rank-style-actions {
+      grid-column: 1 / -1;
+    }
+
+    #classif-builder-v2 .classif-rank-style-actions {
+      justify-content: flex-start;
+    }
+
+    #classif-builder-v2 .classif-presentacio-flow::before {
+      display: none;
     }
   }

@@ -21,14 +21,14 @@
                 <img src="{% static 'classificacions/sections/particions/camps.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Camps de particio</p>
-                <p class="builder-subsection__desc">Selecciona i ordena els camps que separen la classificacio en subgrups.</p>
+                <p class="builder-subsection__title">Camps de partició</p>
+                <p class="builder-subsection__desc">Selecciona i ordena els camps que separen la classificació en subgrups.</p>
               </div>
             </div>
           </div>
         </div>
         <div class="classif-partition-body" id="particionsFieldsBox">
-          <div class="small text-muted">Sense camps de particio disponibles.</div>
+          <div class="small text-muted">Sense camps de partició disponibles.</div>
         </div>
       </div>
 
@@ -36,24 +36,29 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">02</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/particions/personalitzada.png' %}" alt="">
+              </span>
             <span>
-              <p class="builder-subsection__title">Particio personalitzada</p>
+              <p class="builder-subsection__title">Partició personalitzada</p>
               <p class="builder-subsection__desc">Agrupa valors detectats en etiquetes propies per simplificar la classificacio final.</p>
             </span>
+            </div>
           </div>
         </div>
         <div class="classif-partition-body" id="particionsCustomBox">
-          <div class="small text-muted">Selecciona almenys un camp de particio per configurar grups personalitzats.</div>
+          <div class="small text-muted">Selecciona almenys un camp de partició per configurar grups personalitzats.</div>
         </div>
       </div>
 
       <div class="builder-subsection classif-partition-panel" id="particionsDerivedBox" style="display:none;">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">03</span>
+            <span class="classif-step-index">02.b</span>
             <span>
               <p class="builder-subsection__title">Forquilles de data de naixement</p>
-              <p class="builder-subsection__desc">Configura els rangs que alimenten la particio derivada.</p>
+              <p class="builder-subsection__desc">Configura els rangs que alimenten la partició derivada.</p>
             </span>
           </div>
           <div class="builder-inline-note">Individual i equips</div>
@@ -64,11 +69,16 @@
       <div id="equipCfgBox" class="builder-subsection builder-subsection--muted classif-partition-panel" style="display:none;">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">04</span>
+            <span class="classif-step-index">03</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/team.png' %}" alt="">
+              </span>
             <span>
-              <p class="builder-subsection__title">Configuracio d'equips <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="equips_overview" aria-label="Ajuda configuracio d'equips">?</button></p>
-              <p class="builder-subsection__desc">Particions manuals i opcions addicionals quan la classificacio treballa per equips.</p>
+              <p class="builder-subsection__title">Configuració d'equips <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="equips_overview" aria-label="Ajuda configuració d'equips">?</button></p>
+              <p class="builder-subsection__desc">Particions manuals i opcions addicionals quan la classificació treballa per equips.</p>
             </span>
+            </div>
           </div>
           <div class="builder-inline-note">Equips</div>
         </div>

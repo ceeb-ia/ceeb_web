@@ -361,6 +361,20 @@ main, .footer_section {
     display: flex;
     align-items: center; /* Centra verticalment el contingut dins del contenidor */
     justify-content: space-between; /* Espai entre el logo i el menú */
+    min-width: 0;
+    position: relative;
+}
+
+.header_section .container-fluid > .row {
+    width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+}
+
+.header_section .container-fluid > .row > [class*="col-"] {
+    min-width: 0;
+    padding-right: 0;
+    padding-left: 0;
 }
 
 .header_section .navbar-brand {
@@ -422,6 +436,15 @@ main, .footer_section {
   color: #f9fcfb;
   text-align: center;
   text-transform: uppercase;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1199.98px) {
+  .custom_nav-container.navbar-expand-lg .navbar-nav .nav-link {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
 }
 
 a,
@@ -1726,16 +1749,31 @@ select.form-select-sm {
   width: 100%;
 }
 @media (max-width: 991.98px) {
+  .custom_nav-container {
+    position: static;
+  }
+
   .custom_nav-container .navbar-collapse {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    left: 0;
+    z-index: 3100;
+    width: auto;
+    max-width: 100%;
     background: #203376;
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
     border-radius: 8px;
+    overflow-x: hidden;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
   }
   .custom_nav-container .navbar-nav .nav-link {
     padding: 0.5rem 0.75rem;
     text-align: left;
     margin: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .custom_nav-container .dropdown-menu {
     position: static;

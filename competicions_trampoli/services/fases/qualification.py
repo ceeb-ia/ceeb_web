@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -601,6 +602,15 @@ def _chunks_by_strategy(
                 right -= 1
             unit_index = target + 1
         return chunks, 0
+
+    if strategy == "random":
+        shuffled = list(selected)
+        random.shuffle(shuffled)
+        offset = 0
+        for index, capacity in enumerate(capacities):
+            chunks[index] = shuffled[offset:offset + capacity]
+            offset += capacity
+        return chunks, max(0, len(shuffled) - offset)
 
     offset = 0
     for index, capacity in enumerate(capacities):

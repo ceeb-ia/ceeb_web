@@ -849,6 +849,7 @@ class PhaseGroupPlanForm(forms.Form):
     FORMATION_CLASSIFICATION_ORDER = "classification_order"
     FORMATION_SERPENTINE = "serpentine"
     FORMATION_FIRST_LAST = "first_last"
+    FORMATION_RANDOM = "random"
 
     split_mode = forms.ChoiceField(
         label="Com crear unitats",
@@ -884,6 +885,7 @@ class PhaseGroupPlanForm(forms.Form):
             (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificacio"),
             (FORMATION_SERPENTINE, "Serpentina"),
             (FORMATION_FIRST_LAST, "Primer amb ultim"),
+            (FORMATION_RANDOM, "Aleatori"),
         ],
         initial=FORMATION_CLASSIFICATION_ORDER,
         required=False,
@@ -945,6 +947,7 @@ class ProgramUnitEditForm(forms.Form):
     FORMATION_CLASSIFICATION_ORDER = "classification_order"
     FORMATION_SERPENTINE = "serpentine"
     FORMATION_FIRST_LAST = "first_last"
+    FORMATION_RANDOM = "random"
 
     unit_id = forms.IntegerField(widget=forms.HiddenInput)
     nom = forms.CharField(
@@ -964,6 +967,7 @@ class ProgramUnitEditForm(forms.Form):
             (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificacio"),
             (FORMATION_SERPENTINE, "Serpentina"),
             (FORMATION_FIRST_LAST, "Primer amb ultim"),
+            (FORMATION_RANDOM, "Aleatori"),
         ],
         initial=FORMATION_CLASSIFICATION_ORDER,
         widget=forms.Select(attrs={"class": "form-select"}),

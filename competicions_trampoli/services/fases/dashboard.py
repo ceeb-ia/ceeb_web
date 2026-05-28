@@ -345,6 +345,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
                 "classification_order": "Ordre de classificacio",
                 "serpentine": "Serpentina",
                 "first_last": "Primer amb ultim",
+                "random": "Aleatori",
             }.get(unit.ui_formation_strategy, "Ordre de classificacio")
             unit.ui_group_plan_strategy = str(metadata.get("group_plan_strategy") or "")
         phase.ui_units = units

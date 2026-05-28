@@ -3,6 +3,32 @@
     individual: "{% static 'classificacions/individual.png' %}",
     equips: "{% static 'classificacions/team.png' %}",
   };
+  window.PUNTUACIO_ICON_URLS = window.PUNTUACIO_ICON_URLS || {
+    agregacio: "{% static 'classificacions/sections/puntuacio/agregacio.png' %}",
+    aparells: "{% static 'classificacions/sections/puntuacio/aparells.png' %}",
+    base: "{% static 'classificacions/sections/puntuacio/base.png' %}",
+    camps: "{% static 'classificacions/sections/puntuacio/camps.png' %}",
+    camps_exercici: "{% static 'classificacions/sections/puntuacio/camps_exercici.png' %}",
+    configuracio: "{% static 'classificacions/sections/puntuacio/configuracio.png' %}",
+    resum: "{% static 'classificacions/sections/puntuacio/resum.png' %}",
+    tractament: "{% static 'classificacions/sections/puntuacio/tractament.png' %}",
+  };
+
+  function puntuacioIconHTML(key) {
+    const src = (window.PUNTUACIO_ICON_URLS || {})[String(key || "").trim()];
+    if (!src) return "";
+    return `<span class="classif-panel-icon puntuacio-step-card__icon" aria-hidden="true"><img src="${esc(src)}" alt=""></span>`;
+  }
+
+  window.DESEMPAT_ICON_URLS = window.DESEMPAT_ICON_URLS || {
+    criteris: "{% static 'classificacions/sections/desempat/criteris.png' %}",
+  };
+
+  function desempatIconHTML(key) {
+    const src = (window.DESEMPAT_ICON_URLS || {})[String(key || "").trim()];
+    if (!src) return "";
+    return `<span class="classif-panel-icon puntuacio-step-card__icon" aria-hidden="true"><img src="${esc(src)}" alt=""></span>`;
+  }
 
   function normalizeContextCode(raw) {
     return String(raw || "native").trim() || "native";
@@ -1391,7 +1417,7 @@
     return `
       <div class="puntuacio-step-card puntuacio-step-card--fields" data-app-fields-box="${esc(compAparellId)}">
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">1. Camps</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("camps")}<span>1. Camps</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <select class="form-control form-control-sm"

@@ -1,3 +1,5 @@
+{% load static %}
+
 <section id="section-puntuacio" class="builder-section builder-section--puntuacio" data-builder-section>
   <div class="builder-section__header">
     <div>
@@ -13,10 +15,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">01</span>
-            <span>
-              <p class="builder-subsection__title">Context del calcul <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda context del calcul">?</button></p>
-              <p class="builder-subsection__desc">Defineix la base, els aparells, la fase font i com es tracten les notes abans d'editar cada aparell.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/base.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Context del calcul <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda context del calcul">?</button></p>
+                <p class="builder-subsection__desc">Defineix la base, els aparells, la fase font i com es tracten les notes abans d'editar cada aparell.</p>
+              </div>
+            </div>
           </div>
           <div class="builder-inline-note">Entrada</div>
         </div>
@@ -25,6 +32,9 @@
           <div class="classif-puntuacio-context-card classif-puntuacio-context-card--base">
             <div class="classif-puntuacio-context-card__head">
               <span class="classif-step-index">1</span>
+              <span class="classif-panel-icon classif-panel-icon--compact" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/base.png' %}" alt="">
+              </span>
               <span>
                 <span class="classif-puntuacio-context-card__title">Base i ordre</span>
                 <span class="classif-puntuacio-context-card__desc">Com es calcula i ordena el resultat.</span>
@@ -79,6 +89,9 @@
           <div class="classif-puntuacio-context-card classif-puntuacio-context-card--apps">
             <div class="classif-puntuacio-context-card__head">
               <span class="classif-step-index">2</span>
+              <span class="classif-panel-icon classif-panel-icon--compact" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/aparells.png' %}" alt="">
+              </span>
               <span>
                 <span class="classif-puntuacio-context-card__title">Aparells i fase font</span>
                 <span class="classif-puntuacio-context-card__desc">Quins aparells entren i d'on surten les notes.</span>
@@ -99,6 +112,9 @@
           <div class="classif-puntuacio-context-card classif-puntuacio-context-card--treatment">
             <div class="classif-puntuacio-context-card__head">
               <span class="classif-step-index">3</span>
+              <span class="classif-panel-icon classif-panel-icon--compact" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
+              </span>
               <span>
                 <span class="classif-puntuacio-context-card__title">Tractament</span>
                 <span class="classif-puntuacio-context-card__desc">Per aparell, sac global i membres.</span>
@@ -129,10 +145,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">02</span>
-            <span>
-              <p class="builder-subsection__title">Configuracio dels aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda configuracio per aparell">?</button></p>
-              <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatoria, i pot afegir una configuracio extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/configuracio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Configuracio dels aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda configuracio per aparell">?</button></p>
+                <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatoria, i pot afegir una configuracio extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
+              </div>
+            </div>
           </div>
         </div>
         <div id="perAppBox" class="mb-0 puntuacio-app-list"></div>
@@ -145,10 +166,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">03</span>
-            <span>
-              <p class="builder-subsection__title">Seleccio dins del sac compartit <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
-              <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Seleccio dins del sac compartit <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
+                <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
+              </div>
+            </div>
           </div>
           <div class="builder-inline-note">Sac global</div>
         </div>
@@ -196,10 +222,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">04</span>
-            <span>
-              <p class="builder-subsection__title">Limits i restriccions</p>
-              <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Limits i restriccions</p>
+                <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="row">
@@ -218,10 +249,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">05</span>
-            <span>
-              <p class="builder-subsection__title">Combinacio final entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregacio entre aparells">?</button></p>
-              <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Combinacio final entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregacio entre aparells">?</button></p>
+                <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="row">
@@ -243,10 +279,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">06</span>
-            <span>
-              <p class="builder-subsection__title">Resum del calcul</p>
-              <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/resum.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Resum del calcul</p>
+                <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="builder-summary-box">
@@ -257,9 +298,14 @@
 
       <div id="victoryConfigBox" class="builder-subsection builder-subsection--highlight classif-puntuacio-panel classif-puntuacio-panel--victories" style="display:none;">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">Configuracio de victories <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victories_overview" aria-label="Ajuda configuracio de victories">?</button></p>
-            <p class="builder-subsection__desc">Nomes s'aplica quan la base de puntuacio es `Victories`. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
+          <div class="classif-panel-title-row">
+            <span class="classif-panel-icon" aria-hidden="true">
+              <img src="{% static 'classificacions/sections/puntuacio/base.png' %}" alt="">
+            </span>
+            <div class="classif-panel-title-copy">
+              <p class="builder-subsection__title">Configuracio de victories <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victories_overview" aria-label="Ajuda configuracio de victories">?</button></p>
+              <p class="builder-subsection__desc">Nomes s'aplica quan la base de puntuacio es `Victories`. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
+            </div>
           </div>
           <div class="builder-inline-note">Nomes Victories</div>
         </div>
@@ -312,9 +358,14 @@
 
       <div id="victoryTieBox" class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--victories" style="display:none;">
         <div class="builder-subsection__head">
-          <div>
-            <p class="builder-subsection__title">Desempat intern de comparacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda desempat intern de victories">?</button></p>
-            <p class="builder-subsection__desc">Nomes s'aplica en mode <strong>Victories</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
+          <div class="classif-panel-title-row">
+            <span class="classif-panel-icon" aria-hidden="true">
+              <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
+            </span>
+            <div class="classif-panel-title-copy">
+              <p class="builder-subsection__title">Desempat intern de comparacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda desempat intern de victories">?</button></p>
+              <p class="builder-subsection__desc">Nomes s'aplica en mode <strong>Victories</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
+            </div>
           </div>
           <div class="builder-inline-note">Depen de Victories</div>
         </div>

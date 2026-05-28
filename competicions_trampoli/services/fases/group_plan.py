@@ -119,7 +119,7 @@ def _group_plan_config(cut: dict, settings: dict | None = None) -> dict:
         raise QualificationError("La politica d'empats del tall no es valida.")
     if split_mode not in {"by_count", "by_capacity"}:
         raise QualificationError("El mode de creacio de grups no es valid.")
-    if formation_strategy not in {"classification_order", "serpentine", "first_last"}:
+    if formation_strategy not in {"classification_order", "serpentine", "first_last", "random"}:
         raise QualificationError("El criteri de repartiment de grups no es valid.")
     return {
         "strategy": split_mode,

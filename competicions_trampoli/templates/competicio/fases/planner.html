@@ -14,6 +14,7 @@
 >
     {% include "competicio/fases/_header.html" %}
 
+    <div class="phase-dashboard-body-card">
     {% if messages %}
       <div class="phase-dashboard-messages">
         {% for message in messages %}
@@ -52,6 +53,7 @@
     {% else %}
       {% include "competicio/fases/_no_apps.html" %}
     {% endif %}
+    </div>
     {% include "competicio/fases/_confirm_modal.html" %}
 </div>
 

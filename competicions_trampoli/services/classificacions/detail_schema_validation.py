@@ -303,6 +303,10 @@ def validate_detail_schema(
         add("presentacio.detall.enabled", "presentacio.detall.enabled ha de ser boolea.")
     if "default_open" in raw_detail and not isinstance(detail_default_open_raw, bool):
         add("presentacio.detall.default_open", "presentacio.detall.default_open ha de ser boolea.")
+    if "sections_layout" in raw_detail:
+        sections_layout = str(raw_detail.get("sections_layout") or "").strip().lower()
+        if sections_layout not in {"tabs", "stacked"}:
+            add("presentacio.detall.sections_layout", "presentacio.detall.sections_layout ha de ser tabs o stacked.")
 
     detail_enabled = bool(detail_enabled_raw) if isinstance(detail_enabled_raw, bool) else False
     raw_sections = raw_detail.get("sections", None)

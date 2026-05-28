@@ -6,6 +6,258 @@
     ];
   }
 
+  const PARTITION_PRESENTATION_COLORS = [
+    ["auto", "Automatic"],
+    ["blue", "Blau"],
+    ["green", "Verd"],
+    ["amber", "Ambre"],
+    ["red", "Vermell"],
+    ["cyan", "Cian"],
+    ["violet", "Violeta"],
+    ["slate", "Gris"],
+  ];
+
+  const RANK_ROW_COLORS = [
+    ["gold", "Or"],
+    ["silver", "Plata"],
+    ["bronze", "Bronze"],
+    ["blue", "Blau"],
+    ["green", "Verd"],
+    ["amber", "Ambre"],
+    ["red", "Vermell"],
+    ["violet", "Violeta"],
+    ["slate", "Gris"],
+  ];
+
+  function normalizePartitionPresentation(raw) {
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const order = [];
+    const seen = new Set();
+    (Array.isArray(cfg.ordre) ? cfg.ordre : []).forEach(item => {
+      const key = String(item || "").trim();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      order.push(key);
+    });
+    const styles = {};
+    const rawStyles = cfg.estils && typeof cfg.estils === "object" && !Array.isArray(cfg.estils) ? cfg.estils : {};
+    Object.entries(rawStyles).forEach(([rawKey, rawStyle]) => {
+      const key = String(rawKey || "").trim();
+      if (!key) return;
+      const style = rawStyle && typeof rawStyle === "object" && !Array.isArray(rawStyle) ? rawStyle : {};
+      const color = String(style.color || "auto").trim().toLowerCase();
+      const label = String(style.label || "").trim();
+      styles[key] = {
+        color: PARTITION_PRESENTATION_COLORS.some(([value]) => value === color) ? color : "auto",
+        label,
+      };
+    });
+    return { ordre: order, estils: styles };
+  }
+
+  function partitionPresentationRowsFromSchema(raw) {
+    const cfg = normalizePartitionPresentation(raw);
+    const rows = [];
+    const seen = new Set();
+    cfg.ordre.forEach(key => {
+      const style = cfg.estils[key] || {};
+      rows.push({ key, color: style.color || "auto", label: style.label || "" });
+      seen.add(key);
+    });
+    Object.entries(cfg.estils).forEach(([key, style]) => {
+      if (seen.has(key)) return;
+      rows.push({ key, color: style.color || "auto", label: style.label || "" });
+    });
+    return rows;
+  }
+
+  function readPartitionPresentationUI() {
+    const order = [];
+    const styles = {};
+    document.querySelectorAll("#partitionPresentationBox [data-partition-presentation-row]").forEach(row => {
+      const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
+      if (!key || order.includes(key)) return;
+      const color = String(row.querySelector('[data-k="color"]')?.value || "auto").trim().toLowerCase();
+      const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
+      order.push(key);
+      styles[key] = {
+        color: PARTITION_PRESENTATION_COLORS.some(([value]) => value === color) ? color : "auto",
+        label,
+      };
+    });
+    return { ordre: order, estils: styles };
+  }
+
+  function partitionPresentationSuggestions() {
+    const out = [];
+    const seen = new Set();
+    const codes = typeof selectedParticioCodesFromUI === "function" ? selectedParticioCodesFromUI() : [];
+    function add(key, label) {
+      const cleanKey = String(key || "").trim();
+      if (!cleanKey || seen.has(cleanKey)) return;
+      seen.add(cleanKey);
+      out.push({ key: cleanKey, label: String(label || cleanKey).trim() });
+    }
+    if (!codes.length) {
+      add("global", "Global");
+      return out;
+    }
+    codes.forEach(code => {
+      const choices = typeof getResolvedParentChoiceEntries === "function"
+        ? getResolvedParentChoiceEntries(code, typeof readParticionsCustomUI === "function" ? readParticionsCustomUI(selectedParticioCodesFromUI()) : {})
+        : [];
+      choices.slice(0, 40).forEach(choice => add(choice.value || choice.label, choice.label || choice.value));
+    });
+    return out;
+  }
+
+  function renderPartitionPresentationUI(raw) {
+    if (!els.partitionPresentationBox) return;
+    const rows = partitionPresentationRowsFromSchema(raw);
+    if (!rows.length) {
+      els.partitionPresentationBox.innerHTML = `<div class="small text-muted border rounded p-2">Cap particio personalitzada. El live fara servir l'ordre i colors automatics.</div>`;
+      return;
+    }
+    const colorOptions = (selected) => PARTITION_PRESENTATION_COLORS
+      .map(([value, label]) => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(label)}</option>`)
+      .join("");
+    els.partitionPresentationBox.innerHTML = rows.map((row, idx) => `
+      <div class="classif-partition-presentation-row" data-partition-presentation-row>
+        <div class="classif-partition-presentation-index">${esc(String(idx + 1).padStart(2, "0"))}</div>
+        <div class="classif-partition-presentation-field classif-partition-presentation-field--key">
+          <label class="small text-muted mb-1">Particio</label>
+          <input class="form-control form-control-sm" data-k="key" value="${esc(row.key)}" placeholder="Infantil o categoria:Infantil">
+        </div>
+        <div class="classif-partition-presentation-field">
+          <label class="small text-muted mb-1">Color</label>
+          <select class="form-control form-control-sm" data-k="color">${colorOptions(row.color || "auto")}</select>
+        </div>
+        <div class="classif-partition-presentation-field">
+          <label class="small text-muted mb-1">Etiqueta</label>
+          <input class="form-control form-control-sm" data-k="label" value="${esc(row.label || "")}" placeholder="Opcional">
+        </div>
+        <div class="classif-partition-presentation-actions">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${idx === 0 ? "disabled" : ""} aria-label="Pujar">&uarr;</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${idx === rows.length - 1 ? "disabled" : ""} aria-label="Baixar">&darr;</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" aria-label="Eliminar">Eliminar</button>
+        </div>
+      </div>
+    `).join("");
+
+    els.partitionPresentationBox.querySelectorAll("[data-partition-presentation-row]").forEach((row, idx) => {
+      row.querySelectorAll("input,select").forEach(input => {
+        input.addEventListener("input", syncAdvancedFromUI);
+        input.addEventListener("change", syncAdvancedFromUI);
+      });
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = partitionPresentationRowsFromSchema(readPartitionPresentationUI());
+        cur.splice(idx, 1);
+        renderPartitionPresentationUI({ ordre: cur.map(item => item.key), estils: Object.fromEntries(cur.map(item => [item.key, { color: item.color, label: item.label }])) });
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = partitionPresentationRowsFromSchema(readPartitionPresentationUI());
+        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        renderPartitionPresentationUI({ ordre: cur.map(item => item.key), estils: Object.fromEntries(cur.map(item => [item.key, { color: item.color, label: item.label }])) });
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const cur = partitionPresentationRowsFromSchema(readPartitionPresentationUI());
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        renderPartitionPresentationUI({ ordre: cur.map(item => item.key), estils: Object.fromEntries(cur.map(item => [item.key, { color: item.color, label: item.label }])) });
+        syncAdvancedFromUI();
+      });
+    });
+  }
+
+  function normalizeRankStyleConfig(raw) {
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const rawPositions = cfg.posicions && typeof cfg.posicions === "object" && !Array.isArray(cfg.posicions) ? cfg.posicions : {};
+    const positions = {};
+    Object.entries(rawPositions).forEach(([rawPos, rawStyle]) => {
+      const pos = Math.trunc(Number(rawPos));
+      if (!Number.isFinite(pos) || pos < 1) return;
+      const style = rawStyle && typeof rawStyle === "object" && !Array.isArray(rawStyle) ? rawStyle : {};
+      const color = String(style.color || "").trim().toLowerCase();
+      if (!RANK_ROW_COLORS.some(([value]) => value === color)) return;
+      positions[String(pos)] = { color };
+    });
+    return { posicions: positions };
+  }
+
+  function rankStyleRowsFromSchema(raw) {
+    const cfg = normalizeRankStyleConfig(raw);
+    return Object.entries(cfg.posicions)
+      .map(([pos, style]) => ({ pos: Number(pos), color: style.color }))
+      .filter(item => Number.isFinite(item.pos) && item.pos > 0)
+      .sort((a, b) => a.pos - b.pos);
+  }
+
+  function readRankStyleUI() {
+    const positions = {};
+    document.querySelectorAll("#rankStyleBox [data-rank-style-row]").forEach(row => {
+      const pos = Math.trunc(Number(row.querySelector('[data-k="pos"]')?.value || 0));
+      if (!Number.isFinite(pos) || pos < 1) return;
+      const color = String(row.querySelector('[data-k="color"]')?.value || "").trim().toLowerCase();
+      if (!RANK_ROW_COLORS.some(([value]) => value === color)) return;
+      positions[String(pos)] = { color };
+    });
+    return { posicions: positions };
+  }
+
+  function rankStyleConfigFromRows(rows) {
+    return {
+      posicions: Object.fromEntries(
+        (Array.isArray(rows) ? rows : [])
+          .filter(item => Number.isFinite(Number(item.pos)) && Number(item.pos) > 0)
+          .map(item => [String(Math.trunc(Number(item.pos))), { color: item.color || "gold" }])
+      ),
+    };
+  }
+
+  function renderRankStyleUI(raw) {
+    if (!els.rankStyleBox) return;
+    const rows = rankStyleRowsFromSchema(raw);
+    if (!rows.length) {
+      els.rankStyleBox.innerHTML = `<div class="small text-muted border rounded p-2">Cap fila destacada. El live fara servir el fons normal.</div>`;
+      return;
+    }
+    const colorOptions = (selected) => RANK_ROW_COLORS
+      .map(([value, label]) => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(label)}</option>`)
+      .join("");
+    els.rankStyleBox.innerHTML = rows.map((row, idx) => `
+      <div class="classif-rank-style-row" data-rank-style-row>
+        <div class="classif-rank-style-index">${esc(String(idx + 1).padStart(2, "0"))}</div>
+        <div class="classif-rank-style-field">
+          <label class="small text-muted mb-1">Posicio</label>
+          <input class="form-control form-control-sm" data-k="pos" type="number" min="1" value="${esc(String(row.pos))}">
+        </div>
+        <div class="classif-rank-style-field">
+          <label class="small text-muted mb-1">Fons</label>
+          <select class="form-control form-control-sm" data-k="color">${colorOptions(row.color || "gold")}</select>
+        </div>
+        <div class="classif-rank-style-actions">
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" aria-label="Eliminar">Eliminar</button>
+        </div>
+      </div>
+    `).join("");
+
+    els.rankStyleBox.querySelectorAll("[data-rank-style-row]").forEach((row, idx) => {
+      row.querySelectorAll("input,select").forEach(input => {
+        input.addEventListener("input", syncAdvancedFromUI);
+        input.addEventListener("change", syncAdvancedFromUI);
+      });
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = rankStyleRowsFromSchema(readRankStyleUI());
+        cur.splice(idx, 1);
+        renderRankStyleUI(rankStyleConfigFromRows(cur));
+        syncAdvancedFromUI();
+      });
+    });
+  }
+
   function normalizeColumnsFromSchema(rawCols) {
     const cols = Array.isArray(rawCols) ? rawCols : [];
     if (!cols.length) return defaultDisplayColumns();
@@ -807,7 +1059,7 @@
 
     cols.forEach((col, idx) => {
       const row = document.createElement("div");
-      row.className = "border rounded p-2 mb-2 col-row";
+      row.className = "border rounded p-2 mb-2 col-row classif-column-card";
       row.setAttribute("data-type", col.type || "builtin");
 
       if ((col.type || "builtin") === "raw") {
@@ -875,6 +1127,58 @@
             </div>
           </div>
         `;
+        row.innerHTML = `
+          <input type="hidden" data-k="key" value="${esc(col.key || `raw_${idx+1}`)}">
+          <div class="classif-column-card__banner">
+            <span class="classif-column-card__type">Camp</span>
+            <select class="form-control form-control-sm classif-column-card__app-select" data-k="app_id" aria-label="Aparell">
+              ${buildRawAppOptionsHTML(appId)}
+            </select>
+            <span class="classif-column-card__actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" aria-label="Moure a l'esquerra">&larr;</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" aria-label="Moure a la dreta">&rarr;</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" aria-label="Eliminar">Eliminar</button>
+            </span>
+          </div>
+          <div class="classif-column-card__body">
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}">
+            </div>
+            <div class="classif-column-card__row">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Camp</label>
+                <select class="form-control form-control-sm" data-k="camp">
+                  ${buildRawCampOptionsHTML(appId, camp, { mainColumns: true })}
+                </select>
+              </div>
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Exercici</label>
+                <select class="form-control form-control-sm" data-k="exercici">
+                  ${buildExerciciOptionsHTML(appId, ex)}
+                </select>
+              </div>
+            </div>
+            <div class="classif-column-card__field classif-column-card__field--full" data-k="judge_wrap" style="display:none;">
+              <label class="small text-muted mb-1">Jutges</label>
+              <select class="form-control form-control-sm" data-k="judge_ids" multiple size="3"></select>
+            </div>
+            <div class="classif-column-card__row classif-column-card__row--compact">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Decimals</label>
+                <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}">
+              </div>
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Alineacio</label>
+                <select class="form-control form-control-sm" data-k="align">
+                  <option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>Dreta</option>
+                  <option value="left" ${(col.align || "") === "left" ? "selected" : ""}>Esquerra</option>
+                  <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>Centre</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `;
         row.dataset.rawUsage = "main";
         refreshRawControls(row, judgeIds, { mainColumns: true });
       } else {
@@ -911,6 +1215,42 @@
               <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up">↑</button>
               <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down">↓</button>
               <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">-</button>
+            </div>
+          </div>
+        `;
+        row.innerHTML = `
+          <div class="classif-column-card__banner">
+            <span class="classif-column-card__type">Builtin</span>
+            <span class="classif-column-card__actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" aria-label="Moure a l'esquerra">&larr;</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" aria-label="Moure a la dreta">&rarr;</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" aria-label="Eliminar">Eliminar</button>
+            </span>
+          </div>
+          <div class="classif-column-card__body">
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}">
+            </div>
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="key">
+                ${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}
+              </select>
+            </div>
+            <div class="classif-column-card__row classif-column-card__row--compact">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Decimals</label>
+                <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}">
+              </div>
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Alineacio</label>
+                <select class="form-control form-control-sm" data-k="align">
+                  <option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>Esquerra</option>
+                  <option value="right" ${(col.align || "") === "right" ? "selected" : ""}>Dreta</option>
+                  <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>Centre</option>
+                </select>
+              </div>
             </div>
           </div>
         `;
@@ -1086,6 +1426,11 @@
       els.detailDefaultOpen.disabled = !detailChecked;
       if (!detailChecked) els.detailDefaultOpen.checked = false;
     }
+    if (els.detailSectionsLayout) {
+      const layout = String(els.detailSectionsLayout.value || "tabs").trim();
+      els.detailSectionsLayout.value = layout === "stacked" ? "stacked" : "tabs";
+      els.detailSectionsLayout.disabled = !detailChecked;
+    }
     const selectedSectionType = String(els.detailSectionType?.value || "").trim();
     const canAddSelectedSection = detailChecked && canAddDetailSection(selectedSectionType);
     if (els.detailSectionType) els.detailSectionType.disabled = !available || !detailChecked;
@@ -1129,7 +1474,7 @@
 
     cols.forEach((col, idx) => {
       const row = document.createElement("div");
-      row.className = "border rounded p-2 mb-2 col-row";
+      row.className = "border rounded p-2 mb-2 col-row classif-column-card";
       row.setAttribute("data-type", col.type || "builtin");
 
       if ((col.type || "builtin") === "raw") {
@@ -1327,7 +1672,7 @@
     return out.length ? out : defaultDetailDisplayColumns();
   }
 
-  function renderDetailSectionColumnsUI(sectionBox, sectionType, rawCols, enabled, sectionIdx) {
+  function renderLegacyDetailSectionColumnsUI(sectionBox, sectionType, rawCols, enabled, sectionIdx) {
     const cols = normalizeDetailColumnsForSection(rawCols, sectionType);
     const builtins = detailAllowedBuiltinKeysForSection(sectionType).map(key => {
       const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
@@ -1339,7 +1684,7 @@
 
     cols.forEach((col, idx) => {
       const row = document.createElement("div");
-      row.className = "border rounded p-2 mb-2 col-row";
+      row.className = "border rounded p-2 mb-2 col-row classif-column-card";
       row.setAttribute("data-type", col.type || "builtin");
 
       if ((col.type || "builtin") === "raw") {
@@ -1375,6 +1720,36 @@
             <div class="col-6 col-md-2 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
             <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}></div>
             <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button></div>
+          </div>
+        `;
+        row.innerHTML = `
+          <div class="classif-column-card__banner">
+            <span class="classif-column-card__type">Builtin</span>
+            <span class="classif-column-card__actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"} aria-label="Moure a l'esquerra">&larr;</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"} aria-label="Moure a la dreta">&rarr;</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"} aria-label="Eliminar">Eliminar</button>
+            </span>
+          </div>
+          <div class="classif-column-card__body">
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="key" data-error-path="${esc(colPath + ".key")}" ${enabled ? "" : "disabled"}>${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}</select>
+            </div>
+            <div class="classif-column-card__row classif-column-card__row--compact">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Decimals</label>
+                <input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}>
+              </div>
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Alineacio</label>
+                <select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>Esquerra</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>Dreta</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>Centre</option></select>
+              </div>
+            </div>
           </div>
         `;
       }
@@ -1514,7 +1889,7 @@
     cols.forEach((col, idx) => {
       const colPath = `presentacio.detall.sections[${sectionIdx}].columns[${idx}]`;
       const row = document.createElement("div");
-      row.className = "border rounded p-2 mb-2 col-row";
+      row.className = "border rounded p-2 mb-2 col-row classif-column-card";
       row.setAttribute("data-type", col.type || "builtin");
       row.dataset.errorPath = colPath;
 
@@ -1551,6 +1926,49 @@
             <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button></div>
           </div>
         `;
+        row.innerHTML = `
+          <input type="hidden" data-k="app_id" value="${esc(String(appId || ""))}">
+          <input type="hidden" data-k="key" data-error-path="${esc(colPath + ".key")}" value="${esc(col.key || `detail_raw_${idx+1}`)}">
+          <div class="classif-column-card__banner">
+            <span class="classif-column-card__type">Camp</span>
+            <span class="classif-column-card__app-name">${esc(detailSectionAppName(appId) || "Sense aparell")}</span>
+            <span class="classif-column-card__actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"} aria-label="Moure a l'esquerra">&larr;</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"} aria-label="Moure a la dreta">&rarr;</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"} aria-label="Eliminar">Eliminar</button>
+            </span>
+          </div>
+          <div class="classif-column-card__body">
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="classif-column-card__row">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Camp</label>
+                <select class="form-control form-control-sm" data-k="camp" data-error-path="${esc(colPath + ".source.camp")}" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp, { sectionType })}</select>
+              </div>
+              ${exerciseModeControl ? `<div class="classif-column-card__field"><label class="small text-muted mb-1">Mode exercici</label><select class="form-control form-control-sm" data-k="exercise_mode" data-error-path="${esc(colPath + ".source.exercise_mode")}" ${enabled ? "" : "disabled"}><option value="selected" ${exerciseMode === "selected" ? "selected" : ""}>Seguir seleccio</option><option value="fixed" ${exerciseMode === "fixed" ? "selected" : ""}>Exercici concret</option></select></div>` : ""}
+              ${sectionType === "team_members_table"
+                ? `<div class="classif-column-card__field" data-k="exercise_wrap" style="${exerciseMode === "fixed" ? "" : "display:none;"}"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${(enabled && exerciseMode === "fixed") ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>`
+                : `<div class="classif-column-card__field"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>`}
+            </div>
+            <div class="classif-column-card__field classif-column-card__field--full" data-k="judge_wrap" style="display:none;">
+              <label class="small text-muted mb-1">Jutges</label>
+              <select class="form-control form-control-sm" data-k="judge_ids" data-error-path="${esc(colPath + ".source.jutges.ids")}" multiple size="3" ${enabled ? "" : "disabled"}></select>
+            </div>
+            <div class="classif-column-card__row classif-column-card__row--compact">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Decimals</label>
+                <input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}" ${enabled ? "" : "disabled"}>
+              </div>
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Alineacio</label>
+                <select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>Dreta</option><option value="left" ${(col.align || "") === "left" ? "selected" : ""}>Esquerra</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>Centre</option></select>
+              </div>
+            </div>
+          </div>
+        `;
         row.dataset.sectionType = sectionType;
         refreshRawControls(row, judgeIds, { sectionType });
       } else {
@@ -1563,6 +1981,36 @@
             <div class="col-6 col-md-2 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
             <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}></div>
             <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button></div>
+          </div>
+        `;
+        row.innerHTML = `
+          <div class="classif-column-card__banner">
+            <span class="classif-column-card__type">Builtin</span>
+            <span class="classif-column-card__actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"} aria-label="Moure a l'esquerra">&larr;</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"} aria-label="Moure a la dreta">&rarr;</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"} aria-label="Eliminar">Eliminar</button>
+            </span>
+          </div>
+          <div class="classif-column-card__body">
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="classif-column-card__field classif-column-card__field--full">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="key" data-error-path="${esc(colPath + ".key")}" ${enabled ? "" : "disabled"}>${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}</select>
+            </div>
+            <div class="classif-column-card__row classif-column-card__row--compact">
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Decimals</label>
+                <input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}>
+              </div>
+              <div class="classif-column-card__field">
+                <label class="small text-muted mb-1">Alineacio</label>
+                <select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>Esquerra</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>Dreta</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>Centre</option></select>
+              </div>
+            </div>
           </div>
         `;
       }
@@ -1618,13 +2066,49 @@
     const sections = normalizeDetailSectionsFromSchema({ sections: rawSections });
     const enabled = isDetailConfigAvailable() && !!els.detailEnabled?.checked;
     els.detailSectionsBox.innerHTML = "";
+    if (!sections.length) {
+      state.detailActiveSectionIdx = 0;
+      return;
+    }
+    const activeIdx = Math.max(0, Math.min(Number(state.detailActiveSectionIdx || 0), sections.length - 1));
+    state.detailActiveSectionIdx = activeIdx;
+    const shell = document.createElement("div");
+    shell.className = "classif-detail-tabs-shell";
+    const tabs = document.createElement("div");
+    tabs.className = "classif-detail-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "Seccions del detall desplegable");
+    const panels = document.createElement("div");
+    panels.className = "classif-detail-panels";
+    shell.appendChild(tabs);
+    shell.appendChild(panels);
+    els.detailSectionsBox.appendChild(shell);
 
     sections.forEach((section, idx) => {
       const sectionPath = `presentacio.detall.sections[${idx}]`;
       const sectionAppId = Number(section?.aparell_id || 0);
       const splitInfo = getDetailSectionSplitInfo(section);
+      const sectionTypeLabel = detailSectionChoices().find(x => x.type === section.type)?.label || section.type;
+      const sectionLabel = String(section.label || "").trim() || sectionTypeLabel || `Seccio ${idx + 1}`;
+      const sectionAppName = detailSectionAppName(sectionAppId);
+      const isActive = idx === activeIdx;
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = `classif-detail-tab${isActive ? " is-active" : ""}`;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+      tab.innerHTML = `
+        <span class="classif-detail-tab__name">${esc(sectionLabel)}</span>
+        <span class="classif-detail-tab__meta">${esc([sectionTypeLabel, sectionAppName].filter(Boolean).join(" - ") || "Seccio")}</span>
+      `;
+      tab.addEventListener("click", () => {
+        state.detailActiveSectionIdx = idx;
+        renderDetailSectionsUI(readDetailSectionsUI(true));
+      });
+      tabs.appendChild(tab);
       const box = document.createElement("div");
-      box.className = "border rounded p-2 mb-3";
+      box.className = "border rounded p-2 classif-detail-section-panel";
+      box.hidden = !isActive;
       box.setAttribute("data-section-idx", String(idx));
       box.setAttribute("data-section-type", String(section.type || ""));
       box.dataset.errorPath = sectionPath;
@@ -1648,7 +2132,7 @@
         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
           <div class="flex-fill">
             <div class="small text-muted mb-1">Seccio</div>
-            <div class="font-weight-bold">${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}</div>
+            <div class="font-weight-bold">${esc(sectionTypeLabel)}</div>
           </div>
           <div class="d-flex gap-1">
             <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
@@ -1657,7 +2141,7 @@
           </div>
         </div>
         <div class="row">
-          <div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}" disabled></div>
+          <div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="${esc(sectionTypeLabel)}" disabled></div>
           ${appSelector}
           <div class="col-12 ${requiresApp ? "col-md-4" : "col-md-8"} mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(sectionPath + ".label")}" value="${esc(section.label || "")}" ${enabled ? "" : "disabled"}></div>
         </div>
@@ -1700,6 +2184,7 @@
       box.querySelector('[data-act="del"]').addEventListener("click", () => {
         const cur = readDetailSectionsUI(true);
         cur.splice(idx, 1);
+        state.detailActiveSectionIdx = Math.max(0, Math.min(idx, cur.length - 1));
         renderDetailSectionsUI(cur);
         syncAdvancedFromUI();
       });
@@ -1707,6 +2192,7 @@
         if (idx <= 0) return;
         const cur = readDetailSectionsUI(true);
         const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        state.detailActiveSectionIdx = idx - 1;
         renderDetailSectionsUI(cur);
         syncAdvancedFromUI();
       });
@@ -1714,6 +2200,7 @@
         const cur = readDetailSectionsUI(true);
         if (idx >= cur.length - 1) return;
         const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        state.detailActiveSectionIdx = idx + 1;
         renderDetailSectionsUI(cur);
         syncAdvancedFromUI();
       });
@@ -1756,7 +2243,7 @@
         });
         renderDetailSectionColumnsUI(box, section.type, section.columns || [], enabled, idx, sectionAppId);
       }
-      els.detailSectionsBox.appendChild(box);
+      panels.appendChild(box);
     });
   }
 
@@ -2138,6 +2625,8 @@
 
     const presentacio = schema.presentacio && typeof schema.presentacio === "object" && !Array.isArray(schema.presentacio) ? schema.presentacio : {};
     presentacio.columnes = Array.isArray(presentacio.columnes) ? presentacio.columnes : fallback.presentacio.columnes;
+    presentacio.particions = normalizePartitionPresentation(presentacio.particions || fallback.presentacio.particions || {});
+    presentacio.files = normalizeRankStyleConfig(presentacio.files || fallback.presentacio.files || {});
     presentacio.detall = presentacio.detall && typeof presentacio.detall === "object" && !Array.isArray(presentacio.detall)
       ? presentacio.detall
       : fallback.presentacio.detall;

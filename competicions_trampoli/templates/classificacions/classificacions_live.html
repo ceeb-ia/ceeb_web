@@ -15,6 +15,7 @@
     width: max-content;
     min-width: 100%;
     table-layout: auto;
+    font-size: 0.88rem;
   }
   .live-classif-table th,
   .live-classif-table td {
@@ -23,9 +24,17 @@
   }
   .live-col-rank,
   .live-col-score,
-  .live-col-raw,
   .live-col-points {
     white-space: nowrap;
+  }
+  .live-col-raw {
+    min-width: 7rem;
+    max-width: 18rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  td.live-col-raw {
+    background: rgba(248, 250, 252, 0.72);
   }
   .live-col-name,
   .live-col-participant {
@@ -110,7 +119,9 @@
     cursor: pointer;
   }
   .live-detail-name {
+    display: block;
     min-width: 0;
+    max-width: 100%;
     border: 0;
     background: transparent;
     color: inherit;
@@ -140,19 +151,139 @@
   .live-detail-panel {
     overflow: hidden;
   }
-  .live-detail-shell {
-    background: #f8fbff;
-    border: 1px solid #dde4ef;
-    border-radius: 10px;
-    padding: 0.75rem;
+  .live-result-row.is-detail-open > td {
+    background: #fbfdff;
+    border-bottom-color: transparent;
   }
-  .live-detail-title {
-    font-size: 0.82rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
+  .live-result-row.has-detail {
+    cursor: pointer;
+  }
+  .live-result-row.has-detail:hover > td {
+    background: #f8fbff;
+  }
+  .live-result-row.has-detail.is-detail-open:hover > td {
+    background: #fbfdff;
+  }
+  .live-result-row.is-rank-highlight > td {
+    background: var(--rank-row-bg) !important;
+  }
+  .live-result-row.is-rank-highlight.has-detail:hover > td,
+  .live-result-row.is-rank-highlight.has-detail.is-detail-open:hover > td {
+    background: var(--rank-row-bg-hover) !important;
+  }
+  .live-detail-row > td {
+    padding-top: 0 !important;
+    border-top: 0;
+    background: #fbfdff;
+  }
+  .live-detail-shell {
+    background: transparent;
+    border: 0;
+    border-left: 2px solid rgba(47, 128, 237, 0.32);
+    border-radius: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .live-detail-tabs {
+    display: flex;
+    gap: 0.3rem;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.45rem 0.5rem 0.35rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .live-detail-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-width: 5.75rem;
+    max-width: none;
+    border: 1px solid #d8e3f2;
+    border-radius: 999px;
+    background: #fff;
     color: #334155;
+    padding: 0.28rem 0.55rem;
+    text-align: center;
+    cursor: pointer;
+  }
+  .live-detail-tab:hover,
+  .live-detail-tab:focus {
+    border-color: #93b5e1;
+    background: #f8fbff;
+    outline: none;
+  }
+  .live-detail-tab.is-active {
+    border-color: #2f80ed;
+    background: #edf5ff;
+  }
+  .live-detail-tab__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.74rem;
+    font-weight: 700;
+  }
+  .live-detail-section {
+    padding: 0.45rem 0 0.55rem 0.55rem;
+  }
+  .live-detail-section[hidden] {
+    display: none !important;
+  }
+  .live-detail-shell--stacked .live-detail-section + .live-detail-section {
+    border-top: 1px solid #e2e8f0;
+  }
+  .live-detail-section-title {
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+  }
+  .live-detail-empty {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.72rem;
+    padding: 0.35rem 0;
+  }
+  .live-detail-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .live-detail-member {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    border: 1px solid #d8e3f2;
+    border-radius: 999px;
+    background: #fff;
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.25;
+    padding: 0.18rem 0.42rem;
+    overflow-wrap: anywhere;
+  }
+  .live-detail-section .table-responsive {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .live-detail-section .live-classif-table {
+    width: max-content;
+    min-width: 100%;
   }
   .partition-card {
+    --partition-accent: #2f80ed;
+    --partition-head-bg: linear-gradient(135deg, #f8fbff 0%, #f5f8fc 100%);
     border: 1px solid #dde4ef;
     border-radius: 10px;
     background: #ffffff;
@@ -167,7 +298,8 @@
     gap: 0.8rem;
     padding: 0.55rem 0.7rem;
     border-bottom: 1px solid #e6ecf5;
-    background: linear-gradient(135deg, #f8fbff 0%, #f5f8fc 100%);
+    border-left: 4px solid var(--partition-accent);
+    background: var(--partition-head-bg);
   }
   .partition-title-wrap {
     min-width: 0;
@@ -200,11 +332,11 @@
   .partition-table {
     margin-bottom: 0;
   }
-  .part-idx-0 .partition-head { border-left: 4px solid #2f80ed; }
-  .part-idx-1 .partition-head { border-left: 4px solid #f2994a; }
-  .part-idx-2 .partition-head { border-left: 4px solid #27ae60; }
-  .part-idx-3 .partition-head { border-left: 4px solid #eb5757; }
-  .part-idx-4 .partition-head { border-left: 4px solid #56ccf2; }
+  .part-idx-0 { --partition-accent: #2f80ed; }
+  .part-idx-1 { --partition-accent: #f2994a; }
+  .part-idx-2 { --partition-accent: #27ae60; }
+  .part-idx-3 { --partition-accent: #eb5757; }
+  .part-idx-4 { --partition-accent: #56ccf2; }
   @media (max-width: 640px) {
     .container-fluid {
       padding-left: .55rem;
@@ -249,17 +381,21 @@
       font-size: .68rem;
     }
     .live-classif-table {
-      font-size: .76rem;
+      font-size: .68rem;
     }
     .live-classif-table th,
     .live-classif-table td {
-      padding: .28rem .34rem !important;
-      line-height: 1.16;
+      padding: .22rem .28rem !important;
+      line-height: 1.12;
     }
     .live-col-name,
     .live-col-participant {
-      min-width: 8.5rem;
-      max-width: 12rem;
+      min-width: 7.25rem;
+      max-width: 10rem;
+    }
+    .live-col-raw {
+      min-width: 5.75rem;
+      max-width: 9.5rem;
     }
     .live-detail-toggle {
       font-size: .72rem;
@@ -272,15 +408,25 @@
       outline-offset: 1px;
     }
     .live-detail-shell {
-      padding: .45rem;
-      border-radius: 6px;
+      border-radius: 0;
     }
-    .live-detail-title {
-      font-size: .72rem;
-      margin-bottom: .32rem;
+    .live-detail-tabs {
+      gap: .25rem;
+      padding: .34rem .35rem .3rem;
+    }
+    .live-detail-tab {
+      min-width: 5.25rem;
+      max-width: none;
+      padding: .24rem .42rem;
+    }
+    .live-detail-tab__label {
+      font-size: .62rem;
+    }
+    .live-detail-section {
+      padding: .34rem 0 .42rem .42rem;
     }
     .live-detail-shell .live-classif-table {
-      font-size: .7rem;
+      font-size: .62rem;
     }
     .judge-row {
       gap: .25rem;
@@ -396,6 +542,7 @@
   let timer = null;
   const liveCfgStore = new Map();
   const liveDetailState = new Map();
+  const liveDetailTabState = new Map();
   const liveDetailAnimation = {
     key: "",
     opening: false,
@@ -529,14 +676,43 @@
     return !!defaultOpen;
   }
 
-  function renderDetailTable(detail){
+  function detailSectionRowCount(section){
+    const type = String(section?.type || "").trim();
+    if (type === "members_list") return Array.isArray(section?.items) ? section.items.length : 0;
+    return Array.isArray(section?.rows) ? section.rows.length : 0;
+  }
+
+  function getActiveDetailSectionIndex(detailKey, sections){
+    const total = Array.isArray(sections) ? sections.length : 0;
+    if (!total) return 0;
+    const saved = Number(liveDetailTabState.get(detailKey));
+    if (Number.isInteger(saved) && saved >= 0 && saved < total) return saved;
+    return 0;
+  }
+
+  function renderDetailMembersList(section){
+    const items = Array.isArray(section?.items) ? section.items : [];
+    if (!items.length) return '<div class="live-detail-empty">Sense participants per mostrar.</div>';
+    let html = '<div class="live-detail-members">';
+    items.forEach(item => {
+      const participant = String(item?.participant || "").trim();
+      const entitat = String(item?.entitat_nom || "").trim();
+      if (!participant && !entitat) return;
+      const label = entitat ? `${participant || "Participant"} - ${entitat}` : participant;
+      html += '<span class="live-detail-member">' + esc(label) + '</span>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderDetailTable(detail, detailKey){
     const sections = Array.isArray(detail?.sections) ? detail.sections : [];
     if (!sections.length) return "";
 
     const renderSectionTable = (section) => {
       const columns = Array.isArray(section?.columns) ? section.columns : [];
       const rows = Array.isArray(section?.rows) ? section.rows : [];
-      if (!columns.length || !rows.length) return "";
+      if (!columns.length || !rows.length) return '<div class="live-detail-empty">Sense dades per mostrar en aquesta seccio.</div>';
       let html = '<div class="table-responsive"><table class="table table-sm live-classif-table mb-0"><thead><tr>';
       columns.forEach(col => {
         html += `<th class="${esc(colClass(col))}">${esc(col.label || col.key || "")}</th>`;
@@ -557,21 +733,43 @@
       return html;
     };
 
-    let html = '<div class="live-detail-shell">';
-    html += '<div class="live-detail-title">Detall</div>';
-    sections.forEach(section => {
+    const layout = String(detail?.sections_layout || "tabs").trim().toLowerCase() === "stacked" ? "stacked" : "tabs";
+    const useTabs = layout === "tabs" && sections.length > 1;
+    const activeIndex = useTabs ? getActiveDetailSectionIndex(detailKey, sections) : 0;
+    let detailHtml = '<div class="live-detail-shell live-detail-shell--' + esc(layout) + '">';
+
+    if (useTabs) {
+      detailHtml += '<div class="live-detail-tabs" role="tablist" aria-label="Seccions del detall">';
+      sections.forEach((section, idx) => {
+        const tabLabel = String(section?.label || "").trim() || `Seccio ${idx + 1}`;
+        const active = idx === activeIndex;
+        detailHtml += '<button type="button" class="live-detail-tab js-live-detail-tab' + (active ? ' is-active' : '') + '"' +
+          ' data-detail-key="' + esc(detailKey) + '"' +
+          ' data-detail-tab-index="' + esc(String(idx)) + '"' +
+          ' role="tab"' +
+          ' aria-selected="' + (active ? 'true' : 'false') + '">' +
+          '<span class="live-detail-tab__label">' + esc(tabLabel) + '</span>' +
+          '</button>';
+      });
+      detailHtml += '</div>';
+    }
+
+    sections.forEach((section, idx) => {
       const type = String(section?.type || "").trim();
       const label = String(section?.label || "").trim();
-      if (label) html += `<div class="live-detail-title mb-2">${esc(label)}</div>`;
+      const active = !useTabs || idx === activeIndex;
+      detailHtml += '<section class="live-detail-section" data-detail-key="' + esc(detailKey) + '" data-detail-section-index="' + esc(String(idx)) + '"' + (active ? '' : ' hidden') + '>';
+      if (label && (!useTabs || sections.length <= 1)) detailHtml += `<div class="live-detail-section-title">${esc(label)}</div>`;
       if (type === "members_list") {
-        const items = Array.isArray(section?.items) ? section.items : [];
-        html += `<div class="small text-muted mb-2">${items.map(item => esc(String(item?.participant || ""))).filter(Boolean).join(" · ")}</div>`;
+        detailHtml += renderDetailMembersList(section);
       } else {
-        html += renderSectionTable(section);
+        detailHtml += renderSectionTable(section);
       }
+      detailHtml += '</section>';
     });
-    html += '</div>';
-    return html;
+    detailHtml += '</div>';
+    return detailHtml;
+
   }
 
   function formatPartitionTitle(raw){
@@ -586,6 +784,101 @@
       })
       .filter(Boolean);
     return parts.length ? parts.join(" / ") : "global";
+  }
+
+  const PARTITION_VISUAL_COLORS = {
+    blue: { accent: "#2f80ed", bg: "linear-gradient(135deg, #f8fbff 0%, #edf5ff 100%)" },
+    green: { accent: "#27ae60", bg: "linear-gradient(135deg, #f7fff9 0%, #ecfdf3 100%)" },
+    amber: { accent: "#f2994a", bg: "linear-gradient(135deg, #fffaf2 0%, #fff3df 100%)" },
+    red: { accent: "#eb5757", bg: "linear-gradient(135deg, #fff8f8 0%, #fff1f1 100%)" },
+    cyan: { accent: "#56ccf2", bg: "linear-gradient(135deg, #f4fcff 0%, #eaf9ff 100%)" },
+    violet: { accent: "#7c3aed", bg: "linear-gradient(135deg, #fbf8ff 0%, #f4efff 100%)" },
+    slate: { accent: "#64748b", bg: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)" },
+  };
+
+  const RANK_VISUAL_COLORS = {
+    gold: { accent: "#d97706", bg: "#fffbeb", hover: "#fef3c7" },
+    silver: { accent: "#64748b", bg: "#f8fafc", hover: "#eef2f7" },
+    bronze: { accent: "#b45309", bg: "#fff7ed", hover: "#ffedd5" },
+    blue: { accent: "#2f80ed", bg: "#eff6ff", hover: "#dbeafe" },
+    green: { accent: "#27ae60", bg: "#f0fdf4", hover: "#dcfce7" },
+    amber: { accent: "#f2994a", bg: "#fff7ed", hover: "#ffedd5" },
+    red: { accent: "#eb5757", bg: "#fff1f2", hover: "#ffe4e6" },
+    violet: { accent: "#7c3aed", bg: "#f5f3ff", hover: "#ede9fe" },
+    slate: { accent: "#64748b", bg: "#f8fafc", hover: "#eef2f7" },
+  };
+
+  function normalizePartitionPresentation(raw){
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const order = Array.isArray(cfg.ordre) ? cfg.ordre.map(x => String(x || "").trim()).filter(Boolean) : [];
+    const styles = cfg.estils && typeof cfg.estils === "object" && !Array.isArray(cfg.estils) ? cfg.estils : {};
+    return { ordre: order, estils: styles };
+  }
+
+  function partitionMatchKeys(part){
+    const raw = String(part?.particio || "global").trim() || "global";
+    const title = formatPartitionTitle(raw);
+    return [raw, title].map(x => String(x || "").trim()).filter(Boolean);
+  }
+
+  function partitionPresentationEntry(part, presentation){
+    const keys = partitionMatchKeys(part);
+    const styles = presentation.estils || {};
+    const hit = keys.find(key => Object.prototype.hasOwnProperty.call(styles, key));
+    return hit ? { key: hit, style: styles[hit] || {} } : { key: "", style: {} };
+  }
+
+  function orderedPartitionParts(parts, presentation){
+    const source = Array.isArray(parts) ? parts.slice() : [];
+    const order = Array.isArray(presentation.ordre) ? presentation.ordre : [];
+    if (!order.length) return source;
+    const rank = new Map(order.map((key, idx) => [String(key || "").trim(), idx]));
+    return source
+      .map((part, idx) => {
+        const keys = partitionMatchKeys(part);
+        const hits = keys.map(key => rank.has(key) ? rank.get(key) : null).filter(v => v !== null);
+        return { part, idx, rank: hits.length ? Math.min(...hits) : Number.MAX_SAFE_INTEGER };
+      })
+      .sort((a, b) => (a.rank - b.rank) || (a.idx - b.idx))
+      .map(item => item.part);
+  }
+
+  function partitionVisualAttrs(part, presentation){
+    const entry = partitionPresentationEntry(part, presentation);
+    const color = String(entry.style.color || "auto").trim().toLowerCase();
+    const colorCfg = PARTITION_VISUAL_COLORS[color];
+    const label = String(entry.style.label || "").trim();
+    const attrs = { title: label || formatPartitionTitle(part?.particio), style: "" };
+    if (colorCfg) {
+      attrs.style = ` style="--partition-accent:${colorCfg.accent};--partition-head-bg:${colorCfg.bg};"`;
+    }
+    return attrs;
+  }
+
+  function normalizeRowPresentation(raw){
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const positions = cfg.posicions && typeof cfg.posicions === "object" && !Array.isArray(cfg.posicions) ? cfg.posicions : {};
+    return { posicions: positions };
+  }
+
+  function rowPositionKey(row, cells){
+    const raw = row?.posicio ?? cells?.posicio ?? cells?.["#"] ?? "";
+    const text = String(raw ?? "").trim();
+    const match = text.match(/\d+/);
+    if (!match) return "";
+    const n = Number(match[0]);
+    return Number.isFinite(n) && n > 0 ? String(Math.trunc(n)) : "";
+  }
+
+  function rowVisualAttrs(row, cells, presentation){
+    const key = rowPositionKey(row, cells);
+    const style = key ? ((presentation.posicions || {})[key] || {}) : {};
+    const colorCfg = RANK_VISUAL_COLORS[String(style.color || "").trim().toLowerCase()];
+    if (!colorCfg) return { className: "", style: "" };
+    return {
+      className: " is-rank-highlight",
+      style: ` style="--rank-row-bg:${colorCfg.bg};--rank-row-bg-hover:${colorCfg.hover};"`,
+    };
   }
 
   function activeTabHref(){
@@ -668,7 +961,9 @@
     if (!host) return;
 
     liveCfgStore.set(String(cfg.id), cfg);
-    const parts = cfg.parts || [];
+    const partitionPresentation = normalizePartitionPresentation(cfg.partition_presentation || {});
+    const rowPresentation = normalizeRowPresentation(cfg.row_presentation || {});
+    const parts = orderedPartitionParts(cfg.parts || [], partitionPresentation);
     const columns = (Array.isArray(cfg.columns) && cfg.columns.length) ? cfg.columns : defaultColumns();
     document.getElementById("badge-" + cfg.id).textContent = parts.length ? parts.length : "0";
 
@@ -690,10 +985,11 @@
     let html = "";
     parts.forEach((p, pIdx) => {
       // Mostra només la part després de l'últim '|', si existeix
-      const particioNom = formatPartitionTitle(p.particio);
+      const visual = partitionVisualAttrs(p, partitionPresentation);
+      const particioNom = visual.title;
 
       const rowCount = (p.rows || []).length;
-      html += '<section class="partition-card part-idx-' + esc(String(pIdx % 5)) + '">';
+      html += '<section class="partition-card part-idx-' + esc(String(pIdx % 5)) + '"' + visual.style + '>';
       html +=   '<div class="partition-head">';
       html +=     '<div class="partition-title-wrap">';
       html +=       '<div class="partition-sub">Particio</div>';
@@ -716,12 +1012,13 @@
         const stableRowId = String(r.row_id || `row-${rIdx}`);
         const rowKey = `${cfg.id}|${String(p.particio || "global")}|${stableRowId}`;
         const detailOpen = detail ? isDetailOpen(detailKey, !!detail.default_open) : false;
+        const rowVisual = rowVisualAttrs(r, cells, rowPresentation);
         const toggleColKey = columns.some(col => String(col?.key || "") === "participant")
           ? "participant"
           : String(columns[0]?.key || "");
         let toggleInjected = false;
 
-        html += '<tr data-live-row-key="' + esc(rowKey) + '" data-live-row-id="' + esc(String(r.row_id || rIdx)) + '">';
+        html += '<tr class="live-result-row' + (detail ? ' has-detail' : '') + (detailOpen ? ' is-detail-open' : '') + rowVisual.className + '" data-live-row-key="' + esc(rowKey) + '" data-live-row-id="' + esc(String(r.row_id || rIdx)) + '"' + rowVisual.style + '>';
         columns.forEach(col => {
           const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
             ? cells[col.key]
@@ -754,7 +1051,7 @@
         html += '</tr>';
         if (detail && detailOpen) {
           html += '<tr class="table-light live-detail-row">';
-          html += '<td colspan="' + esc(String(columns.length)) + '"><div class="live-detail-panel" data-live-detail-key="' + esc(detailKey) + '">' + renderDetailTable(detail) + '</div></td>';
+          html += '<td colspan="' + esc(String(columns.length)) + '"><div class="live-detail-panel" data-live-detail-key="' + esc(detailKey) + '">' + renderDetailTable(detail, detailKey) + '</div></td>';
           html += '</tr>';
         }
       });
@@ -831,7 +1128,32 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener("click", (ev) => {
-      const btn = ev.target.closest(".js-live-detail-toggle");
+      const tabBtn = ev.target.closest(".js-live-detail-tab");
+      if (tabBtn) {
+        const detailKey = String(tabBtn.getAttribute("data-detail-key") || "").trim();
+        const idx = Number(tabBtn.getAttribute("data-detail-tab-index"));
+        if (!detailKey || !Number.isInteger(idx)) return;
+        liveDetailTabState.set(detailKey, idx);
+        const shell = tabBtn.closest(".live-detail-shell");
+        if (!shell) return;
+        shell.querySelectorAll(".js-live-detail-tab").forEach(btn => {
+          const active = Number(btn.getAttribute("data-detail-tab-index")) === idx;
+          btn.classList.toggle("is-active", active);
+          btn.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        shell.querySelectorAll(".live-detail-section").forEach(section => {
+          const active = Number(section.getAttribute("data-detail-section-index")) === idx;
+          section.hidden = !active;
+        });
+        return;
+      }
+
+      let btn = ev.target.closest(".js-live-detail-toggle");
+      if (!btn) {
+        if (ev.target.closest("button,a,input,select,textarea,label,summary,details,.live-detail-row")) return;
+        const row = ev.target.closest(".live-result-row.has-detail");
+        if (row) btn = row.querySelector(".js-live-detail-toggle");
+      }
       if (!btn) return;
       const cfgId = String(btn.getAttribute("data-cfg-id") || "").trim();
       const partKey = String(btn.getAttribute("data-part-key") || "global");

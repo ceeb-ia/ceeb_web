@@ -459,12 +459,15 @@
     line-height: 1.15;
     text-align: center;
     text-decoration: none;
+    white-space: normal;
     overflow-wrap: anywhere;
   }
 
   .competition-domain-button span {
+    display: block;
     min-width: 0;
-    overflow-wrap: normal;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     word-break: normal;
     hyphens: none;
   }
@@ -609,6 +612,13 @@
     .competition-domain-grid > *,
     .competition-domain-grid > *:nth-child(n+4) {
       grid-column: span 1;
+    }
+
+    .competition-domain-button {
+      flex-direction: column;
+      gap: 5px;
+      min-height: 66px;
+      padding: 8px 7px;
     }
   }
 </style>

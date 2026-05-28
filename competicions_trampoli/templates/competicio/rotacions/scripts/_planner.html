@@ -333,6 +333,96 @@ const programFilters = {
   activeStationId: null,
 };
 let activePlannerDrawerPanel = "programables";
+const PLANNER_TOOLBAR_OPEN_STORAGE_KEY = "rotacions.planner.toolbar.open:{{ competicio.id }}";
+
+function rotationGridScrollStorageKey(){
+  return `rotacions.grid.scroll:{{ competicio.id }}:${window.location.pathname}`;
+}
+
+function rotationGridWrap(){
+  return document.querySelector(".grid-wrap");
+}
+
+function firstVisibleRotationRow(wrap){
+  if (!wrap) return null;
+  const top = wrap.scrollTop + 24;
+  const bottom = wrap.scrollTop + wrap.clientHeight;
+  return Array.from(document.querySelectorAll("table.rot tbody tr[data-franja-visual-row], table.rot tbody tr[data-franja-row]"))
+    .find((row) => row.offsetTop + row.offsetHeight > top && row.offsetTop < bottom) || null;
+}
+
+function firstVisibleRotationStation(wrap){
+  if (!wrap) return null;
+  const left = wrap.scrollLeft + 250;
+  const right = wrap.scrollLeft + wrap.clientWidth;
+  return Array.from(document.querySelectorAll("table.rot thead th.js-col-h"))
+    .find((th) => th.offsetLeft + th.offsetWidth > left && th.offsetLeft < right) || null;
+}
+
+function saveRotationGridScrollState(){
+  const wrap = rotationGridWrap();
+  if (!wrap) return;
+  const row = firstVisibleRotationRow(wrap);
+  const station = firstVisibleRotationStation(wrap);
+  const payload = {
+    savedAt: Date.now(),
+    top: wrap.scrollTop || 0,
+    left: wrap.scrollLeft || 0,
+    franjaId: row ? String(row.dataset.franjaVisualRow || row.dataset.franjaRow || "") : "",
+    rowOffset: row ? (row.offsetTop - wrap.scrollTop) : null,
+    stationId: station ? String(station.dataset.estacio || "") : "",
+    stationOffset: station ? (station.offsetLeft - wrap.scrollLeft) : null,
+  };
+  try {
+    window.sessionStorage.setItem(rotationGridScrollStorageKey(), JSON.stringify(payload));
+  } catch (error) {
+    // sessionStorage can be unavailable in restricted browsing contexts.
+  }
+}
+
+function restoreRotationGridScrollState(){
+  let payload = null;
+  try {
+    payload = JSON.parse(window.sessionStorage.getItem(rotationGridScrollStorageKey()) || "null");
+    window.sessionStorage.removeItem(rotationGridScrollStorageKey());
+  } catch (error) {
+    return;
+  }
+  if (!payload || typeof payload !== "object") return;
+  if (!Number.isFinite(Number(payload.savedAt)) || Date.now() - Number(payload.savedAt) > 120000) return;
+
+  const apply = () => {
+    const wrap = rotationGridWrap();
+    if (!wrap) return;
+    let nextTop = Number(payload.top);
+    let nextLeft = Number(payload.left);
+    const rowOffset = Number(payload.rowOffset);
+    const stationOffset = Number(payload.stationOffset);
+
+    if (payload.franjaId && Number.isFinite(rowOffset)) {
+      const row = document.querySelector(`table.rot tbody tr[data-franja-visual-row="${payload.franjaId}"], table.rot tbody tr[data-franja-row="${payload.franjaId}"]`);
+      if (row) nextTop = row.offsetTop - rowOffset;
+    }
+    if (payload.stationId && Number.isFinite(stationOffset)) {
+      const station = document.querySelector(`table.rot thead th.js-col-h[data-estacio="${payload.stationId}"]`);
+      if (station) nextLeft = station.offsetLeft - stationOffset;
+    }
+
+    if (Number.isFinite(nextTop)) wrap.scrollTop = Math.max(0, nextTop);
+    if (Number.isFinite(nextLeft)) wrap.scrollLeft = Math.max(0, nextLeft);
+  };
+
+  requestAnimationFrame(() => requestAnimationFrame(apply));
+  window.setTimeout(apply, 140);
+}
+
+function reloadRotacionsPreservingGridScroll(){
+  saveRotationGridScrollState();
+  location.reload();
+}
+
+window.addEventListener("pagehide", saveRotationGridScrollState);
+window.addEventListener("beforeunload", saveRotationGridScrollState);
 
 function escapeHtml(s){
   return String(s ?? "")
@@ -901,6 +991,39 @@ function currentAddFranjaColorPayload(){
   return normalizeFranjaColorValue(input.value, tipus);
 }
 
+function addMinutesToTime(value, minutesToAdd){
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  let startMinutes = 9 * 60;
+  if (match) {
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (Number.isFinite(hours) && Number.isFinite(minutes) && hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+      startMinutes = (hours * 60) + minutes;
+    }
+  }
+  const endMinutes = Math.min((24 * 60) - 1, startMinutes + minutesToAdd);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(endMinutes / 60))}:${pad(endMinutes % 60)}`;
+}
+
+function firstFranjaCreatePayload(){
+  const hora_inici = (document.getElementById("hi")?.value || "").trim() || "09:00";
+  const hora_fi = (document.getElementById("hf")?.value || "").trim() || addMinutesToTime(hora_inici, 20);
+  return {
+    hora_inici,
+    hora_fi,
+    titol: document.getElementById("ft")?.value || "",
+    tipus: document.getElementById("ftype")?.value || "competition",
+    color_fons: currentAddFranjaColorPayload(),
+  };
+}
+
+async function createFirstFranjaFromGrid(){
+  const resp = await submitFranjaMutation(ADD_FR_URL, firstFranjaCreatePayload());
+  if (resp?.cancelled) return;
+  reloadRotacionsPreservingGridScroll();
+}
+
 function currentEditFranjaColorPayload(){
   const tipus = document.getElementById("editFrTipus")?.value || "competition";
   const input = document.getElementById("editFrColor");
@@ -958,7 +1081,7 @@ function initTopButtons(){
         grid = {};
         renderAll();
         if (statusEl) statusEl.textContent = "✅ Programa netejat.";
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         if (statusEl) statusEl.textContent = "❌ Error netejant: " + (e.message || e);
       }
@@ -1000,7 +1123,7 @@ function initTopButtons(){
       try {
         const resp = await submitFranjaMutation(ADD_FR_URL, {hora_inici, hora_fi, titol, tipus, color_fons});
         if (resp?.cancelled) return;
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert("Error creant franja: " + (e.message || e));
       }
@@ -1012,7 +1135,7 @@ function initTopButtons(){
     btnAddDescans.addEventListener("click", async () => {
       try {
         await postJSON(ADD_REST_URL, {});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert("Error creant descans: " + (e.message || e));
       }
@@ -1037,7 +1160,7 @@ function initTopButtons(){
       try {
         const r = await postJSON(AUTO_FR_URL, {hora_inici, hora_fi, interval_min, titol_base, clear_existing});
         if (autoStatusEl) autoStatusEl.textContent = `✅ Creat ${r && r.created != null ? r.created : ""} franges.`;
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch (e) {
         if (autoStatusEl) autoStatusEl.textContent = "❌ Error: " + (e.message || e);
       }
@@ -1199,6 +1322,16 @@ function initGlobalClickHandler(){
       return;
     }
 
+    const createFirstFranjaBtn = ev.target.closest(".js-create-first-franja");
+    if (createFirstFranjaBtn){
+      try{
+        await createFirstFranjaFromGrid();
+      } catch(e){
+        showAlert("Error creant primera franja: " + (e.message || e));
+      }
+      return;
+    }
+
     // EDITAR FRANJA (obre modal)
     const editBtn = ev.target.closest(".js-edit-fr");
     if (editBtn){
@@ -1240,7 +1373,7 @@ function initGlobalClickHandler(){
         const resp = await submitFranjaMutation(editFrUrl, {titol, tipus, hora_inici, hora_fi, color_fons});
         if (resp?.cancelled) return;
         if (window.jQuery) window.jQuery("#editFrModal").modal("hide");
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert("Error guardant franja: " + (e.message || e));
       }
@@ -1285,7 +1418,7 @@ function initGlobalClickHandler(){
 
         const r = await postJSON(extrapolarUrl(ex), {count});
         if (statusEl) statusEl.textContent = `✅ Extrapolat. Franges creades: ${r?.created_franges ?? "?"}, cel·les omplertes: ${r?.filled ?? "?"}.`;
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert("Error extrapolant: " + (e.message || e));
         if (statusEl) statusEl.textContent = "❌ Error extrapolant: " + (e.message || e);
@@ -1300,7 +1433,7 @@ function initGlobalClickHandler(){
       try{
         const resp = await submitFranjaMutation(insertAfterUrl(ins), {});
         if (resp?.cancelled) return;
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert("Error inserint franja: " + (e.message || e));
       }
@@ -1314,7 +1447,7 @@ function initGlobalClickHandler(){
       if (!await showConfirm("Eliminar franja?")) return;
       try {
         await postJSON(delFrUrl(fr), {});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert(e.message || e);
       }
@@ -1328,7 +1461,7 @@ function initGlobalClickHandler(){
       if (!await showConfirm("Eliminar estació?")) return;
       try {
         await postJSON(delEstacioUrl(es), {});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch(e){
         showAlert(e.message || e);
       }
@@ -1441,7 +1574,27 @@ function isPlannerToolbarOpen(){
   return toolbar ? !toolbar.classList.contains("is-collapsed") : true;
 }
 
-function setPlannerToolbarOpen(open){
+function readStoredPlannerToolbarOpen(){
+  try {
+    const value = window.localStorage.getItem(PLANNER_TOOLBAR_OPEN_STORAGE_KEY);
+    if (value === "0") return false;
+    if (value === "1") return true;
+  } catch (error) {
+    // localStorage can be unavailable in restricted browsing contexts.
+  }
+  return true;
+}
+
+function writeStoredPlannerToolbarOpen(open){
+  try {
+    window.localStorage.setItem(PLANNER_TOOLBAR_OPEN_STORAGE_KEY, open ? "1" : "0");
+  } catch (error) {
+    // localStorage can be unavailable in restricted browsing contexts.
+  }
+}
+
+function setPlannerToolbarOpen(open, options){
+  const opts = options || {};
   const toolbar = document.getElementById("rotation-toolbar");
   const collapseBtn = document.getElementById("rotation-toolbar-collapse");
   const panels = document.getElementById("rotation-toolbar-panels");
@@ -1452,6 +1605,7 @@ function setPlannerToolbarOpen(open){
     collapseBtn.textContent = shouldOpen ? "Amagar" : "Mostrar";
   }
   if (panels) panels.setAttribute("aria-hidden", shouldOpen ? "false" : "true");
+  if (!opts.skipSave) writeStoredPlannerToolbarOpen(shouldOpen);
   syncPlannerDrawerPanels();
 }
 
@@ -1514,7 +1668,7 @@ function initFranjaRowDnD(){
           target_id: parseInt(targetId, 10),
           position,
         });
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch (e) {
         showAlert("Error reordenant franges: " + (e.message || e));
       }
@@ -1579,7 +1733,7 @@ function initVisualFranjaRowDnD(){
           target_id: parseInt(targetId, 10),
           position,
         });
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
       } catch (e) {
         showAlert("Error reordenant visualment les franges globals: " + (e.message || e));
       }
@@ -1587,11 +1741,12 @@ function initVisualFranjaRowDnD(){
   });
 }
 
-function setPlannerDrawerPanel(panelKey){
+function setPlannerDrawerPanel(panelKey, options){
+  const opts = options || {};
   activePlannerDrawerPanel = ["programables", "franges", "globals", "export"].includes(String(panelKey || ""))
     ? String(panelKey)
     : "programables";
-  setPlannerToolbarOpen(true);
+  if (opts.openToolbar !== false) setPlannerToolbarOpen(true);
   syncPlannerDrawerPanels();
 }
 
@@ -1741,8 +1896,8 @@ function renderGroupBuckets(){
 }
 
 function initPlannerDrawerControls(){
-  setPlannerDrawerPanel(activePlannerDrawerPanel);
-  setPlannerToolbarOpen(true);
+  setPlannerDrawerPanel(activePlannerDrawerPanel, {openToolbar: false});
+  setPlannerToolbarOpen(readStoredPlannerToolbarOpen(), {skipSave: true});
 
   const toolbarCollapse = document.getElementById("rotation-toolbar-collapse");
   if (toolbarCollapse) toolbarCollapse.addEventListener("click", () => togglePlannerToolbar());
@@ -1853,5 +2008,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initStationFocusHandlers();
 
   renderAll({save:false});
+  restoreRotationGridScrollState();
 });
 </script>

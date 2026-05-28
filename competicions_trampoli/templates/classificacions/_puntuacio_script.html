@@ -1,3 +1,21 @@
+  {% load static %}
+  window.PUNTUACIO_ICON_URLS = window.PUNTUACIO_ICON_URLS || {
+    agregacio: "{% static 'classificacions/sections/puntuacio/agregacio.png' %}",
+    aparells: "{% static 'classificacions/sections/puntuacio/aparells.png' %}",
+    base: "{% static 'classificacions/sections/puntuacio/base.png' %}",
+    camps: "{% static 'classificacions/sections/puntuacio/camps.png' %}",
+    camps_exercici: "{% static 'classificacions/sections/puntuacio/camps_exercici.png' %}",
+    configuracio: "{% static 'classificacions/sections/puntuacio/configuracio.png' %}",
+    resum: "{% static 'classificacions/sections/puntuacio/resum.png' %}",
+    tractament: "{% static 'classificacions/sections/puntuacio/tractament.png' %}",
+  };
+
+  function puntuacioIconHTML(key) {
+    const src = (window.PUNTUACIO_ICON_URLS || {})[String(key || "").trim()];
+    if (!src) return "";
+    return `<span class="classif-panel-icon puntuacio-step-card__icon" aria-hidden="true"><img src="${esc(src)}" alt=""></span>`;
+  }
+
   let puntuacioUiBound = false;
   const TIE_INPUT_SOURCE_COPY = {
     raw_exercises: "Entrada: tots els exercicis disponibles",
@@ -1104,7 +1122,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--selection" data-app-ex-box="${esc(compAparellId)}">
         <label class="small text-muted mb-1">3. Selecció de notes sobre el conjunt d'aquest aparell</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">3. Seleccio de notes sobre el conjunt d'aquest aparell</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("tractament")}<span>3. Seleccio de notes sobre el conjunt d'aquest aparell</span></div>
         </div>
         <div class="puntuacio-step-card__body">
         <select class="form-control form-control-sm mb-1" data-app-ex-mode data-app-id="${esc(compAparellId)}">
@@ -1142,7 +1160,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-camps-mode-box="${esc(compAparellId)}">
         <label class="small text-muted mb-1">1c. Tractament de camps</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">1c. Tractament de camps</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("tractament")}<span>1c. Tractament de camps</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <select class="form-control form-control-sm" data-app-camps-mode data-app-id="${esc(compAparellId)}">
@@ -1219,7 +1237,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-exercise-fields-box="${esc(compAparellId)}" style="${mode === "per_exercici" ? "" : "display:none;"}">
         <label class="small text-muted mb-1">1d. Personalitzacio per exercici</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">1d. Camps per exercici</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("camps_exercici")}<span>1d. Camps per exercici</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <div class="small text-muted mb-2">Base comuna per a tots els exercicis d'aquest aparell. Nomes cal omplir un exercici si ha de sortir de la base comuna.</div>
@@ -1235,7 +1253,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--field-agg" data-app-agg-ex-box="${esc(compAparellId)}">
         <label class="small text-muted mb-1">4. Agregacio dels exercicis seleccionats</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">4. Agregacio dels exercicis seleccionats</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("agregacio")}<span>4. Agregacio dels exercicis seleccionats</span></div>
         </div>
         <div class="puntuacio-step-card__body">
         <select class="form-control form-control-sm" data-app-agg-exercicis data-app-id="${esc(compAparellId)}">
@@ -1259,7 +1277,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--selection" data-app-participants-box="${esc(compAparellId)}" style="${showStep ? "" : "display:none;"}">
         <label class="small text-muted mb-1">5. Seleccio i agregacio entre membres</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">5. Seleccio i agregacio entre membres</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("agregacio")}<span>5. Seleccio i agregacio entre membres</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <select class="form-control form-control-sm mb-1" data-app-participants-mode data-app-id="${esc(compAparellId)}">
@@ -1315,7 +1333,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--field-agg" data-app-agg-box="${esc(compAparellId)}">
         <label class="small text-muted mb-1">1b. Agregacio de camps</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">1b. Agregacio de camps</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("agregacio")}<span>1b. Agregacio de camps</span></div>
         </div>
         <div class="puntuacio-step-card__body">
         <select class="form-control form-control-sm" data-app-agg-camps data-app-id="${esc(compAparellId)}">
@@ -1339,7 +1357,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--pretreat" data-app-candidate-box="${esc(compAparellId)}">
         <label class="small text-muted mb-1">${esc(info.title)}</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">${esc(info.title)}</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("tractament")}<span>${esc(info.title)}</span></div>
         </div>
         <div class="puntuacio-step-card__body">
         <select class="form-control form-control-sm mb-1" data-app-candidate-mode data-app-id="${esc(compAparellId)}">
@@ -1399,7 +1417,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-team-pool-mode-box="${esc(compAparellId)}" style="${showCard ? "" : "display:none;"}">
         <label class="small text-muted mb-1">3a. Mode del pool d'equip</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">3a. Mode del pool d'equip</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("tractament")}<span>3a. Mode del pool d'equip</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <select class="form-control form-control-sm" data-app-team-pool-mode data-app-id="${esc(compAparellId)}">
@@ -1456,7 +1474,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--selection" data-app-team-pool-exercise-box="${esc(compAparellId)}" style="${isTeamPoolPerExerciseConfigurationAvailable() && mode === "per_exercici" ? "" : "display:none;"}">
         <label class="small text-muted mb-1">3b. Bosses per exercici</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">3b. Bosses per exercici</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("camps_exercici")}<span>3b. Bosses per exercici</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <div class="small text-muted mb-2">Cada subtotal es calcula dins del seu numero d'exercici i despres entra al flux general de seleccio entre exercicis.</div>
@@ -1471,7 +1489,7 @@
       <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-pool-context="${esc(compAparellId)}">
         <label class="small text-muted mb-1">3. Selecció sobre el conjunt</label>
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">3. Seleccio sobre el conjunt</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("aparells")}<span>3. Seleccio sobre el conjunt</span></div>
           <div class="puntuacio-step-card__badge">Bloc compartit</div>
         </div>
         <div class="puntuacio-step-card__body">
@@ -1755,10 +1773,13 @@
       card.className = `puntuacio-app-card ${toneClass}`;
       card.innerHTML = `
         <div class="puntuacio-app-card__head">
-          <div>
+          <div class="classif-panel-title-row">
+            ${puntuacioIconHTML("configuracio")}
+            <div class="classif-panel-title-copy">
             <div class="puntuacio-app-card__eyebrow">Aparell</div>
             <div class="puntuacio-app-card__title">${esc(appName)}</div>
             <div class="puntuacio-app-card__meta">${esc(metaParts.join(" | "))}</div>
+            </div>
           </div>
         </div>
         <div class="puntuacio-app-card__body">

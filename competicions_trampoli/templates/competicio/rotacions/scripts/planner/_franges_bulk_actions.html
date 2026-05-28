@@ -254,7 +254,7 @@
         if (!accepted) return;
         setStatus("Buidant franges...");
         await postJSON(BULK_CLEAR_URL, {franja_ids: franjaIds});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
         return;
       }
       if (action === "delete") {
@@ -268,7 +268,7 @@
         if (!accepted) return;
         setStatus("Eliminant franges...");
         await postJSON(BULK_DELETE_URL, {franja_ids: franjaIds});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
         return;
       }
       if (action === "color") {
@@ -276,7 +276,7 @@
         if (!value) return;
         setStatus("Actualitzant color...");
         await postJSON(BULK_UPDATE_URL, {franja_ids: franjaIds, ...value});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
         return;
       }
       if (action === "type") {
@@ -284,7 +284,7 @@
         if (!value) return;
         setStatus("Actualitzant tipus...");
         await postJSON(BULK_UPDATE_URL, {franja_ids: franjaIds, ...value});
-        location.reload();
+        reloadRotacionsPreservingGridScroll();
         return;
       }
       if (action === "shift") {
@@ -292,7 +292,7 @@
         if (!value) return;
         setStatus("Desplaçant franges...");
         const result = await postWithPreview(BULK_SHIFT_URL, {franja_ids: franjaIds, ...value});
-        if (result) location.reload();
+        if (result) reloadRotacionsPreservingGridScroll();
         return;
       }
       if (action === "duration") {
@@ -300,7 +300,7 @@
         if (!value) return;
         setStatus("Ajustant durada...");
         const result = await postWithPreview(BULK_DURATION_URL, {franja_ids: franjaIds, ...value});
-        if (result) location.reload();
+        if (result) reloadRotacionsPreservingGridScroll();
         return;
       }
       if (action === "duplicate") {
@@ -311,7 +311,7 @@
           franja_ids: franjaIds,
           ...value,
         });
-        if (result) location.reload();
+        if (result) reloadRotacionsPreservingGridScroll();
       }
     } catch (e) {
       setStatus("");

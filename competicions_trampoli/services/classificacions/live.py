@@ -25,6 +25,56 @@ def default_live_columns():
     ]
 
 
+def partition_presentation_config(schema):
+    presentacio = (schema or {}).get("presentacio") if isinstance(schema, dict) else {}
+    raw_cfg = (presentacio or {}).get("particions") if isinstance(presentacio, dict) else {}
+    raw_cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    order = []
+    seen = set()
+    for item in raw_cfg.get("ordre") or []:
+        key = str(item or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        order.append(key)
+    styles = {}
+    raw_styles = raw_cfg.get("estils") if isinstance(raw_cfg.get("estils"), dict) else {}
+    allowed_colors = {"auto", "blue", "green", "amber", "red", "cyan", "violet", "slate"}
+    for raw_key, raw_style in raw_styles.items():
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        style = raw_style if isinstance(raw_style, dict) else {}
+        color = str(style.get("color") or "auto").strip().lower()
+        styles[key] = {
+            "color": color if color in allowed_colors else "auto",
+            "label": str(style.get("label") or "").strip(),
+        }
+    return {"ordre": order, "estils": styles}
+
+
+def row_presentation_config(schema):
+    presentacio = (schema or {}).get("presentacio") if isinstance(schema, dict) else {}
+    raw_cfg = (presentacio or {}).get("files") if isinstance(presentacio, dict) else {}
+    raw_cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    raw_positions = raw_cfg.get("posicions") if isinstance(raw_cfg.get("posicions"), dict) else {}
+    allowed_colors = {"gold", "silver", "bronze", "blue", "green", "amber", "red", "violet", "slate"}
+    positions = {}
+    for raw_pos, raw_style in raw_positions.items():
+        try:
+            pos = int(raw_pos)
+        except (TypeError, ValueError):
+            continue
+        if pos < 1:
+            continue
+        style = raw_style if isinstance(raw_style, dict) else {}
+        color = str(style.get("color") or "").strip().lower()
+        if color not in allowed_colors:
+            continue
+        positions[str(pos)] = {"color": color}
+    return {"posicions": positions}
+
+
 def format_partition_title(raw):
     source = "global" if raw in (None, "") else str(raw)
     tokens = []
@@ -74,6 +124,8 @@ def build_live_cfg_payload_row(competicio, cfg, *, compute_fn=compute_classifica
         "tipus": cfg.tipus,
         "publicada": bool(getattr(cfg, "publicada", True)),
         "columns": runtime["columns"] or get_display_columns(cfg.schema or {}),
+        "partition_presentation": partition_presentation_config(cfg.schema or {}),
+        "row_presentation": row_presentation_config(cfg.schema or {}),
         "parts": runtime["parts"],
         **({"error": runtime["error"]} if runtime["error"] else {}),
     }
@@ -117,5 +169,7 @@ __all__ = [
     "extract_export_value",
     "format_partition_title",
     "live_data_payload",
+    "partition_presentation_config",
     "public_live_payload",
+    "row_presentation_config",
 ]

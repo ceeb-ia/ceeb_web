@@ -54,6 +54,7 @@
           <option value="classification_order" {% if unit.ui_formation_strategy == "classification_order" %}selected{% endif %}>Ordre de classificacio</option>
           <option value="serpentine" {% if unit.ui_formation_strategy == "serpentine" %}selected{% endif %}>Ordre invers</option>
           <option value="first_last" {% if unit.ui_formation_strategy == "first_last" %}selected{% endif %}>Primer amb ultim</option>
+          <option value="random" {% if unit.ui_formation_strategy == "random" %}selected{% endif %}>Aleatori</option>
         </select>
       </label>
       <button class="btn btn-sm btn-outline-primary" type="submit">Desar unitat</button>

@@ -30,6 +30,20 @@
                 {% else %}
                   {% include "competicio/rotacions/grid/_row_global.html" %}
                 {% endif %}
+                {% if forloop.last %}
+                  <tr class="rotation-grid-add-row">
+                    <td colspan="{{ estacions|length|add:1 }}">
+                      <button
+                        type="button"
+                        class="rotation-grid-add-franja js-insert-after"
+                        data-fr="{{ f.id }}"
+                        title="Inserir franja sota">
+                        <span aria-hidden="true">+</span>
+                        <span>Inserir franja sota</span>
+                      </button>
+                    </td>
+                  </tr>
+                {% endif %}
               {% empty %}
                 {% include "competicio/rotacions/grid/_empty.html" %}
               {% endfor %}

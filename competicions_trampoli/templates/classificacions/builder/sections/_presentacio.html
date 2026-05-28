@@ -1,71 +1,196 @@
-              <section id="section-presentacio" class="builder-section builder-section--presentacio" data-builder-section>
-                <div class="builder-section__header">
-                  <div>
-                    <div class="builder-section__eyebrow">Sortida</div>
-                    <h4 class="builder-section__title">Presentació <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="presentacio_overview" aria-label="Ajuda presentació">?</button></h4>
-                    <p class="builder-section__desc">Configura el top visible, els empats, les columnes i la previsualització final de la classificació.</p>
-                  </div>
-                  <div class="builder-help-badge">Visualització</div>
-                </div>
-                <div class="builder-section__body">
-                  <div class="builder-section__stack">
-                    <div class="builder-subsection builder-subsection--muted">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Regles de sortida</p>
-                          <p class="builder-subsection__desc">Ajustos globals sobre quants resultats es mostren i com es tracten els empats.</p>
-                        </div>
-                      </div>
-          <div class="row">
-            <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Top N <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="top_n" aria-label="Ajuda top N">?</button></label>
-              <input class="form-control" id="iTopN" type="number" min="0" value="0">
-            </div>
-            <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold d-block">Mostrar empats <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mostrar_empats" aria-label="Ajuda mostrar empats">?</button></label>
-              <div class="form-check mt-2">
-                <input class="form-check-input" type="checkbox" id="cEmpats" checked>
-                <label class="form-check-label" for="cEmpats">Sí</label>
+{% load static %}
+
+<section id="section-presentacio" class="builder-section builder-section--presentacio" data-builder-section>
+  <div class="builder-section__header">
+    <div>
+      <div class="builder-section__eyebrow">Sortida</div>
+      <h4 class="builder-section__title">Presentacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="presentacio_overview" aria-label="Ajuda presentacio">?</button></h4>
+      <p class="builder-section__desc">Configura el top visible, els empats, la taula principal, el detall desplegable i la previsualitzacio final.</p>
+    </div>
+    <div class="builder-help-badge">Visualitzacio</div>
+  </div>
+  <div class="builder-section__body">
+    <div class="builder-section__stack classif-presentacio-flow">
+      <div class="builder-subsection builder-subsection--muted classif-presentacio-panel classif-presentacio-panel--rules">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">01</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/presentacio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Regles de sortida</p>
+                <p class="builder-subsection__desc">Ajustos globals sobre quants resultats es mostren i com es tracten els empats.</p>
               </div>
             </div>
-            {% if builder_can_preview|default:True %}
-            <div class="col-12 col-md-4 mb-3 d-flex align-items-end justify-content-end">
-              <div class="d-flex align-items-center gap-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
-                <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="preview_help" aria-label="Ajuda previsualització">?</button>
-              </div>
-            </div>
-            {% endif %}
           </div>
-                    </div>
+        </div>
 
-                    <div class="builder-subsection">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Columnes i previsualització</p>
-                          <p class="builder-subsection__desc">Defineix les columnes que es mostraran a la live i valida la sortida amb una previsualització.</p>
-                        </div>
-                      </div>
-                      <div class="d-flex flex-wrap gap-2 mb-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddBuiltin">+ Builtin</button>
-                        <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_builtin" aria-label="Ajuda columnes builtin">?</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
-                        <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_raw" aria-label="Ajuda columnes raw">?</button>
-                      </div>
-                      <div id="columnsRawContextualCopy" class="small text-muted mb-2"></div>
-                      <div id="columnsBox" class="mb-3"></div>
-                      <details class="builder-preview-shell builder-preview-panel">
-                        <summary>Previsualitzacio</summary>
-                        <div class="border rounded p-2 mt-2" id="previewBox">
-                          <div class="text-muted small">Fes clic a "Previsualitzar".</div>
-                        </div>
-                      </details>
-                    </div>
+        <div class="row">
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold">Top N <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="top_n" aria-label="Ajuda top N">?</button></label>
+            <input class="form-control" id="iTopN" type="number" min="0" value="0">
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold d-block">Mostrar empats <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mostrar_empats" aria-label="Ajuda mostrar empats">?</button></label>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="cEmpats" checked>
+              <label class="form-check-label" for="cEmpats">Si</label>
+            </div>
+          </div>
+        </div>
+      </div>
 
-                    <details class="builder-advanced">
-                      <summary class="small text-muted">Schema complet (JSON) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="advanced_json" aria-label="Ajuda schema complet JSON">?</button></summary>
-                      <textarea class="form-control mt-2" id="advancedJson" rows="10"></textarea>
-                    </details>
-                  </div>
-                </div>
-              </section>
+      <div class="builder-subsection classif-presentacio-panel classif-presentacio-panel--main">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">02</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/presentacio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Taula principal</p>
+                <p class="builder-subsection__desc">Defineix les columnes visibles de la classificacio: camps base, punts i camps raw.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddBuiltin">+ Builtin</button>
+          <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_builtin" aria-label="Ajuda columnes builtin">?</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
+          <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_raw" aria-label="Ajuda columnes raw">?</button>
+        </div>
+        <div id="columnsRawContextualCopy" class="small text-muted mb-2"></div>
+        <div id="columnsBox" class="mb-3"></div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted classif-presentacio-panel classif-presentacio-panel--detail" id="detailConfigBox">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">03</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/presentacio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Detall desplegable</p>
+                <p class="builder-subsection__desc">Configura el segon nivell sota cada fila. Cada seccio del detall es treballa com una pestanya.</p>
+              </div>
+            </div>
+          </div>
+          <div class="builder-inline-note">Sota fila</div>
+        </div>
+
+        <div id="detailScopeHint" class="alert alert-secondary py-2 px-3 small mb-3 classif-filter-context-note">
+          Configura seccions desplegables sota cada fila, limitades al tipus de classificacio actual.
+        </div>
+
+        <div class="classif-detail-toggle-grid">
+          <label class="classif-switch-card" for="detailEnabled">
+            <input class="form-check-input" type="checkbox" id="detailEnabled">
+            <span class="classif-switch-control" aria-hidden="true"></span>
+            <span class="classif-switch-copy">
+              <strong>Activar detall</strong>
+              <small>Mostra seccions desplegables sota cada fila.</small>
+            </span>
+          </label>
+          <label class="classif-switch-card" for="detailDefaultOpen">
+            <input class="form-check-input" type="checkbox" id="detailDefaultOpen">
+            <span class="classif-switch-control" aria-hidden="true"></span>
+            <span class="classif-switch-copy">
+              <strong>Obert per defecte</strong>
+              <small>Les files mostren el detall directament.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="classif-detail-layout-row">
+          <label class="small text-muted mb-1" for="detailSectionsLayout">Disposicio de seccions</label>
+          <select class="form-control form-control-sm w-auto" id="detailSectionsLayout">
+            <option value="tabs">Pestanyes</option>
+            <option value="stacked">Vertical</option>
+          </select>
+        </div>
+
+        <div class="classif-detail-add-row">
+          <select class="form-control form-control-sm w-auto" id="detailSectionType"></select>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnDetailSectionAdd">+ Seccio</button>
+        </div>
+        <div id="detailConfigAlert" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;"></div>
+        <div id="detailSectionsBox" class="mb-2 classif-detail-sections-box"></div>
+      </div>
+
+      <div class="builder-subsection classif-presentacio-panel classif-presentacio-panel--partitions">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">04</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/particions.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Estil de particions</p>
+                <p class="builder-subsection__desc">Ordena visualment els blocs del live i assigna'ls un color de fons tematic.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnPartitionPresentationAdd">+ Particio</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPartitionPresentationSuggest">Suggerir valors</button>
+        </div>
+        <div class="small text-muted mb-2">La clau pot ser el titol que veus al live o la clau interna completa de la particio.</div>
+        <div id="partitionPresentationBox" class="classif-partition-presentation-box"></div>
+
+        <div class="classif-live-row-style-head">
+          <div>
+            <p class="builder-subsection__title mb-1">Files destacades</p>
+            <p class="builder-subsection__desc mb-0">Aplica colors de fons a posicions concretes: 1r, 2n, 3r o qualsevol altra.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnRankStyleAdd">+ Posicio</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRankStyleDefaults">Podis</button>
+          </div>
+        </div>
+        <div id="rankStyleBox" class="classif-rank-style-box"></div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--highlight classif-presentacio-panel classif-presentacio-panel--preview">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">05</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/presentacio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Previsualitzacio</p>
+                <p class="builder-subsection__desc">Valida la sortida final de la taula principal i del detall configurat.</p>
+              </div>
+            </div>
+          </div>
+          {% if builder_can_preview|default:True %}
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
+            <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="preview_help" aria-label="Ajuda previsualitzacio">?</button>
+          </div>
+          {% endif %}
+        </div>
+        <details class="builder-preview-shell builder-preview-panel" open>
+          <summary>Previsualitzacio</summary>
+          <div class="border rounded p-2 mt-2" id="previewBox">
+            <div class="text-muted small">Fes clic a "Previsualitzar".</div>
+          </div>
+        </details>
+      </div>
+
+      <details class="builder-advanced">
+        <summary class="small text-muted">Schema complet (JSON) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="advanced_json" aria-label="Ajuda schema complet JSON">?</button></summary>
+        <textarea class="form-control mt-2" id="advancedJson" rows="10"></textarea>
+      </details>
+    </div>
+  </div>
+</section>

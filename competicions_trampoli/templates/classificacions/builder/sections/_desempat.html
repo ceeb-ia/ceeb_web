@@ -1,3 +1,5 @@
+{% load static %}
+
 <section id="section-desempat" class="builder-section builder-section--desempat" data-builder-section>
   <div class="builder-section__header">
     <div>
@@ -14,10 +16,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">01</span>
-            <span>
-              <p class="builder-subsection__title">Cadena de criteris</p>
-              <p class="builder-subsection__desc">Cada fila es un criteri aplicat en ordre: entrada, abast, valoracio, seleccio del conjunt, membres i ordre final.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/desempat/criteris.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Cadena de criteris</p>
+                <p class="builder-subsection__desc">Cada fila es un criteri aplicat en ordre: entrada, abast, valoracio, seleccio del conjunt, membres i ordre final.</p>
+              </div>
+            </div>
           </div>
           <div class="builder-inline-note">Sequencial</div>
         </div>
@@ -49,10 +56,15 @@
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">02</span>
-            <span>
-              <p class="builder-subsection__title">Edicio avancada</p>
-              <p class="builder-subsection__desc">Acces directe al JSON dels desempats per manteniment o compatibilitat.</p>
-            </span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/desempat/criteris.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Edicio avancada</p>
+                <p class="builder-subsection__desc">Acces directe al JSON dels desempats per manteniment o compatibilitat.</p>
+              </div>
+            </div>
           </div>
           <div class="builder-inline-note">JSON</div>
         </div>
