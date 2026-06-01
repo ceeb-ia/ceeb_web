@@ -1,0 +1,121 @@
+{% load static %}
+
+<aside class="team-workspace-pane groups-pane groups-pane-preview">
+  <div class="team-pane-card groups-pane-card groups-pane-card-preview team-pane-card-preview" id="series-right-pane-card">
+    <div class="team-pane-head groups-inspector-head series-inspector-head">
+      <div class="groups-title-with-logo">
+        <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+        <div>
+          <div class="groups-pane-step">Inspector lateral</div>
+          <div class="fw-semibold">Detall i previsualitzacio</div>
+          <div class="small text-muted">Selecciona una serie per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-series-preview-clear">Netejar</button>
+    </div>
+
+    <div class="team-right-pane-tabs groups-right-pane-tabs" role="tablist" aria-label="Inspector de series">
+      <button type="button" class="team-right-pane-tab groups-right-pane-tab is-active" id="btn-series-right-tab-detail" data-series-right-tab="detail" aria-selected="true">
+        Detall de la serie
+      </button>
+      <button type="button" class="team-right-pane-tab groups-right-pane-tab" id="btn-series-right-tab-preview" data-series-right-tab="preview" aria-selected="false">
+        Previsualitzacio
+      </button>
+    </div>
+
+    <div class="team-right-pane-view groups-right-pane-view" id="series-right-pane-detail">
+      <div class="groups-detail-empty" id="series-detail-empty">
+        Selecciona una serie del board per veure'n el detall sense deformar la graella.
+      </div>
+      <div class="groups-detail-panel d-none" id="series-detail-panel">
+        <div class="groups-detail-head">
+          <div class="groups-detail-head-main">
+            <div class="groups-detail-title-row">
+              <img class="groups-detail-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+              <div class="groups-detail-title" id="series-detail-title">Serie</div>
+            </div>
+            <div class="small text-muted" id="series-detail-meta">Sense dades</div>
+          </div>
+          <div class="groups-detail-actions" id="series-detail-actions"></div>
+        </div>
+        <div class="groups-detail-summary" id="series-detail-summary"></div>
+        <div class="groups-detail-editor d-none" id="series-detail-editor"></div>
+        <div class="small text-muted" id="series-detail-name-note">Sense observacions</div>
+        <div class="groups-detail-members">
+          <div class="groups-detail-members-toolbar d-none" id="series-detail-members-toolbar">
+            <div class="groups-universe-filterbar groups-detail-filterbar series-detail-filterbar">
+              <div class="groups-filter-search">
+                <label class="small text-muted mb-1 d-block" for="series-detail-subject-q">Cerca</label>
+                <input type="text" class="form-control form-control-sm" id="series-detail-subject-q" placeholder="Nom, context o membres...">
+              </div>
+              <div class="groups-filter-buttons" aria-label="Filtres d'unitats de la serie">
+                <div class="groups-filter-popover" data-series-detail-filter-popover data-select-id="series-detail-filter-context" data-filter-label="Context">
+                  <select id="series-detail-filter-context" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                  <details class="groups-filter-menu">
+                    <summary class="groups-filter-trigger">
+                      <span class="groups-filter-trigger-label">Context</span>
+                      <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                    </summary>
+                    <div class="groups-filter-panel groups-filter-panel-wide">
+                      <div class="groups-filter-panel-head">
+                        <span>Context</span>
+                        <button type="button" class="groups-filter-clear" data-series-detail-filter-clear="series-detail-filter-context">Netejar</button>
+                      </div>
+                      <div class="groups-filter-options" data-filter-options-for="series-detail-filter-context"></div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+            <div class="groups-existing-toolbar-meta groups-detail-filter-meta">
+              <div class="groups-filter-active-chips" id="series-detail-filter-active-chips" aria-live="polite"></div>
+              <div class="groups-existing-toolbar-count">
+                <span class="badge badge-light border" id="series-detail-filter-count">0 unitats</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-detail-filters-clear">Netejar</button>
+              </div>
+            </div>
+          </div>
+          <div class="team-context-member-list" id="series-detail-members-list" data-series-member-source="1"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="team-right-pane-view groups-right-pane-view d-none" id="series-right-pane-preview">
+      <div class="groups-preview-note groups-title-with-logo series-preview-note">
+        <img class="groups-title-logo" src="{% static 'inscripcions/grups/previsualitzar.png' %}" alt="">
+        <div class="small text-muted">La preview es reutilitza per a totes les accions principals del workspace i es mante visible mentre explores el board.</div>
+      </div>
+      <div class="group-preview-panel" id="series-preview" data-has-preview="0" data-dirty="0" data-loading="0">
+        <div class="group-preview-toolbar">
+          <div>
+            <div class="small text-muted d-none" id="series-preview-intent-label"></div>
+            <div class="group-preview-status" id="series-preview-status">
+              Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
+            </div>
+          </div>
+          <div class="group-preview-actions">
+            <button type="button" class="btn btn-sm btn-primary d-none" id="btn-series-preview-confirm">Confirmar aquesta accio</button>
+          </div>
+        </div>
+        <div class="team-preview-selection d-none" id="series-preview-selection-summary"></div>
+        <div class="group-preview-summary d-none" id="series-preview-summary"></div>
+        <div class="group-preview-sections">
+          <div class="group-preview-section d-none" id="series-preview-existing-wrap">
+            <div class="group-preview-section-head">
+              <div class="fw-semibold">Series actuals afectades</div>
+              <div class="group-preview-section-meta" id="series-preview-existing-meta"></div>
+            </div>
+            <div class="group-preview-list" id="series-preview-existing-list"></div>
+          </div>
+          <div class="group-preview-section d-none" id="series-preview-planned-wrap">
+            <div class="group-preview-section-head">
+              <div class="fw-semibold">Resultat previst</div>
+              <div class="group-preview-section-meta" id="series-preview-planned-meta"></div>
+            </div>
+            <div class="group-preview-list" id="series-preview-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>

@@ -455,6 +455,49 @@
       background: #f8fafc;
     }
 
+    #computedTable tbody tr {
+      --formula-row-bg: #ffffff;
+      --formula-row-hover-bg: #f8fafc;
+      --formula-card-bg: #ffffff;
+      --formula-card-border: #e2e8f0;
+      --formula-soft-bg: #f8fafc;
+      --formula-side-border: #e2e8f0;
+    }
+
+    #computedTable tbody tr:nth-child(even) {
+      --formula-row-bg: #f7f9fc;
+      --formula-row-hover-bg: #f3f6fa;
+      --formula-card-bg: #fbfcfe;
+      --formula-card-border: #dbe3ee;
+      --formula-soft-bg: #eef3f8;
+      --formula-side-border: #cbd5e1;
+    }
+
+    #computedTable tbody tr td {
+      background: var(--formula-row-bg);
+    }
+
+    #computedTable tbody tr:hover td {
+      background: var(--formula-row-hover-bg);
+    }
+
+    #computedTable tbody tr td:first-child {
+      border-left: 4px solid var(--formula-side-border);
+    }
+
+    #computedTable tbody tr .step-card,
+    #computedTable tbody tr [data-box="exec_trampoli"],
+    #computedTable tbody tr [data-box="select_sum"],
+    #computedTable tbody tr [data-box="member_treatment"] {
+      border-color: var(--formula-card-border) !important;
+      background: var(--formula-card-bg);
+    }
+
+    #computedTable tbody tr .microflow {
+      background: var(--formula-soft-bg);
+      border-color: var(--formula-card-border);
+    }
+
     .schema-workspace input:not([type="checkbox"]):not([type="radio"]),
     .schema-workspace select,
     .schema-workspace textarea,

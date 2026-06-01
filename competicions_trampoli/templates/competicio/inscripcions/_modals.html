@@ -1,6 +1,102 @@
 {% load competicio_extras %}
 <div class="inscripcions-backdrop" id="inscripcions-drawer-backdrop" aria-hidden="true"></div>
 <div class="group-buckets-backdrop" id="group-buckets-backdrop" aria-hidden="true"></div>
+<div class="team-member-unassign-backdrop" id="team-member-unassign-backdrop" aria-hidden="true"></div>
+<div class="team-action-backdrop" id="team-action-backdrop" aria-hidden="true"></div>
+
+<section
+  class="team-member-unassign-modal is-warning"
+  id="team-member-unassign-confirm-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-hidden="true"
+  aria-labelledby="team-member-unassign-confirm-title"
+  tabindex="-1">
+  <div class="team-member-unassign-modal-head">
+    <div>
+      <p class="team-member-unassign-modal-kicker">Confirmacio</p>
+      <h3 id="team-member-unassign-confirm-title">Treure membre de l'equip</h3>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-team-member-unassign-cancel>Tancar</button>
+  </div>
+  <div class="team-member-unassign-modal-body">
+    <p id="team-member-unassign-confirm-body">Aquesta inscripcio quedara sense equip en el context actual.</p>
+  </div>
+  <div class="team-member-unassign-modal-foot">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-team-member-unassign-cancel>Cancel-lar</button>
+    <button type="button" class="btn btn-sm btn-warning" id="team-member-unassign-confirm-accept">Treure</button>
+  </div>
+</section>
+
+<section
+  class="team-member-unassign-modal is-success"
+  id="team-member-unassign-success-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-hidden="true"
+  aria-labelledby="team-member-unassign-success-title"
+  tabindex="-1">
+  <div class="team-member-unassign-modal-head">
+    <div>
+      <p class="team-member-unassign-modal-kicker">Completat</p>
+      <h3 id="team-member-unassign-success-title">Inscripcio treta de l'equip</h3>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="team-member-unassign-success-close">Tancar</button>
+  </div>
+  <div class="team-member-unassign-modal-body">
+    <p id="team-member-unassign-success-body">La inscripcio ha quedat sense equip en el context actual.</p>
+  </div>
+  <div class="team-member-unassign-modal-foot">
+    <button type="button" class="btn btn-sm btn-success" id="team-member-unassign-success-accept">D'acord</button>
+  </div>
+</section>
+
+<section
+  class="team-action-modal is-warning"
+  id="team-action-confirm-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-hidden="true"
+  aria-labelledby="team-action-confirm-title"
+  tabindex="-1">
+  <div class="team-action-modal-head">
+    <div>
+      <p class="team-action-modal-kicker" id="team-action-confirm-kicker">Confirmacio</p>
+      <h3 id="team-action-confirm-title">Confirmar accio</h3>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-team-action-cancel>Tancar</button>
+  </div>
+  <div class="team-action-modal-body">
+    <p id="team-action-confirm-body">Vols continuar?</p>
+  </div>
+  <div class="team-action-modal-foot">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-team-action-cancel>Cancel-lar</button>
+    <button type="button" class="btn btn-sm btn-warning" id="team-action-confirm-accept">Confirmar</button>
+  </div>
+</section>
+
+<section
+  class="team-action-modal is-success"
+  id="team-action-success-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-hidden="true"
+  aria-labelledby="team-action-success-title"
+  tabindex="-1">
+  <div class="team-action-modal-head">
+    <div>
+      <p class="team-action-modal-kicker">Completat</p>
+      <h3 id="team-action-success-title">Accio completada</h3>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="team-action-success-close">Tancar</button>
+  </div>
+  <div class="team-action-modal-body">
+    <p id="team-action-success-body">Els canvis s'han aplicat correctament.</p>
+  </div>
+  <div class="team-action-modal-foot">
+    <button type="button" class="btn btn-sm btn-success" id="team-action-success-accept">D'acord</button>
+  </div>
+</section>
 
 <div class="group-buckets-modal" id="group-buckets-modal" aria-hidden="true">
   <div class="group-buckets-modal-head">

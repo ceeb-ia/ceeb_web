@@ -6,6 +6,12 @@
 
   const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
   const showAlert = typeof window.showAlert === 'function' ? window.showAlert : API.showAlert;
+  const showWorkspaceActionConfirm = typeof window.showWorkspaceActionConfirm === 'function'
+    ? window.showWorkspaceActionConfirm
+    : async (options = {}) => {
+      const message = String(options.body || 'Vols continuar?');
+      return typeof window.showConfirm === 'function' ? !!(await window.showConfirm(message)) : window.confirm(message);
+    };
   const postJson = typeof window.postJson === 'function' ? window.postJson : API.postJson;
   const getCurrentInscripcioFilters = typeof window.getCurrentInscripcioFilters === 'function'
     ? window.getCurrentInscripcioFilters
@@ -1004,7 +1010,7 @@
           label: `Previsualitzacio de: ${describeGroupStrategy(resolvedStrategy)}`,
           buttonLabel: 'Confirmar aquesta creacio',
           canConfirm: true,
-          execute: () => makeGroupsFromPayload(confirmPayload),
+          execute: () => makeGroupsFromPayload(confirmPayload, { skipConfirm: true }),
         });
       } else {
         clearGroupPreviewConfirmIntent();
@@ -1019,10 +1025,19 @@
     }
   }
 
-  async function makeGroupsFromPayload(payload) {
+  async function makeGroupsFromPayload(payload, options = {}) {
     if (!(payload.selected_ids || []).length) {
       showAlert('Selecciona com a minim una inscripcio.');
       return false;
+    }
+    if (!options?.skipConfirm) {
+      const ok = await showWorkspaceActionConfirm({
+        title: 'Crear grups',
+        body: `Crear grups amb ${Number((payload.selected_ids || []).length)} inscripcio(ns) seleccionades?`,
+        confirmLabel: 'Crear',
+        tone: 'primary',
+      });
+      if (!ok) return false;
     }
 
     try {

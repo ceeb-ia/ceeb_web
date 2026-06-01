@@ -1,0 +1,449 @@
+  function readBoardFilters() {
+    return normalizeBoardFilters({
+      q: document.getElementById('series-board-filter-q')?.value || '',
+      contexts: selectedOptionValues(document.getElementById('series-board-filter-context')),
+      members_state: document.getElementById('series-board-filter-members-state')?.value || 'all',
+      program_state: document.getElementById('series-board-filter-program-state')?.value || 'all',
+    });
+  }
+
+  function buildBoardFilterOptions(series) {
+    const contexts = new Set();
+    (Array.isArray(series) ? series : []).forEach((serie) => {
+      const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+      subjects.forEach((subject) => {
+        const clean = String(subject?.context_name || '').trim();
+        if (clean) contexts.add(clean);
+      });
+    });
+    return { contexts: Array.from(contexts).sort((a, b) => a.localeCompare(b, 'ca')) };
+  }
+
+  function setBoardFiltersToDom(filters, options) {
+    const data = normalizeBoardFilters(filters);
+    const q = document.getElementById('series-board-filter-q');
+    if (q) q.value = String(data.q || '');
+    fillSelect(document.getElementById('series-board-filter-context'), options?.contexts || [], data.contexts || [], 'Tots');
+    const membersState = document.getElementById('series-board-filter-members-state');
+    const programState = document.getElementById('series-board-filter-program-state');
+    if (membersState) membersState.value = String(data.members_state || 'all');
+    if (programState) programState.value = String(data.program_state || 'all');
+  }
+
+  function boardFiltersAreActive(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    return !!(
+      current.q
+      || current.contexts.length
+      || current.members_state !== 'all'
+      || current.program_state !== 'all'
+    );
+  }
+
+  function boardFilterSummaryLabel(selectEl) {
+    if (!selectEl) return 'Qualsevol';
+    const selected = Array.from(selectEl.selectedOptions || []).filter((option) => String(option.value || '') !== 'all');
+    if (!selected.length) return selectEl.multiple ? 'Qualsevol' : 'Totes';
+    if (selected.length === 1) return String(selected[0]?.textContent || selected[0]?.value || '');
+    return `${selected.length} seleccionats`;
+  }
+
+  function renderBoardFilterActiveChips() {
+    const wrap = document.getElementById('series-board-filter-active-chips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    let activeCount = 0;
+
+    if (state.boardFilters.q) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-series-board-filter-search-clear', '1');
+      chip.textContent = `Cerca: ${state.boardFilters.q} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    }
+
+    [
+      { id: 'series-board-filter-context', label: 'Context' },
+      { id: 'series-board-filter-members-state', label: 'Contingut' },
+      { id: 'series-board-filter-program-state', label: 'Programa' },
+    ].forEach((filter) => {
+      const selectEl = document.getElementById(filter.id);
+      if (!selectEl) return;
+      const selected = selectEl.multiple
+        ? Array.from(selectEl.selectedOptions || [])
+        : Array.from(selectEl.selectedOptions || []).filter((option) => String(option.value || '') !== 'all');
+      selected.forEach((option) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'groups-filter-chip';
+        chip.setAttribute('data-series-board-filter-chip-select', filter.id);
+        chip.setAttribute('data-series-board-filter-chip-value', String(option.value || ''));
+        chip.textContent = `${filter.label}: ${option.textContent?.trim() || option.value} x`;
+        frag.appendChild(chip);
+        activeCount += 1;
+      });
+    });
+
+    wrap.classList.toggle('is-empty', activeCount === 0);
+    wrap.appendChild(frag);
+  }
+
+  function syncBoardFiltersAndRender() {
+    state.boardFilters = readBoardFilters();
+    renderBoardFilterPopovers();
+    renderCards(state.workspace);
+    saveWorkspaceState();
+  }
+
+  function renderBoardFilterPopovers() {
+    document.querySelectorAll('[data-series-board-filter-popover]').forEach((popover) => {
+      const selectId = String(popover.getAttribute('data-select-id') || '').trim();
+      const selectEl = document.getElementById(selectId);
+      if (!selectEl) return;
+      const summary = popover.querySelector('[data-filter-summary]');
+      if (summary) summary.textContent = boardFilterSummaryLabel(selectEl);
+      popover.classList.toggle('is-active', selectEl.multiple ? selectedOptionValues(selectEl).length > 0 : String(selectEl.value || 'all') !== 'all');
+      const optionsWrap = popover.querySelector(`[data-filter-options-for="${selectId}"]`);
+      if (!optionsWrap) return;
+      optionsWrap.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      Array.from(selectEl.options || []).forEach((option) => {
+        const optionValue = String(option.value || '');
+        const label = document.createElement('label');
+        label.className = 'groups-filter-option';
+        const input = document.createElement('input');
+        input.type = selectEl.multiple ? 'checkbox' : 'radio';
+        input.className = 'js-series-board-filter-choice';
+        input.name = `series-board-filter-choice-${selectId}`;
+        input.value = optionValue;
+        input.checked = !!option.selected;
+        input.setAttribute('data-select-id', selectId);
+        input.addEventListener('change', () => {
+          if (selectEl.multiple) {
+            option.selected = !!input.checked;
+          } else {
+            selectEl.value = optionValue;
+          }
+          syncBoardFiltersAndRender();
+        });
+        const text = document.createElement('span');
+        text.textContent = option.textContent || optionValue;
+        label.appendChild(input);
+        label.appendChild(text);
+        frag.appendChild(label);
+      });
+      if (!frag.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'groups-filter-empty';
+        empty.textContent = 'Sense opcions disponibles';
+        frag.appendChild(empty);
+      }
+      optionsWrap.appendChild(frag);
+    });
+    renderBoardFilterActiveChips();
+  }
+
+  function clearBoardFilter(selectId, value = '') {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    if (selectEl.multiple) {
+      Array.from(selectEl.options || []).forEach((option) => {
+        if (!value || String(option.value || '') === String(value)) option.selected = false;
+      });
+    } else {
+      selectEl.value = 'all';
+    }
+    syncBoardFiltersAndRender();
+  }
+
+  function seriesSearchText(serie) {
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    return normalizeSearchText([
+      serie?.search_text,
+      serie?.label,
+      serie?.name,
+      serie?.summary_label,
+      ...subjects.map((subject) => `${subject?.label || ''} ${subject?.context_name || ''} ${subject?.members_text || ''}`),
+    ].filter(Boolean).join(' '));
+  }
+
+  function serieMatchesBoardFilters(serie, filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    if (current.members_state === 'with_subjects' && Number(serie?.subjects_count || 0) <= 0) return false;
+    if (current.members_state === 'empty' && Number(serie?.subjects_count || 0) > 0) return false;
+    if (current.program_state === 'programmed' && !serie?.is_programmed) return false;
+    if (current.program_state === 'out_of_program' && !serie?.is_out_of_program) return false;
+    if (current.contexts.length) {
+      const subjectContexts = new Set(
+        subjects.map((subject) => String(subject?.context_name || '').trim()).filter(Boolean)
+      );
+      if (!current.contexts.some((value) => subjectContexts.has(value))) return false;
+    }
+    if (current.q && !seriesSearchText(serie).includes(normalizeSearchText(current.q))) return false;
+    return true;
+  }
+
+  function renderBoardFilterControls(series) {
+    const options = buildBoardFilterOptions(series);
+    setBoardFiltersToDom(state.boardFilters, options);
+    state.boardFilters = readBoardFilters();
+    renderBoardFilterPopovers();
+  }
+
+  function seriesEmptyStateMessage(workspace) {
+    const series = Array.isArray(workspace?.series) ? workspace.series : [];
+    const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
+    const candidateCount = Number(workspace?.candidates?.total || 0);
+    if (series.length > 0) return { visible: false, message: '' };
+
+    const issueText = issues
+      .flatMap((issue) => [
+        String(issue?.team_label || ''),
+        ...(Array.isArray(issue?.reasons) ? issue.reasons : []),
+      ])
+      .join(' ')
+      .toLowerCase();
+
+    if (issueText.includes('sense fonts configurades') || issueText.includes('cap context configurat') || issueText.includes('no te cap context')) {
+      return {
+        visible: true,
+        message: "Aquest aparell d'equip no te contextos font configurats. Ves al gestor d'equips per seleccionar-los.",
+      };
+    }
+    if (candidateCount > 0) {
+      return { visible: true, message: 'Encara no hi ha series creades. Selecciona equips i crea una serie.' };
+    }
+    return { visible: true, message: 'No hi ha series disponibles per aquest aparell amb la configuracio actual.' };
+  }
+
+  function appendSerieStatusPill(wrap, label) {
+    if (!label) return;
+    const pill = document.createElement('span');
+    pill.className = 'series-existing-status-pill';
+    pill.textContent = label;
+    wrap.appendChild(pill);
+  }
+
+  function serieCardActionMenu(serie) {
+    const menu = document.createElement('details');
+    menu.className = 'groups-existing-actions-menu series-card-actions-menu';
+    menu.addEventListener('click', (event) => event.stopPropagation());
+
+    const trigger = document.createElement('summary');
+    trigger.className = 'groups-existing-actions-trigger';
+    trigger.setAttribute('aria-label', `Accions de ${String(serie?.label || 'la serie')}`);
+    trigger.textContent = '...';
+    menu.appendChild(trigger);
+
+    const popover = document.createElement('div');
+    popover.className = 'groups-existing-actions-popover';
+
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'groups-existing-action-item';
+    rename.textContent = 'Renombrar';
+    rename.disabled = !editable();
+    rename.addEventListener('click', async () => {
+      menu.removeAttribute('open');
+      await selectSerie(serie.id, { forceReload: false, openEditor: true });
+      requestAnimationFrame(() => {
+        const input = document.querySelector(`[data-series-name-input="${CSS.escape(String(serie.id || ''))}"]`);
+        input?.focus();
+        input?.select?.();
+      });
+    });
+    popover.appendChild(rename);
+
+    const exportWorkSheet = document.createElement('button');
+    exportWorkSheet.type = 'button';
+    exportWorkSheet.className = 'groups-existing-action-item';
+    exportWorkSheet.textContent = 'Exportar full de treball';
+    exportWorkSheet.addEventListener('click', () => {
+      menu.removeAttribute('open');
+      window.location.href = exportUrl(workSheetExportUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
+      });
+    });
+    popover.appendChild(exportWorkSheet);
+
+    if (serie?.is_empty) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'groups-existing-action-item groups-existing-action-danger';
+      remove.textContent = 'Previsualitzar baixa';
+      remove.disabled = !editable();
+      remove.addEventListener('click', async () => {
+        menu.removeAttribute('open');
+        await previewDeleteSerie(serie.id);
+      });
+      popover.appendChild(remove);
+    }
+
+    menu.appendChild(popover);
+    return menu;
+  }
+
+  function serieCard(serie, index) {
+    const serieId = String(serie?.id || '').trim();
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    const subjectsCount = Number(serie?.subjects_count || subjects.length || 0);
+    const isCurrent = String(state.selectedSerieId || '') === serieId;
+    const card = document.createElement('div');
+    card.className = `team-context-team-card group-band-${Number(index || 0) % 8}${subjectsCount <= 0 ? ' is-empty' : ''}${isCurrent ? ' is-current' : ''}${serie?.is_programmed ? ' is-programmed' : ''}${serie?.is_out_of_program ? ' is-out-of-program' : ''}`;
+    card.dataset.seriesCardId = serieId;
+
+    const head = document.createElement('div');
+    head.className = 'team-context-team-head';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'team-context-team-title-wrap';
+    const title = document.createElement('div');
+    title.className = 'team-context-team-name';
+    title.textContent = String(serie?.label || `Serie ${serie?.display_num || ''}`);
+    titleWrap.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'series-existing-card-meta';
+    const count = document.createElement('span');
+    count.className = 'series-existing-card-count';
+    count.textContent = `${subjectsCount} unitats`;
+    meta.appendChild(count);
+    const statuses = document.createElement('span');
+    statuses.className = 'series-existing-status-pills';
+    appendSerieStatusPill(statuses, serie?.is_programmed ? 'Programada' : '');
+    appendSerieStatusPill(statuses, serie?.is_out_of_program ? 'Fora de programa' : '');
+    appendSerieStatusPill(statuses, subjectsCount <= 0 ? 'Buida' : '');
+    appendSerieStatusPill(statuses, isCurrent ? 'Detall actiu' : '');
+    if (statuses.childNodes.length) meta.appendChild(statuses);
+    titleWrap.appendChild(meta);
+
+    const sampleNames = subjects
+      .map((subject) => String(subject?.name || subject?.label || '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    if (sampleNames.length) {
+      const preview = document.createElement('div');
+      preview.className = 'small text-muted mt-1 team-context-team-preview';
+      const remaining = Math.max(0, subjectsCount - sampleNames.length);
+      preview.textContent = `${sampleNames.join(', ')}${remaining ? ` +${remaining}` : ''}`;
+      titleWrap.appendChild(preview);
+    }
+    head.appendChild(titleWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'team-context-team-actions';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn btn-sm btn-outline-dark';
+    open.textContent = 'Detall';
+    open.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await selectSerie(serieId, { forceReload: false });
+    });
+    actions.appendChild(open);
+
+    const assign = document.createElement('button');
+    assign.type = 'button';
+    assign.className = 'btn btn-sm btn-outline-primary';
+    assign.textContent = 'Assignar seleccio';
+    assign.disabled = !editable();
+    assign.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await previewAssignSelection(serieId);
+    });
+    actions.appendChild(assign);
+    actions.appendChild(serieCardActionMenu(serie));
+    head.appendChild(actions);
+    card.appendChild(head);
+
+    card.addEventListener('click', async () => {
+      await selectSerie(serieId, { forceReload: false });
+    });
+    return card;
+  }
+
+  function renderCards(workspace) {
+    const activeList = document.getElementById('series-active-list');
+    const emptyList = document.getElementById('series-empty-list');
+    const emptyWrap = document.getElementById('series-empty-wrap');
+    if (!activeList || !emptyList || !emptyWrap) return;
+
+    const series = Array.isArray(workspace?.series) ? workspace.series : [];
+    const visibleSeries = series.filter((serie) => serieMatchesBoardFilters(serie));
+    const activeSeries = visibleSeries.filter((serie) => Number(serie?.subjects_count || 0) > 0);
+    const emptySeries = visibleSeries.filter((serie) => Number(serie?.subjects_count || 0) <= 0);
+
+    activeList.innerHTML = '';
+    emptyList.innerHTML = '';
+    activeSeries.forEach((serie, index) => activeList.appendChild(serieCard(serie, index)));
+    emptySeries.forEach((serie, index) => emptyList.appendChild(serieCard(serie, activeSeries.length + index)));
+    emptyWrap.classList.toggle('d-none', emptySeries.length === 0);
+
+    if (!activeSeries.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'groups-board-placeholder';
+      placeholder.textContent = boardFiltersAreActive()
+        ? 'Cap serie amb unitats coincideix amb els filtres.'
+        : 'Encara no hi ha series amb unitats.';
+      activeList.appendChild(placeholder);
+    }
+
+    const emptyState = seriesEmptyStateMessage(workspace);
+    const emptyStateEl = document.getElementById('series-board-empty-state');
+    if (emptyStateEl) {
+      emptyStateEl.textContent = emptyState.message;
+      emptyStateEl.classList.toggle('d-none', !emptyState.visible);
+    }
+    setText('series-board-status', series.length ? `${visibleSeries.length} de ${series.length} series visibles.` : (emptyState.message || 'Encara no hi ha series creades.'));
+    setText('series-board-filter-count', `${visibleSeries.length} de ${series.length} series`);
+  }
+
+  function bindSeriesBoardUi() {
+    document.getElementById('series-board-filter-q')?.addEventListener('input', applyBoardFilterChange);
+    ['series-board-filter-context', 'series-board-filter-members-state', 'series-board-filter-program-state'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('change', applyBoardFilterChange);
+    });
+
+    document.getElementById('btn-series-board-filters-clear')?.addEventListener('click', () => {
+      state.boardFilters = normalizeBoardFilters();
+      renderBoardFilterControls(Array.isArray(state.workspace?.series) ? state.workspace.series : []);
+      renderCards(state.workspace);
+      saveWorkspaceState();
+    });
+
+    shell.addEventListener('click', (event) => {
+      const clear = event.target.closest('[data-series-board-filter-clear]');
+      if (clear) {
+        event.preventDefault();
+        clearBoardFilter(String(clear.getAttribute('data-series-board-filter-clear') || '').trim());
+        return;
+      }
+      const chip = event.target.closest('[data-series-board-filter-chip-select]');
+      if (chip) {
+        event.preventDefault();
+        clearBoardFilter(
+          String(chip.getAttribute('data-series-board-filter-chip-select') || '').trim(),
+          String(chip.getAttribute('data-series-board-filter-chip-value') || '').trim()
+        );
+        return;
+      }
+      if (event.target.closest('[data-series-board-filter-search-clear]')) {
+        event.preventDefault();
+        const q = document.getElementById('series-board-filter-q');
+        if (q) q.value = '';
+        syncBoardFiltersAndRender();
+        return;
+      }
+      if (event.target.closest('[data-series-board-filter-popover], .groups-existing-actions-menu')) return;
+      document.querySelectorAll('#series-workspace-shell [data-series-board-filter-popover] details[open], #series-workspace-shell .groups-existing-actions-menu[open]').forEach((details) => {
+        details.removeAttribute('open');
+      });
+    });
+  }

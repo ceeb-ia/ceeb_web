@@ -2770,6 +2770,107 @@
       visibility:visible;
       pointer-events:auto;
     }
+    .team-member-unassign-backdrop,
+    .team-action-backdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(15, 23, 42, 0.46);
+      opacity:0;
+      visibility:hidden;
+      pointer-events:none;
+      transition:opacity .18s ease, visibility .18s ease;
+      z-index:4060;
+    }
+    .team-member-unassign-backdrop.is-visible,
+    .team-action-backdrop.is-visible{
+      opacity:1;
+      visibility:visible;
+      pointer-events:auto;
+    }
+    .team-member-unassign-modal,
+    .team-action-modal{
+      position:fixed;
+      top:50%;
+      left:50%;
+      width:min(460px, calc(100vw - 32px));
+      display:none;
+      flex-direction:column;
+      background:#ffffff;
+      border:1px solid #cfd9ec;
+      border-radius:16px;
+      box-shadow:0 24px 70px rgba(15, 23, 42, 0.34);
+      transform:translate(-50%, -50%);
+      z-index:4065;
+      overflow:hidden;
+    }
+    .team-member-unassign-modal.is-visible,
+    .team-action-modal.is-visible{
+      display:flex;
+    }
+    .team-member-unassign-modal-head,
+    .team-action-modal-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      padding:16px 18px 14px;
+      border-bottom:1px solid #e5ebf5;
+      background:linear-gradient(135deg, #f9fbff 0%, #eef5ff 100%);
+    }
+    .team-member-unassign-modal.is-warning .team-member-unassign-modal-head,
+    .team-action-modal.is-warning .team-action-modal-head{
+      background:linear-gradient(135deg, #fffaf0 0%, #fef3c7 100%);
+    }
+    .team-member-unassign-modal.is-success .team-member-unassign-modal-head,
+    .team-action-modal.is-success .team-action-modal-head{
+      background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    }
+    .team-member-unassign-modal.is-danger .team-member-unassign-modal-head,
+    .team-action-modal.is-danger .team-action-modal-head{
+      background:linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+    }
+    .team-member-unassign-modal-kicker,
+    .team-action-modal-kicker{
+      margin:0 0 4px;
+      color:#64748b;
+      font-size:.72rem;
+      font-weight:800;
+      letter-spacing:0;
+      text-transform:uppercase;
+    }
+    .team-member-unassign-modal h3,
+    .team-action-modal h3{
+      margin:0;
+      color:#0f172a;
+      font-size:1rem;
+      font-weight:800;
+      line-height:1.25;
+    }
+    .team-member-unassign-modal-body,
+    .team-action-modal-body{
+      padding:18px;
+      color:#334155;
+      font-size:.9rem;
+      line-height:1.5;
+    }
+    .team-member-unassign-modal-body p,
+    .team-action-modal-body p{
+      margin:0;
+    }
+    .team-member-unassign-modal-foot,
+    .team-action-modal-foot{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      flex-wrap:wrap;
+      padding:14px 18px 16px;
+      border-top:1px solid #e5ebf5;
+      background:#f8fafc;
+    }
+    body.team-member-unassign-modal-open,
+    body.team-action-modal-open{
+      overflow:hidden;
+    }
     .custom-sort-modal{
       position:fixed;
       top:calc(var(--actions-drawer-top) + 16px);
@@ -5593,4 +5694,5 @@
     {% include "competicio/inscripcions/styles/_teams_actions.html" %}
     {% include "competicio/inscripcions/styles/_teams_existing_board.html" %}
     {% include "competicio/inscripcions/styles/_teams_detail_preview.html" %}
+    {% include "competicio/inscripcions/styles/_series_layout.html" %}
   </style>

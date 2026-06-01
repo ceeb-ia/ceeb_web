@@ -87,6 +87,10 @@ from ..views.inscripcions.team_series import (
     series_work_sheet_export,
     series_workspace,
 )
+from ..views.inscripcions.team_series_creation import (
+    series_create_many,
+    series_creation_preview,
+)
 
 
 urlpatterns = [
@@ -434,6 +438,16 @@ urlpatterns = [
         "competicio/<int:pk>/inscripcions/series-equips/preview/",
         competition_view(series_preview, "inscripcions.view"),
         name="inscripcions_series_equips_preview",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/series-equips/creation-preview/",
+        competition_view(series_creation_preview, "inscripcions.view"),
+        name="inscripcions_series_equips_creation_preview",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/series-equips/create-many/",
+        competition_view(series_create_many, "inscripcions.edit"),
+        name="inscripcions_series_equips_create_many",
     ),
     path(
         "competicio/<int:pk>/inscripcions/series-equips/create/",

@@ -1,0 +1,142 @@
+{% load static %}
+
+<section class="team-workspace-pane groups-pane groups-pane-actions">
+  <div class="team-pane-card groups-pane-card groups-pane-card-actions">
+    <div class="team-pane-head">
+      <div class="groups-title-with-logo">
+        <img class="groups-title-logo" src="{% static 'inscripcions/grups/accions.png' %}" alt="">
+        <div>
+          <div class="groups-pane-step">2. Aplica una operacio</div>
+          <div class="fw-semibold">Accions sobre la seleccio</div>
+          <div class="small text-muted">Operacions directes i estrategies de creacio sobre les unitats competitives seleccionades.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="groups-action-section">
+      <div class="groups-direct-card mt-2">
+        <div class="series-direct-fields">
+          <div class="groups-direct-field">
+            <label class="small text-muted mb-1 d-block" for="series-workspace-existing-select">Serie desti</label>
+            <select id="series-workspace-existing-select" class="form-control form-control-sm">
+              <option value="">Carregant series...</option>
+            </select>
+          </div>
+          <div class="groups-direct-field">
+            <label class="small text-muted mb-1 d-block" for="series-workspace-create-name">Nom de la serie</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="series-workspace-create-name"
+              placeholder="Nom opcional de la serie..."
+            >
+          </div>
+          <button type="button" class="btn btn-sm btn-primary groups-direct-create-btn" id="btn-series-preview-create">
+            Crear serie
+          </button>
+        </div>
+        <div class="small text-muted" id="series-direct-scope-note">Cal tenir una seleccio activa. La creacio manual sempre es previsualitza abans de confirmar-la.</div>
+        <div class="groups-direct-secondary-actions series-direct-secondary-actions">
+          <button type="button" class="btn btn-sm btn-outline-warning" id="btn-series-preview-assign">Assignar seleccio a aquesta serie</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-series-preview-unassign">Deixar sense serie</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" id="btn-series-preview-delete">Desactivar serie</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="groups-action-section">
+      <div class="groups-action-section-head">
+        <div class="groups-section-title-with-logo">
+          <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
+          <div class="fw-semibold small text-uppercase text-muted">Estrategies de creacio</div>
+        </div>
+        <div class="small text-muted" id="series-workspace-selection-note">Aquestes accions treballaran sobre la seleccio activa del workspace.</div>
+      </div>
+
+      <div class="groups-strategy-list mt-2">
+        <div class="groups-strategy-card">
+          <div class="groups-strategy-card-head">
+            <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/x_grups.png' %}" alt="">
+            <div class="groups-strategy-title-copy">
+              <span class="text-muted small fw-semibold">Crear X series</span>
+              <span class="small text-muted">Reparteix la seleccio en X series equilibrades.</span>
+            </div>
+          </div>
+          <div class="groups-strategy-card-body">
+            <div class="groups-strategy-controls">
+              <input id="series-series-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm groups-strategy-number">
+            </div>
+            <div class="groups-strategy-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-preview-count">Previsualitzar</button>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-series-create-count">Crear</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="groups-strategy-card">
+          <div class="groups-strategy-card-head">
+            <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/mida.png' %}" alt="">
+            <div class="groups-strategy-title-copy">
+              <span class="text-muted small fw-semibold">Crear per mida fixa/equilibrada</span>
+              <span class="small text-muted">Divideix la seleccio en series de mida fixa o equilibrada.</span>
+            </div>
+          </div>
+          <div class="groups-strategy-card-body">
+            <div class="groups-strategy-controls">
+              <input id="series-series-size" type="number" min="2" max="200" value="4" class="form-control form-control-sm groups-strategy-number">
+              <select id="series-series-size-mode" class="form-control form-control-sm groups-strategy-mode">
+                <option value="fixed">Mida fixa</option>
+                <option value="balanced">Equilibrades</option>
+              </select>
+            </div>
+            <div class="groups-strategy-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-preview-size">Previsualitzar</button>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-series-create-size">Crear</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="groups-strategy-card">
+          <div class="groups-strategy-card-head">
+            <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/equilibrats.png' %}" alt="">
+            <div class="groups-strategy-title-copy">
+              <span class="text-muted small fw-semibold">Equilibrades min-max</span>
+              <span class="small text-muted">Busca una particio dins la forquilla.</span>
+            </div>
+          </div>
+          <div class="groups-strategy-card-body">
+            <div class="groups-strategy-controls">
+              <input id="series-series-min-size" type="number" min="1" max="200" value="3" class="form-control form-control-sm groups-strategy-number" title="Minim">
+              <span class="small text-muted">a</span>
+              <input id="series-series-max-size" type="number" min="1" max="200" value="4" class="form-control form-control-sm groups-strategy-number" title="Maxim">
+            </div>
+            <div class="groups-strategy-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-preview-range-balanced">Previsualitzar</button>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-series-create-range-balanced">Crear</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="groups-strategy-card">
+          <div class="groups-strategy-card-head">
+            <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/forquilla.png' %}" alt="">
+            <div class="groups-strategy-title-copy">
+              <span class="text-muted small fw-semibold">X series amb forquilla</span>
+              <span class="small text-muted">Forca el nombre de series si la forquilla ho permet.</span>
+            </div>
+          </div>
+          <div class="groups-strategy-card-body">
+            <div class="groups-strategy-controls">
+              <input id="series-series-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm groups-strategy-number">
+            </div>
+            <div class="groups-strategy-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-preview-count-range">Previsualitzar</button>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-series-create-count-range">Crear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>

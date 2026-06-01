@@ -5,6 +5,69 @@
   const API = window.InscripcionsApp;
   if (!API) return;
 
+  window.showWorkspaceActionConfirm = window.showWorkspaceActionConfirm || function (options = {}) {
+    const title = String(options.title || 'Confirmar accio').trim();
+    const body = String(options.body || 'Vols continuar?').trim();
+    const confirmLabel = String(options.confirmLabel || 'Confirmar').trim();
+    const kicker = String(options.kicker || 'Confirmacio').trim();
+    const tone = String(options.tone || 'warning').trim();
+    const buttonClass = tone === 'danger' ? 'btn-danger' : tone === 'primary' ? 'btn-primary' : 'btn-warning';
+    const els = {
+      backdrop: document.getElementById('team-action-backdrop'),
+      confirmModal: document.getElementById('team-action-confirm-modal'),
+      confirmKicker: document.getElementById('team-action-confirm-kicker'),
+      confirmTitle: document.getElementById('team-action-confirm-title'),
+      confirmBody: document.getElementById('team-action-confirm-body'),
+      confirmAccept: document.getElementById('team-action-confirm-accept'),
+      confirmCancelButtons: Array.from(document.querySelectorAll('[data-team-action-cancel]')),
+    };
+    if (!els.backdrop || !els.confirmModal || !els.confirmAccept) {
+      return typeof window.showConfirm === 'function'
+        ? window.showConfirm(body)
+        : Promise.resolve(window.confirm(body));
+    }
+    if (els.confirmKicker) els.confirmKicker.textContent = kicker;
+    if (els.confirmTitle) els.confirmTitle.textContent = title;
+    if (els.confirmBody) els.confirmBody.textContent = body;
+    els.confirmAccept.textContent = confirmLabel;
+    els.confirmAccept.className = `btn btn-sm ${buttonClass}`;
+    return new Promise((resolve) => {
+      let done = false;
+      const cleanup = (accepted) => {
+        if (done) return;
+        done = true;
+        els.confirmAccept.removeEventListener('click', accept);
+        els.backdrop?.removeEventListener('click', cancel);
+        document.removeEventListener('keydown', onKeydown);
+        els.confirmCancelButtons.forEach((button) => button.removeEventListener('click', cancel));
+        els.confirmModal.classList.remove('is-visible', 'is-warning', 'is-success', 'is-danger');
+        els.confirmModal.setAttribute('aria-hidden', 'true');
+        els.backdrop.classList.remove('is-visible');
+        els.backdrop.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('team-action-modal-open');
+        resolve(!!accepted);
+      };
+      const accept = () => cleanup(true);
+      const cancel = () => cleanup(false);
+      const onKeydown = (event) => {
+        if (event.key === 'Escape') cleanup(false);
+      };
+      if (els.backdrop.parentElement !== document.body) document.body.appendChild(els.backdrop);
+      if (els.confirmModal.parentElement !== document.body) document.body.appendChild(els.confirmModal);
+      els.confirmModal.classList.remove('is-warning', 'is-success', 'is-danger');
+      els.confirmModal.classList.add(`is-${tone || 'warning'}`, 'is-visible');
+      els.confirmModal.setAttribute('aria-hidden', 'false');
+      els.backdrop.classList.add('is-visible');
+      els.backdrop.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('team-action-modal-open');
+      els.confirmAccept.addEventListener('click', accept);
+      els.backdrop.addEventListener('click', cancel);
+      document.addEventListener('keydown', onKeydown);
+      els.confirmCancelButtons.forEach((button) => button.addEventListener('click', cancel));
+      window.setTimeout(() => els.confirmAccept.focus?.(), 0);
+    });
+  };
+
   const BIRTH_YEAR_RANGE_GROUP_CODE = 'any_naixement_forquilla';
   let birthYearRangeSavedConfig = API.app.initial.birthYearRangeGroupConfig || { sense_data_label: '', fora_rang_label: '', ranges: [] };
 

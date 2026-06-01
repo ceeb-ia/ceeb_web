@@ -1,0 +1,122 @@
+{% load static %}
+
+<section class="team-workspace-pane groups-pane groups-pane-board">
+  <div class="team-pane-card groups-pane-card groups-pane-card-board">
+    <div class="team-pane-head groups-existing-head series-existing-head">
+      <div class="groups-title-with-logo">
+        <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">
+        <div>
+          <div class="fw-semibold">3. Series creades</div>
+          <div class="small text-muted">Consulta les series actives i buides.</div>
+        </div>
+      </div>
+      <div class="groups-existing-head-actions">
+        <span class="badge badge-light border" id="series-summary-badge">0 series</span>
+        <details class="groups-existing-actions-menu series-existing-actions-menu">
+          <summary class="groups-existing-actions-trigger" aria-label="Accions de series">...</summary>
+          <div class="groups-existing-actions-popover">
+            <button type="button" class="groups-existing-action-item" id="btn-series-board-export-start-list">Exportar llista de sortida</button>
+            <button type="button" class="groups-existing-action-item groups-existing-action-danger" id="btn-series-workspace-delete-empty">Desactivar series buides</button>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="groups-existing-toolbar series-existing-toolbar">
+      <div class="groups-universe-filterbar groups-existing-filterbar">
+        <div class="groups-filter-search">
+          <label class="small text-muted mb-1 d-block" for="series-board-filter-q">Cerca</label>
+          <input type="text" class="form-control form-control-sm" id="series-board-filter-q" placeholder="Nom de la serie, equip o context...">
+        </div>
+        <div class="groups-filter-buttons" aria-label="Filtres de series creades">
+          <div class="groups-filter-popover" data-series-board-filter-popover data-select-id="series-board-filter-context" data-filter-label="Context">
+            <select id="series-board-filter-context" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+            <details class="groups-filter-menu">
+              <summary class="groups-filter-trigger">
+                <span class="groups-filter-trigger-label">Context</span>
+                <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+              </summary>
+              <div class="groups-filter-panel groups-filter-panel-wide">
+                <div class="groups-filter-panel-head">
+                  <span>Context</span>
+                  <button type="button" class="groups-filter-clear" data-series-board-filter-clear="series-board-filter-context">Netejar</button>
+                </div>
+                <div class="groups-filter-options" data-filter-options-for="series-board-filter-context"></div>
+              </div>
+            </details>
+          </div>
+
+          <div class="groups-filter-popover" data-series-board-filter-popover data-select-id="series-board-filter-members-state" data-filter-label="Contingut">
+            <select id="series-board-filter-members-state" class="form-control form-control-sm groups-filter-native">
+              <option value="all">Totes</option>
+              <option value="with_subjects">Amb unitats</option>
+              <option value="empty">Buides</option>
+            </select>
+            <details class="groups-filter-menu">
+              <summary class="groups-filter-trigger">
+                <span class="groups-filter-trigger-label">Contingut</span>
+                <span class="groups-filter-trigger-summary" data-filter-summary>Totes</span>
+              </summary>
+              <div class="groups-filter-panel">
+                <div class="groups-filter-panel-head">
+                  <span>Contingut</span>
+                  <button type="button" class="groups-filter-clear" data-series-board-filter-clear="series-board-filter-members-state">Netejar</button>
+                </div>
+                <div class="groups-filter-options" data-filter-options-for="series-board-filter-members-state"></div>
+              </div>
+            </details>
+          </div>
+
+          <div class="groups-filter-popover" data-series-board-filter-popover data-select-id="series-board-filter-program-state" data-filter-label="Programa">
+            <select id="series-board-filter-program-state" class="form-control form-control-sm groups-filter-native">
+              <option value="all">Totes</option>
+              <option value="programmed">Programades</option>
+              <option value="out_of_program">Fora de programa</option>
+            </select>
+            <details class="groups-filter-menu">
+              <summary class="groups-filter-trigger">
+                <span class="groups-filter-trigger-label">Programa</span>
+                <span class="groups-filter-trigger-summary" data-filter-summary>Totes</span>
+              </summary>
+              <div class="groups-filter-panel">
+                <div class="groups-filter-panel-head">
+                  <span>Programa</span>
+                  <button type="button" class="groups-filter-clear" data-series-board-filter-clear="series-board-filter-program-state">Netejar</button>
+                </div>
+                <div class="groups-filter-options" data-filter-options-for="series-board-filter-program-state"></div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+      <div class="groups-existing-toolbar-meta">
+        <div class="groups-filter-active-chips" id="series-board-filter-active-chips" aria-live="polite"></div>
+        <div class="groups-existing-toolbar-count">
+          <span class="badge badge-light border" id="series-board-filter-count">0 de 0 series</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-board-filters-clear">Netejar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="team-context-teams-status small text-muted" id="series-board-status">Cap serie carregada.</div>
+    <div class="alert alert-light border mt-3 mb-3 d-none" id="series-board-empty-state" role="status"></div>
+
+    <div class="groups-board">
+      <div class="groups-board-section">
+        <div class="groups-board-section-head">
+          <div class="fw-semibold">Series amb unitats</div>
+          <div class="small text-muted">Unitats assignades a cada serie.</div>
+        </div>
+        <div class="team-context-teams-list groups-board-grid" id="series-active-list"></div>
+      </div>
+
+      <div class="groups-board-section d-none" id="series-empty-wrap">
+        <div class="groups-board-section-head">
+          <div class="fw-semibold">Series buides</div>
+          <div class="small text-muted">Series disponibles sense unitats assignades.</div>
+        </div>
+        <div class="team-context-zero-members-list groups-board-grid groups-board-grid-empty" id="series-empty-list"></div>
+      </div>
+    </div>
+  </div>
+</section>

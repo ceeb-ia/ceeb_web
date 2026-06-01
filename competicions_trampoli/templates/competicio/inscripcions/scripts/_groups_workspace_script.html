@@ -92,7 +92,12 @@ window.initGroupsWorkspace = async function () {
       .filter(Boolean)
   );
   const alertBox = (message) => typeof showAlert === 'function' ? showAlert(message) : window.alert(message);
-  const confirmBox = async (message) => typeof showConfirm === 'function' ? !!(await showConfirm(message)) : window.confirm(message);
+  const confirmBox = async (message, options = {}) => {
+    if (typeof window.showWorkspaceActionConfirm === 'function') {
+      return !!(await window.showWorkspaceActionConfirm(Object.assign({ body: message }, options || {})));
+    }
+    return typeof showConfirm === 'function' ? !!(await showConfirm(message)) : window.confirm(message);
+  };
   const text = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = String(value ?? '');
@@ -1658,7 +1663,11 @@ window.initGroupsWorkspace = async function () {
 
   async function applyGroupTransform() {
     if (!editable() || !state.transformPayload) return;
-    const ok = await confirmBox('Aplicar aquesta transformacio de grups?');
+    const ok = await confirmBox('Aplicar aquesta transformacio de grups?', {
+      title: 'Aplicar transformacio',
+      confirmLabel: 'Aplicar',
+      tone: 'primary',
+    });
     if (!ok) return;
     try {
       state.transformBusy = true;
@@ -2275,7 +2284,11 @@ window.initGroupsWorkspace = async function () {
   async function applyBulkGroupOrder() {
     if (!bulkGroupOrderApplyUrl || !state.bulkGroupOrderPayload || !state.bulkGroupOrderPreview?.can_apply) return;
     const preview = state.bulkGroupOrderPreview;
-    const ok = await confirmBox(`Aplicar la reordenacio a ${Number(preview.groups_total || 0)} grup(s) i ${Number(preview.members_total || 0)} participant(s)?`);
+    const ok = await confirmBox(`Aplicar la reordenacio a ${Number(preview.groups_total || 0)} grup(s) i ${Number(preview.members_total || 0)} participant(s)?`, {
+      title: 'Aplicar reordenacio',
+      confirmLabel: 'Aplicar',
+      tone: 'primary',
+    });
     if (!ok) return;
     setBulkGroupOrderBusy(true);
     try {
@@ -2644,14 +2657,30 @@ window.initGroupsWorkspace = async function () {
     if (!editable()) return;
     if (action !== 'delete' && !ensureSelection()) return;
     if (!options?.skipConfirm) {
+      const selectedCount = selectedIds().length;
+      const targetGroup = extra?.group_id
+        ? (state.workspace?.groups || []).find((group) => String(group?.id || '').trim() === String(extra.group_id || '').trim())
+        : null;
+      const targetLabel = String(targetGroup?.label || '').trim();
       const ok = await confirmBox(
         action === 'create'
-          ? 'Crear un grup nou amb la seleccio activa?'
+          ? `Crear un grup nou amb ${selectedCount} inscripcio(ns) de la seleccio activa?`
           : action === 'assign'
-            ? 'Enviar la seleccio activa al grup seleccionat?'
+            ? `Enviar ${selectedCount} inscripcio(ns) al grup${targetLabel ? ` "${targetLabel}"` : ' seleccionat'}?`
             : action === 'unassign'
-              ? 'Deixar la seleccio activa sense grup?'
-              : 'Eliminar aquest grup buit?'
+              ? `Deixar ${selectedCount} inscripcio(ns) de la seleccio activa sense grup?`
+              : 'Eliminar aquest grup buit?',
+        {
+          title: action === 'create'
+            ? 'Crear grup'
+            : action === 'assign'
+              ? 'Assignar seleccio'
+              : action === 'unassign'
+                ? 'Treure seleccio del grup'
+                : 'Desactivar grup',
+          confirmLabel: action === 'delete' ? 'Desactivar' : 'Confirmar',
+          tone: action === 'delete' || action === 'unassign' ? 'danger' : 'primary',
+        }
       );
       if (!ok) return;
     }
@@ -2708,6 +2737,15 @@ window.initGroupsWorkspace = async function () {
   async function unassignSingleMember(inscripcioId) {
     const cleanId = String(inscripcioId || '').trim();
     if (!cleanId || state.dragBusy) return;
+    const memberRow = document.querySelector(`.js-group-member-unassign[data-inscripcio-id="${CSS.escape(cleanId)}"]`)?.closest('.team-context-member-row');
+    const memberName = String(memberRow?.querySelector('.team-context-member-title')?.textContent || `Inscripcio ${cleanId}`).trim();
+    const groupName = String(getCurrentSelectedGroupSummary()?.label || 'aquest grup').trim();
+    const ok = await confirmBox(`Vols treure ${memberName} del grup "${groupName}"? La inscripcio quedara sense grup.`, {
+      title: 'Treure membre del grup',
+      confirmLabel: 'Treure',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       state.dragBusy = true;
       await postUnassignIds([cleanId]);
@@ -3249,6 +3287,14 @@ window.initGroupsWorkspace = async function () {
         const input = document.querySelector(`[data-group-name-input="${CSS.escape(groupId)}"]`);
         const nextName = String(input?.value || '').trim();
         if (!groupId || !groupNum) return;
+        const group = getGroupDetail(groupId) || getCurrentSelectedGroupSummary();
+        const currentName = String(group?.name || group?.label || `Grup ${groupNum}`).trim();
+        const ok = await confirmBox(`Vols canviar el nom de "${currentName}" a "${nextName || `Grup ${groupNum}`}"?`, {
+          title: 'Renombrar grup',
+          confirmLabel: 'Renombrar',
+          tone: 'primary',
+        });
+        if (!ok) return;
         try {
           const data = await postJson(groupsSetGroupNameUrl, { group: groupNum, name: nextName });
           if (!data?.ok) throw new Error("No s'ha pogut desar el nom del grup.");
@@ -3378,7 +3424,11 @@ window.initGroupsWorkspace = async function () {
       }
 
       if (action === 'delete-empty') {
-        if (!(await confirmBox('Desactivar tots els grups buits?'))) return;
+        if (!(await confirmBox('Desactivar tots els grups buits?', {
+          title: 'Desactivar grups buits',
+          confirmLabel: 'Desactivar',
+          tone: 'danger',
+        }))) return;
         try {
           const data = await postJson(groupsDeleteEmptyUrl, {});
           invalidateAllGroupDetails();
@@ -3402,7 +3452,11 @@ window.initGroupsWorkspace = async function () {
         const warning = state.workspace?.rotacions_active
           ? `S'esborraran tots els grups no programats. Els grups presents a rotacions o al programa no s'esborraran.${protectedHint}`
           : `S'esborraran tots els grups no programats.${protectedHint}`;
-        if (!(await confirmBox(`${warning}\n\nVols continuar?`))) return;
+        if (!(await confirmBox(`${warning}\n\nVols continuar?`, {
+          title: 'Esborrar grups no programats',
+          confirmLabel: 'Esborrar',
+          tone: 'danger',
+        }))) return;
         try {
           const data = await postJson(groupsDeleteAllUrl, {});
           invalidateAllGroupDetails();

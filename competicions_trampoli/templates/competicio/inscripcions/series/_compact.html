@@ -1,0 +1,28 @@
+<div class="team-compact-summary mt-3" id="series-compact-actions">
+  <div class="team-compact-summary-copy">
+    <div class="fw-semibold mb-2">Accions rapides</div>
+    <div class="small text-muted">Selecciona un aparell i prepara les operacions basiques. El workspace amplia la seleccio, el board i el detall.</div>
+  </div>
+  <div class="quick-actions-panel series-quick-actions-panel">
+    <div class="quick-actions-fields">
+      <div class="quick-action-field">
+        <label class="small text-muted mb-0" for="series-comp-aparell-select">Aparell</label>
+        <select id="series-comp-aparell-select" class="form-control form-control-sm">
+          {% if series_team_aparells %}
+            {% for comp_aparell in series_team_aparells %}
+              <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.display_nom }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">Sense aparell actiu</option>
+          {% endif %}
+        </select>
+      </div>
+    </div>
+
+    <div class="quick-actions-buttons">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-refresh">Refrescar</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-export-start-list">Start list</button>
+    </div>
+    <div class="small text-muted" id="series-compact-actions-note">Aquestes accions treballaran sobre la seleccio preparada al workspace.</div>
+  </div>
+</div>
