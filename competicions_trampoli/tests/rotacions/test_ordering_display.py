@@ -81,6 +81,7 @@ from ...services.inscripcions.queries import (
     build_inscripcions_sort_context_key,
     get_competicio_custom_sort_rank_map,
 )
+from ...services.rotacions.rotacions_ordering import order_rotation_cell_pairs
 from ...services.classificacions.builder import scoreable_codes_by_app_id as _scoreable_codes_by_app_id
 from ...services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
 from ...services.classificacions.export import _normalize_excel_cell
@@ -227,6 +228,50 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
             is_active=True,
         )
         self.client.force_login(self.user)
+
+    def test_rotation_cell_random_order_uses_same_seed_for_portal_and_export_keys(self):
+        pairs = [(1, "A"), (2, "B"), (3, "C"), (4, "D"), (5, "E")]
+
+        portal_order = order_rotation_cell_pairs(
+            pairs,
+            competicio_id=self.comp.id,
+            franja_id=self.franja_2.id,
+            unit_key=f"unit:{self.ins_1.grup_competicio_id}+2",
+            mode="random",
+        )
+        export_order = order_rotation_cell_pairs(
+            pairs,
+            competicio_id=self.comp.id,
+            franja_id=self.franja_2.id,
+            unit_key=f"unit:g:{self.ins_1.grup_competicio_id}+g:2",
+            mode="random",
+        )
+
+        self.assertEqual(portal_order, export_order)
+
+    def test_rotation_cell_rotate_applies_to_combined_sequence(self):
+        pairs = [(1, "A"), (2, "B"), (3, "C"), (4, "D"), (5, "E")]
+
+        first = order_rotation_cell_pairs(
+            pairs,
+            competicio_id=self.comp.id,
+            franja_id=self.franja_1.id,
+            unit_key="unit:1+2",
+            mode="rotate",
+            rotate_step=0,
+        )
+        third = order_rotation_cell_pairs(
+            pairs,
+            competicio_id=self.comp.id,
+            franja_id=self.franja_3.id,
+            unit_key="unit:1+2",
+            mode="rotate",
+            rotate_step=2,
+        )
+
+        self.assertEqual([item for _id, item in first], ["B", "C", "D", "E", "A"])
+        self.assertEqual([item for _id, item in third], ["D", "E", "A", "B", "C"])
+        self.assertEqual(first[0][1], third[-2][1])
 
     def _assign_group_to_app_franja(self, group, franja):
         assignacio, _created = RotacioAssignacio.objects.get_or_create(

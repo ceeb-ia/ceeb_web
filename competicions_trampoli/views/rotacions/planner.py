@@ -400,7 +400,7 @@ def rotacions_planner(request, pk):
         station_modes[str(estacio.id)] = {
             "mode": mode,
             "comp_aparell_id": int(comp_aparell_id or 0) or None,
-            "label": str(getattr(aparell, "nom", "") or ""),
+            "label": str(getattr(comp_aparell, "display_nom", "") or getattr(aparell, "nom", "") or ""),
         }
 
     assigns = (

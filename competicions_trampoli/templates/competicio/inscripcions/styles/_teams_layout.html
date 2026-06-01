@@ -1,0 +1,140 @@
+    #teams-main-card {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    #panel-equips > .action-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #panel-equips > .action-panel-header > div:first-child {
+      min-width: 0;
+      margin-right: auto;
+    }
+
+    #teams-main-card > #team-compact-actions {
+      margin-top: 0 !important;
+      padding: 10px 2px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    #teams-main-card .quick-actions-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: min(100%, 620px);
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid #dbeafe;
+      border-radius: 10px;
+      background: #ffffff;
+    }
+
+    #teams-main-card .quick-actions-fields,
+    #teams-main-card .quick-actions-composer {
+      display: grid;
+      gap: 8px;
+    }
+
+    #teams-main-card .quick-action-field {
+      display: grid;
+      grid-template-columns: 92px minmax(220px, 1fr);
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    #teams-main-card .quick-action-field label {
+      color: #475569 !important;
+      font-weight: 720;
+    }
+
+    #teams-main-card .quick-action-field .form-control {
+      width: 100%;
+      min-width: 0;
+      border-color: #cbd5e1;
+      background: #ffffff;
+    }
+
+    #teams-main-card .quick-action-field .form-control:focus {
+      border-color: var(--insc-base, #0f766e);
+      box-shadow: 0 0 0 0.14rem rgba(15, 118, 110, 0.12);
+    }
+
+    #teams-main-card .quick-actions-buttons {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-top: 2px;
+    }
+
+    #teams-main-card .quick-actions-banners {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-width: 0;
+      padding-top: 2px;
+    }
+
+    #teams-main-card .quick-actions-banner {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      max-width: 100%;
+      padding: 0.22rem 0.56rem;
+      overflow: hidden;
+      border: 1px solid #99f6e4;
+      border-radius: 999px;
+      background: #f0fdfa;
+      color: #134e4a;
+      font-size: 0.73rem;
+      font-weight: 760;
+      line-height: 1.15;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #teams-main-card .quick-actions-buttons .btn {
+      border-radius: 8px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    #team-compact-actions-note {
+      padding-top: 2px;
+    }
+
+    #teams-main-card #team-workspace-shell {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    @media (max-width: 767.98px) {
+      #panel-equips > .action-panel-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #teams-main-card .quick-action-field {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      #teams-main-card .quick-actions-buttons .btn {
+        flex: 1 1 100%;
+      }
+    }

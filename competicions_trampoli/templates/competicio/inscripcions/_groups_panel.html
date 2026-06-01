@@ -3,10 +3,22 @@
 <section class="action-panel" id="panel-grups" data-panel-key="grups">
   <div class="action-panel-header">
     <div>
-      <p class="panel-title mb-0">Gestor de grups</p>
-      <div class="subtle">Mode compacte per a accions rapides i workspace propi per a seleccio, resum i revisio.</div>
+      <p class="panel-title mb-0">Grups</p>
+    </div>
+    <div class="tab-select-card-tools">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+        data-expand-target="groups-main-card"
+        data-label-collapsed="Obrir gestor de grups"
+        data-label-expanded="Tancar vista ampla"
+        aria-expanded="false"
+      >
+        Obrir gestor de grups
+      </button>
     </div>
   </div>
+
 
   <div class="action-panel-body">
     <div
@@ -16,64 +28,37 @@
       data-expand-title="Gestor de grups"
       data-expand-subtitle="Seleccio, creacio, modificacio i vista rapida dels grups existents en un sol workspace."
     >
-      <div class="tab-select-card-head">
-        <div>
-          <div class="fw-semibold">Gestor de grups</div>
-          <div class="small text-muted">Flux manual prioritari amb una capa automatica accessible des del mateix espai.</div>
-        </div>
-        <div class="tab-select-card-tools">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
-            data-expand-target="groups-main-card"
-            data-label-collapsed="Obrir gestor de grups"
-            data-label-expanded="Tancar vista ampla"
-            aria-expanded="false"
-          >
-            Obrir gestor de grups
-          </button>
-        </div>
-      </div>
 
-      <div class="team-compact-summary">
-        <div class="team-compact-summary-copy">
-          Crea grups amb seleccio explicita, assigna o treu inscripcions i revisa l'estat dels grups existents abans d'aplicar canvis.
-        </div>
-        <div class="team-compact-summary-metrics" id="groups-compact-summary-metrics">
-          <span class="group-preview-badge badge badge-light border">{{ existing_groups_count|default:0 }} grups</span>
-          <span class="group-preview-badge badge badge-light border">{{ group_member_totals|length }} amb participants</span>
-          <span class="group-preview-badge badge badge-light border">Carregant resum...</span>
-        </div>
-      </div>
 
       <div class="team-compact-summary mt-3" id="groups-compact-actions">
         <div class="team-compact-summary-copy">
           <div class="fw-semibold mb-2">Accions rapides</div>
           <div class="small text-muted">Treballen sempre sobre la seleccio activa del workspace.</div>
         </div>
-        <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 460px);">
-          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-            <label class="small text-muted mb-0" for="groups-compact-target-group">Grup desti</label>
-            <select id="groups-compact-target-group" class="form-control form-control-sm" style="width:min(100%, 260px); min-width:220px;">
-              <option value="">Carregant grups...</option>
-            </select>
+        <div class="quick-actions-panel groups-quick-actions-panel">
+          <div class="quick-actions-fields">
+            <div class="quick-action-field">
+              <label class="small text-muted mb-0" for="groups-compact-target-group">Grup desti</label>
+              <select id="groups-compact-target-group" class="form-control form-control-sm">
+                <option value="">Carregant grups...</option>
+              </select>
+            </div>
           </div>
-          <div class="d-flex flex-wrap" style="gap:8px;">
-            <button type="button" class="btn btn-sm btn-outline-dark" data-group-action="create">Crear un grup amb la seleccio</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" data-group-action="assign">Enviar seleccio al grup</button>
-            <button type="button" class="btn btn-sm btn-outline-warning" data-group-action="unassign">Deixar seleccio sense grup</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-group-action="open-workspace">Obrir workspace</button>
+          <div class="quick-actions-banners" id="groups-quick-summary-banners" aria-live="polite">
+            <span class="quick-actions-banner">Carregant grups...</span>
           </div>
+          <div class="quick-actions-composer">
+            <div class="quick-actions-buttons">
+              <button type="button" class="btn btn-sm btn-outline-dark" data-group-action="create">Crear un grup amb la seleccio</button>
+              <button type="button" class="btn btn-sm btn-outline-primary" data-group-action="assign">Enviar seleccio al grup</button>
+              <button type="button" class="btn btn-sm btn-outline-warning" data-group-action="unassign">Deixar seleccio sense grup</button>
+            </div>
+          </div>
+          <div class="small text-muted" id="groups-compact-actions-note">Aquestes accions treballaran sobre la seleccio activa del workspace.</div>
         </div>
       </div>
 
-      <div class="team-compact-summary mt-3">
-        <div class="team-compact-summary-copy">
-          <div class="fw-semibold mb-2">Grups en vista rapida</div>
-          <div class="small text-muted" id="groups-compact-list-note">Mostrant els primers grups carregats des del workspace.</div>
-        </div>
-        <div class="team-compact-summary-metrics" id="groups-compact-list"></div>
-      </div>
+
 
       <div
         class="team-workspace-shell groups-workspace-shell is-board-mode"

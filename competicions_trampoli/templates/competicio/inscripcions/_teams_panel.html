@@ -1,8 +1,21 @@
+{% load static %}
+
 <section class="action-panel" id="panel-equips" data-panel-key="equips">
   <div class="action-panel-header">
     <div>
-      <p class="panel-title mb-0">Fer Equips</p>
-      <div class="subtle">Workspace coherent amb grups per filtrar univers, construir seleccio i aplicar accions dins d'un context explicit.</div>
+      <p class="panel-title mb-0">Equips</p>
+    </div>
+    <div class="tab-select-card-tools">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+        data-expand-target="teams-main-card"
+        data-label-collapsed="Obrir gestor d'equips"
+        data-label-expanded="Tancar vista ampla"
+        aria-expanded="false"
+      >
+        Obrir gestor d'equips
+      </button>
     </div>
   </div>
 
@@ -14,119 +27,79 @@
       data-expand-title="Gestor d'equips"
       data-expand-subtitle="Context, univers, seleccio, creacio i revisio del resultat en un mateix workspace."
     >
-      <div class="tab-select-card-head">
-        <div>
-          <div class="fw-semibold">Gestor d'equips</div>
-          <div class="small text-muted">
-            Context actiu:
-            <strong id="team-context-title-inline">{{ team_context_selected_label|default:team_context_selected_code }}</strong>
-          </div>
-        </div>
-        <div class="tab-select-card-tools">
-          <span class="badge badge-light border" id="team-context-badge-inline">Context {{ team_context_selected_code }}</span>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
-            data-expand-target="teams-main-card"
-            data-label-collapsed="Obrir gestor d'equips"
-            data-label-expanded="Tancar vista ampla"
-            aria-expanded="false"
-          >
-            Obrir gestor d'equips
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-team-workspace-board-mode" aria-hidden="true">
-            Flux complet d'equips
-          </button>
-        </div>
-      </div>
 
-      <div class="team-compact-summary">
-        <div class="team-compact-summary-copy">
-          Defineix el context, prepara una seleccio explicita i crea o reassigna equips sense perdre de vista el board actual.
-          El detall complet es carrega quan obres el workspace.
-        </div>
-        <div class="team-compact-summary-metrics" id="team-compact-summary-metrics">
-          <span class="group-preview-badge badge badge-light border">Carregant resum...</span>
-        </div>
-      </div>
 
       <div class="team-compact-summary mt-3" id="team-compact-actions">
         <div class="team-compact-summary-copy">
           <div class="fw-semibold mb-2">Accions rapides</div>
-          <div class="small text-muted">Comparteixen context amb el workspace. L'abast pot ser la seleccio actual o totes les filtrades.</div>
+          <div class="small text-muted">Crea, assigna o treu seleccions d'equips.</div>
         </div>
-        <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 520px);">
-          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-            <label class="small text-muted mb-0" for="team-compact-context">Context</label>
-            <select id="team-compact-context" class="form-control form-control-sm" style="width:190px;">
-              <option value="{{ team_context_selected_code }}" selected>{{ team_context_selected_label|default:team_context_selected_code }}</option>
-            </select>
-            <label class="small text-muted mb-0" for="team-compact-scope">Abast</label>
-            <select id="team-compact-scope" class="form-control form-control-sm" style="width:170px;">
-              <option value="selected">Seleccio actual</option>
-              <option value="filtered">Totes les filtrades</option>
-            </select>
-            <label class="small text-muted mb-0" for="team-compact-target-team">Equip desti</label>
-            <select id="team-compact-target-team" class="form-control form-control-sm" style="width:min(100%, 260px); min-width:220px;">
-              <option value="">Carregant equips...</option>
-            </select>
+        <div class="quick-actions-panel team-quick-actions-panel">
+          <div class="quick-actions-fields">
+            <div class="quick-action-field">
+              <label class="small text-muted mb-0" for="team-compact-context">Context</label>
+              <select id="team-compact-context" class="form-control form-control-sm">
+                <option value="{{ team_context_selected_code }}" selected>{{ team_context_selected_label|default:team_context_selected_code }}</option>
+              </select>
+            </div>
+            <div class="quick-action-field">
+              <label class="small text-muted mb-0" for="team-compact-scope">Abast</label>
+              <select id="team-compact-scope" class="form-control form-control-sm">
+                <option value="selected">Seleccio actual</option>
+                <option value="filtered">Totes les filtrades</option>
+              </select>
+            </div>
+            <div class="quick-action-field">
+              <label class="small text-muted mb-0" for="team-compact-target-team">Equip desti</label>
+              <select id="team-compact-target-team" class="form-control form-control-sm">
+                <option value="">Carregant equips...</option>
+              </select>
+            </div>
           </div>
-          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-            <input type="text" class="form-control form-control-sm" id="team-compact-name" style="width:min(100%, 260px);" placeholder="Nom del nou equip...">
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-compact-create">Crear equip nou amb seleccio</button>
-            <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-compact-assign">Assignar seleccio</button>
-            <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-compact-unassign">Treure seleccio</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-compact-open-workspace">Obrir workspace</button>
+          <div class="quick-actions-banners" id="team-quick-context-banners" aria-live="polite">
+            <span class="quick-actions-banner">Carregant context...</span>
+          </div>
+          <div class="quick-actions-composer">
+            <div class="quick-action-field quick-action-field-input">
+              <label class="small text-muted mb-0" for="team-compact-name">Nou equip</label>
+              <input type="text" class="form-control form-control-sm" id="team-compact-name" placeholder="Nom del nou equip...">
+            </div>
+            <div class="quick-actions-buttons">
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-compact-create">Crear equip nou amb seleccio</button>
+              <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-compact-assign">Assignar seleccio</button>
+              <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-compact-unassign">Treure seleccio</button>
+            </div>
           </div>
           <div class="small text-muted" id="team-compact-actions-note">Aquestes accions treballaran sobre la seleccio actual del modal.</div>
         </div>
       </div>
 
       <div class="team-workspace-shell groups-workspace-shell" id="team-workspace-shell">
-        <div class="team-workspace-header groups-workspace-header-compact" id="team-workspace-header">
-          <div class="team-workspace-header-bar">
-            <div class="team-workspace-header-main">
-              <span class="badge badge-light border" id="team-context-badge">Context {{ team_context_selected_code }}</span>
-              <div class="team-workspace-title-wrap">
-                <div class="team-workspace-title" id="team-context-title">{{ team_context_selected_label|default:team_context_selected_code }}</div>
-                <div class="small text-muted" id="team-context-description">Filtra l'univers del context actiu, construeix la seleccio i aplica operacions sobre ella.</div>
-              </div>
-            </div>
-            <div class="team-workspace-header-tools">
-              <span class="badge badge-light border"><strong id="team-summary-teams-with-members">-</strong> equips</span>
-              <span class="badge badge-light border"><strong id="team-summary-assigned">-</strong> amb equip</span>
-              <span class="badge badge-light border"><strong id="team-summary-unassigned">-</strong> sense equip</span>
-              <span class="badge badge-light border"><strong id="team-summary-total">-</strong> totals</span>
-            </div>
-          </div>
-        </div>
-
         <div class="groups-workspace-layout">
           <section class="groups-workspace-row groups-workspace-row-prep">
             <div class="groups-prep-main">
               <section class="team-workspace-pane groups-pane groups-pane-universe">
                 <div class="team-pane-card groups-pane-card groups-pane-card-universe">
                   <div class="team-pane-head">
-                    <div>
-                      <div class="groups-pane-step">1. Filtra l'univers</div>
-                      <div class="fw-semibold">Univers i seleccio</div>
-                      <div class="small text-muted">El context es part del pas 1. Des d'aqui filtres, selecciones i sincronitzes el que fara servir la resta del workspace.</div>
+                    <div class="groups-title-with-logo">
+                      <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
+                      <div>
+                        <div class="fw-semibold">1. Univers de candidates</div>
+                        <div class="small text-muted">Ajusta context, filtres i cerca abans de construir la seleccio activa.</div>
+                      </div>
                     </div>
                     <span class="badge badge-light border" id="team-candidates-count-badge">0 candidates</span>
                   </div>
 
-                  <div class="team-manual-banner">
-                    <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+                  <div class="team-context-strip">
+                    <div class="team-context-strip-main">
                       <label class="small text-muted mb-0" for="team-workspace-context-select">Context d'equips</label>
-                      <select id="team-workspace-context-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
+                      <select id="team-workspace-context-select" class="form-control form-control-sm">
                         <option value="{{ team_context_selected_code }}" selected>{{ team_context_selected_label|default:team_context_selected_code }}</option>
                       </select>
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-context-toggle" aria-expanded="false">
-                        Veure gestio del context
+                        Gestionar context
                       </button>
-                    </div>
-                    <div class="small text-muted mt-2" id="team-selection-scope-copy">
-                      Aquest workspace treballa sobre el context actiu i la seleccio activa que construeixes en aquest mateix panell.
                     </div>
                   </div>
 
@@ -135,82 +108,125 @@
                       <div class="team-workspace-context-head">
                         <div>
                           <div class="team-workspace-eyebrow">Gestio del context</div>
-                          <div class="small text-muted">Canvia, crea o elimina contextos sense sortir del pas 1. Les dades completes es carreguen en obrir el workspace.</div>
                         </div>
                       </div>
-                      <div class="d-flex align-items-center flex-wrap mt-2" style="gap:10px;">
+                      <div class="team-context-actions">
                         <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-workspace-context-create">Nou context</button>
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-context-rename">Renombrar context</button>
                         <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-context-delete">Eliminar context</button>
                       </div>
                     </div>
-                    <div class="team-workspace-context mt-3">
+                    <div class="team-workspace-context">
                       <div class="team-workspace-context-head">
                         <div>
-                          <div class="team-workspace-eyebrow">Aparells d'equip</div>
-                          <div class="small text-muted">Selecciona en quins aparells globals d'equip competeix aquest context.</div>
+                          <div class="team-workspace-eyebrow">Aparells d'equip en els que competeix el context</div>
                         </div>
                       </div>
-                      <div id="team-context-source-status" class="small text-muted mt-2">Carregant aparells d'equip...</div>
-                      <div id="team-context-source-list" class="d-flex flex-column mt-2" style="gap:8px;"></div>
-                      <div class="d-flex justify-content-end mt-2">
+                      <div id="team-context-source-list" class="team-context-source-list"></div>
+                      <div class="team-context-source-actions">
                         <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-context-sources-save">Desar aparells d'equip</button>
                       </div>
                     </div>
-                    <div class="team-context-metrics" id="team-context-metrics">
-                      <div class="team-context-metric">
-                        <span class="team-context-metric-label">Equips actius</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-teams-with-members">-</strong>
-                      </div>
-                      <div class="team-context-metric">
-                        <span class="team-context-metric-label">Amb equip</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-assigned">-</strong>
-                      </div>
-                      <div class="team-context-metric">
-                        <span class="team-context-metric-label">Sense equip</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-unassigned">-</strong>
-                      </div>
-                      <div class="team-context-metric">
-                        <span class="team-context-metric-label">Total inscripcions</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-total">-</strong>
-                      </div>
-                    </div>
                   </div>
 
-                  <div class="team-filters-grid">
-                    <div>
+                  <div class="groups-universe-filterbar team-universe-filterbar">
+                    <div class="groups-filter-search">
                       <label class="small text-muted mb-1 d-block" for="team-filter-q">Cerca</label>
                       <input type="text" class="form-control form-control-sm" id="team-filter-q" placeholder="Nom, document o entitat...">
                     </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-filter-categoria">Categoria</label>
-                      <select id="team-filter-categoria" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-filter-subcategoria">Subcategoria</label>
-                      <select id="team-filter-subcategoria" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-filter-entitat">Entitat</label>
-                      <select id="team-filter-entitat" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-filter-assignment-state">Estat al context</label>
-                      <select id="team-filter-assignment-state" class="form-control form-control-sm">
-                        <option value="all">Totes</option>
-                        <option value="unassigned">Sense equip en aquest context</option>
-                        <option value="assigned">Amb equip en aquest context</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-filter-equip-id">Equip actual al context</label>
-                      <select id="team-filter-equip-id" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                  </div>
 
-                  <div class="small text-muted mt-2">
-                    Pots seleccionar mes d'un valor amb Ctrl/Cmd o Shift. Dins del mateix camp s'aplica qualsevol coincidencia; entre camps, totes alhora.
+                    <div class="groups-filter-buttons" aria-label="Filtres de candidates d'equips">
+                      <div class="groups-filter-popover" data-team-filter-popover data-select-id="team-filter-categoria" data-filter-label="Categoria">
+                        <select id="team-filter-categoria" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Categoria</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Categoria</span>
+                              <button type="button" class="groups-filter-clear" data-team-filter-clear="team-filter-categoria">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-filter-categoria"></div>
+                          </div>
+                        </details>
+                      </div>
+
+                      <div class="groups-filter-popover" data-team-filter-popover data-select-id="team-filter-subcategoria" data-filter-label="Subcategoria">
+                        <select id="team-filter-subcategoria" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Subcategoria</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Subcategoria</span>
+                              <button type="button" class="groups-filter-clear" data-team-filter-clear="team-filter-subcategoria">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-filter-subcategoria"></div>
+                          </div>
+                        </details>
+                      </div>
+
+                      <div class="groups-filter-popover" data-team-filter-popover data-select-id="team-filter-entitat" data-filter-label="Entitat">
+                        <select id="team-filter-entitat" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Entitat</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel groups-filter-panel-wide">
+                            <div class="groups-filter-panel-head">
+                              <span>Entitat</span>
+                              <button type="button" class="groups-filter-clear" data-team-filter-clear="team-filter-entitat">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-filter-entitat"></div>
+                          </div>
+                        </details>
+                      </div>
+
+                      <div class="groups-filter-popover" data-team-filter-popover data-select-id="team-filter-assignment-state" data-filter-label="Estat">
+                        <select id="team-filter-assignment-state" class="form-control form-control-sm groups-filter-native">
+                          <option value="all">Totes</option>
+                          <option value="unassigned">Sense equip en aquest context</option>
+                          <option value="assigned">Amb equip en aquest context</option>
+                        </select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Estat</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Totes</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Estat</span>
+                              <button type="button" class="groups-filter-clear" data-team-filter-clear="team-filter-assignment-state">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-filter-assignment-state"></div>
+                          </div>
+                        </details>
+                      </div>
+
+                      <div class="groups-filter-popover" data-team-filter-popover data-select-id="team-filter-equip-id" data-filter-label="Equip">
+                        <select id="team-filter-equip-id" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Equip</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel groups-filter-panel-wide">
+                            <div class="groups-filter-panel-head">
+                              <span>Equip actual al context</span>
+                              <button type="button" class="groups-filter-clear" data-team-filter-clear="team-filter-equip-id">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-filter-equip-id"></div>
+                          </div>
+                        </details>
+                      </div>
+                    </div>
                   </div>
+                  <div class="groups-filter-active-chips" id="team-filter-active-chips" aria-live="polite"></div>
 
                   <div class="team-candidates-status small text-muted" id="team-candidates-status">Carregant candidates...</div>
                   <div class="groups-universe-body">
@@ -220,21 +236,8 @@
                         <span class="badge badge-light border" id="team-selection-mode-label">0 filtrades</span>
                       </div>
                       <div class="groups-candidates-toolbar-actions">
-                        <div class="groups-selection-strip-group">
-                          <div class="groups-toolbar-label">Filtrades</div>
-                          <div class="d-flex flex-wrap" style="gap:8px;">
-                            <button type="button" class="btn btn-sm btn-light border" id="btn-team-workspace-select-filtered">Seleccionar totes</button>
-                            <button type="button" class="btn btn-sm btn-light border" id="btn-team-workspace-add-filtered">Afegir</button>
-                            <button type="button" class="btn btn-sm btn-light border" id="btn-team-workspace-remove-filtered">Treure</button>
-                          </div>
-                        </div>
-                        <div class="groups-selection-strip-group">
-                          <div class="groups-toolbar-label">Sincronitzacio</div>
-                          <div class="d-flex flex-wrap" style="gap:8px;">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-import-selection">Importar del llistat</button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-clear-selection">Netejar</button>
-                          </div>
-                        </div>
+                        <button type="button" class="btn btn-sm btn-primary" id="btn-team-workspace-add-filtered">Afegir</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-clear-selection">Netejar</button>
                       </div>
                     </div>
                     <div class="team-candidates-list" id="team-candidates-list"></div>
@@ -252,34 +255,36 @@
               <section class="team-workspace-pane groups-pane groups-pane-actions">
                 <div class="team-pane-card groups-pane-card groups-pane-card-actions">
                   <div class="team-pane-head">
-                    <div>
-                      <div class="groups-pane-step">2. Aplica una operacio</div>
-                      <div class="fw-semibold">Accions i estrategies</div>
-                      <div class="small text-muted">Totes les accions principals treballen sobre la seleccio activa. Les estrategies poden usar camps natius i columnes Excel.</div>
+                    <div class="groups-title-with-logo">
+                      <img class="groups-title-logo" src="{% static 'inscripcions/grups/accions.png' %}" alt="">
+                      <div>
+                        <div class="fw-semibold">2. Accions sobre la seleccio</div>
+                        <div class="small text-muted">Operacions directes i estrategies de creacio sobre la seleccio activa del context.</div>
+                      </div>
                     </div>
                   </div>
 
-                  <div class="team-action-note" id="team-workspace-selection-note">Aquestes accions treballaran sobre la seleccio activa del workspace.</div>
-
                   <div class="groups-action-section">
-                    <div class="groups-action-section-head">
-                      <div class="fw-semibold small text-uppercase text-muted">Operacions directes</div>
-                      <div class="small text-muted">Crear, assignar, deixar sense equip o eliminar un equip buit seleccionat.</div>
-                    </div>
-                    <div class="team-manual-banner mt-2">
-                      Aquestes accions s'aplicaran al context <strong id="team-manual-context-name">
-                        {{ team_context_selected_label|default:team_context_selected_code }}
-                      </strong>.
-                      <div class="d-flex flex-wrap mt-2" style="gap:8px;">
-                        <select id="team-workspace-existing-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
-                          <option value="">Carregant equips...</option>
-                        </select>
-                        <input type="text" class="form-control form-control-sm" id="team-workspace-new-name" style="min-width:200px; max-width:260px;" placeholder="Nom del nou equip...">
+                    <div class="groups-direct-card mt-2">
+                      <div class="team-direct-context-note small text-muted">
+                        Context actiu: <strong id="team-manual-context-name">{{ team_context_selected_label|default:team_context_selected_code }}</strong>
                       </div>
-                      <div class="small text-muted mt-2" id="team-direct-scope-note">Cal tenir una seleccio activa per aplicar aquestes operacions.</div>
-                      <div class="groups-action-grid mt-3">
+                      <div class="groups-direct-create-row">
+                        <div class="groups-direct-field">
+                          <label class="small text-muted mb-1 d-block" for="team-workspace-existing-select">Equip desti</label>
+                          <select id="team-workspace-existing-select" class="form-control form-control-sm">
+                            <option value="">Carregant equips...</option>
+                          </select>
+                        </div>
+                        <div class="groups-direct-field">
+                          <label class="small text-muted mb-1 d-block" for="team-workspace-new-name">Nom de l'equip</label>
+                          <input type="text" class="form-control form-control-sm" id="team-workspace-new-name" placeholder="Nom del nou equip...">
+                        </div>
+                        <button type="button" class="btn btn-sm btn-primary groups-direct-create-btn" id="btn-team-workspace-create-manual">Crear equip</button>
+                      </div>
+                      <div class="small text-muted" id="team-direct-scope-note">Cal tenir una seleccio activa per aplicar aquestes operacions.</div>
+                      <div class="groups-direct-secondary-actions team-direct-secondary-actions">
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-preview-direct">Previsualitzar</button>
-                        <button type="button" class="btn btn-sm btn-primary" id="btn-team-workspace-create-manual">Crear equip amb la seleccio</button>
                         <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-workspace-assign">Assignar seleccio a aquest equip</button>
                         <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-workspace-unassign">Deixar sense equip</button>
                         <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-delete-selected">Eliminar equip buit</button>
@@ -289,88 +294,186 @@
 
                   <div class="groups-action-section">
                     <div class="groups-action-section-head">
-                      <div class="fw-semibold small text-uppercase text-muted">Estrategies de creacio</div>
-                      <div class="small text-muted" id="team-auto-scope-note">La particio treballa sobre la seleccio activa i respecta els mateixos camps que grups.</div>
+                      <div class="groups-section-title-with-logo">
+                        <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
+                        <div class="fw-semibold small text-uppercase text-muted">Estrategies de creacio</div>
+                      </div>
+                      <div class="small text-muted" id="team-workspace-selection-note">Aquestes accions treballaran sobre la seleccio activa del workspace.</div>
                     </div>
-                    <div class="groups-strategy-card mt-2">
-                      <div class="groups-strategy-card-head">
-                        <span class="text-muted small fw-semibold">Particionar per camps</span>
-                        <span class="small text-muted">Els camps Excel conviuen al mateix cataleg i queden etiquetats pel seu origen.</span>
+
+                    <div class="groups-strategy-list mt-2">
+                      <div class="groups-strategy-card">
+                        <div class="groups-strategy-card-head">
+                          <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/x_grups.png' %}" alt="">
+                          <div class="groups-strategy-title-copy">
+                            <span class="text-muted small fw-semibold">Crear X equips</span>
+                            <span class="small text-muted">Reparteix la seleccio en X equips equilibrats.</span>
+                          </div>
+                        </div>
+                        <div class="groups-strategy-card-body">
+                          <div class="groups-strategy-controls">
+                            <input id="team-team-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm groups-strategy-number">
+                          </div>
+                          <div class="groups-strategy-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-preview-count">Previsualitzar</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-team-create-count">Crear</button>
+                          </div>
+                        </div>
                       </div>
-                      <div class="chips">
-                        {% for f in team_partition_fields %}
-                          <label class="group-chip" title="{{ f.code }}">
-                            <input
-                              type="checkbox"
-                              class="js-team-field"
-                              value="{{ f.code }}"
-                              {% if f.code in team_partition_default_fields %}checked{% endif %}
-                            >
-                            <span>{{ f.ui_label|default:f.label }}</span>
+
+                      <div class="groups-strategy-card">
+                        <div class="groups-strategy-card-head">
+                          <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/mida.png' %}" alt="">
+                          <div class="groups-strategy-title-copy">
+                            <span class="text-muted small fw-semibold">Crear per mida</span>
+                            <span class="small text-muted">Divideix la seleccio en equips de mida fixa o equilibrada.</span>
+                          </div>
+                        </div>
+                        <div class="groups-strategy-card-body">
+                          <div class="groups-strategy-controls">
+                            <input id="team-team-size" type="number" min="2" max="200" value="3" class="form-control form-control-sm groups-strategy-number">
+                            <select id="team-team-size-mode" class="form-control form-control-sm groups-strategy-mode">
+                              <option value="fixed">Mida fixa</option>
+                              <option value="balanced">Equilibrats</option>
+                            </select>
+                          </div>
+                          <div class="groups-strategy-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-preview-size">Previsualitzar</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-team-create-size">Crear</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="groups-strategy-card">
+                        <div class="groups-strategy-card-head">
+                          <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/equilibrats.png' %}" alt="">
+                          <div class="groups-strategy-title-copy">
+                            <span class="text-muted small fw-semibold">Equilibrats min-max</span>
+                            <span class="small text-muted">Busca una particio dins la forquilla.</span>
+                          </div>
+                        </div>
+                        <div class="groups-strategy-card-body">
+                          <div class="groups-strategy-controls">
+                            <input id="team-team-min-size" type="number" min="1" max="200" value="3" class="form-control form-control-sm groups-strategy-number" title="Minim">
+                            <span class="small text-muted">a</span>
+                            <input id="team-team-max-size" type="number" min="1" max="200" value="4" class="form-control form-control-sm groups-strategy-number" title="Maxim">
+                          </div>
+                          <div class="groups-strategy-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-preview-range-balanced">Previsualitzar</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-team-create-range-balanced">Crear</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="groups-strategy-card">
+                        <div class="groups-strategy-card-head">
+                          <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/forquilla.png' %}" alt="">
+                          <div class="groups-strategy-title-copy">
+                            <span class="text-muted small fw-semibold">X equips amb forquilla</span>
+                            <span class="small text-muted">Forca el nombre d'equips si la forquilla ho permet.</span>
+                          </div>
+                        </div>
+                        <div class="groups-strategy-card-body">
+                          <div class="groups-strategy-controls">
+                            <input id="team-team-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm groups-strategy-number">
+                          </div>
+                          <div class="groups-strategy-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-preview-count-range">Previsualitzar</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-team-create-count-range">Crear</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="groups-auto-context-fold mt-2 team-auto-context-fold">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-toggle" aria-expanded="false">
+                        Veure creacio massiva per buckets
+                      </button>
+                      <div class="groups-auto-context-panel d-none" id="team-auto-buckets-panel">
+                        <div class="groups-auto-context-meta">
+                          <div class="groups-auto-context-meta-item">
+                            <span class="groups-auto-context-meta-label">Origen</span>
+                            <span class="badge badge-light border">Seleccio activa</span>
+                          </div>
+                          <div class="groups-auto-context-meta-item">
+                            <span class="groups-auto-context-meta-label">Buckets</span>
+                            <span class="badge badge-light border" id="team-auto-buckets-count">0 buckets actius de 0</span>
+                          </div>
+                          <div class="groups-auto-context-meta-item">
+                            <span class="groups-auto-context-meta-label">Visibles</span>
+                            <span class="small text-muted" id="team-auto-buckets-visibility-summary">0 visibles de 0 buckets resolts.</span>
+                          </div>
+                        </div>
+                        <div class="groups-strategy-card team-bucket-fields-card">
+                          <div class="groups-strategy-card-head">
+                            <img class="groups-strategy-logo" src="{% static 'inscripcions/grups/bucket.png' %}" alt="">
+                            <div class="groups-strategy-title-copy">
+                              <span class="text-muted small fw-semibold">Particionar per camps</span>
+                              <span class="small text-muted" id="team-auto-scope-note">La particio treballa sobre la seleccio activa i respecta els mateixos camps que grups.</span>
+                            </div>
+                          </div>
+                          <div class="chips team-field-chips">
+                            {% for f in team_partition_fields %}
+                              <label class="group-chip" title="{{ f.code }}">
+                                <input
+                                  type="checkbox"
+                                  class="js-team-field"
+                                  value="{{ f.code }}"
+                                  {% if f.code in team_partition_default_fields %}checked{% endif %}
+                                >
+                                <span>{{ f.ui_label|default:f.label }}</span>
+                              </label>
+                            {% endfor %}
+                          </div>
+                          <label class="m-0 small team-auto-replace-option">
+                            <input type="checkbox" id="team-auto-replace" checked>
+                            Reassignar equips existents
                           </label>
-                        {% endfor %}
-                      </div>
-                      <div class="d-flex align-items-center flex-wrap team-inline-options" style="gap:10px;">
-                        <label class="m-0 small">
-                          <input type="checkbox" id="team-auto-replace" checked>
-                          Reassignar equips existents
-                        </label>
-                      </div>
-                      <div class="groups-auto-context-fold">
-                        <div class="small text-muted" id="team-auto-target-note">
-                          Selecciona camps de particio per resoldre buckets sobre la seleccio activa o sobre les filtrades actuals.
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap:8px;">
-                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-toggle" aria-expanded="false">
-                            Veure buckets resolts
-                          </button>
-                          <span class="badge badge-light border" id="team-auto-buckets-count">0 buckets actius de 0</span>
-                        </div>
-                        <div class="small text-muted" id="team-auto-buckets-visibility-summary">0 visibles de 0 buckets resolts.</div>
-                        <div class="groups-auto-context-panel d-none" id="team-auto-buckets-panel">
-                          <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:10px;">
-                            <div>
-                              <div class="fw-semibold small text-uppercase text-muted">Buckets resolts</div>
-                              <div class="small text-muted" id="team-auto-buckets-status">
-                                Encara no hi ha cap resolucio automatica disponible.
-                              </div>
-                            </div>
-                            <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                              <button type="button" class="btn btn-sm btn-light border" id="btn-team-auto-buckets-all">Seleccionar tots</button>
-                              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-none">Netejar</button>
-                            </div>
-                          </div>
-                          <div class="team-auto-buckets-filter-grid mt-3">
-                            <div>
-                              <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-q">Cerca</label>
-                              <input type="text" class="form-control form-control-sm" id="team-auto-buckets-filter-q" placeholder="Nom, valors o membres...">
-                            </div>
-                            <div>
-                              <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-selected-state">Estat</label>
-                              <select id="team-auto-buckets-filter-selected-state" class="form-control form-control-sm">
-                                <option value="all">Tots</option>
-                                <option value="selected">Actius</option>
-                                <option value="unselected">No actius</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-sort">Ordenacio</label>
-                              <select id="team-auto-buckets-filter-sort" class="form-control form-control-sm">
-                                <option value="count_desc">Mida desc</option>
-                                <option value="count_asc">Mida asc</option>
-                                <option value="label_asc">A-Z</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div class="team-auto-buckets-grid d-none mt-2" id="team-auto-buckets-grid"></div>
-                          <div class="small text-muted mt-2" id="team-auto-buckets-empty">
-                            Defineix l'estrategia per veure quins buckets es poden activar.
+                          <div class="small text-muted" id="team-auto-target-note">
+                            Selecciona camps de particio per resoldre buckets sobre la seleccio activa.
                           </div>
                         </div>
-                      </div>
-                      <div class="d-flex flex-wrap mt-3" style="gap:10px;">
-                        <button type="button" class="btn btn-sm btn-outline-info" id="btn-team-workspace-preview">Previsualitzar estrategia</button>
-                        <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-workspace-auto-create">Crear equips automaticament</button>
+                        <div class="groups-auto-context-buckets-head">
+                          <div>
+                            <div class="groups-auto-context-buckets-title">Buckets resolts</div>
+                            <div class="small text-muted" id="team-auto-buckets-status">
+                              Encara no hi ha cap resolucio automatica disponible.
+                            </div>
+                          </div>
+                          <div class="groups-auto-context-buckets-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-preview">Previsualitzar</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-team-workspace-auto-create">Crear per bucket</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-auto-buckets-set">Substitueix seleccio</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-all">Seleccionar tots</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-none">Netejar buckets</button>
+                          </div>
+                        </div>
+                        <div class="team-auto-buckets-filter-grid">
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-q">Cerca</label>
+                            <input type="text" class="form-control form-control-sm" id="team-auto-buckets-filter-q" placeholder="Nom, valors o membres...">
+                          </div>
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-selected-state">Estat</label>
+                            <select id="team-auto-buckets-filter-selected-state" class="form-control form-control-sm">
+                              <option value="all">Tots</option>
+                              <option value="selected">Actius</option>
+                              <option value="unselected">No actius</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-sort">Ordenacio</label>
+                            <select id="team-auto-buckets-filter-sort" class="form-control form-control-sm">
+                              <option value="count_desc">Mida desc</option>
+                              <option value="count_asc">Mida asc</option>
+                              <option value="label_asc">A-Z</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div class="team-auto-buckets-grid d-none" id="team-auto-buckets-grid"></div>
+                        <div class="small text-muted" id="team-auto-buckets-empty">
+                          Defineix l'estrategia per veure quins buckets es poden activar.
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -382,77 +485,118 @@
           <section class="groups-workspace-row groups-workspace-row-impact">
             <section class="team-workspace-pane groups-pane groups-pane-board">
               <div class="team-pane-card groups-pane-card groups-pane-card-board">
-                <div class="team-pane-head">
-                  <div>
-                    <div class="groups-pane-step">3. Revisa l'impacte</div>
-                    <div class="fw-semibold">Equips actuals</div>
-                    <div class="small text-muted">Board compacte per revisar equips amb membres, equips buits i l'espai sense equip del context actual.</div>
+                <div class="team-pane-head groups-existing-head team-existing-head">
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">
+                    <div>
+                      <div class="fw-semibold">3. Equips actuals</div>
+                      <div class="small text-muted">Board de revisio per consultar equips actius, buits i accions del context.</div>
+                    </div>
                   </div>
-                  <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <div class="groups-existing-head-actions">
                     <span class="badge badge-light border" id="team-existing-count-badge">0 equips</span>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-delete-empty" data-delete-empty-url="{% url 'inscripcions_equips_delete_empty' competicio.id %}">
-                      Eliminar buits
-                    </button>
-                    <button type="button" class="btn btn-sm btn-danger" id="btn-team-workspace-delete-all" data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}">
-                      Eliminar tots
-                    </button>
+                    <details class="groups-existing-actions-menu team-existing-actions-menu">
+                      <summary class="groups-existing-actions-trigger" aria-label="Accions d'equips">...</summary>
+                      <div class="groups-existing-actions-popover">
+                        <button type="button" class="groups-existing-action-item groups-existing-action-danger" id="btn-team-workspace-delete-empty" data-delete-empty-url="{% url 'inscripcions_equips_delete_empty' competicio.id %}">
+                          Eliminar equips buits
+                        </button>
+                        <button type="button" class="groups-existing-action-item groups-existing-action-danger-strong" id="btn-team-workspace-delete-all" data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}">
+                          Eliminar tots els equips
+                        </button>
+                      </div>
+                    </details>
                   </div>
                 </div>
-                <div class="team-action-note">L'esborrat massiu actua nomes sobre el context actiu. Les targetes accepten drops sense obrir-se ni creixer.</div>
-                <div class="team-context-teams-status small text-muted" id="team-context-teams-status">Sense dades encara.</div>
-                <div class="team-manual-banner mt-3">
-                  <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:10px;">
-                    <div>
-                      <div class="fw-semibold">Filtres del board</div>
-                      <div class="small text-muted" id="team-board-filters-summary">Nom de l'equip, participants i facetes agregades del board del context actiu.</div>
-                    </div>
-                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                      <span class="badge badge-light border" id="team-board-filter-count">0 de 0 equips</span>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-board-filters-clear">Netejar</button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-board-filters-toggle" aria-expanded="false">Veure filtres del board</button>
-                    </div>
-                  </div>
-                  <div class="groups-auto-context-panel d-none mt-3" id="team-board-filters-panel">
-                    <div class="team-filters-grid">
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-board-filter-q">Cerca al board</label>
+
+                <div class="groups-existing-toolbar team-existing-toolbar">
+                  <div class="groups-universe-filterbar groups-existing-filterbar">
+                    <div class="groups-filter-search">
+                      <label class="small text-muted mb-1 d-block" for="team-board-filter-q">Cerca</label>
                       <input type="text" class="form-control form-control-sm" id="team-board-filter-q" placeholder="Nom de l'equip, participant o entitat...">
                     </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-board-filter-categoria">Categories</label>
-                      <select id="team-board-filter-categoria" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-board-filter-subcategoria">Subcategories</label>
-                      <select id="team-board-filter-subcategoria" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-board-filter-entitat">Entitats</label>
-                      <select id="team-board-filter-entitat" class="form-control form-control-sm" multiple size="4"></select>
-                    </div>
-                    <div>
-                      <label class="small text-muted mb-1 d-block" for="team-board-filter-members-state">Estat de l'equip</label>
-                      <select id="team-board-filter-members-state" class="form-control form-control-sm">
-                        <option value="all">Tots</option>
-                        <option value="with_members">Amb participants</option>
-                        <option value="empty">Buits</option>
-                      </select>
+                    <div class="groups-filter-buttons" aria-label="Filtres d'equips actuals">
+                      <div class="groups-filter-popover" data-team-board-filter-popover data-select-id="team-board-filter-categoria" data-filter-label="Categoria">
+                        <select id="team-board-filter-categoria" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Categoria</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Categoria</span>
+                              <button type="button" class="groups-filter-clear" data-team-board-filter-clear="team-board-filter-categoria">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-board-filter-categoria"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-team-board-filter-popover data-select-id="team-board-filter-subcategoria" data-filter-label="Subcategoria">
+                        <select id="team-board-filter-subcategoria" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Subcategoria</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Subcategoria</span>
+                              <button type="button" class="groups-filter-clear" data-team-board-filter-clear="team-board-filter-subcategoria">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-board-filter-subcategoria"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-team-board-filter-popover data-select-id="team-board-filter-entitat" data-filter-label="Entitat">
+                        <select id="team-board-filter-entitat" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Entitat</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                          </summary>
+                          <div class="groups-filter-panel groups-filter-panel-wide">
+                            <div class="groups-filter-panel-head">
+                              <span>Entitat</span>
+                              <button type="button" class="groups-filter-clear" data-team-board-filter-clear="team-board-filter-entitat">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-board-filter-entitat"></div>
+                          </div>
+                        </details>
+                      </div>
+                      <div class="groups-filter-popover" data-team-board-filter-popover data-select-id="team-board-filter-members-state" data-filter-label="Estat">
+                        <select id="team-board-filter-members-state" class="form-control form-control-sm groups-filter-native">
+                          <option value="all">Tots</option>
+                          <option value="with_members">Amb membres</option>
+                          <option value="empty">Buits</option>
+                        </select>
+                        <details class="groups-filter-menu">
+                          <summary class="groups-filter-trigger">
+                            <span class="groups-filter-trigger-label">Estat</span>
+                            <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                          </summary>
+                          <div class="groups-filter-panel">
+                            <div class="groups-filter-panel-head">
+                              <span>Estat</span>
+                              <button type="button" class="groups-filter-clear" data-team-board-filter-clear="team-board-filter-members-state">Netejar</button>
+                            </div>
+                            <div class="groups-filter-options" data-filter-options-for="team-board-filter-members-state"></div>
+                          </div>
+                        </details>
+                      </div>
                     </div>
                   </div>
-                  <div class="small text-muted mt-2">
-                    Dins del mateix camp s'aplica qualsevol coincidencia; entre camps, totes alhora. La zona Sense equip es manté visible.
-                  </div>
+                  <div class="groups-existing-toolbar-meta">
+                    <div class="groups-filter-active-chips" id="team-board-filter-active-chips" aria-live="polite"></div>
+                    <div class="groups-existing-toolbar-count">
+                      <span class="badge badge-light border" id="team-board-filter-count">0 de 0 equips</span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-board-filters-clear">Netejar</button>
+                    </div>
                   </div>
                 </div>
-                <div class="groups-board">
-                  <div class="groups-board-section">
-                    <div class="groups-board-section-head">
-                      <div class="fw-semibold">Sense equip</div>
-                      <div class="small text-muted">Punt d'entrada i sortida rapida per deixar inscripcions sense equip.</div>
-                    </div>
-                    <div class="team-context-unassigned-dropzone" id="team-context-unassigned-dropzone"></div>
-                  </div>
 
+                <div class="team-context-teams-status small text-muted" id="team-context-teams-status">Sense dades encara.</div>
+                <div class="groups-board">
                   <div class="groups-board-section">
                     <div class="groups-board-section-head">
                       <div class="fw-semibold">Equips amb membres</div>
@@ -472,13 +616,16 @@
               </div>
             </section>
 
-            <section class="team-workspace-pane groups-pane groups-pane-preview">
+            <aside class="team-workspace-pane groups-pane groups-pane-preview">
               <div class="team-pane-card groups-pane-card groups-pane-card-preview team-pane-card-preview" id="team-right-pane-card">
-                <div class="team-pane-head">
-                  <div>
-                    <div class="groups-pane-step">Previsualitzacio / detall</div>
-                    <div class="fw-semibold">Inspector lateral</div>
-                    <div class="small text-muted">La previsualitzacio del workspace i el detall de l'equip seleccionat comparteixen el mateix lloc fix.</div>
+                <div class="team-pane-head groups-inspector-head team-inspector-head">
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+                    <div>
+                      <div class="groups-pane-step">Inspector lateral</div>
+                      <div class="fw-semibold">Detall i previsualitzacio</div>
+                      <div class="small text-muted">Selecciona un equip per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
+                    </div>
                   </div>
                   <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-team-preview-clear">Netejar</button>
                 </div>
@@ -498,7 +645,10 @@
                   <div class="team-detail-panel groups-detail-panel d-none" id="team-detail-panel">
                     <div class="team-detail-head groups-detail-head">
                       <div class="team-detail-head-main groups-detail-head-main">
-                        <div class="team-detail-title groups-detail-title" id="team-detail-title">Equip</div>
+                        <div class="groups-detail-title-row">
+                          <img class="groups-detail-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+                          <div class="team-detail-title groups-detail-title" id="team-detail-title">Equip</div>
+                        </div>
                         <div class="small text-muted" id="team-detail-meta">Sense dades</div>
                       </div>
                       <div class="team-detail-actions groups-detail-actions" id="team-detail-actions"></div>
@@ -507,6 +657,59 @@
                     <div class="team-detail-editor groups-detail-editor d-none" id="team-detail-editor"></div>
                     <div class="small text-muted" id="team-detail-name-note">Sense observacions</div>
                     <div class="team-detail-members groups-detail-members">
+                      <div class="groups-detail-members-toolbar d-none" id="team-detail-members-toolbar">
+                        <div class="groups-universe-filterbar groups-detail-filterbar team-detail-filterbar">
+                          <div class="groups-filter-search">
+                            <label class="small text-muted mb-1 d-block" for="team-detail-member-q">Cerca</label>
+                            <input type="text" class="form-control form-control-sm" id="team-detail-member-q" placeholder="Nom, entitat o equip base...">
+                          </div>
+                          <div class="groups-filter-buttons" aria-label="Filtres de membres de l'equip">
+                            <div class="groups-filter-popover" data-team-detail-filter-popover data-select-id="team-detail-filter-entitat" data-filter-label="Entitat">
+                              <select id="team-detail-filter-entitat" class="form-control form-control-sm groups-filter-native" multiple size="4"></select>
+                              <details class="groups-filter-menu">
+                                <summary class="groups-filter-trigger">
+                                  <span class="groups-filter-trigger-label">Entitat</span>
+                                  <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                                </summary>
+                                <div class="groups-filter-panel groups-filter-panel-wide">
+                                  <div class="groups-filter-panel-head">
+                                    <span>Entitat</span>
+                                    <button type="button" class="groups-filter-clear" data-team-detail-filter-clear="team-detail-filter-entitat">Netejar</button>
+                                  </div>
+                                  <div class="groups-filter-options" data-filter-options-for="team-detail-filter-entitat"></div>
+                                </div>
+                              </details>
+                            </div>
+                            <div class="groups-filter-popover" data-team-detail-filter-popover data-select-id="team-detail-filter-native-state" data-filter-label="Base">
+                              <select id="team-detail-filter-native-state" class="form-control form-control-sm groups-filter-native">
+                                <option value="all">Tots</option>
+                                <option value="with_native">Amb equip base</option>
+                                <option value="without_native">Sense equip base</option>
+                              </select>
+                              <details class="groups-filter-menu">
+                                <summary class="groups-filter-trigger">
+                                  <span class="groups-filter-trigger-label">Base</span>
+                                  <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                                </summary>
+                                <div class="groups-filter-panel">
+                                  <div class="groups-filter-panel-head">
+                                    <span>Equip base</span>
+                                    <button type="button" class="groups-filter-clear" data-team-detail-filter-clear="team-detail-filter-native-state">Netejar</button>
+                                  </div>
+                                  <div class="groups-filter-options" data-filter-options-for="team-detail-filter-native-state"></div>
+                                </div>
+                              </details>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="groups-existing-toolbar-meta groups-detail-filter-meta">
+                          <div class="groups-filter-active-chips" id="team-detail-filter-active-chips" aria-live="polite"></div>
+                          <div class="groups-existing-toolbar-count">
+                            <span class="badge badge-light border" id="team-detail-filter-count">0 membres</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-detail-filters-clear">Netejar</button>
+                          </div>
+                        </div>
+                      </div>
                       <div class="team-context-member-list" id="team-detail-members-list" data-member-source="1"></div>
                       <div class="team-detail-members-pager groups-detail-members-pager d-none" id="team-detail-members-pager"></div>
                     </div>
@@ -514,7 +717,10 @@
                 </div>
 
                 <div class="team-right-pane-view groups-right-pane-view" id="team-right-pane-preview">
-                  <div class="small text-muted team-preview-note groups-preview-note">La preview es reutilitza per a les estrategies i per a les operacions directes que treballen sobre la seleccio activa.</div>
+                  <div class="team-preview-note groups-preview-note groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/previsualitzar.png' %}" alt="">
+                    <div class="small text-muted">La preview es reutilitza per a les estrategies i per a les operacions directes que treballen sobre la seleccio activa.</div>
+                  </div>
                   <div class="group-preview-panel team-preview-panel" id="team-preview" data-has-preview="0" data-dirty="0">
                     <div class="group-preview-toolbar">
                       <div>
@@ -548,7 +754,7 @@
                   </div>
                 </div>
               </div>
-            </section>
+            </aside>
           </section>
         </div>
       </div>

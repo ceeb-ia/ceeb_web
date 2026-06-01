@@ -1,0 +1,329 @@
+    #team-workspace-shell .groups-pane-card-board {
+      background: linear-gradient(180deg, #ffffff 0%, #f8fffe 100%);
+    }
+
+    #team-workspace-shell .groups-pane-card-board::before {
+      background: linear-gradient(90deg, var(--insc-base, #0f766e) 0%, #14b8a6 100%);
+    }
+
+    #team-workspace-shell .team-existing-head {
+      align-items: center;
+      gap: 14px;
+    }
+
+    #team-workspace-shell .groups-existing-head-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-left: auto;
+      flex: 0 0 auto;
+    }
+
+    #team-workspace-shell .groups-existing-actions-menu {
+      position: relative;
+    }
+
+    #team-workspace-shell .groups-existing-actions-menu[open] {
+      z-index: 35;
+    }
+
+    #team-workspace-shell .groups-existing-actions-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--insc-soft-border, #b8eee7);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 900;
+      line-height: 1;
+      list-style: none;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    #team-workspace-shell .groups-existing-actions-trigger::-webkit-details-marker {
+      display: none;
+    }
+
+    #team-workspace-shell .groups-existing-actions-trigger:hover,
+    #team-workspace-shell .groups-existing-actions-menu[open] .groups-existing-actions-trigger {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+    }
+
+    #team-workspace-shell .groups-existing-actions-popover {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: min(270px, calc(100vw - 40px));
+      padding: 6px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+    }
+
+    #team-workspace-shell .groups-existing-action-item {
+      display: block;
+      width: 100%;
+      padding: 8px 9px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #334155;
+      font-size: 0.8rem;
+      font-weight: 720;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    #team-workspace-shell .groups-existing-action-item:hover,
+    #team-workspace-shell .groups-existing-action-item:focus {
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+      outline: none;
+    }
+
+    #team-workspace-shell .groups-existing-action-danger {
+      color: #b91c1c;
+    }
+
+    #team-workspace-shell .groups-existing-action-danger-strong {
+      color: #991b1b;
+      font-weight: 800;
+    }
+
+    #team-workspace-shell .groups-existing-action-danger:hover,
+    #team-workspace-shell .groups-existing-action-danger:focus,
+    #team-workspace-shell .groups-existing-action-danger-strong:hover,
+    #team-workspace-shell .groups-existing-action-danger-strong:focus {
+      background: #fef2f2;
+      color: #991b1b;
+    }
+
+    #team-workspace-shell .team-existing-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 10px;
+      border: 1px solid var(--insc-soft-border, #b8eee7);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    }
+
+    #team-workspace-shell .groups-existing-filterbar {
+      display: grid;
+      grid-template-columns: 1fr;
+      row-gap: 16px;
+    }
+
+    #team-workspace-shell .groups-existing-toolbar-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    #team-workspace-shell .groups-existing-toolbar-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    #team-workspace-shell .groups-existing-toolbar-count .badge {
+      border-color: var(--insc-soft-border, #b8eee7) !important;
+      color: var(--insc-text, #134e4a);
+      font-weight: 740;
+    }
+
+    #team-workspace-shell .groups-existing-toolbar-count .btn {
+      border-color: var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      font-weight: 720;
+    }
+
+    #team-workspace-shell .groups-board {
+      gap: 12px;
+    }
+
+    #team-workspace-shell .groups-board-section {
+      padding: 10px;
+      border-color: var(--insc-soft-border, #b8eee7);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    #team-workspace-shell .groups-board-grid {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+    }
+
+    #team-workspace-shell .team-context-team-card {
+      --group-accent: var(--insc-base, #0f766e);
+      --group-bg: #ffffff;
+      min-width: 0;
+      min-height: 126px;
+      gap: 10px;
+      padding: 11px;
+      overflow: hidden;
+      border-color: color-mix(in srgb, var(--group-accent) 16%, #dbe5f2);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: inset 3px 0 0 var(--group-accent), 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    #team-workspace-shell .team-context-team-card.group-band-0 { --group-accent: #2563eb; --group-bg: #dbeafe; }
+    #team-workspace-shell .team-context-team-card.group-band-1 { --group-accent: #0f766e; --group-bg: #ccfbf1; }
+    #team-workspace-shell .team-context-team-card.group-band-2 { --group-accent: #b45309; --group-bg: #ffedd5; }
+    #team-workspace-shell .team-context-team-card.group-band-3 { --group-accent: #be123c; --group-bg: #ffe4e6; }
+    #team-workspace-shell .team-context-team-card.group-band-4 { --group-accent: #7c3aed; --group-bg: #ede9fe; }
+    #team-workspace-shell .team-context-team-card.group-band-5 { --group-accent: #0e7490; --group-bg: #cffafe; }
+    #team-workspace-shell .team-context-team-card.group-band-6 { --group-accent: #b91c1c; --group-bg: #fee2e2; }
+    #team-workspace-shell .team-context-team-card.group-band-7 { --group-accent: #4d7c0f; --group-bg: #ecfccb; }
+
+    #team-workspace-shell .team-context-team-card.is-empty {
+      background: #ffffff;
+      border-style: dashed;
+    }
+
+    #team-workspace-shell .team-context-team-card.is-current {
+      border-color: var(--group-accent);
+      box-shadow: inset 3px 0 0 var(--group-accent), 0 0 0 2px color-mix(in srgb, var(--group-accent) 12%, transparent), 0 8px 16px rgba(15, 23, 42, 0.06);
+    }
+
+    #team-workspace-shell .team-context-team-head,
+    #team-workspace-shell .team-context-team-title-wrap {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    #team-workspace-shell .team-context-team-name {
+      display: -webkit-box;
+      max-width: 100%;
+      overflow: hidden;
+      color: var(--insc-text, #0f172a);
+      font-size: 0.94rem;
+      font-weight: 820;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+      text-overflow: ellipsis;
+      white-space: normal;
+      word-break: break-word;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    #team-workspace-shell .team-existing-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      max-width: 100%;
+      margin-top: 5px;
+      overflow: hidden;
+      line-height: 1.2;
+    }
+
+    #team-workspace-shell .team-existing-members {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 24px;
+      padding: 0.16rem 0.46rem;
+      border: 1px solid color-mix(in srgb, var(--group-accent) 18%, #dbe5f2);
+      border-radius: 999px;
+      background: #ffffff;
+      color: color-mix(in srgb, var(--group-accent) 72%, #334155);
+      font-size: 0.74rem;
+      font-weight: 780;
+    }
+
+    #team-workspace-shell .groups-existing-status-pills {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    #team-workspace-shell .groups-existing-status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 23px;
+      padding: 0.14rem 0.44rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.7rem;
+      font-weight: 720;
+    }
+
+    #team-workspace-shell .team-context-team-preview {
+      max-width: 100%;
+      display: block;
+      color: #64748b !important;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #team-workspace-shell .team-context-team-actions {
+      gap: 6px;
+      padding-top: 2px;
+    }
+
+    #team-workspace-shell .team-context-team-actions .btn {
+      border-radius: 8px;
+      font-size: 0.74rem;
+      font-weight: 740;
+    }
+
+    #team-workspace-shell .team-context-team-actions .btn-outline-dark,
+    #team-workspace-shell .team-context-team-actions .btn-outline-primary,
+    #team-workspace-shell .team-context-team-actions .btn-outline-secondary {
+      border-color: #dbe5f2;
+      background: #ffffff;
+      color: #334155;
+    }
+
+    #team-workspace-shell .team-context-team-actions .btn-outline-dark:hover,
+    #team-workspace-shell .team-context-team-actions .btn-outline-primary:hover,
+    #team-workspace-shell .team-context-team-actions .btn-outline-secondary:hover {
+      border-color: var(--group-accent);
+      background: color-mix(in srgb, var(--group-bg) 28%, #ffffff);
+      color: color-mix(in srgb, var(--group-accent) 82%, #0f172a);
+    }
+
+    #team-workspace-shell .team-context-team-drop-surface {
+      min-height: 40px;
+      border-radius: 8px;
+      border-color: #e2e8f0;
+      background: #f8fafc;
+    }
+
+    @media (max-width: 767.98px) {
+      #team-workspace-shell .team-existing-head {
+        align-items: flex-start;
+      }
+
+      #team-workspace-shell .groups-existing-head-actions,
+      #team-workspace-shell .groups-existing-toolbar-count {
+        width: 100%;
+        justify-content: space-between;
+        margin-left: 0;
+      }
+    }

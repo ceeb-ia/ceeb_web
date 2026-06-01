@@ -1192,12 +1192,27 @@ window.initGroupsWorkspace = async function () {
 
   function renderCompactSummary(summary) {
     const metrics = document.getElementById('groups-compact-summary-metrics');
-    if (!metrics) return;
-    metrics.innerHTML = '';
-    metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.groups_total || 0)} grups`));
-    metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.groups_with_members || 0)} amb participants`));
-    metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.unassigned_count || 0)} sense grup`));
-    metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.out_of_program_groups || 0)} fora de programa`));
+    if (metrics) {
+      metrics.innerHTML = '';
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.groups_total || 0)} grups`));
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.groups_with_members || 0)} amb participants`));
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.unassigned_count || 0)} sense grup`));
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.out_of_program_groups || 0)} fora de programa`));
+    }
+    const banners = document.getElementById('groups-quick-summary-banners');
+    if (banners) {
+      banners.innerHTML = '';
+      [
+        `${Number(summary?.groups_total || 0)} grups disponibles`,
+        `${Number(summary?.groups_with_members || 0)} amb participants`,
+        `${Number(summary?.unassigned_count || 0)} inscripcions sense grup`,
+      ].forEach((label) => {
+        const badge = document.createElement('span');
+        badge.className = 'quick-actions-banner';
+        badge.textContent = label;
+        banners.appendChild(badge);
+      });
+    }
   }
 
   function renderCompactList(groups) {

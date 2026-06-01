@@ -28,9 +28,8 @@ from ...services.shared.competition_groups import (
 from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     build_rotation_unit_step_map,
-    effective_rotate_steps,
     get_rotacions_order_modes,
-    order_pairs_for_mode,
+    order_rotation_cell_pairs,
     rotation_unit_key,
     unique_ordered,
 )
@@ -403,14 +402,14 @@ def franges_export_excel(request, pk):
                 base_pairs.append((ins_id, ins))
 
         unit_key = rotation_unit_key(items)
-        ordered_pairs = order_pairs_for_mode(
+        ordered_pairs = order_rotation_cell_pairs(
             base_pairs,
-            mode_for_franja,
-            rotate_steps=effective_rotate_steps(
-                mode_for_franja,
-                rotation_unit_step_map.get((unit_key, franja.id), 0),
-            ),
-            seed_prefix=f"rot-export|{competicio.id}|{franja.id}|{estacio.id}|{unit_key}",
+            competicio_id=competicio.id,
+            franja_id=franja.id,
+            unit_key=unit_key,
+            mode=mode_for_franja,
+            rotate_step=rotation_unit_step_map.get((unit_key, franja.id), 0),
+            default_kind="g",
         )
         return [ins for _ins_id, ins in ordered_pairs]
 
@@ -438,14 +437,14 @@ def franges_export_excel(request, pk):
                 base_pairs.append((subject_id, subject))
 
         unit_key = rotation_unit_key(items)
-        ordered_pairs = order_pairs_for_mode(
+        ordered_pairs = order_rotation_cell_pairs(
             base_pairs,
-            mode_for_franja,
-            rotate_steps=effective_rotate_steps(
-                mode_for_franja,
-                rotation_unit_step_map.get((unit_key, franja.id), 0),
-            ),
-            seed_prefix=f"rot-export|team|{competicio.id}|{franja.id}|{estacio.id}|{unit_key}",
+            competicio_id=competicio.id,
+            franja_id=franja.id,
+            unit_key=unit_key,
+            mode=mode_for_franja,
+            rotate_step=rotation_unit_step_map.get((unit_key, franja.id), 0),
+            default_kind="s",
         )
         return [subject for _subject_id, subject in ordered_pairs]
 

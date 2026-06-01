@@ -105,8 +105,7 @@ class RotacioEstacio(models.Model):
             return self.nom_override.strip()
         if self.tipus == "descans":
             return "Descans"
-        # comp_aparell -> aparell -> nom
-        return getattr(getattr(self.comp_aparell, "aparell", None), "nom", "Aparell")
+        return getattr(self.comp_aparell, "display_nom", None) or getattr(getattr(self.comp_aparell, "aparell", None), "nom", "Aparell")
 
     def __str__(self):
         return f"{self.competicio} | {self.nom}"

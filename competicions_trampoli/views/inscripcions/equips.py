@@ -54,6 +54,9 @@ from ...services.inscripcions.queries import (
     _normalize_sort_filters,
     get_allowed_group_fields,
 )
+from ...services.shared.competition_groups import group_label
+from ...services.shared.partition_plans import normalize_creation_strategy
+from ...services.teams.creation_plans import buckets_to_apply, grouped_from_strategy
 
 
 def _norm_val(v):
@@ -249,6 +252,11 @@ def _build_team_name(fields, vals_pretty):
     return " | ".join(parts) if parts else "Equip automatic"
 
 
+def _team_name_for_plan_item(fields, item):
+    strategy_name = str((item or {}).get("strategy_name") or "").strip()
+    return strategy_name or _build_team_name(fields, (item or {}).get("vals_pretty") or [])
+
+
 def _append_preview_sample(container, value, limit=4):
     if not value:
         return
@@ -442,6 +450,9 @@ def _serialize_workspace_candidate(ins, context_code, current_team=None, base_as
         )
         native_team_id = getattr(native_team, "id", None)
         native_team_name = str(getattr(native_team, "nom", "") or "").strip()
+    group = getattr(ins, "grup_competicio", None)
+    group_num = int(group.display_num) if group is not None and getattr(group, "display_num", None) else getattr(ins, "grup", None)
+    group_label_value = group_label(group) if group is not None else (f"Grup {group_num}" if group_num else "Sense grup")
     return {
         "id": int(ins.id),
         "nom": str(getattr(ins, "nom_i_cognoms", "") or "").strip(),
@@ -453,6 +464,9 @@ def _serialize_workspace_candidate(ins, context_code, current_team=None, base_as
         "current_team_name": current_team_name,
         "native_team_id": native_team_id,
         "native_team_name": native_team_name,
+        "group_id": getattr(ins, "grup_competicio_id", None),
+        "group_num": group_num,
+        "group_label": group_label_value,
         "has_team_in_context": bool(current_team_id),
         "show_native_team_hint": not is_native_equip_context(context_code),
     }
@@ -476,7 +490,7 @@ def _build_workspace_candidate_queryset(competicio: Competicio, context_code: st
         .order_by()
     )
 
-    qs = _build_inscripcions_filtered_qs(competicio, clean_filters).annotate(
+    qs = _build_inscripcions_filtered_qs(competicio, clean_filters).select_related("grup_competicio").annotate(
         current_team_id=Subquery(current_assignment_qs.values("equip_id")[:1], output_field=IntegerField()),
         current_team_name=Subquery(current_assignment_qs.values("equip__nom")[:1], output_field=CharField()),
         native_team_id=Subquery(native_assignment_qs.values("equip_id")[:1], output_field=IntegerField()),
@@ -724,6 +738,68 @@ def equips_workspace(request, pk):
         )
         get_inscripcions_timing_collector(request).apply_to_response(response)
         return response
+    if operation == "apply_auto_context_selection":
+        fields = _validated_partition_fields(competicio, payload.get("fields"))
+        if not fields:
+            return HttpResponseBadRequest("No hi ha camps de particio valids")
+        selected_ids = payload.get("selected_ids") or []
+        if not isinstance(selected_ids, list):
+            selected_ids = []
+        current_selected_ids = [int(value) for value in selected_ids if str(value).isdigit()]
+        target = _resolve_workspace_target_records(
+            competicio,
+            context_code,
+            filters=filters,
+            selected_ids=current_selected_ids,
+            only_fields=["extra", *[f for f in fields if hasattr(Inscripcio, f)]],
+        )
+        grouped = _partition_records(target["records"], fields)
+        selected_grouped = buckets_to_apply(grouped, payload)
+        target_ids = []
+        seen_target_ids = set()
+        for item in selected_grouped.values():
+            for ins_id in item.get("ids") or []:
+                clean_id = int(ins_id)
+                if clean_id in seen_target_ids:
+                    continue
+                seen_target_ids.add(clean_id)
+                target_ids.append(clean_id)
+
+        selection_mode = str(payload.get("selection_mode") or "set").strip().lower()
+        if selection_mode not in {"set", "add", "remove"}:
+            selection_mode = "set"
+        current_set = set(current_selected_ids)
+        if selection_mode == "set":
+            updated_selected_ids = list(target_ids)
+        elif selection_mode == "remove":
+            target_set = set(target_ids)
+            updated_selected_ids = [ins_id for ins_id in current_selected_ids if ins_id not in target_set]
+        else:
+            updated_selected_ids = list(current_selected_ids)
+            for ins_id in target_ids:
+                if ins_id not in current_set:
+                    updated_selected_ids.append(ins_id)
+                    current_set.add(ins_id)
+
+        response = JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "operation": "apply_auto_context_selection",
+                    "context_code": context_code,
+                    "target_ids": target_ids,
+                    "target_ids_count": len(target_ids),
+                    "selected_ids": updated_selected_ids,
+                    "selection_count": len(updated_selected_ids),
+                    "buckets_total": len(grouped),
+                    "buckets_applied": len(selected_grouped),
+                },
+                request,
+                competicio.id,
+            )
+        )
+        get_inscripcions_timing_collector(request).apply_to_response(response)
+        return response
     page = payload.get("page") or 1
     page_size = payload.get("page_size") or 40
     response = JsonResponse(_build_workspace_payload(competicio, context_code, filters=filters, page=page, page_size=page_size, request=request))
@@ -739,8 +815,9 @@ def equips_preview(request, pk):
     if payload is None:
         return HttpResponseBadRequest("JSON invalid")
 
+    strategy = normalize_creation_strategy(payload.get("strategy"))
     fields = _validated_partition_fields(competicio, payload.get("fields"))
-    if not fields:
+    if strategy == "per_bucket" and not fields:
         return HttpResponseBadRequest("No hi ha camps de particio valids")
     context_code = _payload_context_code(payload)
     _code, _ctx, err = _get_context_or_400(competicio, context_code)
@@ -763,10 +840,29 @@ def equips_preview(request, pk):
         only_fields=["extra", *builtin_fields],
     )
     records = list(target["records"])
-    records, grouped, applied_bucket_keys = _filter_partition_records_by_bucket_keys(records, fields, bucket_keys)
+    existing_teams = list(get_equips_for_context(competicio, context_code))
+    grouped_all = _partition_records(records, fields)
+    payload_for_plan = {
+        **payload,
+        "bucket_keys": bucket_keys,
+    }
+    try:
+        grouped, plan_meta = grouped_from_strategy(
+            records,
+            grouped_all,
+            payload_for_plan,
+            existing_names=[str(e.nom or "").strip() for e in existing_teams],
+        )
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    planned_ids = {
+        int(ins_id)
+        for item in grouped.values()
+        for ins_id in (item.get("ids") or [])
+    }
+    records = [ins for ins in records if int(ins.id) in planned_ids]
     record_map = OrderedDict((ins.id, ins) for ins in records)
     existing_assignments = get_contextual_assignment_map(competicio, records, context_code)
-    existing_teams = list(get_equips_for_context(competicio, context_code))
     existing_team_by_id = {e.id: e for e in existing_teams}
     existing_team_by_name = {str(e.nom or "").strip(): e for e in existing_teams}
     source_impact = defaultdict(
@@ -794,7 +890,7 @@ def equips_preview(request, pk):
 
     preview = []
     for item in grouped.values():
-        target_name = _build_team_name(fields, item["vals_pretty"])
+        target_name = _team_name_for_plan_item(fields, item)
         target_team = existing_team_by_name.get(target_name)
         target_team_id = getattr(target_team, "id", None)
         member_sample = {"items": [], "extra": 0}
@@ -852,7 +948,7 @@ def equips_preview(request, pk):
             {
                 "nom_suggerit": target_name,
                 "count": len(item["ids"]),
-                "values": item["vals_pretty"],
+                "values": item.get("vals_pretty") or [],
                 "member_samples": member_samples,
                 "member_samples_remaining": member_samples_remaining,
                 "existing_team_id": target_team_id,
@@ -939,6 +1035,8 @@ def equips_preview(request, pk):
         {
             "ok": True,
             "context_code": context_code,
+            "strategy": plan_meta.get("strategy"),
+            "preview_only": True,
             "fields": fields,
             "total_inscripcions": len(records),
             "total_equips": len(preview),
@@ -949,10 +1047,17 @@ def equips_preview(request, pk):
                 replace_existing,
             ),
             "bucket_summary": {
-                "available_count": len(_partition_records(target["records"], fields)),
-                "selected_count": len(applied_bucket_keys),
-                "applied_count": len(applied_bucket_keys),
+                "available_count": len(grouped_all),
+                "selected_count": int(plan_meta.get("buckets_applied") or 0),
+                "applied_count": int(plan_meta.get("buckets_applied") or 0),
             },
+            "buckets_total": int(plan_meta.get("buckets_total") or 0),
+            "buckets_applied": int(plan_meta.get("buckets_applied") or 0),
+            "effective_bucket_count": int(plan_meta.get("buckets_total") or 0),
+            "used_fallback": bool(plan_meta.get("used_fallback")),
+            "fallback_reason": str(plan_meta.get("fallback_reason") or ""),
+            "size_min": int(plan_meta.get("size_min") or 0),
+            "size_max": int(plan_meta.get("size_max") or 0),
             "existing_summary": {
                 "teams_total": len(existing_teams),
                 "teams_with_members": teams_with_members,
@@ -973,8 +1078,9 @@ def equips_auto_create(request, pk):
     if payload is None:
         return HttpResponseBadRequest("JSON invalid")
 
+    strategy = normalize_creation_strategy(payload.get("strategy"))
     fields = _validated_partition_fields(competicio, payload.get("fields"))
-    if not fields:
+    if strategy == "per_bucket" and not fields:
         return HttpResponseBadRequest("No hi ha camps de particio valids")
     context_code = _payload_context_code(payload)
     context_code, context_obj, err = _get_context_or_400(competicio, context_code)
@@ -997,15 +1103,37 @@ def equips_auto_create(request, pk):
         only_fields=["extra", *builtin_fields],
     )
     records = list(target["records"])
-    records, grouped, _applied_bucket_keys = _filter_partition_records_by_bucket_keys(records, fields, bucket_keys)
+    existing_teams_for_plan = list(get_equips_for_context(competicio, context_code))
+    grouped_all = _partition_records(records, fields)
+    try:
+        grouped, plan_meta = grouped_from_strategy(
+            records,
+            grouped_all,
+            {
+                **payload,
+                "bucket_keys": bucket_keys,
+            },
+            existing_names=[str(e.nom or "").strip() for e in existing_teams_for_plan],
+        )
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    planned_ids = {
+        int(ins_id)
+        for item in grouped.values()
+        for ins_id in (item.get("ids") or [])
+    }
+    records = [ins for ins in records if int(ins.id) in planned_ids]
     if not records:
         return JsonResponse(
             with_inscripcions_history_payload(
                 {
                     "ok": True,
                     "context_code": context_code,
+                    "strategy": plan_meta.get("strategy"),
                     "created": 0,
                     "updated": 0,
+                    "buckets_total": int(plan_meta.get("buckets_total") or 0),
+                    "buckets_applied": int(plan_meta.get("buckets_applied") or 0),
                     "equips": [],
                     "contexts": _serialize_contexts(competicio),
                 },
@@ -1019,8 +1147,9 @@ def equips_auto_create(request, pk):
     created = 0
     existing_assignments = get_contextual_assignment_map(competicio, records, context_code)
 
-    for g in grouped.values():
-        name = _build_team_name(fields, g["vals_pretty"])
+    for key, g in grouped.items():
+        name = _team_name_for_plan_item(fields, g)
+        criteri_mode = "partition" if str(plan_meta.get("strategy") or "per_bucket") == "per_bucket" else "strategy"
         equip, was_created = Equip.objects.get_or_create(
             competicio=competicio,
             context=context_obj,
@@ -1028,7 +1157,8 @@ def equips_auto_create(request, pk):
             defaults={
                 "origen": Equip.Origen.AUTO,
                 "criteri": {
-                    "mode": "partition",
+                    "mode": criteri_mode,
+                    "strategy": plan_meta.get("strategy"),
                     "fields": fields,
                     "values": g["vals_norm"],
                 },
@@ -1037,45 +1167,48 @@ def equips_auto_create(request, pk):
 
         if was_created:
             created += 1
-        team_by_key[json.dumps(g["vals_norm"], ensure_ascii=False)] = equip.id
+        team_by_key[key] = equip.id
 
     creates = []
     updates = []
-    for ins in records:
-        vals_norm = [_norm_val(_ins_value(ins, f)) for f in fields]
-        key = json.dumps(vals_norm, ensure_ascii=False)
+    record_map = {int(ins.id): ins for ins in records}
+    for key, item in grouped.items():
         new_team_id = team_by_key.get(key)
         if not new_team_id:
             continue
-
-        current_row = existing_assignments.get(ins.id)
-        current_team_id = getattr(current_row, "equip_id", None)
-        if not replace_existing and current_team_id not in (None, new_team_id):
-            continue
-        if current_team_id == new_team_id:
-            continue
-
         criteri = {
-            "mode": "partition",
+            "mode": "partition" if str(plan_meta.get("strategy") or "per_bucket") == "per_bucket" else "strategy",
+            "strategy": plan_meta.get("strategy"),
             "fields": fields,
-            "values": vals_norm,
+            "values": item.get("vals_norm") or [],
         }
-        if current_row is None:
-            creates.append(
-                InscripcioEquipAssignacio(
-                    competicio=competicio,
-                    context=context_obj,
-                    inscripcio=ins,
-                    equip_id=new_team_id,
-                    origen=InscripcioEquipAssignacio.Origen.AUTO,
-                    criteri=criteri,
+        for ins_id in item.get("ids") or []:
+            ins = record_map.get(int(ins_id))
+            if ins is None:
+                continue
+            current_row = existing_assignments.get(ins.id)
+            current_team_id = getattr(current_row, "equip_id", None)
+            if not replace_existing and current_team_id not in (None, new_team_id):
+                continue
+            if current_team_id == new_team_id:
+                continue
+
+            if current_row is None:
+                creates.append(
+                    InscripcioEquipAssignacio(
+                        competicio=competicio,
+                        context=context_obj,
+                        inscripcio=ins,
+                        equip_id=new_team_id,
+                        origen=InscripcioEquipAssignacio.Origen.AUTO,
+                        criteri=criteri,
+                    )
                 )
-            )
-        else:
-            current_row.equip_id = new_team_id
-            current_row.origen = InscripcioEquipAssignacio.Origen.AUTO
-            current_row.criteri = criteri
-            updates.append(current_row)
+            else:
+                current_row.equip_id = new_team_id
+                current_row.origen = InscripcioEquipAssignacio.Origen.AUTO
+                current_row.criteri = criteri
+                updates.append(current_row)
     if creates:
         InscripcioEquipAssignacio.objects.bulk_create(creates, batch_size=500)
     if updates:
@@ -1096,8 +1229,13 @@ def equips_auto_create(request, pk):
             {
                 "ok": True,
                 "context_code": context_code,
+                "strategy": plan_meta.get("strategy"),
                 "created": created,
                 "updated": updated,
+                "buckets_total": int(plan_meta.get("buckets_total") or 0),
+                "buckets_applied": int(plan_meta.get("buckets_applied") or 0),
+                "size_min": int(plan_meta.get("size_min") or 0),
+                "size_max": int(plan_meta.get("size_max") or 0),
                 "equips": _serialize_equips(competicio, context_code),
                 "contexts": _serialize_contexts(competicio),
             },

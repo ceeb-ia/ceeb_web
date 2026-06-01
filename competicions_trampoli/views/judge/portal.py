@@ -31,9 +31,8 @@ from ...services.rotacions.rotacions_ordering import (
     assignacio_grups,
     assignacio_series,
     build_rotation_unit_step_map,
-    effective_rotate_steps,
     get_rotacions_order_modes,
-    order_pairs_for_mode,
+    order_rotation_cell_pairs,
     rotation_unit_key,
     rotation_unit_label,
     unique_ordered,
@@ -613,17 +612,16 @@ def judge_portal(request, token, assignment_id=None):
             group_items.extend(grouped.get(member_key, []))
         base_pairs = [(item["subject_id"], item) for item in group_items]
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
-        rotate_steps = effective_rotate_steps(
-            mode_for_group,
-            rotation_step_map.get((group_id, fid), 0) if fid else 0,
-        )
         seed_franja = fid if fid is not None else 0
 
-        ordered_pairs = order_pairs_for_mode(
+        ordered_pairs = order_rotation_cell_pairs(
             base_pairs,
-            mode_for_group,
-            rotate_steps=rotate_steps,
-            seed_prefix=f"judge|{competicio.id}|{seed_franja}|{comp_aparell.id}|{group_id}",
+            competicio_id=competicio.id,
+            franja_id=seed_franja,
+            unit_key=group_id,
+            mode=mode_for_group,
+            rotate_step=rotation_step_map.get((group_id, fid), 0) if fid else 0,
+            default_kind="g",
         )
         ordered_subjects = []
         for rank, (_subject_id, subject) in enumerate(ordered_pairs, start=1):

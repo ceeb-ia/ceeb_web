@@ -214,6 +214,9 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-team-workspace-board-mode"')
         self.assertContains(response, 'id="team-filter-q"')
         self.assertContains(response, 'id="btn-team-workspace-preview"')
+        self.assertContains(response, 'id="btn-team-preview-count"')
+        self.assertContains(response, 'id="btn-team-create-size"')
+        self.assertContains(response, 'id="btn-team-auto-buckets-set"')
         self.assertContains(response, 'id="team-auto-buckets-grid"')
         self.assertContains(response, 'id="btn-team-auto-buckets-all"')
         self.assertContains(response, 'id="btn-team-auto-buckets-none"')
@@ -1085,6 +1088,85 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(payload.get("total_inscripcions"), 1)
         self.assertEqual(payload.get("bucket_summary", {}).get("selected_count"), 1)
         self.assertEqual([row.get("nom_suggerit") for row in (payload.get("preview") or [])], ["Club C"])
+
+    def test_equips_preview_count_strategy_uses_selected_ids_without_partition_fields(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_preview", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "strategy": "count",
+                    "team_count": 2,
+                    "replace_existing": True,
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [self.ins_keep.id, self.ins_move.id, self.ins_new.id, self.ins_ctx.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("strategy"), "count")
+        self.assertEqual(payload.get("total_inscripcions"), 4)
+        self.assertEqual([row.get("count") for row in (payload.get("preview") or [])], [2, 2])
+        self.assertEqual([row.get("nom_suggerit") for row in (payload.get("preview") or [])], ["Equip 1", "Equip 2"])
+        self.assertEqual(payload.get("size_min"), 2)
+        self.assertEqual(payload.get("size_max"), 2)
+
+    def test_equips_auto_create_size_fixed_creates_balanced_context_assignments(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_auto_create", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "strategy": "size_fixed",
+                    "team_size": 2,
+                    "replace_existing": True,
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [self.ins_keep.id, self.ins_move.id, self.ins_new.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("strategy"), "size_fixed")
+        self.assertEqual(payload.get("created"), 2)
+        assignments = (
+            InscripcioEquipAssignacio.objects
+            .filter(competicio=self.comp, context=self.ctx, inscripcio_id__in=[self.ins_keep.id, self.ins_move.id, self.ins_new.id])
+            .select_related("equip")
+            .order_by("inscripcio__ordre_sortida")
+        )
+        self.assertEqual([row.equip.nom for row in assignments], ["Equip 1", "Equip 1", "Equip 2"])
+
+    def test_equips_workspace_apply_auto_context_selection_sets_bucket_members(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "operation": "apply_auto_context_selection",
+                    "fields": ["entitat"],
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [self.ins_keep.id, self.ins_move.id, self.ins_new.id, self.ins_ctx.id],
+                    "bucket_keys": [json.dumps(["Club C"], ensure_ascii=False)],
+                    "selection_mode": "set",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("target_ids"), [self.ins_new.id])
+        self.assertEqual(payload.get("selected_ids"), [self.ins_new.id])
+        self.assertEqual(payload.get("buckets_applied"), 1)
 
     def test_equips_auto_create_respects_column_filters(self):
         response = self.client.post(

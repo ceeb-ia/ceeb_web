@@ -1,0 +1,263 @@
+    #team-workspace-shell .groups-pane-card-actions .team-pane-head {
+      align-items: flex-start;
+    }
+
+    #team-workspace-shell .groups-workspace-row-prep {
+      grid-template-columns: minmax(0, 0.96fr) minmax(460px, 1.04fr);
+    }
+
+    #team-workspace-shell .groups-pane-card-actions {
+      min-width: 0;
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn {
+      min-height: 32px;
+      border-radius: 8px;
+      font-weight: 740;
+      letter-spacing: 0;
+      box-shadow: none;
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-primary {
+      border-color: var(--insc-base, #0f766e);
+      background: var(--insc-base, #0f766e);
+      color: #ffffff;
+      box-shadow: 0 6px 14px rgba(15, 118, 110, 0.14);
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-primary:hover,
+    #team-workspace-shell .groups-pane-card-actions .btn-primary:focus {
+      border-color: var(--insc-text, #134e4a);
+      background: var(--insc-text, #134e4a);
+      color: #ffffff;
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-primary,
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-secondary {
+      border-color: var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-primary:hover,
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-primary:focus,
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-secondary:hover,
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-secondary:focus {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-warning {
+      border-color: #0e7490;
+      background: #ffffff;
+      color: #0e7490;
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-warning:hover,
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-warning:focus {
+      border-color: #155e75;
+      background: #ecfeff;
+      color: #155e75;
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-danger {
+      border-color: #fecaca;
+      background: #ffffff;
+      color: #b91c1c;
+    }
+
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-danger:hover,
+    #team-workspace-shell .groups-pane-card-actions .btn-outline-danger:focus {
+      border-color: #ef4444;
+      background: #fef2f2;
+      color: #991b1b;
+    }
+
+    #team-workspace-shell .team-direct-context-note {
+      padding-bottom: 2px;
+    }
+
+    #team-workspace-shell .team-direct-secondary-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #team-workspace-shell .team-direct-secondary-actions .btn {
+      min-width: 0;
+      padding-right: 0.5rem;
+      padding-left: 0.5rem;
+      overflow-wrap: anywhere;
+      white-space: normal;
+      line-height: 1.15;
+    }
+
+    #team-workspace-shell .groups-strategy-actions .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #team-workspace-shell .team-auto-context-fold #btn-team-auto-buckets-toggle {
+      align-self: flex-start;
+      border-color: var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      font-weight: 760;
+    }
+
+    #team-workspace-shell .team-auto-context-fold #btn-team-auto-buckets-toggle:hover,
+    #team-workspace-shell .team-auto-context-fold #btn-team-auto-buckets-toggle:focus {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+    }
+
+    #team-workspace-shell #team-auto-buckets-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--insc-soft-border, #b8eee7);
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    }
+
+    #team-workspace-shell #team-auto-buckets-panel.d-none {
+      display: none !important;
+    }
+
+    #team-workspace-shell .team-bucket-fields-card {
+      min-height: 0;
+      box-shadow: none;
+    }
+
+    #team-workspace-shell .team-field-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    #team-workspace-shell .team-field-chips .group-chip {
+      border-color: var(--insc-soft-border, #b8eee7);
+      color: #334155;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    #team-workspace-shell .team-field-chips .group-chip:has(input:checked) {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+      box-shadow: inset 3px 0 0 var(--insc-base, #0f766e);
+    }
+
+    #team-workspace-shell .team-auto-replace-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #334155;
+      font-weight: 700;
+    }
+
+    #team-workspace-shell .team-auto-replace-option input {
+      accent-color: var(--insc-base, #0f766e);
+    }
+
+    #team-workspace-shell .team-auto-buckets-filter-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.3fr) repeat(2, minmax(128px, 0.75fr));
+      gap: 8px;
+      align-items: end;
+    }
+
+    #team-workspace-shell .team-auto-buckets-filter-grid .form-control {
+      border-color: var(--insc-soft-border, #b8eee7);
+    }
+
+    #team-workspace-shell .team-auto-buckets-filter-grid .form-control:focus {
+      border-color: var(--insc-base, #0f766e);
+      box-shadow: 0 0 0 0.14rem rgba(15, 118, 110, 0.14);
+    }
+
+    #team-workspace-shell .team-auto-buckets-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+      max-height: min(330px, 38vh);
+      overflow: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+    }
+
+    #team-workspace-shell .team-auto-buckets-grid.d-none {
+      display: none !important;
+    }
+
+    #team-workspace-shell .team-auto-bucket-card {
+      border-color: var(--insc-soft-border, #b8eee7);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    #team-workspace-shell .team-auto-bucket-card.is-selected {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      box-shadow: inset 3px 0 0 var(--insc-base, #0f766e);
+    }
+
+    #team-workspace-shell .groups-auto-context-buckets-actions .btn {
+      border-color: var(--insc-soft-border, #b8eee7);
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      font-weight: 720;
+      white-space: normal;
+      line-height: 1.15;
+    }
+
+    #team-workspace-shell .groups-auto-context-buckets-actions .btn-primary {
+      border-color: var(--insc-base, #0f766e);
+      background: var(--insc-base, #0f766e);
+      color: #ffffff;
+      box-shadow: 0 6px 14px rgba(15, 118, 110, 0.14);
+    }
+
+    #team-workspace-shell .groups-auto-context-buckets-actions .btn:hover,
+    #team-workspace-shell .groups-auto-context-buckets-actions .btn:focus {
+      border-color: var(--insc-base, #0f766e);
+      background: #f0fdfa;
+      color: var(--insc-text, #134e4a);
+    }
+
+    #team-workspace-shell .groups-auto-context-buckets-actions .btn-primary:hover,
+    #team-workspace-shell .groups-auto-context-buckets-actions .btn-primary:focus {
+      border-color: var(--insc-text, #134e4a);
+      background: var(--insc-text, #134e4a);
+      color: #ffffff;
+    }
+
+    @media (max-width: 991.98px) {
+      #team-workspace-shell .groups-workspace-row-prep {
+        grid-template-columns: 1fr;
+      }
+
+      #team-workspace-shell .team-auto-buckets-filter-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #team-workspace-shell .groups-auto-context-buckets-actions {
+        width: 100%;
+      }
+
+      #team-workspace-shell .groups-auto-context-buckets-actions .btn {
+        flex: 1 1 auto;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      #team-workspace-shell .team-direct-secondary-actions {
+        grid-template-columns: 1fr;
+      }
+    }
