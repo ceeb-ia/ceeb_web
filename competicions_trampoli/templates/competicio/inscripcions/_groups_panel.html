@@ -3,7 +3,10 @@
 <section class="action-panel" id="panel-grups" data-panel-key="grups">
   <div class="action-panel-header">
     <div>
-      <p class="panel-title mb-0">Grups</p>
+      <div class="inscripcions-help-title">
+        <p class="panel-title mb-0">Grups</p>
+        <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_workspace" aria-label="Ajuda sobre el gestor de grups" title="Ajuda sobre el gestor de grups">?</button>
+      </div>
     </div>
     <div class="tab-select-card-tools">
       <button
@@ -100,7 +103,10 @@
                         <div class="small text-muted">Ajusta filtres, cerca i revisa les candidates abans de construir la seleccio activa.</div>
                       </div>
                     </div>
-                    <span class="badge badge-light border" id="groups-candidates-count-badge">0 candidates</span>
+                    <div class="inscripcions-help-title">
+                      <span class="badge badge-light border" id="groups-candidates-count-badge">0 candidates</span>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_universe" aria-label="Ajuda sobre l'univers de candidates" title="Ajuda sobre l'univers de candidates">?</button>
+                    </div>
                   </div>
 
                   <div class="groups-universe-filterbar">
@@ -235,6 +241,7 @@
                         <div class="small text-muted">Operacions directes i estratègies de creació sobre la mateixa selecció activa.</div>
                       </div>
                     </div>
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_selection_actions" aria-label="Ajuda sobre accions de grups" title="Ajuda sobre accions de grups">?</button>
                   </div>
 
                   <div class="groups-action-section">
@@ -265,6 +272,7 @@
                         <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
                         <div class="fw-semibold small text-uppercase text-muted">Estratègies de creacio</div>
                       </div>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_creation_strategies" aria-label="Ajuda sobre estrategies de creacio" title="Ajuda sobre estrategies de creacio">?</button>
                     </div>
 
                     <div class="groups-strategy-list mt-2">
@@ -355,6 +363,7 @@
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-auto-context-toggle" aria-expanded="false">
                         Veure estratègies de creació massiva
                       </button>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_buckets" aria-label="Ajuda sobre creacio per buckets" title="Ajuda sobre creacio per buckets">?</button>
                       <div class="groups-auto-context-panel d-none" id="groups-auto-context-panel">
                         <div class="groups-auto-context-meta">
                           <div class="groups-auto-context-meta-item">
@@ -487,11 +496,13 @@
                     </div>
                   </div>
                   <div class="groups-existing-head-actions">
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_board" aria-label="Ajuda sobre grups actuals" title="Ajuda sobre grups actuals">?</button>
                     <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
                     <details class="groups-existing-actions-menu">
                       <summary class="groups-existing-actions-trigger" aria-label="Accions de grups">...</summary>
                       <div class="groups-existing-actions-popover">
                         <button type="button" class="groups-existing-action-item" id="btn-groups-bulk-order" {% if not can_edit_inscripcions %}disabled{% endif %}>Reordenar ordre de competicio</button>
+                        <button type="button" class="groups-existing-action-item" data-avatar-topic="groups_order" aria-label="Ajuda sobre ordre de competicio">Ajuda ordre de competicio</button>
                         <button type="button" class="groups-existing-action-item groups-existing-action-danger" id="btn-groups-delete-empty" data-group-action="delete-empty">Desactivar grups buits</button>
                         <button type="button" class="groups-existing-action-item groups-existing-action-danger-strong" id="btn-groups-delete-all" data-group-action="delete-all">Esborrar tots els no programats</button>
                       </div>
@@ -661,7 +672,10 @@
                       <div class="small text-muted">Selecciona un grup per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
                     </div>
                   </div>
-                  <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
+                  <div class="inscripcions-help-title">
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_inspector" aria-label="Ajuda sobre l'inspector lateral" title="Ajuda sobre l'inspector lateral">?</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
+                  </div>
                 </div>
                 <div class="groups-right-pane-tabs" role="tablist" aria-label="Inspector de grups">
                   <button

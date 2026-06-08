@@ -219,6 +219,9 @@
     {% endif %}
     {% if has_competition_dock and not hide_base_chrome %}
     {% include "competicio/_competition_dock.html" %}
+    {% if competition_dock_avatar_messages and not avatar_messages %}
+    {% include "components/avatar_helper.html" with avatar_messages=competition_dock_avatar_messages avatar_initial_topic=competition_dock_avatar_initial_topic position="left" state="closed" %}
+    {% endif %}
     {% endif %}
 
     <!-- Scripts -->

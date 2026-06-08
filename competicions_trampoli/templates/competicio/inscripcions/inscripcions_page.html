@@ -16,6 +16,7 @@
   {{ inscripcions_page_boot|json_script:"inscripcions-page-boot-data" }}
 
   <div class="container-fluid mt-4">
+    {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
     {% include "competicio/inscripcions/_header.html" %}
     {% include "competicio/inscripcions/_toolbar.html" %}
     {% include "competicio/inscripcions/_modals.html" %}

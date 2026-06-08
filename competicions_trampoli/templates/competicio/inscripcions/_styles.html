@@ -678,6 +678,9 @@
     body.group-buckets-modal-open{
       overflow:hidden;
     }
+    body.group-buckets-modal-open .avatar-helper{
+      z-index:4000;
+    }
     .group-preview-panel{
       margin-top:16px;
       padding:14px 16px;
@@ -4302,12 +4305,55 @@
     }
 
     .inscripcions-page-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
       margin: 0;
       color: var(--insc-text);
       font-size: clamp(1.9rem, 3vw, 2.45rem);
       font-weight: 800;
       line-height: 1.05;
       letter-spacing: 0;
+    }
+
+    .inscripcions-help-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .inscripcions-help-title .panel-title,
+    .inscripcions-help-title .actions-shell-title {
+      margin-bottom: 0;
+    }
+
+    .inscripcions-context-help {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid rgba(15, 118, 110, 0.24);
+      border-radius: 50%;
+      background: #ffffff;
+      color: var(--insc-base, #0f766e);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .inscripcions-context-help:hover,
+    .inscripcions-context-help:focus {
+      border-color: rgba(15, 118, 110, 0.42);
+      background: #ecfdf5;
+      color: #0f5f59;
+      outline: none;
     }
 
     .inscripcions-context-line {

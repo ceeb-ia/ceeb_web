@@ -1,86 +1,209 @@
-AVATAR_MESSAGES = {
-  "teams_workspace": {
-    "id": "teams_workspace",
-    "avatar": "avatar/explaining/explaining_2.png",
-    "variant": "info",
-    "steps": [
-      {
-        "text": "Aquest és l’espai de treball d’Equips. Aquí pots crear i gestionar equips a partir de les inscripcions de la competició."
-      },
-      {
-        "text": "El workspace es divideix en 4 parts: l’univers de candidats, les accions sobre la selecció, els equips actuals i el detall amb previsualització."
-      },
-      {
-        "text": "A l’Univers de candidats veuràs totes les inscripcions disponibles. Pots cercar-les amb la barra de cerca i aplicar filtres per treballar només amb les que t’interessin."
-      },
-      {
-        "text": "Amb el botó Afegir les inscripcions filtrades, passaràs aquests candidats a la selecció. Amb Netejar, buidaràs completament la selecció."
-      },
-      {
-        "text": "La selecció és el conjunt d’inscripcions sobre el qual s’aplicaran les accions de creació d’equips."
-      },
-      {
-        "text": "En aquest mateix apartat també pots escollir el context de treball. Els equips que creïs viuran dins d’aquest context."
-      },
-      {
-        "text": "Des de Gestionar context pots indicar en quins aparells d’equip de la competició aquest equip actuarà com a unitat competitiva."
-      },
-      {
-        "text": "A Accions sobre la selecció pots crear nous equips dins del context actual."
-      },
-      {
-        "text": "Les estratègies de creació et permeten generar equips ràpidament: pots crear un nombre concret d’equips, equips d’una mida determinada o equips equilibrats dins d’una forquilla."
-      },
-      {
-        "text": "Abans de confirmar la creació, pots previsualitzar el resultat per revisar com quedarien els equips."
-      },
-      {
-        "text": "També tens la creació massiva per buckets, que permet dividir la selecció segons valors de columnes importades de l’Excel."
-      },
-      {
-        "text": "Quan fas servir buckets, IA Score separa les inscripcions en grups segons els valors diferents de les columnnes seleccionades."
-      },
-      {
-        "text": "A Equips actuals trobaràs el llistat d’equips ja creats dins del context. Pots cercar-los i filtrar-los per localitzar ràpidament els que necessitis."
-      },
-      {
-        "text": "Finalment, a Detall i previsualització podràs veure els membres de l’equip seleccionat, aplicar accions d’edició i revisar previsualitzacions abans de confirmar canvis."
-      }
-    ],
-    "actions": []
-  }
-}
+EXPLAINING_AVATARS = [
+    "avatar/explaining/explaining_2.png",
+    "avatar/explaining/explaining_3.png",
+    "avatar/explaining/explaining_4.png",
+    "avatar/explaining/explaining_5.png",
+]
 
 
-#CONTEXT
 AVATAR_MESSAGES = {
-  "teams_workspace_context": {
-    "id": "teams_workspace_context",
-    "avatar": "avatar/explaining/explaining_2.png",
-    "variant": "info",
-    "steps": [
-    {
-    "text": "Un context és l’espai on IA Score interpreta quins equips existeixen i per a què serveixen dins de la competició."
+    "teams_workspace": {
+        "id": "teams_workspace",
+        "title": "Gestor d'equips",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Aquest gestor serveix per crear i revisar equips a partir de les inscripcions de la competicio."
+            },
+            {
+                "text": "Els equips sempre viuen dins d'un context. El context decideix per a que serveixen aquells equips i quines inscripcions poden formar-ne part."
+            },
+            {
+                "text": "El workspace es divideix en zones: context, univers de candidates, accions sobre la seleccio, equips actuals i inspector lateral."
+            },
+        ],
+        "actions": [],
     },
-    {
-    "text": "Dins d’un mateix context, una inscripció només pot formar part d’un equip. Això evita contradiccions quan IA Score ha de calcular resultats o organitzar la participació."
+    "teams_workspace_context": {
+        "id": "teams_workspace_context",
+        "title": "Context d'equips",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Un context es l'espai on IA Score interpreta quins equips existeixen i per a que serveixen dins de la competicio."
+            },
+            {
+                "text": "Dins d'un mateix context, una inscripcio nomes pot formar part d'un equip. Aixo evita contradiccions quan es calculen resultats o participacions."
+            },
+            {
+                "text": "Si una mateixa inscripcio ha de formar part d'equips diferents, crea contextos diferents."
+            },
+            {
+                "text": "Un context pot servir per agrupar resultats individuals o per fer que un conjunt d'inscripcions competeixi com una sola unitat."
+            },
+        ],
+        "actions": [],
     },
-    {
-    "text": "Si una mateixa inscripció ha de formar part d’equips diferents, cal crear contextos diferents. Precisament per això existeixen els contextos."
+    "teams_context_sources": {
+        "id": "teams_context_sources",
+        "title": "Aparells d'equip del context",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Aquesta zona indica en quins aparells d'equip el context actua com a unitat competitiva."
+            },
+            {
+                "text": "Quan un aparell queda vinculat al context, IA Score pot tractar l'equip com el participant real d'aquell aparell."
+            },
+            {
+                "text": "Desa els aparells del context quan vulguis que aquesta configuracio quedi disponible per a la resta del flux competitiu."
+            },
+        ],
+        "actions": [],
     },
-    {
-    "text": "Per exemple, una inscripció podria formar part d’un equip per a una classificació conjunta, i d’un altre equip diferent per competir en un aparell d’equip."
+    "teams_universe": {
+        "id": "teams_universe",
+        "title": "Univers de candidates",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "L'univers mostra les inscripcions disponibles per preparar equips dins del context actiu."
+            },
+            {
+                "text": "Pots cercar per nom, document o entitat i combinar filtres com categoria, subcategoria, entitat, estat o equip actual."
+            },
+            {
+                "text": "El filtre d'estat diferencia les inscripcions que ja tenen equip en aquest context de les que encara no en tenen."
+            },
+            {
+                "text": "Amb Afegir passes les inscripcions filtrades a la seleccio activa. Amb Netejar buides aquesta seleccio."
+            },
+        ],
+        "actions": [],
     },
-    {
-    "text": "Els contextos poden servir per crear classificacions d’equip derivades de notes individuals, agrupant resultats de diverses inscripcions."
+    "teams_selection_actions": {
+        "id": "teams_selection_actions",
+        "title": "Accions sobre la seleccio",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "La seleccio activa es el conjunt d'inscripcions sobre el qual treballen les accions d'aquesta zona."
+            },
+            {
+                "text": "Pots crear un equip nou, assignar la seleccio a un equip existent o deixar-la sense equip dins del context actual."
+            },
+            {
+                "text": "Eliminar equip buit nomes te sentit quan l'equip seleccionat no te membres."
+            },
+        ],
+        "actions": [],
     },
-    {
-    "text": "També poden servir per definir un conjunt d’inscripcions que actuarà com una sola unitat competitiva en un aparell d’equip, com parelles, trios o conjunts."
+    "teams_creation_strategies": {
+        "id": "teams_creation_strategies",
+        "title": "Estrategies de creacio",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Les estrategies creen equips a partir de la seleccio activa sense haver de repartir les inscripcions manualment."
+            },
+            {
+                "text": "Pots crear un nombre concret d'equips, equips d'una mida determinada o equips equilibrats dins d'una forquilla."
+            },
+            {
+                "text": "Previsualitza abans de crear per revisar com quedaria el repartiment en el context actiu."
+            },
+        ],
+        "actions": [],
     },
-    {
-    "text": "Quan gestiones el context, pots indicar en quins aparells d’equip aquest conjunt competirà com a equip i no com a inscripcions individuals separades."
-    }
-    ],
-    "actions": []
-    }
+    "teams_buckets": {
+        "id": "teams_buckets",
+        "title": "Creacio per buckets",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Els buckets divideixen la seleccio activa en blocs segons els camps que triis."
+            },
+            {
+                "text": "Cada combinacio diferent de valors genera un bucket proposat, util quan les dades ja porten divisions o torns."
+            },
+            {
+                "text": "Pots activar buckets, substituir la seleccio, previsualitzar el resultat o crear equips directament per bucket."
+            },
+            {
+                "text": "L'opcio Reassignar equips existents permet que la creacio actualitzi assignacions previes del context."
+            },
+        ],
+        "actions": [],
+    },
+    "teams_board": {
+        "id": "teams_board",
+        "title": "Equips actuals",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Aquesta zona mostra els equips que existeixen dins del context actiu."
+            },
+            {
+                "text": "Pots cercar i filtrar per localitzar equips per nom, participants, entitat, categoria, subcategoria o estat."
+            },
+            {
+                "text": "Els equips amb membres i els equips buits es mostren separats per facilitar la revisio i la neteja."
+            },
+        ],
+        "actions": [],
+    },
+    "teams_destructive_actions": {
+        "id": "teams_destructive_actions",
+        "title": "Eliminacio d'equips",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "warning",
+        "steps": [
+            {
+                "text": "Aquest menu agrupa accions de neteja del context actiu."
+            },
+            {
+                "text": "Eliminar equips buits nomes treu equips sense membres."
+            },
+            {
+                "text": "Eliminar tots els equips es una accio mes forta: buida els equips del context i cal usar-la nomes quan vols reconstruir-los."
+            },
+        ],
+        "actions": [],
+    },
+    "teams_inspector": {
+        "id": "teams_inspector",
+        "title": "Inspector lateral",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "L'inspector mostra el detall de l'equip seleccionat sense perdre la vista general del board."
+            },
+            {
+                "text": "Al detall pots revisar membres, filtrar-los i aplicar accions d'edicio segons el context."
+            },
+            {
+                "text": "La pestanya Previsualitzacio mostra el resultat d'una estrategia o accio abans de confirmar-la."
+            },
+        ],
+        "actions": [],
+    },
 }

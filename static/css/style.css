@@ -154,6 +154,34 @@ body.competicions-app .competition-dock-label {
   white-space: normal;
 }
 
+body.competicions-app .competition-dock-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease, transform .14s ease, box-shadow .14s ease;
+}
+
+body.competicions-app .competition-dock-help:hover,
+body.competicions-app .competition-dock-help:focus {
+  border-color: rgba(37, 99, 235, 0.4);
+  background: #dbeafe;
+  color: #1e3a8a;
+  outline: none;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+}
+
 body.competicions-app .competition-dock-item--home,
 body.competicions-app .competition-dock-item--config {
   --dock-color: #334155;
@@ -217,6 +245,12 @@ body.competicions-app.has-competition-dock .inscripcions-back-to-top {
   body.competicions-app .competition-dock-label {
     max-width: 92px;
     font-size: 0.61rem;
+  }
+
+  body.competicions-app .competition-dock-help {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
   }
 
   body.competicions-app.has-competition-dock .inscripcions-back-to-top {

@@ -29,6 +29,9 @@ AVATAR_MESSAGES = {
             {
                 "text": "Això vol dir que els canvis que facis sobre l’aparell dins d’una competició no afectaran la configuració de l’aparell global."
             },
+            {
+                "text": "De la mateixa manera, tampoc afectaran els canvis que facis sobre l’aparell global a les competicions on ja s’ha acollit. Així pots tenir una base estable i alhora adaptar cada aparell a les necessitats de cada competició. "
+            },
         ],
         "actions": [
             {
@@ -107,7 +110,8 @@ AVATAR_MESSAGES = {
         "variant": "info",
         "steps": [
             {
-                "text": "La puntuació defineix quins camps valorarà el jutge i com es calcula el resultat de l’exercici."
+                "text": "La 'puntuació' dels aparells defineix quins camps valoraran els jutges i com es calculen els resultats dels exercicis.\n"
+                 "És l'element clau que permet a IA Score ser la millor opció per gestionar una gran diversitat de esports i disciplines."
             },
             {
                 "text": "Si un aparell apareix com a pendent de puntuació, encara pots crear-lo igualment, però hauràs de completar aquesta part abans d’utilitzar-lo plenament."

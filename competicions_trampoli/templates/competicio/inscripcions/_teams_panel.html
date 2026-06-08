@@ -3,7 +3,10 @@
 <section class="action-panel" id="panel-equips" data-panel-key="equips">
   <div class="action-panel-header">
     <div>
-      <p class="panel-title mb-0">Equips</p>
+      <div class="inscripcions-help-title">
+        <p class="panel-title mb-0">Equips</p>
+        <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_workspace" aria-label="Ajuda sobre el gestor d'equips" title="Ajuda sobre el gestor d'equips">?</button>
+      </div>
     </div>
     <div class="tab-select-card-tools">
       <button
@@ -88,7 +91,10 @@
                         <div class="small text-muted">Ajusta context, filtres i cerca abans de construir la seleccio activa.</div>
                       </div>
                     </div>
-                    <span class="badge badge-light border" id="team-candidates-count-badge">0 candidates</span>
+                    <div class="inscripcions-help-title">
+                      <span class="badge badge-light border" id="team-candidates-count-badge">0 candidates</span>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_universe" aria-label="Ajuda sobre l'univers de candidates d'equips" title="Ajuda sobre l'univers de candidates d'equips">?</button>
+                    </div>
                   </div>
 
                   <div class="team-context-strip">
@@ -97,6 +103,7 @@
                       <select id="team-workspace-context-select" class="form-control form-control-sm">
                         <option value="{{ team_context_selected_code }}" selected>{{ team_context_selected_label|default:team_context_selected_code }}</option>
                       </select>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_workspace_context" aria-label="Ajuda sobre el context d'equips" title="Ajuda sobre el context d'equips">?</button>
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-context-toggle" aria-expanded="false">
                         Gestionar context
                       </button>
@@ -121,6 +128,7 @@
                         <div>
                           <div class="team-workspace-eyebrow">Aparells d'equip en els que competeix el context</div>
                         </div>
+                        <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_context_sources" aria-label="Ajuda sobre aparells d'equip del context" title="Ajuda sobre aparells d'equip del context">?</button>
                       </div>
                       <div id="team-context-source-list" class="team-context-source-list"></div>
                       <div class="team-context-source-actions">
@@ -262,6 +270,7 @@
                         <div class="small text-muted">Operacions directes i estrategies de creacio sobre la seleccio activa del context.</div>
                       </div>
                     </div>
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_selection_actions" aria-label="Ajuda sobre accions d'equips" title="Ajuda sobre accions d'equips">?</button>
                   </div>
 
                   <div class="groups-action-section">
@@ -297,7 +306,10 @@
                         <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
                         <div class="fw-semibold small text-uppercase text-muted">Estrategies de creacio</div>
                       </div>
-                      <div class="small text-muted" id="team-workspace-selection-note">Aquestes accions treballaran sobre la seleccio activa del workspace.</div>
+                      <div class="inscripcions-help-title">
+                        <div class="small text-muted" id="team-workspace-selection-note">Aquestes accions treballaran sobre la seleccio activa del workspace.</div>
+                        <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_creation_strategies" aria-label="Ajuda sobre estrategies de creacio d'equips" title="Ajuda sobre estrategies de creacio d'equips">?</button>
+                      </div>
                     </div>
 
                     <div class="groups-strategy-list mt-2">
@@ -388,6 +400,7 @@
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-toggle" aria-expanded="false">
                         Veure creacio massiva per buckets
                       </button>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_buckets" aria-label="Ajuda sobre creacio d'equips per buckets" title="Ajuda sobre creacio d'equips per buckets">?</button>
                       <div class="groups-auto-context-panel d-none" id="team-auto-buckets-panel">
                         <div class="groups-auto-context-meta">
                           <div class="groups-auto-context-meta-item">
@@ -493,10 +506,12 @@
                     </div>
                   </div>
                   <div class="groups-existing-head-actions">
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_board" aria-label="Ajuda sobre equips actuals" title="Ajuda sobre equips actuals">?</button>
                     <span class="badge badge-light border" id="team-existing-count-badge">0 equips</span>
                     <details class="groups-existing-actions-menu team-existing-actions-menu">
                       <summary class="groups-existing-actions-trigger" aria-label="Accions d'equips">...</summary>
                       <div class="groups-existing-actions-popover">
+                        <button type="button" class="groups-existing-action-item" data-avatar-topic="teams_destructive_actions" aria-label="Ajuda sobre eliminacio d'equips">Ajuda eliminacio d'equips</button>
                         <button type="button" class="groups-existing-action-item groups-existing-action-danger" id="btn-team-workspace-delete-empty" data-delete-empty-url="{% url 'inscripcions_equips_delete_empty' competicio.id %}">
                           Eliminar equips buits
                         </button>
@@ -626,7 +641,10 @@
                       <div class="small text-muted">Selecciona un equip per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
                     </div>
                   </div>
-                  <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-team-preview-clear">Netejar</button>
+                  <div class="inscripcions-help-title">
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_inspector" aria-label="Ajuda sobre l'inspector lateral d'equips" title="Ajuda sobre l'inspector lateral d'equips">?</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-team-preview-clear">Netejar</button>
+                  </div>
                 </div>
                 <div class="team-right-pane-tabs groups-right-pane-tabs" role="tablist" aria-label="Inspector d'equips">
                   <button type="button" class="team-right-pane-tab groups-right-pane-tab" id="btn-team-right-tab-detail" data-team-right-tab="detail" aria-selected="false">

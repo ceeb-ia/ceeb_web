@@ -304,6 +304,17 @@ def _build_competition_dock(request, is_competicions_app):
     ]
 
 
+def _competition_dock_avatar_messages(show_help):
+    if not show_help:
+        return {}
+    if "competicions_trampoli" not in getattr(settings, "INSTALLED_APPS", ()):
+        return {}
+
+    from competicions_trampoli.services.avatar.competition.overview import AVATAR_MESSAGES
+
+    return AVATAR_MESSAGES
+
+
 def app_env(request):
     app_env = getattr(settings, "APP_ENV", "dev")
     internal_nav_apps = (
@@ -318,6 +329,11 @@ def app_env(request):
     if competition_active_section in {"", "home", "config"}:
         competition_active_section = "general" if is_competicions_app else ""
     competition_dock_items = _build_competition_dock(request, is_competicions_app)
+    competition_dock_help_topic = (
+        "competition_intro"
+        if competition_dock_items and _active_competicio_id(request) is not None
+        else ""
+    )
     competicions_font_config = _build_competicions_font_config(is_competicions_app)
     return {
         "APP_ENV": app_env,
@@ -331,5 +347,8 @@ def app_env(request):
         "competition_active_section": competition_active_section,
         "competition_dock_items": competition_dock_items,
         "has_competition_dock": bool(competition_dock_items),
+        "competition_dock_help_topic": competition_dock_help_topic,
+        "competition_dock_avatar_messages": _competition_dock_avatar_messages(bool(competition_dock_help_topic)),
+        "competition_dock_avatar_initial_topic": competition_dock_help_topic,
         **competicions_font_config,
     }

@@ -14,5 +14,15 @@
       <span class="competition-dock-label">{{ item.label }}</span>
     </a>
   {% endfor %}
+  {% if competition_dock_help_topic %}
+    <button
+      class="competition-dock-help"
+      type="button"
+      data-avatar-topic="{{ competition_dock_help_topic }}"
+      aria-label="Ajuda sobre el flux de la competicio"
+      title="Ajuda sobre el flux de la competicio">
+      ?
+    </button>
+  {% endif %}
 </nav>
 {% endif %}

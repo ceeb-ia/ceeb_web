@@ -1,73 +1,165 @@
+EXPLAINING_AVATARS = [
+    "avatar/explaining/explaining_2.png",
+    "avatar/explaining/explaining_3.png",
+    "avatar/explaining/explaining_4.png",
+    "avatar/explaining/explaining_5.png",
+]
+
+
 AVATAR_MESSAGES = {
-  "groups_workspace": {
-    "id": "groups_workspace",
-    "avatar": "avatar/explaining/explaining_2.png",
-    "variant": "info",
-    "steps": [
-      {
-        "text": "Aquest és l’espai de treball de Grups. Aquí pots organitzar les inscripcions de la competició en grups de treball."
-      },
-      {
-        "text": "Els grups serveixen per preparar l’organització competitiva de les fases preliminars dels aparells."
-      },
-      {
-        "text": "Quan després treballis a Rotacions, aquests grups t’ajudaran a establir el programa de competició: qui competeix, quan competeix i en quin aparell."
-      },
-      {
-        "text": "Si una inscripció forma part d’un grup però no participa en un aparell concret, simplement no apareixerà quan aquell grup estigui programat en aquell aparell."
-      },
-      {
-        "text": "Una inscripció només pot formar part d’un grup."
-      },
-      {
-        "text": "El workspace es divideix en 4 parts: l’univers de candidats, les accions sobre la selecció, els grups creats i el detall amb previsualització."
-      },
-      {
-        "text": "A l’Univers de candidats veuràs totes les inscripcions disponibles per formar grups."
-      },
-      {
-        "text": "Pots cercar inscripcions amb la barra de cerca i aplicar filtres per treballar només amb les candidates que t’interessin."
-      },
-      {
-        "text": "Amb el botó Afegir ,passaràs les inscripcions filtrades a la selecció. Amb Netejar, buidaràs completament la selecció."
-      },
-      {
-        "text": "La selecció és el conjunt d’inscripcions sobre el qual s’aplicaran les accions de creació de grups."
-      },
-      {
-        "text": "A Accions sobre la selecció pots crear nous grups a partir de les inscripcions seleccionades."
-      },
-      {
-        "text": "Les estratègies de creació et permeten generar grups ràpidament: pots crear un nombre concret de grups, grups d’una mida determinada o grups equilibrats dins d’una forquilla."
-      },
-      {
-        "text": "Abans de confirmar la creació, pots previsualitzar el resultat per revisar com quedarien els grups."
-      },
-      {
-        "text": "També pots utilitzar la creació massiva per buckets, que divideix la selecció segons valors de columnes importades de l’Excel."
-      },
-      {
-        "text": "Quan fas servir buckets, IA Score separa les inscripcions en blocs segons els valors diferents de les particions seleccionades."
-      },
-      {
-        "text": "A Grups creats trobaràs el llistat de grups que ja existeixen a la competició. Pots cercar-los i filtrar-los per localitzar ràpidament el grup que necessitis."
-      },
-      {
-        "text": "Cada grup té un ordre de competició propi. Aquest ordre defineix la seqüència interna amb què les seves inscripcions competiran als aparells."
-      },
-      {
-        "text": "Més endavant, a Rotacions, aquest ordre es podrà ajustar segons les necessitats del programa competitiu, però sempre partint de la base guardada al grup."
-      },
-      {
-        "text": "Si el llistat mostra les inscripcions en un ordre diferent de l’ordre de competició guardat, veuràs un avís d’Ordre no desat."
-      },
-      {
-        "text": "Aquest avís indica que l’ordre que estàs veient ara no coincideix amb l’ordre intern que IA Score té guardat per a aquell grup."
-      },
-      {
-        "text": "Finalment, a Detall i previsualització podràs veure les inscripcions del grup seleccionat, aplicar accions d’edició i revisar previsualitzacions abans de confirmar canvis."
-      }
-    ],
-    "actions": []
-  }
+    "groups_workspace": {
+        "id": "groups_workspace",
+        "title": "Gestor de grups",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Aquest gestor serveix per organitzar les inscripcions de la competicio en grups de treball."
+            },
+            {
+                "text": "Els grups preparen la base de l'organitzacio competitiva: despres, a Rotacions, ajuden a decidir qui competeix, quan competeix i en quin aparell."
+            },
+            {
+                "text": "Una inscripcio nomes pot formar part d'un grup. Si no participa en un aparell concret, no apareixera quan aquell grup estigui programat en aquell aparell."
+            },
+            {
+                "text": "El gestor es divideix en zones: univers de candidates, accions sobre la seleccio, grups actuals i inspector lateral."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_universe": {
+        "id": "groups_universe",
+        "title": "Univers de candidates",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "L'univers mostra les inscripcions disponibles per preparar grups."
+            },
+            {
+                "text": "Pots cercar per nom, document o entitat i combinar filtres com categoria, subcategoria, entitat, estat o grup actual."
+            },
+            {
+                "text": "Amb Afegir passes les inscripcions filtrades a la seleccio activa. Amb Netejar buides aquesta seleccio."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_selection_actions": {
+        "id": "groups_selection_actions",
+        "title": "Accions sobre la seleccio",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "La seleccio activa es el conjunt d'inscripcions sobre el qual treballen les accions d'aquesta zona."
+            },
+            {
+                "text": "Pots crear un grup nou amb la seleccio, enviar-la a un grup existent o deixar-la sense grup."
+            },
+            {
+                "text": "Aquestes accions afecten la seleccio actual del workspace, no necessariament tota la taula d'inscripcions."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_creation_strategies": {
+        "id": "groups_creation_strategies",
+        "title": "Estrategies de creacio",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Les estrategies creen grups a partir de la seleccio activa sense haver de repartir les inscripcions manualment."
+            },
+            {
+                "text": "Pots crear un nombre concret de grups, grups d'una mida determinada o grups equilibrats dins d'una forquilla."
+            },
+            {
+                "text": "Previsualitza abans de crear per revisar com quedaria el repartiment."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_buckets": {
+        "id": "groups_buckets",
+        "title": "Creacio per buckets",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Els buckets divideixen les inscripcions en blocs segons valors de camps disponibles, com columnes importades de l'Excel."
+            },
+            {
+                "text": "Cada combinacio diferent de valors genera un bloc proposat. Aixo es util quan les dades ja porten torns, categories o altres particions."
+            },
+            {
+                "text": "Pots substituir la seleccio amb els buckets triats, previsualitzar-los o crear grups directament per bloc."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_board": {
+        "id": "groups_board",
+        "title": "Grups actuals",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Aquesta zona mostra els grups que ja existeixen a la competicio."
+            },
+            {
+                "text": "Pots cercar i filtrar per localitzar grups per nom, participants, entitat, mida, estat o programa."
+            },
+            {
+                "text": "Els grups amb participants i els grups buits es mostren separats perque puguis revisar-los i netejar els que ja no necessites."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_order": {
+        "id": "groups_order",
+        "title": "Ordre de competicio",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "Cada grup pot tenir un ordre intern de competicio per als seus participants."
+            },
+            {
+                "text": "Aquest ordre serveix de base quan mes endavant programes la competicio a Rotacions."
+            },
+            {
+                "text": "Si veus un avis d'ordre no desat, vol dir que l'ordre que estas veient no coincideix amb l'ordre guardat per IA Score."
+            },
+        ],
+        "actions": [],
+    },
+    "groups_inspector": {
+        "id": "groups_inspector",
+        "title": "Inspector lateral",
+        "avatar": EXPLAINING_AVATARS[0],
+        "avatars": EXPLAINING_AVATARS,
+        "variant": "info",
+        "steps": [
+            {
+                "text": "L'inspector mostra el detall del grup seleccionat sense perdre la vista general del board."
+            },
+            {
+                "text": "Al detall pots revisar els membres, filtrar-los i aplicar accions d'edicio segons el que necessitis."
+            },
+            {
+                "text": "La pestanya Previsualitzacio mostra el resultat d'una accio abans de confirmar-la."
+            },
+        ],
+        "actions": [],
+    },
 }

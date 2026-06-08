@@ -575,6 +575,7 @@
     const modalSubtitle = document.getElementById('group-buckets-modal-subtitle');
     if (!backdrop || !modal || !modalBody || !modalTitle || !modalSubtitle) return;
 
+    const previousCardId = String(expandedModalState.cardId || getExpandedGroupCardId() || '').trim();
     restoreExpandedGroupCardToOrigin();
 
     let activeCard = null;
@@ -592,6 +593,16 @@
     }
 
     const visible = !!activeCard;
+    if (!visible && modal.contains(document.activeElement)) {
+      const restoreFocusTarget = previousCardId
+        ? document.querySelector(`.js-expand-tab-select[data-expand-target="${CSS.escape(previousCardId)}"]`)
+        : null;
+      if (restoreFocusTarget && typeof restoreFocusTarget.focus === 'function') {
+        restoreFocusTarget.focus({ preventScroll: true });
+      } else if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+    }
     backdrop.classList.toggle('is-visible', visible);
     backdrop.setAttribute('aria-hidden', visible ? 'false' : 'true');
     modal.classList.toggle('is-visible', visible);

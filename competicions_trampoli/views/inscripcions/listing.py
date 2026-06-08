@@ -37,6 +37,8 @@ from ...services.inscripcions.history import (
     with_inscripcions_history_payload,
 )
 from ...services.inscripcions.media_matching import normalize_media_matching_config
+from ...services.avatar.competition.overview import AVATAR_MESSAGES as COMPETITION_AVATAR_MESSAGES
+from ...services.avatar.inscripcions.messages import AVATAR_MESSAGES as INSCRIPCIONS_AVATAR_MESSAGES
 from ...services.inscripcions.queries import (
     _label_with_source,
     _normalize_schema_extra_code,
@@ -272,6 +274,8 @@ class InscripcionsListNewView(InscripcionsListView):
         requested_fragments = self._get_requested_fragments()
         requested_panel_key = str(self.request.GET.get("__panel_key") or "").strip()
         ctx["inscripcions_lazy_panels"] = not ("panel" in requested_fragments and requested_panel_key)
+        ctx["avatar_messages"] = {**COMPETITION_AVATAR_MESSAGES, **INSCRIPCIONS_AVATAR_MESSAGES}
+        ctx["avatar_initial_topic"] = "competition_inscriptions"
         materialized_records = list(ctx.get("_inscripcions_materialized_records") or [])
         can_reuse_materialized = bool(materialized_records) and not bool(ctx.get("is_paginated"))
         with inscripcions_timing_section(self.request, "listing.permissions_counts"):

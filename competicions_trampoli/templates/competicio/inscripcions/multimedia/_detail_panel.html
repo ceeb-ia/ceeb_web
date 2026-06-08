@@ -10,7 +10,10 @@
           <div class="small text-muted">Selecciona una assignacio per revisar fitxers i accions sense perdre el llistat.</div>
         </div>
       </div>
-      <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-media-detail-clear">Tancar</button>
+      <div class="inscripcions-help-title">
+        <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_detail" aria-label="Ajuda sobre el detall multimedia" title="Ajuda sobre el detall multimedia">?</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-media-detail-clear">Tancar</button>
+      </div>
     </div>
 
     <div class="groups-detail-empty media-detail-empty" id="media-detail-empty">
@@ -37,7 +40,10 @@
           <div class="fw-semibold"><strong>Fitxers assignats</strong></div>
           <div class="small text-muted" id="media-detail-files-note">Sense fitxers seleccionats.</div>
         </div>
-        <span class="badge badge-light border" id="media-detail-files-count">0 fitxers</span>
+        <div class="inscripcions-help-title">
+          <span class="badge badge-light border" id="media-detail-files-count">0 fitxers</span>
+          <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_assignment_actions" aria-label="Ajuda sobre accions dels fitxers assignats" title="Ajuda sobre accions dels fitxers assignats">?</button>
+        </div>
       </div>
 
       <div class="media-detail-files-list" id="media-detail-files-list"></div>
