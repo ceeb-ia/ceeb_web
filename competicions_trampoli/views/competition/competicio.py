@@ -10,6 +10,7 @@ from ceeb_web.access import user_has_any_global_group
 from ...access import GLOBAL_COMPETICIONS_GROUPS, user_has_competicio_capability
 from ...forms import CompeticioForm
 from ...models import Competicio, CompeticioMembership
+from ...services.avatar.home.messages import AVATAR_MESSAGES as HOME_AVATAR_MESSAGES
 
 
 class CompeticioDashboardMixin:
@@ -72,6 +73,8 @@ class CompeticioDashboardMixin:
         ctx["competition_status_counts"] = status_counts
         ctx["competition_total_participants"] = total_participants
         ctx["can_manage_global_competicions"] = user_has_any_global_group(user, GLOBAL_COMPETICIONS_GROUPS)
+        ctx["avatar_messages"] = HOME_AVATAR_MESSAGES
+        ctx["avatar_initial_topic"] = "welcome"
         return ctx
 
 

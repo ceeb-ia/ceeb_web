@@ -38,6 +38,12 @@
     gap: 10px;
   }
 
+  .apparatus-action-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .apparatus-action {
     --action-color: #1d4ed8;
     --action-bg: #ffffff;
@@ -85,8 +91,48 @@
     object-fit: contain;
   }
 
+  .apparatus-context-help {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #bfdbfe;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.07);
+  }
+
+  .apparatus-context-help:hover,
+  .apparatus-context-help:focus {
+    background: #ffffff;
+    color: #0b5bd3;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.14);
+  }
+
+  .apparatus-context-help--filters,
+  .apparatus-context-help--cards,
+  .apparatus-context-help--new-card,
+  .apparatus-context-help--summary {
+    position: absolute;
+    right: -8px;
+    top: -12px;
+    z-index: 2;
+  }
+
   .apparatus-catalog-heading {
     margin-bottom: 22px;
+  }
+
+  .apparatus-catalog-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   .apparatus-catalog-heading h1 {
@@ -114,6 +160,7 @@
   }
 
   .apparatus-summary-item {
+    position: relative;
     min-height: 78px;
     padding: 14px 16px;
     border: 1px solid rgba(219, 226, 239, 0.82);
@@ -140,6 +187,7 @@
   }
 
   .apparatus-filters {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(260px, 1.3fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr);
     gap: 16px;
@@ -201,6 +249,7 @@
   }
 
   .apparatus-card-grid {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: 16px;
@@ -217,6 +266,79 @@
     background: rgba(255, 255, 255, 0.9);
     box-shadow: 0 16px 34px rgba(15, 23, 42, 0.09);
     backdrop-filter: blur(12px);
+  }
+
+  .apparatus-new-card-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 258px;
+  }
+
+  .apparatus-new-card {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    min-height: 258px;
+    padding: 22px;
+    border: 1px dashed rgba(147, 197, 253, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #334155;
+    text-align: center;
+    text-decoration: none;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.07);
+    backdrop-filter: blur(12px);
+  }
+
+  .apparatus-new-card:hover,
+  .apparatus-new-card:focus {
+    color: #334155;
+    text-decoration: none;
+    border-color: #60a5fa;
+    box-shadow: 0 18px 38px rgba(37, 99, 235, 0.14);
+  }
+
+  .apparatus-new-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .apparatus-new-plus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 88px;
+    height: 88px;
+    margin-bottom: 18px;
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+  }
+
+  .apparatus-new-plus img {
+    display: block;
+    width: 88px;
+    height: 88px;
+    object-fit: contain;
+  }
+
+  .apparatus-new-card strong {
+    display: block;
+    color: #071633;
+    font-size: 1.16rem;
+    font-weight: 850;
+  }
+
+  .apparatus-new-description {
+    display: block;
+    max-width: 270px;
+    margin: 10px auto 0;
+    color: #64748b;
+    font-size: 0.92rem;
+    line-height: 1.45;
   }
 
   .apparatus-card-header {
@@ -370,10 +492,24 @@
       width: 100%;
     }
 
+    .apparatus-action-group {
+      width: 100%;
+    }
+
+    .apparatus-action-group .apparatus-action {
+      flex: 1 1 auto;
+    }
+
     .apparatus-summary,
     .apparatus-filters,
     .apparatus-card-grid {
       grid-template-columns: 1fr;
+    }
+
+    .apparatus-card,
+    .apparatus-new-card-shell,
+    .apparatus-new-card {
+      min-height: auto;
     }
   }
 
@@ -387,10 +523,25 @@
       height: 54px;
     }
 
+    .apparatus-catalog-title-row {
+      align-items: flex-start;
+    }
+
     .apparatus-action,
     .apparatus-card-actions .btn,
     .apparatus-card-actions button {
       width: 100%;
+    }
+
+    .apparatus-action-group .apparatus-action {
+      width: auto;
+    }
+
+    .apparatus-context-help--filters,
+    .apparatus-context-help--cards,
+    .apparatus-context-help--new-card,
+    .apparatus-context-help--summary {
+      right: 0;
     }
 
     .apparatus-card-header,
@@ -409,17 +560,14 @@
     <div class="apparatus-catalog-topbar">
       <img class="apparatus-catalog-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
 
-      <div class="apparatus-catalog-actions" aria-label="Accions globals">
-
-        <a class="apparatus-action apparatus-action--primary" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">
-          <img src="{% static 'dock/fases.png' %}" alt="">
-          <span>Crear aparell</span>
-        </a>
-      </div>
     </div>
 
     <div class="apparatus-catalog-heading">
-      <h1>Aparells globals</h1>
+      {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
+      <div class="apparatus-catalog-title-row">
+        <h1>Aparells globals</h1>
+        <button class="apparatus-context-help" type="button" data-avatar-topic="welcome" aria-label="Ajuda sobre aparells globals" title="Ajuda sobre aparells globals">?</button>
+      </div>
       <p>Cataleg reutilitzable per configurar fases, participacio i schemas de puntuacio dins les competicions.</p>
     </div>
 
@@ -439,10 +587,12 @@
       <div class="apparatus-summary-item">
         <span class="apparatus-summary-value">{{ aparell_catalog_stats.with_schema|default:0 }}</span>
         <span class="apparatus-summary-label">Amb puntuacio</span>
+        <button class="apparatus-context-help apparatus-context-help--summary" type="button" data-avatar-topic="scoring_schema" aria-label="Ajuda sobre la puntuació dels aparells" title="Ajuda sobre la puntuació dels aparells">?</button>
       </div>
     </div>
 
     <div class="apparatus-filters" aria-label="Filtres d'aparells">
+      <button class="apparatus-context-help apparatus-context-help--filters" type="button" data-avatar-topic="filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button>
       <label class="apparatus-filter-control">
         <span class="sr-only">Buscar aparell</span>
         <svg class="apparatus-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
@@ -484,6 +634,19 @@
     </div>
 
     <div class="apparatus-card-grid" id="apparatusCardGrid">
+      <button class="apparatus-context-help apparatus-context-help--cards" type="button" data-avatar-topic="apparatus_cards" aria-label="Ajuda sobre les targetes d'aparell" title="Ajuda sobre les targetes d'aparell">?</button>
+      <div class="apparatus-new-card-shell" data-static-card="true">
+        <button class="apparatus-context-help apparatus-context-help--new-card" type="button" data-avatar-topic="create_apparatus" aria-label="Ajuda per crear aparell" title="Ajuda per crear aparell">?</button>
+        <a class="apparatus-new-card" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}" data-avatar-action="create_apparatus">
+          <span class="apparatus-new-content">
+            <span class="apparatus-new-plus" aria-hidden="true">
+              <img src="{% static 'dock/fases.png' %}" alt="">
+            </span>
+            <strong>Crear aparell</strong>
+            <span class="apparatus-new-description">Afegeix un aparell global reutilitzable per preparar competicions.</span>
+          </span>
+        </a>
+      </div>
       {% for a in aparells %}
       <article
         class="apparatus-card"
@@ -529,6 +692,7 @@
         <div class="apparatus-card-actions">
           <a class="btn btn-outline-secondary" href="{% url 'aparell_update' a.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
           <a class="btn btn-outline-warning" href="{% url 'aparell_scoring_schema_update' a.id %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
+
           {% if a.competicio_usage_count %}
             <button class="btn btn-outline-danger" type="button" disabled title="Aparell en us a competicions">Eliminar</button>
           {% else %}

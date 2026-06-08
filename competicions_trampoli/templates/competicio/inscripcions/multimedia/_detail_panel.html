@@ -1,0 +1,46 @@
+{% load static %}
+
+<section class="team-workspace-pane media-pane media-pane-detail">
+  <div class="team-pane-card groups-pane-card groups-pane-card-preview media-detail-card" id="media-detail-card">
+    <div class="team-pane-head groups-inspector-head media-detail-head">
+      <div class="groups-title-with-logo">
+        <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+        <div>
+          <div class="fw-semibold">4. Detall</div>
+          <div class="small text-muted">Selecciona una assignacio per revisar fitxers i accions sense perdre el llistat.</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-media-detail-clear">Tancar</button>
+    </div>
+
+    <div class="groups-detail-empty media-detail-empty" id="media-detail-empty">
+      Selecciona una assignacio del llistat per veure'n el detall.
+    </div>
+
+    <div class="groups-detail-panel media-detail-panel d-none" id="media-detail-panel">
+      <div class="groups-detail-head media-detail-panel-head">
+        <div class="groups-detail-head-main">
+          <div class="groups-detail-title-row">
+            <div class="groups-detail-title" id="media-detail-title">Inscripcio</div>
+          </div>
+          <div class="small text-muted" id="media-detail-meta">Sense dades</div>
+        </div>
+        <div class="groups-detail-actions media-detail-actions" id="media-detail-actions"></div>
+      </div>
+
+      <div class="groups-detail-summary media-detail-summary" id="media-detail-summary"></div>
+
+      <div class="media-detail-upload d-none" id="media-detail-upload"></div>
+
+      <div class="media-detail-files-head">
+        <div>
+          <div class="fw-semibold"><strong>Fitxers assignats</strong></div>
+          <div class="small text-muted" id="media-detail-files-note">Sense fitxers seleccionats.</div>
+        </div>
+        <span class="badge badge-light border" id="media-detail-files-count">0 fitxers</span>
+      </div>
+
+      <div class="media-detail-files-list" id="media-detail-files-list"></div>
+    </div>
+  </div>
+</section>

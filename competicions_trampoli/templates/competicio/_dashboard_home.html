@@ -42,6 +42,12 @@
     gap: 10px;
   }
 
+  .competition-home-action-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .competition-home-action {
     --action-color: #1d4ed8;
     --action-bg: #ffffff;
@@ -97,9 +103,48 @@
     line-height: 1;
   }
 
+  .competition-context-help {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #bfdbfe;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.07);
+  }
+
+  .competition-context-help:hover,
+  .competition-context-help:focus {
+    background: #ffffff;
+    color: #0b5bd3;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.14);
+  }
+
+  .competition-context-help--filters,
+  .competition-context-help--cards,
+  .competition-context-help--new-card {
+    position: absolute;
+    right: -8px;
+    top: -12px;
+    z-index: 2;
+  }
+
   .competition-home-heading {
     display: flow-root;
     margin-bottom: 22px;
+  }
+
+  .competition-home-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   .competition-home-heading h1 {
@@ -152,6 +197,7 @@
   }
 
   .competition-home-filters {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(260px, 1.05fr) minmax(180px, 1fr) minmax(180px, 1fr);
     gap: 16px;
@@ -213,6 +259,7 @@
   }
 
   .competition-card-grid {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(410px, 1fr));
     gap: 18px;
@@ -230,6 +277,12 @@
     backdrop-filter: blur(12px);
   }
 
+  .competition-new-card-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 304px;
+  }
+
   .competition-home-card {
     display: flex;
     flex-direction: column;
@@ -239,6 +292,8 @@
   .competition-new-card {
     display: grid;
     place-items: center;
+    width: 100%;
+    height: 100%;
     padding: 24px;
     border-style: dashed;
     border-color: rgba(147, 197, 253, 0.9);
@@ -569,6 +624,14 @@
       width: 100%;
     }
 
+    .competition-home-action-group {
+      width: 100%;
+    }
+
+    .competition-home-action-group .competition-home-action {
+      flex: 1 1 auto;
+    }
+
     .competition-home-summary,
     .competition-home-filters,
     .competition-card-grid {
@@ -576,6 +639,7 @@
     }
 
     .competition-home-card,
+    .competition-new-card-shell,
     .competition-new-card {
       min-height: auto;
     }
@@ -591,9 +655,23 @@
       height: 54px;
     }
 
+    .competition-home-title-row {
+      align-items: flex-start;
+    }
+
     .competition-home-action {
       width: 100%;
       justify-content: center;
+    }
+
+    .competition-home-action-group .competition-home-action {
+      width: auto;
+    }
+
+    .competition-context-help--filters,
+    .competition-context-help--cards,
+    .competition-context-help--new-card {
+      right: 0;
     }
 
     .competition-card-header {
@@ -630,27 +708,14 @@
         <img class="competition-home-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
       </div>
 
-      {% if can_manage_global_competicions %}
-      <div class="competition-home-actions" aria-label="Accions globals">
-        <a class="competition-home-action" href="{% url 'aparells_list' %}">
-          <img src="{% static 'dock/fases.png' %}" alt="">
-          <span>Aparells globals</span>
-        </a>
-        <a class="competition-home-action competition-home-action--classificacions" href="{% url 'classificacio_template_global_list' %}">
-          <img src="{% static 'dock/classificacions.png' %}" alt="">
-          <span>Plantilles classificacio</span>
-        </a>
-        <a class="competition-home-action competition-home-action--primary" href="{% url 'create' %}">
-          <span class="competition-home-plus" aria-hidden="true">+</span>
-          <span>Nova competicio</span>
-        </a>
-      </div>
-      {% endif %}
     </div>
 
     <div class="competition-home-heading">
-      {% include "components/avatar_helper.html" with image="avatar/greeting_2.png" title="Benvingut!" message="Soc l'assistent d'IA Score. T'ajudare a orientar-te mentre gestiones les competicions." position="left" %}
-      <h1>Competicions</h1>
+      {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
+      <div class="competition-home-title-row">
+        <h1>Competicions</h1>
+        <button class="competition-context-help" type="button" data-avatar-topic="welcome" aria-label="Ajuda del home" title="Ajuda del home">?</button>
+      </div>
       <p>Gestió intel·ligent de competicions</p>
     </div>
 
@@ -674,6 +739,7 @@
     </div>
 
     <div class="competition-home-filters" aria-label="Filtres de competicions">
+      <button class="competition-context-help competition-context-help--filters" type="button" data-avatar-topic="filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button>
       <label class="competition-filter-control">
         <span class="sr-only">Buscar competicio</span>
         <svg class="competition-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
@@ -717,16 +783,20 @@
     </div>
 
     <div class="competition-card-grid" id="competitionCardGrid">
+      <button class="competition-context-help competition-context-help--cards" type="button" data-avatar-topic="competition_cards" aria-label="Ajuda sobre les competicions" title="Ajuda sobre les competicions">?</button>
       {% if can_manage_global_competicions %}
-      <a class="competition-new-card" href="{% url 'create' %}" data-static-card="true">
-        <span class="competition-new-content">
-          <span class="competition-new-plus" aria-hidden="true">
-            <img src="{% static 'general/new.png' %}" alt="">
+      <div class="competition-new-card-shell" data-static-card="true">
+        <button class="competition-context-help competition-context-help--new-card" type="button" data-avatar-topic="create_competition" aria-label="Ajuda per crear competició" title="Ajuda per crear competició">?</button>
+        <a class="competition-new-card" href="{% url 'create' %}" data-avatar-action="create_competition">
+          <span class="competition-new-content">
+            <span class="competition-new-plus" aria-hidden="true">
+              <img src="{% static 'general/new.png' %}" alt="">
+            </span>
+            <strong>Nova competicio</strong>
+            <span class="competition-new-description">Crea una nova competicio i configura'n les fases i moduls.</span>
           </span>
-          <strong>Nova competicio</strong>
-          <span class="competition-new-description">Crea una nova competicio i configura'n les fases i moduls.</span>
-        </span>
-      </a>
+        </a>
+      </div>
       {% endif %}
 
       {% for c in competicions %}

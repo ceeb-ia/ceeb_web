@@ -1,0 +1,166 @@
+  function mediaDetailSelectedId() {
+    return String(state.selectedAssignmentId || '').trim();
+  }
+
+  function mediaDetailRowById(inscripcioId) {
+    const cleanId = String(inscripcioId || '').trim();
+    if (!cleanId) return null;
+    return (state.workspaceRows || []).find((row) => String(row.inscripcio_id || '').trim() === cleanId) || null;
+  }
+
+  function mediaDetailCanHandleCardClick(target) {
+    return !target.closest('a, button, input, label, select, textarea, details, summary, .media-item-actions, .media-upload-row');
+  }
+
+  function renderMediaDetailSummary(row, mediaItems) {
+    const primaryCount = mediaItems.filter((item) => item.is_primary).length;
+    const typeCount = new Set(mediaItems.map((item) => String(item.tipus || 'other'))).size;
+    return [
+      ['Fitxers', formatCount(mediaItems.length)],
+      ['Principals', formatCount(primaryCount)],
+      ['Tipus', formatCount(typeCount)],
+    ].map(([label, value]) => `<div class="media-detail-metric"><span class="media-detail-metric-value">${escapeHtml(value)}</span><span class="media-detail-metric-label">${escapeHtml(label)}</span></div>`).join('');
+  }
+
+  function renderMediaDetailUpload(row) {
+    if (!API.app.canEdit || !row?.inscripcio_id) return '';
+    return `<div class="media-upload-row">
+      <label class="media-file-trigger">
+        <span>Tria fitxer</span>
+        <input type="file" class="form-control form-control-sm js-media-upload-input media-upload-native" data-ins-id="${escapeHtml(row.inscripcio_id)}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+      </label>
+      <button type="button" class="btn btn-sm btn-outline-secondary js-media-upload-btn media-upload-btn" data-ins-id="${escapeHtml(row.inscripcio_id)}">Pujar</button>
+    </div>`;
+  }
+
+  function renderMediaDetailFile(row, item) {
+    return `<article class="media-detail-file-card" data-media-id="${escapeHtml(item.media_id)}">
+      <div>
+        <div class="media-detail-file-title">${escapeHtml(item.original_filename || 'Fitxer sense nom')}</div>
+        <div class="media-detail-file-meta">${escapeHtml(item.source || 'manual')} / ${escapeHtml(item.tipus || 'other')}${item.size ? ` - ${escapeHtml(String(item.size))} bytes` : ''}</div>
+      </div>
+      <div class="media-detail-file-badges">
+        <span class="badge badge-light border">${escapeHtml(item.source || 'manual')}</span>
+        <span class="badge badge-light border">${escapeHtml(item.tipus || 'other')}</span>
+        ${item.is_primary ? '<span class="badge badge-primary">Principal</span>' : '<span class="badge badge-light border">Secundari</span>'}
+      </div>
+      <div class="media-detail-file-actions">
+        <a class="btn btn-sm btn-outline-secondary" href="${escapeHtml(item.url || '#')}" ${item.url ? 'target="_blank" rel="noopener noreferrer"' : 'aria-disabled="true" tabindex="-1"'}>Obrir</a>
+        <button type="button" class="btn btn-sm btn-outline-primary js-media-set-primary" data-media-id="${escapeHtml(item.media_id)}" ${item.is_primary || !API.app.canEdit ? 'disabled' : ''}>Principal</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary js-media-reassign" data-media-id="${escapeHtml(item.media_id)}" data-inscripcio-id="${escapeHtml(row.inscripcio_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Reassignar</button>
+        <button type="button" class="btn btn-sm btn-outline-danger js-media-delete" data-media-id="${escapeHtml(item.media_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Eliminar</button>
+      </div>
+    </article>`;
+  }
+
+  function renderMediaAssignmentDetail() {
+    const empty = document.getElementById('media-detail-empty');
+    const panel = document.getElementById('media-detail-panel');
+    const clearButton = document.getElementById('btn-media-detail-clear');
+    const row = mediaDetailRowById(mediaDetailSelectedId());
+    const hasRow = !!row;
+
+    if (empty) empty.classList.toggle('d-none', hasRow);
+    if (panel) panel.classList.toggle('d-none', !hasRow);
+    if (clearButton) clearButton.classList.toggle('d-none', !hasRow);
+
+    document.querySelectorAll('#media-workspace-list-wrap .media-assignment-card').forEach((card) => {
+      const selected = hasRow && String(card.getAttribute('data-inscripcio-id') || '').trim() === String(row.inscripcio_id || '').trim();
+      card.classList.toggle('is-selected', selected);
+      card.setAttribute('aria-selected', selected ? 'true' : 'false');
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+    });
+
+    if (!hasRow) return;
+
+    const mediaItems = Array.isArray(row.media_items) ? row.media_items : [];
+    const meta = [row.entitat, row.categoria, row.subcategoria, row.sexe].filter(Boolean).join(' / ');
+    const primary = mediaItems.find((item) => item.is_primary) || null;
+    const firstMedia = mediaItems[0] || null;
+    const title = document.getElementById('media-detail-title');
+    const metaNode = document.getElementById('media-detail-meta');
+    const actions = document.getElementById('media-detail-actions');
+    const summary = document.getElementById('media-detail-summary');
+    const upload = document.getElementById('media-detail-upload');
+    const filesNote = document.getElementById('media-detail-files-note');
+    const filesCount = document.getElementById('media-detail-files-count');
+    const filesList = document.getElementById('media-detail-files-list');
+
+    if (title) title.textContent = row.nom_i_cognoms || row.inscripcio_label || `Inscripcio ${row.inscripcio_id || ''}`.trim();
+    if (metaNode) metaNode.textContent = `ID ${row.inscripcio_id || '-'}${meta ? ` - ${meta}` : ''}`;
+    if (summary) summary.innerHTML = renderMediaDetailSummary(row, mediaItems);
+    if (upload) {
+      upload.innerHTML = renderMediaDetailUpload(row);
+      upload.classList.toggle('d-none', !API.app.canEdit);
+    }
+    if (filesNote) filesNote.textContent = mediaItems.length ? 'Accions disponibles per cada fitxer assignat.' : 'Aquesta inscripcio encara no te fitxers assignats.';
+    if (filesCount) filesCount.textContent = `${formatCount(mediaItems.length)} fitxers`;
+    if (filesList) filesList.innerHTML = mediaItems.length ? mediaItems.map((item) => renderMediaDetailFile(row, item)).join('') : '<div class="media-detail-empty-file">No hi ha fitxers assignats. Pots pujar-ne un des del detall.</div>';
+    if (actions) {
+      const primaryAction = firstMedia && !primary
+        ? `<button type="button" class="btn btn-sm btn-outline-primary js-media-set-primary" data-media-id="${escapeHtml(firstMedia.media_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Primer com principal</button>`
+        : '';
+      const openPrimary = primary?.url
+        ? `<a class="btn btn-sm btn-outline-secondary" href="${escapeHtml(primary.url)}" target="_blank" rel="noopener noreferrer">Obrir principal</a>`
+        : '';
+      actions.innerHTML = `${primaryAction}${openPrimary}<button type="button" class="btn btn-sm btn-outline-secondary js-media-workspace-refresh">Refrescar</button>`;
+    }
+  }
+
+  function selectMediaAssignmentDetail(inscripcioId) {
+    const cleanId = String(inscripcioId || '').trim();
+    state.selectedAssignmentId = cleanId;
+    renderMediaAssignmentDetail();
+  }
+
+  function clearMediaAssignmentDetail() {
+    state.selectedAssignmentId = '';
+    renderMediaAssignmentDetail();
+  }
+
+  function wireMediaAssignmentDetail() {
+    if (state.mediaDetailListenersBound) return;
+    state.mediaDetailListenersBound = true;
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (target.closest('#btn-media-detail-clear')) {
+        clearMediaAssignmentDetail();
+        return;
+      }
+
+      const card = target.closest('#media-workspace-list-wrap .media-assignment-card');
+      if (!card || !mediaDetailCanHandleCardClick(target)) return;
+      selectMediaAssignmentDetail(card.getAttribute('data-inscripcio-id') || '');
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const card = target.closest('#media-workspace-list-wrap .media-assignment-card');
+      if (!card) return;
+      event.preventDefault();
+      selectMediaAssignmentDetail(card.getAttribute('data-inscripcio-id') || '');
+    });
+  }
+
+  const baseRenderWorkspaceListForDetail = renderWorkspaceList;
+  renderWorkspaceList = function () {
+    const result = baseRenderWorkspaceListForDetail.apply(this, arguments);
+    if (mediaDetailSelectedId() && !mediaDetailRowById(mediaDetailSelectedId())) {
+      state.selectedAssignmentId = '';
+    }
+    renderMediaAssignmentDetail();
+    return result;
+  };
+
+  const baseWireMediaWorkspaceForDetail = wireMediaWorkspace;
+  wireMediaWorkspace = function () {
+    const result = baseWireMediaWorkspaceForDetail.apply(this, arguments);
+    wireMediaAssignmentDetail();
+    return result;
+  };

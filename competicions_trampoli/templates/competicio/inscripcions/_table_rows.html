@@ -125,8 +125,6 @@
             {% else %}
               -
             {% endif %}
-          {% elif col.code == "ordre_sortida" %}
-            <span class="js-ordre-sortida-cell" data-ins-id="{{ r.id }}">{{ r.ordre_sortida|default:"-" }}</span>
           {% elif col.code == "__aparells__" %}
             {% with rid=r.id|stringformat:"s" %}
               {% with ex_ids=table_runtime.inscripcio_aparells_excluded_map|get_item:rid %}

@@ -25,6 +25,7 @@ from ...services.inscripcions.history import (
     capture_inscripcions_history_snapshot,
     record_inscripcions_history_entry,
 )
+from ...services.avatar.aparells.globals import AVATAR_MESSAGES as GLOBAL_APPARATUS_AVATAR_MESSAGES
 from ...services.scoring.team_scoring import is_team_context_app
 
 
@@ -249,6 +250,8 @@ class AparellList(ListView):
             "used": sum(1 for aparell in aparells if getattr(aparell, "competicio_usage_count", 0)),
             "with_schema": sum(1 for aparell in aparells if getattr(aparell, "has_scoring_schema", False)),
         }
+        ctx["avatar_messages"] = GLOBAL_APPARATUS_AVATAR_MESSAGES
+        ctx["avatar_initial_topic"] = "welcome"
         return ctx
 
 

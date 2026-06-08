@@ -1,7 +1,10 @@
 {% load static %}
+{% get_static_prefix as STATIC_PREFIX %}
 
 <style>
   .avatar-helper {
+    --avatar-bubble-x: 0px;
+    --avatar-bubble-y: 0px;
     position: fixed;
     left: 0;
     bottom: 0;
@@ -15,6 +18,13 @@
 
   .avatar-helper.is-open {
     transform: translateX(0);
+  }
+
+  .avatar-helper:not(.is-open) .avatar-helper__bubble,
+  .avatar-helper:not(.is-open) .avatar-helper__bubble-toggle {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .avatar-helper__image {
@@ -32,7 +42,7 @@
     position: absolute;
     left: clamp(190px, 20vw, 300px);
     top: clamp(18px, 8vh, 82px);
-    width: clamp(240px, 24vw, 350px);
+    width: clamp(260px, 25vw, 380px);
     padding: 16px 18px;
     border: 1px solid rgba(219, 226, 239, 0.94);
     border-radius: 8px;
@@ -40,14 +50,22 @@
     box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
     color: #334155;
     backdrop-filter: blur(14px);
+    cursor: grab;
     pointer-events: auto;
+    touch-action: none;
+    transform: translate(var(--avatar-bubble-x), var(--avatar-bubble-y));
     transition: opacity 180ms ease, transform 180ms ease, visibility 180ms ease;
+  }
+
+  .avatar-helper.is-dragging .avatar-helper__bubble {
+    cursor: grabbing;
+    transition: none;
   }
 
   .avatar-helper.is-bubble-hidden .avatar-helper__bubble {
     opacity: 0;
     visibility: hidden;
-    transform: translateY(-8px);
+    transform: translate(var(--avatar-bubble-x), calc(var(--avatar-bubble-y) - 8px));
     pointer-events: none;
   }
 
@@ -67,7 +85,9 @@
   .avatar-helper__toggle,
   .avatar-helper__hide,
   .avatar-helper__bubble-toggle,
-  .avatar-helper__bubble-close {
+  .avatar-helper__bubble-close,
+  .avatar-helper__step-button,
+  .avatar-helper__action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -152,17 +172,77 @@
     display: block;
     margin: 0 28px 6px 0;
     color: #071633;
+    cursor: grab;
     font-size: 0.95rem;
     font-weight: 850;
     line-height: 1.2;
   }
 
   .avatar-helper__message {
+    min-height: 74px;
     margin: 0;
     color: #64748b;
+    cursor: grab;
     font-size: 0.88rem;
     font-weight: 650;
     line-height: 1.42;
+  }
+
+  .avatar-helper__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .avatar-helper__step-count {
+    color: #94a3b8;
+    font-size: 0.76rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .avatar-helper__nav,
+  .avatar-helper__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .avatar-helper__actions {
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+
+  .avatar-helper__step-button,
+  .avatar-helper__action {
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1.1;
+  }
+
+  .avatar-helper__action {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+
+  .avatar-helper__step-button:disabled {
+    cursor: default;
+    opacity: 0.42;
+  }
+
+  .avatar-helper__step-button:not(:disabled):hover,
+  .avatar-helper__step-button:not(:disabled):focus,
+  .avatar-helper__action:hover,
+  .avatar-helper__action:focus {
+    background: #ffffff;
+    color: #0b5bd3;
+    box-shadow: 0 7px 18px rgba(15, 23, 42, 0.08);
   }
 
   @media (max-width: 1180px) {
@@ -181,7 +261,7 @@
     .avatar-helper__bubble {
       left: 166px;
       top: 42px;
-      width: min(320px, calc(100vw - 188px));
+      width: min(340px, calc(100vw - 188px));
     }
 
     .avatar-helper__bubble-toggle {
@@ -233,14 +313,27 @@
     }
 
     .avatar-helper__message {
+      min-height: 92px;
       font-size: 0.82rem;
+    }
+
+    .avatar-helper__footer {
+      align-items: flex-start;
+      flex-direction: column;
     }
   }
 </style>
 
-{% with avatar_image=image|default:'avatar/greeting_wo_bg.png' avatar_title=title|default:'Benvingut!' avatar_message=message|default:"Soc l'assistent d'IA Score. T'anire ajudant mentre gestiones les competicions." %}
-<aside class="avatar-helper avatar-helper--{{ position|default:'left' }}{% if state != 'closed' %} is-open{% endif %}" aria-label="Assistent IA Score">
-  <button class="avatar-helper__toggle" type="button" aria-label="Obrir l'assistent" title="Obrir l'assistent" aria-expanded="{% if state != 'closed' %}true{% else %}false{% endif %}">
+{% with avatar_image=image|default:'avatar/greeting_2.png' avatar_title=title|default:'Benvingut!' avatar_message=message|default:"Soc l'assistent d'IA Score. T'aniré ajudant mentre gestiones les competicions." initial_topic=avatar_initial_topic|default:'welcome' %}
+{% if avatar_messages %}
+  {{ avatar_messages|json_script:"avatar-helper-messages" }}
+{% endif %}
+<aside
+  class="avatar-helper avatar-helper--{{ position|default:'left' }}{% if state == 'open' %} is-open{% endif %}"
+  aria-label="Assistent IA Score"
+  data-static-prefix="{{ STATIC_PREFIX }}"
+  data-avatar-initial-topic="{{ initial_topic }}">
+  <button class="avatar-helper__toggle" type="button" aria-label="Obrir l'assistent" title="Obrir l'assistent" aria-expanded="{% if state == 'open' %}true{% else %}false{% endif %}">
     <img class="avatar-helper__control-image" src="{% static 'general/avatar_in.png' %}" alt="">
   </button>
   <button class="avatar-helper__hide" type="button" aria-label="Amagar l'assistent" title="Amagar l'assistent">
@@ -249,35 +342,273 @@
   <button class="avatar-helper__bubble-toggle" type="button" aria-label="Mostrar el missatge" title="Mostrar el missatge">
     <img class="avatar-helper__control-image" src="{% static 'general/ask.png' %}" alt="">
   </button>
-  <div class="avatar-helper__bubble">
+  <div class="avatar-helper__bubble" aria-live="polite">
     <button class="avatar-helper__bubble-close" type="button" aria-label="Tancar el missatge" title="Tancar el missatge">&times;</button>
-    <strong class="avatar-helper__title">{{ avatar_title }}</strong>
-    <p class="avatar-helper__message">{{ avatar_message }}</p>
+    <strong class="avatar-helper__title" data-avatar-title>{{ avatar_title }}</strong>
+    <p class="avatar-helper__message" data-avatar-message>{{ avatar_message }}</p>
+    <div class="avatar-helper__footer">
+      <span class="avatar-helper__step-count" data-avatar-step-count></span>
+      <span class="avatar-helper__nav" aria-label="Navegació de l'ajuda">
+        <button class="avatar-helper__step-button" type="button" data-avatar-prev>Anterior</button>
+        <button class="avatar-helper__step-button" type="button" data-avatar-next>Següent</button>
+      </span>
+    </div>
+    <div class="avatar-helper__actions" data-avatar-actions></div>
   </div>
-  <img class="avatar-helper__image" src="{% static avatar_image %}" alt="">
+  <img class="avatar-helper__image" data-avatar-image src="{% static avatar_image %}" alt="">
 </aside>
 {% endwith %}
 
 <script>
   (function () {
-    var helpers = document.querySelectorAll(".avatar-helper");
-    helpers.forEach(function (helper) {
+    var script = document.getElementById("avatar-helper-messages");
+    var topics = {};
+    if (script) {
+      try {
+        topics = JSON.parse(script.textContent || "{}");
+      } catch (err) {
+        topics = {};
+      }
+    }
+
+    function trimSlashes(value) {
+      return String(value || "").replace(/^\/+/, "");
+    }
+
+    function assetUrl(helper, path) {
+      var value = String(path || "");
+      if (!value) {
+        return "";
+      }
+      if (/^(https?:)?\/\//.test(value) || value.charAt(0) === "/" || value.indexOf("data:") === 0) {
+        return value;
+      }
+      return String(helper.dataset.staticPrefix || "/static/") + trimSlashes(value);
+    }
+
+    function topicFor(topicId, fallbackId) {
+      return topics[topicId] || topics[fallbackId] || topics.welcome || null;
+    }
+
+    function stepsFor(topic) {
+      return Array.isArray(topic && topic.steps) ? topic.steps : [];
+    }
+
+    function avatarFor(topic, step, stepIndex) {
+      if (step && step.avatar) {
+        return step.avatar;
+      }
+      var avatars = Array.isArray(topic && topic.avatars) ? topic.avatars : [];
+      if (avatars.length) {
+        return avatars[stepIndex % avatars.length];
+      }
+      return topic && topic.avatar ? topic.avatar : "avatar/greeting_2.png";
+    }
+
+    function runAction(actionName) {
+      if (actionName === "create_competition") {
+        var createLink = document.querySelector("[data-avatar-action='create_competition']");
+        if (createLink && createLink.href) {
+          window.location.href = createLink.href;
+        }
+        return;
+      }
+      if (actionName === "create_apparatus") {
+        var createApparatusLink = document.querySelector("[data-avatar-action='create_apparatus']");
+        if (createApparatusLink && createApparatusLink.href) {
+          window.location.href = createApparatusLink.href;
+        }
+        return;
+      }
+      if (actionName === "open_competition") {
+        var grid = document.getElementById("competitionCardGrid");
+        if (grid) {
+          grid.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    }
+
+    function setupHelper(helper) {
       var openButton = helper.querySelector(".avatar-helper__toggle");
       var hideButton = helper.querySelector(".avatar-helper__hide");
       var bubbleOpenButton = helper.querySelector(".avatar-helper__bubble-toggle");
       var bubbleCloseButton = helper.querySelector(".avatar-helper__bubble-close");
+      var bubbleNode = helper.querySelector(".avatar-helper__bubble");
+      var titleNode = helper.querySelector("[data-avatar-title]");
+      var messageNode = helper.querySelector("[data-avatar-message]");
+      var countNode = helper.querySelector("[data-avatar-step-count]");
+      var imageNode = helper.querySelector("[data-avatar-image]");
+      var prevButton = helper.querySelector("[data-avatar-prev]");
+      var nextButton = helper.querySelector("[data-avatar-next]");
+      var actionsNode = helper.querySelector("[data-avatar-actions]");
+      var initialTopicId = helper.dataset.avatarInitialTopic || "welcome";
+      var currentTopicId = initialTopicId;
+      var currentStep = 0;
+      var bubbleOffset = { x: 0, y: 0 };
+      var dragState = null;
+
+      function setOpenState(isOpen) {
+        helper.classList.toggle("is-open", isOpen);
+        if (!isOpen) {
+          helper.classList.remove("is-bubble-hidden");
+          saveBubbleOffset();
+        }
+        if (openButton) {
+          openButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        }
+      }
+
+      function storageKey() {
+        return "ia-score-avatar-bubble-offset";
+      }
+
+      function normalizeOffset(value) {
+        var x = Number(value && value.x);
+        var y = Number(value && value.y);
+        return {
+          x: Number.isFinite(x) ? x : 0,
+          y: Number.isFinite(y) ? y : 0,
+        };
+      }
+
+      function applyBubbleOffset() {
+        helper.style.setProperty("--avatar-bubble-x", String(Math.round(bubbleOffset.x)) + "px");
+        helper.style.setProperty("--avatar-bubble-y", String(Math.round(bubbleOffset.y)) + "px");
+      }
+
+      function saveBubbleOffset() {
+        try {
+          window.localStorage.setItem(storageKey(), JSON.stringify(normalizeOffset(bubbleOffset)));
+        } catch (err) {
+          return;
+        }
+      }
+
+      function restoreBubbleOffset() {
+        try {
+          var saved = JSON.parse(window.localStorage.getItem(storageKey()) || "null");
+          if (saved) {
+            bubbleOffset = normalizeOffset(saved);
+            applyBubbleOffset();
+          }
+        } catch (err) {
+          return;
+        }
+      }
+
+      function clampBubbleOffset(nextX, nextY, startRect, startOffset) {
+        var margin = 8;
+        var minX = startOffset.x + margin - startRect.left;
+        var maxX = startOffset.x + window.innerWidth - margin - startRect.right;
+        var minY = startOffset.y + margin - startRect.top;
+        var maxY = startOffset.y + window.innerHeight - margin - startRect.bottom;
+        return {
+          x: Math.min(Math.max(nextX, minX), maxX),
+          y: Math.min(Math.max(nextY, minY), maxY),
+        };
+      }
+
+      function constrainBubbleToViewport() {
+        if (!bubbleNode || !helper.classList.contains("is-open")) {
+          return;
+        }
+        var rect = bubbleNode.getBoundingClientRect();
+        bubbleOffset = clampBubbleOffset(bubbleOffset.x, bubbleOffset.y, rect, bubbleOffset);
+        applyBubbleOffset();
+        saveBubbleOffset();
+      }
+
+      function renderActions(topic) {
+        if (!actionsNode) {
+          return;
+        }
+        actionsNode.textContent = "";
+        var actions = Array.isArray(topic && topic.actions) ? topic.actions : [];
+        actions.forEach(function (action) {
+          if (!action || !action.label) {
+            return;
+          }
+          if (action.action === "create_competition" && !document.querySelector("[data-avatar-action='create_competition']")) {
+            return;
+          }
+          if (action.action === "create_apparatus" && !document.querySelector("[data-avatar-action='create_apparatus']")) {
+            return;
+          }
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "avatar-helper__action";
+          button.textContent = action.label;
+          button.addEventListener("click", function () {
+            if (action.topic && topics[action.topic]) {
+              loadTopic(action.topic, { open: true });
+              return;
+            }
+            if (action.action) {
+              runAction(action.action);
+            }
+          });
+          actionsNode.appendChild(button);
+        });
+      }
+
+      function render() {
+        var topic = topicFor(currentTopicId, initialTopicId);
+        if (!topic) {
+          return;
+        }
+        var steps = stepsFor(topic);
+        var maxStep = Math.max(steps.length - 1, 0);
+        currentStep = Math.min(Math.max(currentStep, 0), maxStep);
+        var step = steps[currentStep] || {};
+
+        if (titleNode) {
+          titleNode.textContent = topic.title || "Assistent IA Score";
+        }
+        if (messageNode) {
+          messageNode.textContent = step.text || "";
+        }
+        if (countNode) {
+          countNode.textContent = steps.length > 1 ? String(currentStep + 1) + " / " + String(steps.length) : "";
+        }
+        if (imageNode) {
+          imageNode.src = assetUrl(helper, avatarFor(topic, step, currentStep));
+        }
+        if (prevButton) {
+          prevButton.disabled = currentStep <= 0;
+        }
+        if (nextButton) {
+          nextButton.disabled = currentStep >= maxStep;
+        }
+        renderActions(topic);
+      }
+
+      function openHelper() {
+        applyBubbleOffset();
+        setOpenState(true);
+        helper.classList.remove("is-bubble-hidden");
+      }
+
+      function loadTopic(topicId, options) {
+        currentTopicId = topicFor(topicId, initialTopicId) ? topicId : initialTopicId;
+        currentStep = Number(options && options.step) || 0;
+        render();
+        if (options && options.open) {
+          openHelper();
+        }
+      }
+
+      helper.addEventListener("avatar:topic", function (event) {
+        loadTopic(event.detail && event.detail.topic, { open: true });
+      });
+
       if (openButton) {
         openButton.addEventListener("click", function () {
-          helper.classList.add("is-open");
-          openButton.setAttribute("aria-expanded", "true");
+          loadTopic(currentTopicId || initialTopicId, { open: true, step: currentStep });
         });
       }
       if (hideButton) {
         hideButton.addEventListener("click", function () {
-          helper.classList.remove("is-open");
-          if (openButton) {
-            openButton.setAttribute("aria-expanded", "false");
-          }
+          setOpenState(false);
         });
       }
       if (bubbleOpenButton) {
@@ -287,9 +618,93 @@
       }
       if (bubbleCloseButton) {
         bubbleCloseButton.addEventListener("click", function () {
-          helper.classList.add("is-bubble-hidden");
+          setOpenState(false);
         });
       }
+      if (prevButton) {
+        prevButton.addEventListener("click", function () {
+          currentStep -= 1;
+          render();
+        });
+      }
+      if (nextButton) {
+        nextButton.addEventListener("click", function () {
+          currentStep += 1;
+          render();
+        });
+      }
+
+      if (bubbleNode) {
+        bubbleNode.addEventListener("pointerdown", function (event) {
+          if (event.button !== undefined && event.button !== 0) {
+            return;
+          }
+          if (event.target.closest("button, a, input, select, textarea")) {
+            return;
+          }
+          var rect = bubbleNode.getBoundingClientRect();
+          dragState = {
+            pointerId: event.pointerId,
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            startOffset: { x: bubbleOffset.x, y: bubbleOffset.y },
+            startRect: rect,
+          };
+          helper.classList.add("is-dragging");
+          bubbleNode.setPointerCapture(event.pointerId);
+        });
+
+        bubbleNode.addEventListener("pointermove", function (event) {
+          if (!dragState || event.pointerId !== dragState.pointerId) {
+            return;
+          }
+          var nextX = dragState.startOffset.x + event.clientX - dragState.startClientX;
+          var nextY = dragState.startOffset.y + event.clientY - dragState.startClientY;
+          bubbleOffset = clampBubbleOffset(nextX, nextY, dragState.startRect, dragState.startOffset);
+          applyBubbleOffset();
+          saveBubbleOffset();
+        });
+
+        bubbleNode.addEventListener("pointerup", function (event) {
+          if (!dragState || event.pointerId !== dragState.pointerId) {
+            return;
+          }
+          dragState = null;
+          helper.classList.remove("is-dragging");
+          constrainBubbleToViewport();
+          saveBubbleOffset();
+        });
+
+        bubbleNode.addEventListener("pointercancel", function () {
+          dragState = null;
+          helper.classList.remove("is-dragging");
+          constrainBubbleToViewport();
+          saveBubbleOffset();
+        });
+      }
+
+      window.addEventListener("beforeunload", saveBubbleOffset);
+      window.addEventListener("resize", constrainBubbleToViewport);
+      restoreBubbleOffset();
+      loadTopic(initialTopicId, { open: helper.classList.contains("is-open") });
+    }
+
+    var helpers = Array.prototype.slice.call(document.querySelectorAll(".avatar-helper"));
+    helpers.forEach(setupHelper);
+
+    document.addEventListener("click", function (event) {
+      var trigger = event.target.closest("[data-avatar-topic]");
+      if (!trigger) {
+        return;
+      }
+      event.preventDefault();
+      var helper = document.querySelector(".avatar-helper");
+      if (!helper) {
+        return;
+      }
+      helper.dispatchEvent(new CustomEvent("avatar:topic", {
+        detail: { topic: trigger.dataset.avatarTopic }
+      }));
     });
   })();
 </script>

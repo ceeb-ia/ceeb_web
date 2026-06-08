@@ -64,10 +64,10 @@ BUILTIN_TABLE_FIELDS = [
     {"code": "equip", "label": "Equip", "kind": "builtin"},
     {"code": "__aparells__", "label": "Aparells", "kind": "ui"},
     {"code": "__media__", "label": "Media", "kind": "ui"},
-    {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
 
-SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "ordre_sortida", "__aparells__", "__media__", "__actions__"}
+HIDDEN_TABLE_COLUMN_CODES = {"ordre_sortida"}
+SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "__aparells__", "__media__", "__actions__"}
 
 # Frontend contract for Phase 2 incremental refresh:
 # GET `inscripcions_list` accepts `__fragments=header,toolbar,history,table,panel`
@@ -141,6 +141,8 @@ def get_available_table_columns(competicio):
             kind = col.get("kind") or "extra"
             if kind == "extra":
                 code = _normalize_schema_extra_code(code, reserved)
+            if code in HIDDEN_TABLE_COLUMN_CODES:
+                continue
             excel_codes.add(code)
 
     for field in BUILTIN_TABLE_FIELDS:
@@ -160,6 +162,8 @@ def get_available_table_columns(competicio):
             kind = col.get("kind") or "extra"
             if kind == "extra":
                 code = _normalize_schema_extra_code(code, reserved)
+            if code in HIDDEN_TABLE_COLUMN_CODES:
+                continue
             if code in seen:
                 continue
             label = col.get("label") or code
@@ -202,7 +206,6 @@ def get_selected_table_columns(competicio, available_cols):
             "equip",
             "__aparells__",
             "__media__",
-            "ordre_sortida",
             "__actions__",
         ]
 
