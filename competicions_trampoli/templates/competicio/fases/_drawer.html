@@ -4,6 +4,7 @@
   class="phase-dashboard-sidebar phase-drawer"
   id="phase-actions-drawer"
   aria-label="Accions de fase"
+  data-avatar-anchor="phase-actions-drawer"
 >
   <div class="phase-drawer-shell">
     <div class="phase-drawer-head">
@@ -14,6 +15,7 @@
           <h3 class="phase-drawer-title">Accions de fase</h3>
         </div>
       </div>
+      <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_actions_menu" aria-label="Ajuda sobre accions de fase" title="Ajuda sobre accions de fase">?</button>
       <button
         type="button"
         class="btn btn-sm btn-outline-secondary phase-drawer-close"
@@ -24,17 +26,17 @@
       </button>
     </div>
 
-    <div class="phase-drawer-body">
+    <div class="phase-drawer-body {% if not selected_phase %}phase-drawer-body--base{% endif %}">
       {% if selected_phase %}
         <nav class="phase-drawer-nav" id="phase-drawer-nav" aria-label="Eines de fase">
-          <button type="button" class="phase-drawer-nav-btn is-active" data-phase-panel-target="origin">
+          <button type="button" class="phase-drawer-nav-btn is-active" data-phase-panel-target="origin" data-avatar-anchor="phase-nav-origin">
             <span class="phase-drawer-nav-btn-title">
               <span>Origen i tall</span>
               <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
             </span>
             <span class="phase-drawer-nav-btn-meta">Classificacio i regles</span>
           </button>
-          <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="groups">
+          <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="groups" data-avatar-anchor="phase-nav-groups">
             <span class="phase-drawer-nav-btn-title">
               <span>Grups</span>
               {% if selected_phase.ui_group_plan_stale %}<span class="badge badge-danger">Revisar</span>{% endif %}
@@ -42,7 +44,7 @@
             </span>
             <span class="phase-drawer-nav-btn-meta">Previsualitzacio i unitats</span>
           </button>
-          <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="status">
+          <button type="button" class="phase-drawer-nav-btn" data-phase-panel-target="status" data-avatar-anchor="phase-nav-status">
             <span class="phase-drawer-nav-btn-title">
               <span>Estat</span>
               <img src="{% static 'fases/status.png' %}" alt="">

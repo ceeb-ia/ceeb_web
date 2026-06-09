@@ -1,14 +1,14 @@
-<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" data-avatar-anchor="rotations-panel-franges" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
                 <span>Franges</span>
-                <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="competicio_format" aria-label="Ajuda franges">?</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_time_slots" aria-label="Ajuda franges">?</button>
               </div>
               <div class="drawer-section-subtitle">Crear franges competitives o especials que estructuren el programa.</div>
             </div>
           </div>
-          <div class="rotation-form-grid rotation-form-grid--franja">
+          <div class="rotation-form-grid rotation-form-grid--franja" data-avatar-anchor="rotations-manual-slot">
             <select class="form-control form-control-sm rotation-select" id="ftype">
               {% for opt in franja_type_options %}
                 <option value="{{ opt.value }}">{{ opt.label }}</option>
@@ -23,7 +23,7 @@
           </div>
         </section>
 
-<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" data-avatar-anchor="rotations-slot-selection" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title">Seleccio</div>
@@ -46,12 +46,12 @@
           </div>
         </section>
 
-<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" data-avatar-anchor="rotations-auto-slots" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
                 <span>Generar franges automaticament</span>
-                <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="control_temps" aria-label="Ajuda franges automatiques">?</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_auto_slots" aria-label="Ajuda franges automatiques">?</button>
               </div>
               <div class="drawer-section-subtitle">Crear seqüencies de franges competitives a partir d'un interval de temps.</div>
             </div>

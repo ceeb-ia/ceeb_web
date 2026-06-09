@@ -1,6 +1,7 @@
-<section class="phase-panel">
+<section class="phase-panel" data-avatar-anchor="phase-qualification">
   <div class="phase-panel-title">
     <h5>Snapshot de la fase</h5>
+    <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_status_snapshot" aria-label="Ajuda sobre estat i snapshot" title="Ajuda sobre estat i snapshot">?</button>
     {% if selected_phase.ui_qualification_run_id %}
       <span class="badge badge-light border">Ja congelat</span>
     {% else %}
@@ -48,6 +49,21 @@
       <button class="btn btn-sm btn-primary" type="submit">
         {% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}
       </button>
+    </form>
+    <form
+      method="post"
+      data-phase-confirm-title="Regenerar snapshot"
+      data-phase-confirm-message="Substituir la proposta actual de la fase amb la configuracio vigent?"
+      data-phase-confirm-label="Regenerar snapshot"
+      data-phase-confirm-tone="warning">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="regenerate_qualification">
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+      <div class="form-check mb-2">
+        <input class="form-check-input" id="confirm-regenerate-qualification" type="checkbox" name="confirm_regeneration" value="1">
+        <label class="form-check-label" for="confirm-regenerate-qualification">Confirmar regeneracio</label>
+      </div>
+      <button class="btn btn-sm btn-outline-warning" type="submit">Regenerar snapshot</button>
     </form>
   </div>
   <div class="phase-panel-note mt-2">

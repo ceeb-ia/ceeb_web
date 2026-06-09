@@ -13,6 +13,7 @@ from ...models.competicio import (
     ProgramUnitSlot,
 )
 from ...models.rotacions import RotacioAssignacioProgramUnit
+from ..inscripcions.aparell_participation import participation_preview
 from .group_plan import structural_cut_signature
 from .logos import available_app_logos_for_competicio, selected_logo_path_for_app
 from .qualification import QualificationError, qualification_is_stale, qualification_source_changed
@@ -525,6 +526,13 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         selected_phase.ui_manual_inscripcio_options = manual_inscripcio_options_for_phase(selected_phase)
     root_phases = _attach_phase_tree(selected_phases, selected_phase_id)
     selected_units = [unit for phase in selected_phases for unit in getattr(phase, "ui_units", [])]
+    base_participation_preview = None
+    if selected is not None:
+        base_participation_preview = participation_preview(
+            competicio,
+            selected,
+            getattr(selected, "participation_config", None),
+        )
     return {
         "competicio": competicio,
         "comp_aparells": comp_aparells,
@@ -538,6 +546,7 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         "selected_phase_id": selected_phase_id,
         "phase_count": len(selected_phases),
         "unit_count": len(selected_units),
+        "base_participation_preview": base_participation_preview,
         "programmed_unit_count": sum(1 for unit in selected_units if getattr(unit, "ui_is_programmed", False)),
         "pending_unit_count": sum(1 for unit in selected_units if not getattr(unit, "ui_is_programmed", False)),
         "total_phase_count": sum(item["phase_count"] for item in app_summaries),

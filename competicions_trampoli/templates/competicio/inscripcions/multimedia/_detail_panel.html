@@ -1,7 +1,7 @@
 {% load static %}
 
 <section class="team-workspace-pane media-pane media-pane-detail">
-  <div class="team-pane-card groups-pane-card groups-pane-card-preview media-detail-card" id="media-detail-card">
+  <div class="team-pane-card groups-pane-card groups-pane-card-preview media-detail-card" id="media-detail-card" data-avatar-anchor="media-detail">
     <div class="team-pane-head groups-inspector-head media-detail-head">
       <div class="groups-title-with-logo">
         <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
@@ -35,7 +35,7 @@
 
       <div class="media-detail-upload d-none" id="media-detail-upload"></div>
 
-      <div class="media-detail-files-head">
+      <div class="media-detail-files-head" data-avatar-anchor="media-assignment-actions">
         <div>
           <div class="fw-semibold"><strong>Fitxers assignats</strong></div>
           <div class="small text-muted" id="media-detail-files-note">Sense fitxers seleccionats.</div>

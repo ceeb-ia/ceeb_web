@@ -1,6 +1,6 @@
 {% load static %}
 
-<section class="action-panel" id="panel-grups" data-panel-key="grups">
+<section class="action-panel" id="panel-grups" data-panel-key="grups" data-avatar-anchor="groups-panel">
   <div class="action-panel-header">
     <div>
       <div class="inscripcions-help-title">
@@ -27,6 +27,7 @@
     <div
       class="tab-select-card team-workbench-card"
       id="groups-main-card"
+      data-avatar-anchor="groups-workspace"
       data-expand-card="groups-main-card"
       data-expand-title="Inscripcions   &rarr;   Gestor de grups"
       data-expand-subtitle="Seleccio, creacio, modificacio i vista rapida dels grups existents en un sol workspace."
@@ -94,7 +95,7 @@
           <section class="groups-workspace-row groups-workspace-row-prep">
             <div class="groups-prep-main">
               <section class="team-workspace-pane groups-pane groups-pane-universe">
-                <div class="team-pane-card groups-pane-card groups-pane-card-universe">
+                <div class="team-pane-card groups-pane-card groups-pane-card-universe" data-avatar-anchor="groups-universe">
                   <div class="team-pane-head">
                     <div class="groups-title-with-logo">
                       <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
@@ -232,7 +233,7 @@
 
             <div class="groups-prep-side">
               <section class="team-workspace-pane groups-pane groups-pane-actions">
-                <div class="team-pane-card groups-pane-card groups-pane-card-actions">
+                <div class="team-pane-card groups-pane-card groups-pane-card-actions" data-avatar-anchor="groups-selection-actions">
                   <div class="team-pane-head">
                     <div class="groups-title-with-logo">
                       <img class="groups-title-logo" src="{% static 'inscripcions/grups/accions.png' %}" alt="">
@@ -244,7 +245,7 @@
                     <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_selection_actions" aria-label="Ajuda sobre accions de grups" title="Ajuda sobre accions de grups">?</button>
                   </div>
 
-                  <div class="groups-action-section">
+                  <div class="groups-action-section" data-avatar-anchor="groups-direct-actions">
                     <div class="groups-direct-card mt-2">
                       <div class="groups-direct-create-row">
                         <div class="groups-direct-field">
@@ -266,7 +267,7 @@
                     </div>
                   </div>
 
-                  <div class="groups-action-section">
+                  <div class="groups-action-section" data-avatar-anchor="groups-creation-strategies">
                     <div class="groups-action-section-head">
                       <div class="groups-section-title-with-logo">
                         <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
@@ -359,7 +360,7 @@
                       </div>
 
                     </div>
-                    <div class="groups-auto-context-fold mt-2">
+                    <div class="groups-auto-context-fold mt-2" data-avatar-anchor="groups-buckets">
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-auto-context-toggle" aria-expanded="false">
                         Veure estratègies de creació massiva
                       </button>
@@ -486,7 +487,7 @@
 
           <section class="groups-workspace-row groups-workspace-row-impact">
             <section class="team-workspace-pane groups-pane groups-pane-board">
-              <div class="team-pane-card groups-pane-card groups-pane-card-board">
+              <div class="team-pane-card groups-pane-card groups-pane-card-board" data-avatar-anchor="groups-board">
                 <div class="team-pane-head groups-existing-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">
@@ -498,7 +499,7 @@
                   <div class="groups-existing-head-actions">
                     <button class="inscripcions-context-help" type="button" data-avatar-topic="groups_board" aria-label="Ajuda sobre grups actuals" title="Ajuda sobre grups actuals">?</button>
                     <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
-                    <details class="groups-existing-actions-menu">
+                    <details class="groups-existing-actions-menu" data-avatar-anchor="groups-order-actions">
                       <summary class="groups-existing-actions-trigger" aria-label="Accions de grups">...</summary>
                       <div class="groups-existing-actions-popover">
                         <button type="button" class="groups-existing-action-item" id="btn-groups-bulk-order" {% if not can_edit_inscripcions %}disabled{% endif %}>Reordenar ordre de competicio</button>
@@ -662,7 +663,7 @@
             </section>
 
             <aside class="team-workspace-pane groups-pane groups-pane-preview">
-              <div class="team-pane-card groups-pane-card groups-pane-card-preview" id="groups-right-pane-card">
+              <div class="team-pane-card groups-pane-card groups-pane-card-preview" id="groups-right-pane-card" data-avatar-anchor="groups-inspector">
                 <div class="team-pane-head groups-inspector-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">

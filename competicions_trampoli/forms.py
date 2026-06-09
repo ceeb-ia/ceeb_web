@@ -677,7 +677,7 @@ class CompeticioAparellForm(forms.ModelForm):
             "aparell": forms.Select(attrs={"class": "form-select"}),
             "nom_local": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Trampoli masculi"}),
             "codi_local": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: TRAMP-M"}),
-            "nombre_exercicis": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 10, "value": 1}),
+            "nombre_exercicis": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 5, "value": 1}),
         }
         labels = {
             "aparell": "Aparell base",

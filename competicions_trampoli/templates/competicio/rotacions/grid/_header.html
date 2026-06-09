@@ -9,11 +9,11 @@
                             title="Seleccionar totes les franges visibles">
                       Totes
                     </button>
-                    <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="aparell_rotacio" aria-label="Ajuda franges i estacions">?</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_grid_header" aria-label="Ajuda franges i estacions">?</button>
                   </div>
                 </th>
                 {% for a in estacions %}
-                  <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}">
+                  <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}" data-avatar-anchor="rotations-station-headers">
                     <div class="rot-station-head">
                       <span class="rot-station-name">
                         <span class="rot-station-handle" aria-hidden="true">⠿</span>

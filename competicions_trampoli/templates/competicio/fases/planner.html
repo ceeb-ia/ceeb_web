@@ -13,6 +13,7 @@
   data-selected-phase-id="{% if selected_phase %}{{ selected_phase.id }}{% endif %}"
 >
     {% include "competicio/fases/_header.html" %}
+    {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
 
     <div class="phase-dashboard-body-card">
     {% if messages %}
@@ -28,8 +29,9 @@
     {% if comp_aparell %}
       <button
         type="button"
-        class="btn btn-sm btn-primary phase-actions-toggle"
+        class="btn btn-sm phase-actions-toggle"
         id="phase-actions-toggle"
+        data-avatar-anchor="phase-actions-toggle"
         aria-controls="phase-actions-drawer"
         aria-expanded="false"
         aria-label="Mostrar accions de fase"

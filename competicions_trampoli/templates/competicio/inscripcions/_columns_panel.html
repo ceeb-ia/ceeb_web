@@ -1,4 +1,4 @@
-<div class="panel" data-panel-key="columnes">
+<div class="panel" data-panel-key="columnes" data-avatar-anchor="panel-columns">
   <div class="panel-head collapsed" data-target="#panel-columnes" aria-expanded="false">
     <div>
       <p class="panel-title mb-0">Columnes</p>
@@ -25,7 +25,7 @@
         </div>
       </div>
 
-      <ul id="cols-sortable" class="cols-inline-sortable mb-2">
+      <ul id="cols-sortable" class="cols-inline-sortable mb-2" data-avatar-anchor="columns-list">
         {% for col in available_table_columns %}
           <li class="cols-inline-item" data-col="{{ col.code }}">
             <div class="cols-inline-main">

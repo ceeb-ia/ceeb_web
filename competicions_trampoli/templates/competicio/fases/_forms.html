@@ -2,27 +2,20 @@
 
 {% if selected_phase %}
   <div class="phase-drawer-panels" id="phase-drawer-panels">
-    <section class="phase-drawer-panel is-active" id="phase-panel-origin" data-phase-panel="origin">
+    <section class="phase-drawer-panel is-active" id="phase-panel-origin" data-phase-panel="origin" data-avatar-anchor="phase-panel-origin">
       {% include "competicio/fases/drawer/_source_cut.html" %}
     </section>
 
-    <section class="phase-drawer-panel" id="phase-panel-groups" data-phase-panel="groups" hidden>
+    <section class="phase-drawer-panel" id="phase-panel-groups" data-phase-panel="groups" data-avatar-anchor="phase-panel-groups" hidden>
       {% include "competicio/fases/drawer/_group_plan.html" %}
     </section>
 
-    <section class="phase-drawer-panel" id="phase-panel-status" data-phase-panel="status" hidden>
+    <section class="phase-drawer-panel" id="phase-panel-status" data-phase-panel="status" data-avatar-anchor="phase-panel-status" hidden>
       {% include "competicio/fases/drawer/_qualification.html" %}
       {% include "competicio/fases/drawer/_partitions.html" %}
       {% include "competicio/fases/drawer/_status.html" %}
     </section>
   </div>
 {% else %}
-  <section class="phase-panel is-muted">
-    <div class="phase-panel-title">
-      <h5>Selecciona una fase</h5>
-    </div>
-    <div class="phase-panel-note">
-      L'arbre crea i selecciona fases. Aquest lateral queda reservat per configurar origen i tall, grups interns i estat de la fase seleccionada.
-    </div>
-  </section>
+  {% include "competicio/fases/drawer/_base_phase.html" %}
 {% endif %}

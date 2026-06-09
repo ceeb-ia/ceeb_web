@@ -1,6 +1,6 @@
 {% load static %}
 
-<article class="phase-node">
+<article class="phase-node" data-avatar-anchor="phase-selected-node">
   <header class="phase-node-header">
     <div>
       <div class="phase-node-title">
@@ -57,7 +57,7 @@
     {% endif %}
 
     <div class="phase-summary-grid">
-      <section class="phase-summary-card phase-summary-card-source {% if phase.ui_source_configured and phase.ui_cut_configured %}is-ready{% else %}is-pending{% endif %}">
+      <section class="phase-summary-card phase-summary-card-source {% if phase.ui_source_configured and phase.ui_cut_configured %}is-ready{% else %}is-pending{% endif %}" data-avatar-anchor="phase-summary-source">
         <div class="phase-summary-card-head">
           <div>
             <div class="phase-summary-kicker">
@@ -103,7 +103,7 @@
         {% endif %}
       </section>
 
-      <section class="phase-summary-card phase-summary-card-units is-wide {% if phase.ui_unit_count %}is-ready{% else %}is-pending{% endif %}">
+      <section class="phase-summary-card phase-summary-card-units is-wide {% if phase.ui_unit_count %}is-ready{% else %}is-pending{% endif %}" data-avatar-anchor="phase-summary-units">
         <div class="phase-summary-card-head">
           <div>
             <div class="phase-summary-kicker">
@@ -151,7 +151,7 @@
         {% endif %}
       </section>
 
-      <section class="phase-summary-card phase-summary-card-status">
+      <section class="phase-summary-card phase-summary-card-status" data-avatar-anchor="phase-summary-status">
         <div class="phase-summary-card-head">
           <div>
             <div class="phase-summary-kicker">

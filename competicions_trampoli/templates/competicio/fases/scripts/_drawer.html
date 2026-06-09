@@ -128,6 +128,14 @@
       }
     }
 
+    window.PhasePlanner = Object.assign({}, window.PhasePlanner || {}, {
+      openPanel(panelKey) {
+        setDrawerOpen(true);
+        setActiveDrawerPanel(panelKey || 'origin');
+        return Promise.resolve();
+      },
+    });
+
     const confirmModal = document.getElementById('phase-confirm-modal');
     const confirmBackdrop = document.getElementById('phase-confirm-backdrop');
     const confirmTitle = document.getElementById('phase-confirm-title');

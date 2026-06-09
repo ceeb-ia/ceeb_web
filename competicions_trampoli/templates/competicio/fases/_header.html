@@ -1,12 +1,13 @@
 {% load static %}
 
-<header class="phase-dashboard-header">
+<header class="phase-dashboard-header" data-avatar-anchor="phase-header">
   <div class="phase-dashboard-title">
     <div class="phase-dashboard-title-row">
       <span class="phase-dashboard-title-logo" aria-hidden="true">
         <img src="{% static 'dock/fases.png' %}" alt="">
       </span>
       <h1>Aparells i fases</h1>
+      <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="competition_apparatus_phases" aria-label="Ajuda sobre aparells i fases" title="Ajuda sobre aparells i fases">?</button>
     </div>
     <div class="text-muted small phase-dashboard-subtitle">
       <span class="phase-dashboard-context-main">{{ competicio.nom }}</span> - defineix rondes per aparell, unitats competitives i el pas cap a rotacions.

@@ -1,7 +1,8 @@
 {% load static %}
 
 {% if app_summaries %}
-  <nav class="phase-app-tabs" aria-label="Aparells amb fases">
+  <nav class="phase-app-tabs" aria-label="Aparells amb fases" data-avatar-anchor="phase-app-selector">
+    <button class="phase-app-tabs-help" type="button" data-avatar-topic="phase_app_selector" aria-label="Ajuda sobre aparells locals" title="Ajuda sobre aparells locals">?</button>
     {% for summary in app_summaries %}
       <div class="phase-app-tab {% if summary.app.id == selected_app_id %}is-active{% endif %}">
         <span class="phase-app-tab-media">
@@ -37,13 +38,14 @@
         <span class="phase-app-tab-actions">
           <a
             class="phase-app-tab-action"
+            data-avatar-action="phase-participation"
             href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=summary.app.id %}?next={{ request.get_full_path|urlencode }}">
-            Participacio
+            Participació
           </a>
         </span>
       </div>
     {% endfor %}
-    <a class="phase-app-tab phase-app-tab-add" href="{% url 'trampoli_aparell_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">
+    <a class="phase-app-tab phase-app-tab-add" data-avatar-action="phase-add-apparatus" href="{% url 'trampoli_aparell_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">
       <span class="phase-app-tab-media">
         <img class="phase-app-tab-logo" src="{% static 'fases/nova_fase.png' %}" alt="">
         <span class="phase-app-tab-copy">

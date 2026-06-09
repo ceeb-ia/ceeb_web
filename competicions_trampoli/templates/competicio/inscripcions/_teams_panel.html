@@ -1,6 +1,6 @@
 {% load static %}
 
-<section class="action-panel" id="panel-equips" data-panel-key="equips">
+<section class="action-panel" id="panel-equips" data-panel-key="equips" data-avatar-anchor="teams-panel">
   <div class="action-panel-header">
     <div>
       <div class="inscripcions-help-title">
@@ -26,6 +26,7 @@
     <div
       class="tab-select-card team-workbench-card"
       id="teams-main-card"
+      data-avatar-anchor="teams-workspace"
       data-expand-card="teams-main-card"
       data-expand-title="Inscripcions   &rarr;   Gestor d'equips"
       data-expand-subtitle="Context, univers, seleccio, creacio i revisio del resultat en un mateix workspace."
@@ -82,7 +83,7 @@
           <section class="groups-workspace-row groups-workspace-row-prep">
             <div class="groups-prep-main">
               <section class="team-workspace-pane groups-pane groups-pane-universe">
-                <div class="team-pane-card groups-pane-card groups-pane-card-universe">
+                <div class="team-pane-card groups-pane-card groups-pane-card-universe" data-avatar-anchor="teams-universe">
                   <div class="team-pane-head">
                     <div class="groups-title-with-logo">
                       <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
@@ -97,7 +98,7 @@
                     </div>
                   </div>
 
-                  <div class="team-context-strip">
+                  <div class="team-context-strip" data-avatar-anchor="teams-context">
                     <div class="team-context-strip-main">
                       <label class="small text-muted mb-0" for="team-workspace-context-select">Context d'equips</label>
                       <select id="team-workspace-context-select" class="form-control form-control-sm">
@@ -110,7 +111,7 @@
                     </div>
                   </div>
 
-                  <div class="team-workspace-context-details d-none" id="team-workspace-context-details">
+                  <div class="team-workspace-context-details d-none" id="team-workspace-context-details" data-avatar-anchor="teams-context-details">
                     <div class="team-workspace-context">
                       <div class="team-workspace-context-head">
                         <div>
@@ -123,7 +124,7 @@
                         <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-context-delete">Eliminar context</button>
                       </div>
                     </div>
-                    <div class="team-workspace-context">
+                    <div class="team-workspace-context" data-avatar-anchor="teams-context-sources">
                       <div class="team-workspace-context-head">
                         <div>
                           <div class="team-workspace-eyebrow">Aparells d'equip en els que competeix el context</div>
@@ -261,7 +262,7 @@
 
             <div class="groups-prep-side">
               <section class="team-workspace-pane groups-pane groups-pane-actions">
-                <div class="team-pane-card groups-pane-card groups-pane-card-actions">
+                <div class="team-pane-card groups-pane-card groups-pane-card-actions" data-avatar-anchor="teams-selection-actions">
                   <div class="team-pane-head">
                     <div class="groups-title-with-logo">
                       <img class="groups-title-logo" src="{% static 'inscripcions/grups/accions.png' %}" alt="">
@@ -273,7 +274,7 @@
                     <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_selection_actions" aria-label="Ajuda sobre accions d'equips" title="Ajuda sobre accions d'equips">?</button>
                   </div>
 
-                  <div class="groups-action-section">
+                  <div class="groups-action-section" data-avatar-anchor="teams-direct-actions">
                     <div class="groups-direct-card mt-2">
                       <div class="team-direct-context-note small text-muted">
                         Context actiu: <strong id="team-manual-context-name">{{ team_context_selected_label|default:team_context_selected_code }}</strong>
@@ -300,7 +301,7 @@
                     </div>
                   </div>
 
-                  <div class="groups-action-section">
+                  <div class="groups-action-section" data-avatar-anchor="teams-creation-strategies">
                     <div class="groups-action-section-head">
                       <div class="groups-section-title-with-logo">
                         <img class="groups-section-title-logo" src="{% static 'inscripcions/grups/estrategies.png' %}" alt="">
@@ -396,7 +397,7 @@
                       </div>
                     </div>
 
-                    <div class="groups-auto-context-fold mt-2 team-auto-context-fold">
+                    <div class="groups-auto-context-fold mt-2 team-auto-context-fold" data-avatar-anchor="teams-buckets">
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-toggle" aria-expanded="false">
                         Veure creacio massiva per buckets
                       </button>
@@ -496,7 +497,7 @@
 
           <section class="groups-workspace-row groups-workspace-row-impact">
             <section class="team-workspace-pane groups-pane groups-pane-board">
-              <div class="team-pane-card groups-pane-card groups-pane-card-board">
+              <div class="team-pane-card groups-pane-card groups-pane-card-board" data-avatar-anchor="teams-board">
                 <div class="team-pane-head groups-existing-head team-existing-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">
@@ -508,7 +509,7 @@
                   <div class="groups-existing-head-actions">
                     <button class="inscripcions-context-help" type="button" data-avatar-topic="teams_board" aria-label="Ajuda sobre equips actuals" title="Ajuda sobre equips actuals">?</button>
                     <span class="badge badge-light border" id="team-existing-count-badge">0 equips</span>
-                    <details class="groups-existing-actions-menu team-existing-actions-menu">
+                    <details class="groups-existing-actions-menu team-existing-actions-menu" data-avatar-anchor="teams-destructive-actions">
                       <summary class="groups-existing-actions-trigger" aria-label="Accions d'equips">...</summary>
                       <div class="groups-existing-actions-popover">
                         <button type="button" class="groups-existing-action-item" data-avatar-topic="teams_destructive_actions" aria-label="Ajuda sobre eliminacio d'equips">Ajuda eliminacio d'equips</button>
@@ -631,7 +632,7 @@
             </section>
 
             <aside class="team-workspace-pane groups-pane groups-pane-preview">
-              <div class="team-pane-card groups-pane-card groups-pane-card-preview team-pane-card-preview" id="team-right-pane-card">
+              <div class="team-pane-card groups-pane-card groups-pane-card-preview team-pane-card-preview" id="team-right-pane-card" data-avatar-anchor="teams-inspector">
                 <div class="team-pane-head groups-inspector-head team-inspector-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">

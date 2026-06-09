@@ -1,5 +1,4 @@
 {% load static static_extras %}
-<script src="{% staticv 'js/rotacions_help.js' %}" defer></script>
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
@@ -422,7 +421,13 @@ function reloadRotacionsPreservingGridScroll(){
 }
 
 window.addEventListener("pagehide", saveRotationGridScrollState);
-window.addEventListener("beforeunload", saveRotationGridScrollState);
+window.addEventListener("beforeunload", (ev) => {
+  saveRotationGridScrollState();
+  if (typeof hasUnsavedGridChanges !== "undefined" && hasUnsavedGridChanges) {
+    ev.preventDefault();
+    ev.returnValue = "";
+  }
+});
 
 function escapeHtml(s){
   return String(s ?? "")
@@ -620,6 +625,23 @@ normalizeGridInPlace();
 const statusEl = document.getElementById("saveStatus");
 const autoStatusEl = document.getElementById("autoStatus");
 const exportMetaStatusEl = document.getElementById("exportMetaStatus");
+const saveGridBtn = document.getElementById("btnSave");
+let hasUnsavedGridChanges = false;
+let isSavingGrid = false;
+
+function syncGridSaveState(message){
+  if (saveGridBtn) {
+    saveGridBtn.disabled = isSavingGrid || !hasUnsavedGridChanges;
+  }
+  if (statusEl && message != null) {
+    statusEl.textContent = message;
+  }
+}
+
+function setGridDirty(dirty, message){
+  hasUnsavedGridChanges = !!dirty;
+  syncGridSaveState(message != null ? message : (hasUnsavedGridChanges ? "Canvis sense desar." : ""));
+}
 
 function setExportMetaStatus(msg){
   if (exportMetaStatusEl) exportMetaStatusEl.textContent = msg || "";
@@ -787,8 +809,44 @@ function renderAll() {
     cell.innerHTML = cellHtml(fr, es, gs);
   });
   renderGroupBuckets();
-  // auto-save cada canvi
-  autoSaveGrid();
+  setGridDirty(true, "Canvis sense desar.");
+}
+
+function collectGridCells(){
+  const cells = [];
+  for (const fr in grid){
+    for (const es in grid[fr]){
+      const gs = normalizeGroups(grid[fr][es]);
+      cells.push({
+        franja: parseInt(fr, 10),
+        estacio: parseInt(es, 10),
+        items: gs,
+      });
+    }
+  }
+  return cells;
+}
+
+async function saveGrid(){
+  if (isSavingGrid) return;
+  const cells = collectGridCells();
+  isSavingGrid = true;
+  if (statusEl) statusEl.textContent = "Guardant...";
+  syncGridSaveState();
+  try {
+    await postJSON(SAVE_URL, {cells});
+    hasUnsavedGridChanges = false;
+    syncGridSaveState("Guardat.");
+  } catch(e) {
+    syncGridSaveState("Error guardant: " + (e.message || e));
+  } finally {
+    isSavingGrid = false;
+    syncGridSaveState();
+  }
+}
+
+async function autoSaveGrid(){
+  return saveGrid();
 }
 
 // --- Column DnD (headers) ---
@@ -1079,7 +1137,8 @@ function initTopButtons(){
       try {
         await postJSON(CLEAR_ALL_URL, {});
         grid = {};
-        renderAll();
+        renderAll({save:false});
+        setGridDirty(false, "Programa netejat.");
         if (statusEl) statusEl.textContent = "✅ Programa netejat.";
         reloadRotacionsPreservingGridScroll();
       } catch(e){
@@ -1105,6 +1164,7 @@ function initTopButtons(){
       if (statusEl) statusEl.textContent = "Guardant...";
       try {
         await postJSON(SAVE_URL, {cells});
+        setGridDirty(false, "Guardat.");
         if (statusEl) statusEl.textContent = "✅ Guardat.";
       } catch(e){
         if (statusEl) statusEl.textContent = "❌ Error guardant: " + (e.message || e);
@@ -1415,6 +1475,7 @@ function initGlobalClickHandler(){
           }
         }
         await postJSON(SAVE_URL, {cells});
+        setGridDirty(false, "Guardat.");
 
         const r = await postJSON(extrapolarUrl(ex), {count});
         if (statusEl) statusEl.textContent = `✅ Extrapolat. Franges creades: ${r?.created_franges ?? "?"}, cel·les omplertes: ${r?.filled ?? "?"}.`;
@@ -1750,6 +1811,13 @@ function setPlannerDrawerPanel(panelKey, options){
   syncPlannerDrawerPanels();
 }
 
+window.RotacionsPlanner = Object.assign({}, window.RotacionsPlanner || {}, {
+  openPanel(panelKey) {
+    setPlannerDrawerPanel(panelKey || "programables");
+    return Promise.resolve();
+  },
+});
+
 function setProgramFilter(key, value){
   programFilters[key] = value;
   renderProgramables();
@@ -1888,7 +1956,9 @@ function renderAll(options = {}){
   syncPlannerDrawerPanels();
   syncActiveStationHighlights();
   syncPlannerDrawerStates();
-  if (options.save !== false) autoSaveGrid();
+  if (options.save !== false && options.markDirty !== false) {
+    setGridDirty(true, "Canvis sense desar.");
+  }
 }
 
 function renderGroupBuckets(){

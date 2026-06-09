@@ -7,6 +7,7 @@
 
 <div class="rotation-dashboard-shell rotation-page-shell" id="rotation-page-shell">
   {% include "competicio/rotacions/_header.html" %}
+  {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
 
   <div class="rotation-workspace board">
     <main class="rotation-dashboard-main">
@@ -15,7 +16,6 @@
     </main>
   </div>
 </div>
-{% include "competicio/rotacions/_help_drawer.html" %}
 {% include "competicio/rotacions/_modals.html" %}
 {% include "competicio/rotacions/_json_data.html" %}
 {% include "competicio/rotacions/scripts/_planner.html" %}

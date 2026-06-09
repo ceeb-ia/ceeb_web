@@ -13,6 +13,7 @@ from ....forms import (
 )
 from ....models import Competicio
 from ....models.competicio import CompeticioAparell, CompeticioAparellFase
+from ....services.avatar.aparells.messages import AVATAR_MESSAGES as PHASES_AVATAR_MESSAGES
 from ....services.fases.dashboard import phase_dashboard_context
 from .actions import handle_phase_post
 
@@ -128,6 +129,8 @@ class CompeticioFasesPlanner(View):
             "group_plan_preview": group_plan_preview,
             "qualification_preview": qualification_preview,
             "phase_status_choices": USER_PHASE_STATUS_CHOICES,
+            "avatar_messages": PHASES_AVATAR_MESSAGES,
+            "avatar_initial_topic": "competition_apparatus_phases",
         }
 
 

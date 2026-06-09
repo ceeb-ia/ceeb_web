@@ -1,6 +1,6 @@
 {% load static %}
 
-<section class="phase-flow-stack">
+<section class="phase-flow-stack" data-avatar-anchor="phase-workspace">
   <div class="phase-flow-head">
     <div>
       <h4>{{ comp_aparell.display_nom }}</h4>
@@ -8,21 +8,26 @@
     </div>
     <div class="phase-flow-actions">
       <a class="btn btn-sm btn-outline-primary"
+         data-avatar-action="phase-participation"
          href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
-        <span>Participacio</span>
+        <span>Participació</span>
       </a>
       <a class="btn btn-sm btn-outline-warning phase-themed-btn"
          href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
         <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
-        <span>Puntuacio</span>
+        <span>Puntuació</span>
       </a>
     </div>
   </div>
 
-  <div class="phase-tree-panel">
+  <div class="phase-tree-panel" data-avatar-anchor="phase-tree">
+    <div class="phase-panel-title">
+      <h5 class="mb-0">Arbre de fases</h5>
+      <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_tree" aria-label="Ajuda sobre arbre de fases" title="Ajuda sobre arbre de fases">?</button>
+    </div>
     <div class="phase-tree-root">
       <div class="phase-tree-base-shell">
-        <div class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}">
+        <div class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}" data-avatar-anchor="phase-base-node">
           <a class="phase-tree-base-link"
              href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
             <span class="phase-tree-node-main">
@@ -72,9 +77,10 @@
   </div>
 
   {% if selected_phase %}
-    <section class="phase-detail-panel" aria-label="Detall de fase seleccionada">
+    <section class="phase-detail-panel" aria-label="Detall de fase seleccionada" data-avatar-anchor="phase-detail-panel">
       <div class="phase-detail-heading">
         <h5>Detall de la fase seleccionada</h5>
+        <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_selected_detail" aria-label="Ajuda sobre el detall de fase" title="Ajuda sobre el detall de fase">?</button>
       </div>
       {% include "competicio/fases/_phase_node.html" with phase=selected_phase %}
     </section>

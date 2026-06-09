@@ -1,12 +1,12 @@
 {% load static %}
     <!-- Grid -->
-    <div class="cardx cardx-main rotation-grid-card">
+    <div class="cardx cardx-main rotation-grid-card" data-avatar-anchor="rotations-grid">
       <div class="cardx-h rotation-grid-titlebar">
         <div class="rotation-grid-title-block">
           <div class="rotation-grid-title">
             <img class="rotation-grid-title-icon" src="{% static 'rotacions/planner.png' %}" alt="">
             <span>Programa de rotacions</span>
-            <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="ordre_sortida" aria-label="Ajuda programa">?</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_grid" aria-label="Ajuda programa">?</button>
           </div>
           <div class="rotation-grid-subtitle">Franges, estacions i ordre operatiu de competició</div>
         </div>
@@ -18,8 +18,8 @@
 
       <div class="cardx-b">
         <div class="grid-wrap">
-          <table class="rot">
-            <thead>
+          <table class="rot" data-avatar-anchor="rotations-grid-table">
+            <thead data-avatar-anchor="rotations-grid-header">
               {% include "competicio/rotacions/grid/_header.html" %}
             </thead>
 

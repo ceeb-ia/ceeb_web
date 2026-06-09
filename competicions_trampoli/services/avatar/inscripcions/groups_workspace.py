@@ -15,16 +15,16 @@ AVATAR_MESSAGES = {
         "variant": "info",
         "steps": [
             {
-                "text": "Aquest gestor serveix per organitzar les inscripcions de la competicio en grups de treball."
+                "text": "Aquest gestor serveix per organitzar les inscripcions de la competició en grups de treball."
             },
             {
-                "text": "Els grups preparen la base de l'organitzacio competitiva: despres, a Rotacions, ajuden a decidir qui competeix, quan competeix i en quin aparell."
+                "text": "Els grups preparen la base de l'organització competitiva: després, a 'Rotacions', ajuden a decidir qui competeix, quan competeix i en quin aparell."
             },
             {
-                "text": "Una inscripcio nomes pot formar part d'un grup. Si no participa en un aparell concret, no apareixera quan aquell grup estigui programat en aquell aparell."
+                "text": "Una inscripció nomes pot formar part d'un grup. Si no participa en un aparell concret, simplement no apareixera quan aquell grup estigui programat en aquell aparell."
             },
             {
-                "text": "El gestor es divideix en zones: univers de candidates, accions sobre la seleccio, grups actuals i inspector lateral."
+                "text": "El gestor es divideix en 4 zones: univers de candidates, accions sobre la seleccio, grups actuals i inspector lateral."
             },
         ],
         "actions": [],
@@ -43,7 +43,7 @@ AVATAR_MESSAGES = {
                 "text": "Pots cercar per nom, document o entitat i combinar filtres com categoria, subcategoria, entitat, estat o grup actual."
             },
             {
-                "text": "Amb Afegir passes les inscripcions filtrades a la seleccio activa. Amb Netejar buides aquesta seleccio."
+                "text": "Amb Afegir passes les inscripcions filtrades a la selecció activa. Amb Netejar buides aquesta seleccio."
             },
         ],
         "actions": [],
@@ -56,26 +56,26 @@ AVATAR_MESSAGES = {
         "variant": "info",
         "steps": [
             {
-                "text": "La seleccio activa es el conjunt d'inscripcions sobre el qual treballen les accions d'aquesta zona."
+                "text": "La selecció activa es el conjunt d'inscripcions sobre el qual treballen les accions d'aquesta zona."
             },
             {
-                "text": "Pots crear un grup nou amb la seleccio, enviar-la a un grup existent o deixar-la sense grup."
+                "text": "Pots crear un grup nou amb la selecció, enviar-la a un grup existent o deixar-la sense grup."
             },
             {
-                "text": "Aquestes accions afecten la seleccio actual del workspace, no necessariament tota la taula d'inscripcions."
+                "text": "Tingues en compte que grups ja programats a 'Rotacions' no poden eliminarse, tot i que sí es poden modificar."
             },
         ],
         "actions": [],
     },
     "groups_creation_strategies": {
         "id": "groups_creation_strategies",
-        "title": "Estrategies de creacio",
+        "title": "Estratègies de creació",
         "avatar": EXPLAINING_AVATARS[0],
         "avatars": EXPLAINING_AVATARS,
         "variant": "info",
         "steps": [
             {
-                "text": "Les estrategies creen grups a partir de la seleccio activa sense haver de repartir les inscripcions manualment."
+                "text": "Les estratègies creen grups a partir de la selecció activa sense haver de repartir les inscripcions manualment."
             },
             {
                 "text": "Pots crear un nombre concret de grups, grups d'una mida determinada o grups equilibrats dins d'una forquilla."
@@ -88,16 +88,16 @@ AVATAR_MESSAGES = {
     },
     "groups_buckets": {
         "id": "groups_buckets",
-        "title": "Creacio per buckets",
+        "title": "Creació per buckets",
         "avatar": EXPLAINING_AVATARS[0],
         "avatars": EXPLAINING_AVATARS,
         "variant": "info",
         "steps": [
             {
-                "text": "Els buckets divideixen les inscripcions en blocs segons valors de camps disponibles, com columnes importades de l'Excel."
+                "text": "Els 'buckets' divideixen les inscripcions en blocs segons valors de camps disponibles, com columnes importades de l'Excel."
             },
             {
-                "text": "Cada combinacio diferent de valors genera un bloc proposat. Aixo es util quan les dades ja porten torns, categories o altres particions."
+                "text": "Cada combinació diferent de valors genera un bloc proposat. Aixè és útil quan les dades ja porten torns, categories o altres particions."
             },
             {
                 "text": "Pots substituir la seleccio amb els buckets triats, previsualitzar-los o crear grups directament per bloc."

@@ -1,6 +1,6 @@
 {% load static %}
 
-<section class="action-panel" id="panel-media" data-panel-key="media">
+<section class="action-panel" id="panel-media" data-panel-key="media" data-avatar-anchor="media-panel">
   <div class="action-panel-header">
     <div>
       <div class="inscripcions-help-title">
@@ -26,11 +26,12 @@
     <div
       class="tab-select-card team-workbench-card"
       id="media-main-card"
+      data-avatar-anchor="media-workspace"
       data-expand-card="media-main-card"
       data-expand-title="Inscripcions   &rarr;   Gestor de multimèdia"
       data-expand-subtitle="Configura el match, revisa la preview i gestiona les assignacions en una sola vista."
     >
-        <div class="media-quick-strip" id="media-quick-strip">
+        <div class="media-quick-strip" id="media-quick-strip" data-avatar-anchor="media-quick-match">
           <div class="media-quick-copy">
             <div class="inscripcions-help-title">
               <div class="fw-semibold mb-2">Match assistit</div>
@@ -65,7 +66,7 @@
           <div class="media-workspace-grid">
             <div class="media-workspace-row media-workspace-row-top">
             <section class="team-workspace-pane media-pane media-pane-universe">
-              <div class="team-pane-card groups-pane-card groups-pane-card-universe media-universe-card">
+              <div class="team-pane-card groups-pane-card groups-pane-card-universe media-universe-card" data-avatar-anchor="media-file-universe">
                 <div class="team-pane-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
@@ -82,7 +83,7 @@
                   </div>
                 </div>
 
-                <div class="media-folder-loader">
+                <div class="media-folder-loader" data-avatar-anchor="media-folder-loader">
                   <div class="media-folder-loader-main">
                     <label class="media-folder-input-wrap" for="media-folder-input">
                       <span class="media-folder-input-title">Carpeta local</span>
@@ -112,7 +113,7 @@
                   <div class="media-folder-status" id="media-match-summary">Cap fitxer carregat.</div>
                 </div>
 
-                <div class="media-universe-config">
+                <div class="media-universe-config" data-avatar-anchor="media-match-config">
                   <details class="media-config-details">
                     <summary class="media-config-summary">
                       <span>
@@ -181,7 +182,7 @@
             </section>
 
             <section class="team-workspace-pane media-pane media-pane-preview">
-              <div class="team-pane-card groups-pane-card groups-pane-card-preview media-preview-card">
+              <div class="team-pane-card groups-pane-card groups-pane-card-preview media-preview-card" data-avatar-anchor="media-match-preview">
                 <div class="team-pane-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
@@ -364,7 +365,7 @@
 
             <div class="media-workspace-row media-workspace-row-bottom">
             <section class="team-workspace-pane media-pane media-pane-assignments">
-              <div class="team-pane-card groups-pane-card groups-pane-card-board media-assignments-card">
+              <div class="team-pane-card groups-pane-card groups-pane-card-board media-assignments-card" data-avatar-anchor="media-current-assignments">
                 <div class="team-pane-head">
                   <div class="groups-title-with-logo">
                     <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">

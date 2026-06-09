@@ -17,13 +17,13 @@ AVATAR_MESSAGES = {
                 "text": "El menu d'Inscripcions concentra les eines per revisar, ordenar i preparar el llistat de participants."
             },
             {
-                "text": "Divisions separa la taula en pestanyes. Columnes decideix quins camps veus i en quin ordre."
+                "text": "'Divisions' separa la taula en pestanyes. \n'Columnes' decideix quins camps veus i en quin ordre."
             },
             {
-                "text": "Grups, Equips i Series d'equip obren gestors dedicats per preparar l'organitzacio competitiva."
+                "text": "'Grups', 'Equips' i 'Sèries d'equip' obren gestors dedicats per preparar l'organització competitiva."
             },
             {
-                "text": "Multimedia ajuda a associar fitxers a inscripcions. Altres agrupa exportacio, historial i eines complementaries."
+                "text": "'Multimèdia' ajuda a associar fitxers a inscripcions. 'Altres' agrupa exportació, historial i eines complementaries."
             },
             {
                 "text": "Quan entris en un gestor, trobaras punts d'ajuda propis per entendre cada zona concreta."

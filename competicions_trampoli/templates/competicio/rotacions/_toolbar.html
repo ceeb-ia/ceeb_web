@@ -1,38 +1,41 @@
 {% load static %}
 
-<section class="rotation-toolbar" id="rotation-toolbar" aria-label="Barra d'eines de rotacions">
+<section class="rotation-toolbar" id="rotation-toolbar" aria-label="Barra d'eines de rotacions" data-avatar-anchor="rotations-toolbar">
   <div class="rotation-toolbar-strip">
     <div class="rotation-toolbar-brand">
       <img class="rotation-toolbar-mark" src="{% static 'rotacions/planner.png' %}" alt="">
       <div>
-        <div class="rotation-toolbar-title">Planner</div>
+        <div class="rotation-toolbar-title">
+          <span>Planner</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="competition_rotations_toolbar" aria-label="Ajuda planner">?</button>
+        </div>
         <div class="mini">Eines de programa, franges, vista i export</div>
       </div>
     </div>
 
-    <nav class="rotation-toolbar-tabs" aria-label="Apartats del planner">
-      <button type="button" class="planner-toolbar-nav-btn is-active" data-drawer-panel-target="programables" aria-pressed="true">
+    <nav class="rotation-toolbar-tabs" aria-label="Apartats del planner" data-avatar-anchor="rotations-toolbar-tabs">
+      <button type="button" class="planner-toolbar-nav-btn is-active" data-drawer-panel-target="programables" data-avatar-anchor="rotations-nav-programables" aria-pressed="true">
         <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/programables.png' %}" alt="">
         <span class="rotation-toolbar-tab-copy">
           <span class="rotation-toolbar-tab-title">Programables</span>
           <span class="rotation-toolbar-tab-meta">{{ grups_display|length }} grups</span>
         </span>
       </button>
-      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="franges" aria-pressed="false">
+      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="franges" data-avatar-anchor="rotations-nav-franges" aria-pressed="false">
         <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/franges.png' %}" alt="">
         <span class="rotation-toolbar-tab-copy">
           <span class="rotation-toolbar-tab-title">Franges</span>
           <span class="rotation-toolbar-tab-meta">Crear i generar</span>
         </span>
       </button>
-      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="globals" aria-pressed="false">
+      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="globals" data-avatar-anchor="rotations-nav-tools" aria-pressed="false">
         <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/eines.png' %}" alt="">
         <span class="rotation-toolbar-tab-copy">
           <span class="rotation-toolbar-tab-title">Eines</span>
           <span class="rotation-toolbar-tab-meta">Vista i estructura</span>
         </span>
       </button>
-      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="export" aria-pressed="false">
+      <button type="button" class="planner-toolbar-nav-btn" data-drawer-panel-target="export" data-avatar-anchor="rotations-nav-export" aria-pressed="false">
         <img class="rotation-toolbar-tab-icon" src="{% static 'rotacions/barra/export.png' %}" alt="">
         <span class="rotation-toolbar-tab-copy">
           <span class="rotation-toolbar-tab-title">Export</span>
@@ -47,6 +50,14 @@
       <button type="button" class="rotation-toolbar-density-btn is-active" data-toolbar-height="medium">Mitjà</button>
       <button type="button" class="rotation-toolbar-density-btn" data-toolbar-height="large">Ampli</button>
     </div>
+
+    <button type="button"
+            class="btn btn-sm btn-primary rotation-toolbar-save"
+            id="btnSave"
+            data-avatar-action="rotations-save-program"
+            disabled>
+      Desar programa
+    </button>
 
     <button type="button"
             class="btn btn-sm btn-outline-secondary rotation-toolbar-collapse"
@@ -67,12 +78,12 @@
 
       {% include "competicio/rotacions/drawer/_globals.html" with globals_part="after_franges" %}
 
-      <section class="drawer-section planner-sidebar-panel rotation-export-panel" data-drawer-panel="export" hidden>
+      <section class="drawer-section planner-sidebar-panel rotation-export-panel" data-drawer-panel="export" data-avatar-anchor="rotations-panel-export" hidden>
         <div class="drawer-section-head">
           <div>
             <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
               <span>Exportacio Excel</span>
-              <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="validacio" aria-label="Ajuda validacio">?</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_export" aria-label="Ajuda exportacio">?</button>
             </div>
             <div class="drawer-section-subtitle">Opcions de sortida, logo i camps visibles per a l'Excel de rotacions.</div>
           </div>
@@ -97,7 +108,7 @@
 
         <hr class="my-3">
 
-        <div class="rotation-export-grid">
+        <div class="rotation-export-grid" data-avatar-anchor="rotations-export-meta">
           <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
           <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
           <input type="date" class="form-control form-control-sm" id="exportDate">
@@ -105,9 +116,9 @@
           <div class="rotation-export-fields">
             <div class="mini fw-semibold d-flex align-items-center" style="gap:6px;">
               <span>Camps de participants</span>
-              <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="capcalera_grup" aria-label="Ajuda camps de participants">?</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_export_fields" aria-label="Ajuda camps de participants">?</button>
             </div>
-            <div id="exportFieldsList" class="export-fields-list"></div>
+            <div id="exportFieldsList" class="export-fields-list" data-avatar-anchor="rotations-export-fields"></div>
             <div class="mini text-muted">Es mostraran dins cada cel.la en mode participants.</div>
           </div>
 

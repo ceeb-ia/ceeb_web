@@ -12,6 +12,7 @@ from ...models import Competicio, Inscripcio
 from ...models.competicio import ProgramUnit, ProgramUnitSlot
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioProgramUnit, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
+from ...services.avatar.rotacions.messages import AVATAR_MESSAGES as ROTACIONS_AVATAR_MESSAGES
 from ...services.shared.competition_groups import (
     get_group_board_filter_facets,
     get_group_maps,
@@ -456,6 +457,8 @@ def rotacions_planner(request, pk):
         "out_of_program_groups_count": sum(1 for item in program_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
         "out_of_program_members_total": sum(item["members_count"] for item in program_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
         "show_out_of_program_in_competition_views": show_out_of_program_in_competition_views(competicio),
+        "avatar_messages": ROTACIONS_AVATAR_MESSAGES,
+        "avatar_initial_topic": "competition_rotations",
     }
     return render(request, "competicio/rotacions_planner.html", ctx)
 

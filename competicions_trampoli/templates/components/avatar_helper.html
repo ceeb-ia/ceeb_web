@@ -246,6 +246,21 @@
     box-shadow: 0 7px 18px rgba(15, 23, 42, 0.08);
   }
 
+  .avatar-context-highlight {
+    outline: 2px solid rgba(37, 99, 235, 0.68);
+    outline-offset: 4px;
+    border-radius: 8px;
+    box-shadow: 0 0 0 7px rgba(37, 99, 235, 0.12), 0 10px 30px rgba(15, 23, 42, 0.12);
+    transition: outline-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  [data-avatar-action].avatar-context-highlight,
+  button.avatar-context-highlight,
+  a.avatar-context-highlight {
+    outline-color: rgba(245, 158, 11, 0.95);
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.2), 0 12px 30px rgba(15, 23, 42, 0.16);
+  }
+
   @media (max-width: 1180px) {
     .avatar-helper {
       width: min(100vw, 560px);
@@ -362,13 +377,17 @@
 
 <script>
   (function () {
-    var script = document.getElementById("avatar-helper-messages");
-    var topics = {};
-    if (script) {
+    function parseTopics(helper) {
+      var script = helper && helper.previousElementSibling && helper.previousElementSibling.id === "avatar-helper-messages"
+        ? helper.previousElementSibling
+        : document.getElementById("avatar-helper-messages");
+      if (!script) {
+        return {};
+      }
       try {
-        topics = JSON.parse(script.textContent || "{}");
+        return JSON.parse(script.textContent || "{}");
       } catch (err) {
-        topics = {};
+        return {};
       }
     }
 
@@ -387,7 +406,7 @@
       return String(helper.dataset.staticPrefix || "/static/") + trimSlashes(value);
     }
 
-    function topicFor(topicId, fallbackId) {
+    function topicFor(topics, topicId, fallbackId) {
       return topics[topicId] || topics[fallbackId] || topics.welcome || null;
     }
 
@@ -406,7 +425,53 @@
       return topic && topic.avatar ? topic.avatar : "avatar/greeting_2.png";
     }
 
-    function runAction(actionName) {
+    function selectorForAction(action) {
+      var selector = String(action && action.selector || "").trim();
+      if (selector) {
+        return selector;
+      }
+      var actionName = String(action && action.action || "").trim();
+      if (!actionName) {
+        return "";
+      }
+      return "[data-avatar-action='" + actionName.replace(/'/g, "\\'") + "']";
+    }
+
+    function targetForAction(action) {
+      var selector = selectorForAction(action);
+      if (!selector) {
+        return null;
+      }
+      try {
+        return document.querySelector(selector);
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function runAction(actionConfig) {
+      var action = typeof actionConfig === "string" ? { action: actionConfig } : (actionConfig || {});
+      var actionName = String(action.action || "").trim();
+      if (actionName === "navigate") {
+        var target = targetForAction(action);
+        if (target && target.href) {
+          window.location.href = target.href;
+        }
+        return;
+      }
+      if (actionName === "open_panel") {
+        var panel = String(action.panel || "").trim();
+        var panelApps = [window.InscripcionsApp, window.PhasePlanner, window.RotacionsPlanner];
+        var panelApp = panelApps.find(function (candidate) {
+          return candidate && typeof candidate.openPanel === "function";
+        });
+        if (panel && panelApp) {
+          try {
+            panelApp.openPanel(panel);
+          } catch (err) {}
+        }
+        return;
+      }
       if (actionName === "create_competition") {
         var createLink = document.querySelector("[data-avatar-action='create_competition']");
         if (createLink && createLink.href) {
@@ -430,6 +495,12 @@
     }
 
     function setupHelper(helper) {
+      if (helper.__avatarHelperReady) {
+        return;
+      }
+      var topics = parseTopics(helper);
+      helper.__avatarTopics = topics;
+      helper.__avatarHelperReady = true;
       var openButton = helper.querySelector(".avatar-helper__toggle");
       var hideButton = helper.querySelector(".avatar-helper__hide");
       var bubbleOpenButton = helper.querySelector(".avatar-helper__bubble-toggle");
@@ -447,11 +518,14 @@
       var currentStep = 0;
       var bubbleOffset = { x: 0, y: 0 };
       var dragState = null;
+      var highlightedNodes = [];
+      var contextRenderId = 0;
 
       function setOpenState(isOpen) {
         helper.classList.toggle("is-open", isOpen);
         if (!isOpen) {
           helper.classList.remove("is-bubble-hidden");
+          clearContextHighlight();
           saveBubbleOffset();
         }
         if (openButton) {
@@ -519,12 +593,106 @@
         saveBubbleOffset();
       }
 
-      function renderActions(topic) {
+      function safeQueryAll(selector) {
+        try {
+          return Array.prototype.slice.call(document.querySelectorAll(selector));
+        } catch (err) {
+          return [];
+        }
+      }
+
+      function clearContextHighlight() {
+        highlightedNodes.forEach(function (node) {
+          if (node && node.classList) {
+            node.classList.remove("avatar-context-highlight");
+          }
+        });
+        highlightedNodes = [];
+      }
+
+      function isElementMostlyVisible(node) {
+        if (!node || typeof node.getBoundingClientRect !== "function") {
+          return true;
+        }
+        var rect = node.getBoundingClientRect();
+        var margin = 72;
+        return rect.top >= margin && rect.bottom <= (window.innerHeight - margin);
+      }
+
+      function firstNodeForSelector(selector) {
+        var nodes = safeQueryAll(selector);
+        return nodes.length ? nodes[0] : null;
+      }
+
+      function scrollTargetForStep(step, highlightedNodes) {
+        if (step && step.scroll === false) {
+          return null;
+        }
+        var scrollSelector = String(step && step.scroll || "").trim();
+        if (scrollSelector) {
+          return firstNodeForSelector(scrollSelector);
+        }
+        return highlightedNodes && highlightedNodes.length ? highlightedNodes[0] : null;
+      }
+
+      function applyHighlight(step) {
+        clearContextHighlight();
+        var cleanSelector = String(step && step.highlight || "").trim();
+        if (!cleanSelector || !helper.classList.contains("is-open") || helper.classList.contains("is-bubble-hidden")) {
+          return;
+        }
+        var nodes = safeQueryAll(cleanSelector);
+        highlightedNodes = nodes;
+        nodes.forEach(function (node) {
+          node.classList.add("avatar-context-highlight");
+        });
+        var scrollNode = scrollTargetForStep(step, nodes);
+        if (scrollNode && !isElementMostlyVisible(scrollNode)) {
+          scrollNode.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        }
+      }
+
+      function openStepPanel(step) {
+        var panel = String(step && step.panel || "").trim();
+        if (!panel) {
+          return Promise.resolve();
+        }
+        var panelApps = [window.InscripcionsApp, window.PhasePlanner, window.RotacionsPlanner];
+        var panelApp = panelApps.find(function (candidate) {
+          return candidate && typeof candidate.openPanel === "function";
+        });
+        if (!panelApp) {
+          return Promise.resolve();
+        }
+        try {
+          return Promise.resolve(panelApp.openPanel(panel));
+        } catch (err) {
+          return Promise.resolve();
+        }
+      }
+
+      function applyStepContext(step) {
+        contextRenderId += 1;
+        var renderId = contextRenderId;
+        clearContextHighlight();
+        if (!step || !step.highlight || !helper.classList.contains("is-open") || helper.classList.contains("is-bubble-hidden")) {
+          return;
+        }
+        openStepPanel(step).then(function () {
+          if (renderId !== contextRenderId) {
+            return;
+          }
+          applyHighlight(step);
+        });
+      }
+
+      function renderActions(topic, step) {
         if (!actionsNode) {
           return;
         }
         actionsNode.textContent = "";
-        var actions = Array.isArray(topic && topic.actions) ? topic.actions : [];
+        var stepActions = Array.isArray(step && step.actions) ? step.actions : null;
+        var actions = stepActions || (Array.isArray(topic && topic.actions) ? topic.actions : []);
         actions.forEach(function (action) {
           if (!action || !action.label) {
             return;
@@ -533,6 +701,9 @@
             return;
           }
           if (action.action === "create_apparatus" && !document.querySelector("[data-avatar-action='create_apparatus']")) {
+            return;
+          }
+          if (action.action === "navigate" && !targetForAction(action)) {
             return;
           }
           var button = document.createElement("button");
@@ -545,7 +716,7 @@
               return;
             }
             if (action.action) {
-              runAction(action.action);
+              runAction(action);
             }
           });
           actionsNode.appendChild(button);
@@ -553,7 +724,7 @@
       }
 
       function render() {
-        var topic = topicFor(currentTopicId, initialTopicId);
+        var topic = topicFor(topics, currentTopicId, initialTopicId);
         if (!topic) {
           return;
         }
@@ -580,13 +751,15 @@
         if (nextButton) {
           nextButton.disabled = currentStep >= maxStep;
         }
-        renderActions(topic);
+        renderActions(topic, step);
+        applyStepContext(step);
       }
 
       function openHelper() {
         applyBubbleOffset();
         setOpenState(true);
         helper.classList.remove("is-bubble-hidden");
+        render();
       }
 
       function loadTopic(topicId, options) {
@@ -596,9 +769,10 @@
         }
         currentTopicId = requestedTopicId || initialTopicId;
         currentStep = Number(options && options.step) || 0;
-        render();
         if (options && options.open) {
           openHelper();
+        } else {
+          render();
         }
       }
 
@@ -619,6 +793,7 @@
       if (bubbleOpenButton) {
         bubbleOpenButton.addEventListener("click", function () {
           helper.classList.remove("is-bubble-hidden");
+          render();
         });
       }
       if (bubbleCloseButton) {
@@ -696,25 +871,42 @@
 
     var helpers = Array.prototype.slice.call(document.querySelectorAll(".avatar-helper"));
     helpers.forEach(function (helper) {
+      setupHelper(helper);
       if (document.body && helper.parentNode !== document.body) {
         document.body.appendChild(helper);
       }
-      setupHelper(helper);
     });
 
-    document.addEventListener("click", function (event) {
-      var trigger = event.target.closest("[data-avatar-topic]");
-      if (!trigger) {
-        return;
+    function helperForTopic(topicId) {
+      var topic = String(topicId || "").trim();
+      var candidates = Array.prototype.slice.call(document.querySelectorAll(".avatar-helper"));
+      if (topic) {
+        for (var index = 0; index < candidates.length; index += 1) {
+          var candidate = candidates[index];
+          if (candidate && candidate.__avatarTopics && candidate.__avatarTopics[topic]) {
+            return candidate;
+          }
+        }
       }
-      event.preventDefault();
-      var helper = document.querySelector(".avatar-helper");
-      if (!helper) {
-        return;
-      }
-      helper.dispatchEvent(new CustomEvent("avatar:topic", {
-        detail: { topic: trigger.dataset.avatarTopic }
-      }));
-    });
+      return candidates.length ? candidates[0] : null;
+    }
+
+    if (!window.__avatarHelperTopicClickBound) {
+      window.__avatarHelperTopicClickBound = true;
+      document.addEventListener("click", function (event) {
+        var trigger = event.target.closest("[data-avatar-topic]");
+        if (!trigger) {
+          return;
+        }
+        event.preventDefault();
+        var helper = helperForTopic(trigger.dataset.avatarTopic);
+        if (!helper) {
+          return;
+        }
+        helper.dispatchEvent(new CustomEvent("avatar:topic", {
+          detail: { topic: trigger.dataset.avatarTopic }
+        }));
+      });
+    }
   })();
 </script>

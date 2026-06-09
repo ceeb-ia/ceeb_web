@@ -178,6 +178,18 @@ Llista de vinyetes. Cada element ha de tenir com a mínim `text`.
 
 Llista opcional d'accions dins la bombolla. Fer-ne un ús moderat. Les accions poden ser útils quan la vinyeta explica una acció directa i hi ha un enllaç clar a la pantalla.
 
+`highlight`
+
+Selector CSS opcional de l'element o zona que s'ha de ressaltar mentre l'avatar esta desplegat i mostra aquell pas. Ha de fer referencia preferiblement a un `data-avatar-anchor="..."`, no a classes visuals fragils.
+
+`scroll`
+
+Selector CSS opcional que indica cap a quin element cal portar l'usuari abans de ressaltar. Si val `false`, el pas no ha de provocar cap scroll. Es recomana quan l'element ressaltat ja es visible, quan es tracta d'un drawer lateral, o quan fer scroll seria mes confus que util.
+
+`panel`
+
+Clau opcional d'un panell o drawer que s'ha d'obrir abans d'aplicar el ressaltat. Nomes s'ha d'usar si la pantalla exposa una API de JS estable per obrir-lo, per exemple `window.InscripcionsApp.openPanel(panel)`.
+
 ## Integracio Amb Vista Django
 
 Cada vista que mostri l'avatar ha de passar el catàleg al context.
@@ -229,6 +241,57 @@ No posar botons interactius dins d'un `<a>`. Si cal posar ajuda sobre una card c
   <a class="card" href="...">...</a>
 </div>
 ```
+
+## Ressaltat Contextual De Vinyetes
+
+Quan una vinyeta parla d'una part concreta de la pantalla i l'avatar esta desplegat, aquella zona s'ha de poder identificar visualment. Aquest comportament no ha de ser una accio manual de l'usuari, sino una consequencia natural del pas actiu.
+
+Patro recomanat:
+
+1. Afegir anchors declaratius als templates:
+
+```html
+<section data-avatar-anchor="filters-panel">...</section>
+<button data-avatar-action="import_excel">Importar Excel</button>
+```
+
+2. Enriquir el pas corresponent amb selectors:
+
+```python
+{
+    "text": "Aqui pots filtrar les inscripcions visibles.",
+    "highlight": "[data-avatar-anchor='filters-panel']",
+}
+```
+
+3. Si el pas parla d'un element dins un panell tancat, obrir primer el panell:
+
+```python
+{
+    "text": "A la dreta tens el menu d'accions.",
+    "panel": "agrupacio",
+    "highlight": "[data-avatar-anchor='actions-sidebar']",
+    "scroll": False,
+}
+```
+
+4. Si l'element ressaltat es molt gran, separar el ressaltat del punt de scroll:
+
+```python
+{
+    "text": "La taula reuneix totes les inscripcions.",
+    "highlight": "[data-avatar-anchor='inscriptions-table']",
+    "scroll": "[data-avatar-anchor='inscriptions-table-header']",
+}
+```
+
+Criteris:
+
+- El ressaltat ha de desapareixer quan es canvia de pas, es plega l'avatar o es tanca la bombolla.
+- El CSS de ressaltat no ha de canviar `position`, `display`, dimensions ni `z-index` dels elements ressaltats. Ha de limitar-se a outline, ombra o efectes que no alterin layout.
+- En elements `fixed`, `sticky`, drawers, modals o sidebars, fer servir `scroll: False` per evitar salts visuals.
+- No ressaltar mitja pantalla si hi ha un anchor mes concret que explica millor la vinyeta.
+- Les accions de la bombolla i el ressaltat son coses diferents: una vinyeta pot ressaltar una zona sense afegir cap boto d'accio.
 
 ## Col.locacio Dels Botons D'Ajuda
 
@@ -369,7 +432,15 @@ Exemple:
 <button type="button" data-avatar-topic="filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button>
 ```
 
-### Pas 7. Validar
+### Pas 7. Afegir Anchors I Context De Pas
+
+Si una vinyeta parla d'una zona visible de la pantalla, afegir un `data-avatar-anchor` estable al template i connectar-lo des del pas amb `highlight`.
+
+Si la zona esta dins un drawer o panell, afegir tambe `panel` i decidir explicitament si cal `scroll` o `scroll: False`.
+
+No fer servir selectors dependents d'estil com `.card:nth-child(3)` o classes que nomes existeixen per maquetacio. Els anchors han de descriure el significat de la zona.
+
+### Pas 8. Validar
 
 Executar validacions mínimes:
 
@@ -392,6 +463,9 @@ Una pantalla es considera correctament adaptada quan:
 - cada `?` obre un tema concret i existent;
 - no hi ha `?` sobrants al costat d'accions trivials;
 - cap botó `?` està dins d'un `<a>`;
+- les vinyetes que parlen d'una zona concreta la ressalten quan l'avatar esta desplegat;
+- el ressaltat no mou drawers, sidebars, modals ni elements `fixed` o `sticky`;
+- els elements grans poden tenir `scroll` separat cap a capcaleres o punts d'entrada mes clars;
 - la bombolla no queda fixa tapant el flux principal sense opció de moure-la;
 - tancar la bombolla plega tot l'avatar;
 - plegar l'avatar no deixa cap vinyeta flotant;
@@ -555,11 +629,14 @@ Per cada pantalla:
 3. Confirmar que surt `welcome`.
 4. Obrir cada `?` contextual.
 5. Navegar `Anterior` i `Següent`.
-6. Arrossegar la bombolla.
-7. Plegar l'avatar i tornar-lo a obrir.
-8. Refrescar la pàgina i confirmar que la posició es manté.
-9. Provar una amplada mòbil o estreta.
-10. Confirmar que cap `?` tapa accions principals.
+6. Confirmar que cada pas amb `highlight` ressalta la zona correcta.
+7. Confirmar que cap pas amb `highlight` canvia la posicio visual de drawers, sidebars, modals o elements enganxats.
+8. Confirmar que els elements grans no fan scroll al mig d'una llista confusa si tenen un header o punt d'entrada millor.
+9. Arrossegar la bombolla.
+10. Plegar l'avatar i tornar-lo a obrir.
+11. Refrescar la pàgina i confirmar que la posició es manté.
+12. Provar una amplada mòbil o estreta.
+13. Confirmar que cap `?` tapa accions principals.
 
 ## Criteri Final
 

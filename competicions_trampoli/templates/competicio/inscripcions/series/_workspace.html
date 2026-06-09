@@ -1,13 +1,13 @@
 {% load static %}
 
-<div class="team-workspace-shell groups-workspace-shell" id="series-workspace-shell">
+<div class="team-workspace-shell groups-workspace-shell" id="series-workspace-shell" data-avatar-anchor="series-workspace-shell">
   <div class="alert alert-warning border mb-0 d-none" id="series-issues-banner"></div>
 
   <div class="groups-workspace-layout">
     <section class="groups-workspace-row groups-workspace-row-prep">
       <div class="groups-prep-main">
         <section class="team-workspace-pane groups-pane groups-pane-universe">
-          <div class="team-pane-card groups-pane-card groups-pane-card-universe">
+          <div class="team-pane-card groups-pane-card groups-pane-card-universe" data-avatar-anchor="series-universe">
             <div class="team-pane-head">
               <div class="groups-title-with-logo">
                 <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
@@ -22,7 +22,7 @@
               </div>
             </div>
 
-            <div class="team-context-strip series-aparell-strip">
+            <div class="team-context-strip series-aparell-strip" data-avatar-anchor="series-aparell">
               <div class="team-context-strip-main">
                 <label class="small text-muted mb-0" for="series-workspace-comp-aparell-select">Aparell d'equip</label>
                 <select id="series-workspace-comp-aparell-select" class="form-control form-control-sm">
@@ -110,7 +110,7 @@
             </div>
             <div class="groups-filter-active-chips" id="series-filter-active-chips" aria-live="polite"></div>
 
-            <div class="groups-universe-body">
+            <div class="groups-universe-body" data-avatar-anchor="series-filters-selection">
               <div class="groups-candidates-toolbar">
                 <div class="groups-selection-inline-metrics">
                   <span class="badge badge-light border"><strong id="series-selection-count">0</strong></span>

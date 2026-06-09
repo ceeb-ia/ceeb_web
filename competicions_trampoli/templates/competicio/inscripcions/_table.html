@@ -6,7 +6,7 @@
 {% if lazy_group_tabs_enabled %}
   {{ lazy_group_order_payload|json_script:"inscripcions-lazy-group-order-data" }}
 {% endif %}
-<div class="inscripcions-table-stage">
+<div class="inscripcions-table-stage" data-avatar-anchor="inscriptions-table">
   {% if selected_group_fields and records_grouped %}
     <ul class="nav nav-tabs mt-3" role="tablist" id="tabs-root">
       {% for group_label, group_records, group_key in records_grouped %}
@@ -44,7 +44,7 @@
           {% if group_key == active_group_key %}
             <div class="table-responsive">
               <table class="table table-striped table-bordered table-sm align-middle">
-                <thead class="table-light">
+                <thead class="table-light" data-avatar-anchor="inscriptions-table-header">
                   <tr>
                     <th class="control-col">
                       <input type="checkbox" id="select-all-visible">
@@ -171,7 +171,7 @@
   {% else %}
     <div class="table-responsive">
       <table class="table table-striped table-bordered table-sm align-middle">
-        <thead class="table-light">
+        <thead class="table-light" data-avatar-anchor="inscriptions-table-header">
           <tr>
             <th class="control-col">
               <input type="checkbox" id="select-all-visible">

@@ -1,15 +1,15 @@
-<section class="drawer-section planner-sidebar-panel programables-panel" id="programables-panel" data-drawer-panel="programables">
+<section class="drawer-section planner-sidebar-panel programables-panel" id="programables-panel" data-drawer-panel="programables" data-avatar-anchor="rotations-panel-programables">
               <div class="drawer-section-head">
                 <div>
                   <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
                     <span>Programables</span>
-                    <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda programables">?</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_programmables" aria-label="Ajuda programables">?</button>
                   </div>
                   <div class="drawer-section-subtitle">Grups individuals i series d'equip preparades per arrossegar a la graella.</div>
                 </div>
                 <span class="badge badge-light rotation-count-badge">{{ grups_display|length }}</span>
               </div>
-              <div class="drawer-filterbar program-filterbar mb-3">
+              <div class="drawer-filterbar program-filterbar mb-3" data-avatar-anchor="rotations-programmable-filters">
                 <div class="program-filterbar-main">
                   <input type="search" class="form-control form-control-sm rotation-search-control" id="programSearch" placeholder="Cerca grup, equip, fase, gimnasta o entitat">
                   <details class="program-filter-menu" id="programFilterMenu">
@@ -66,7 +66,7 @@
               </div>
 
               <div class="planner-panel-stack">
-                <details class="group-bucket planner-program-bucket program-bucket-fold program-bucket-fold--pending" id="out-of-program-bucket" open>
+                <details class="group-bucket planner-program-bucket program-bucket-fold program-bucket-fold--pending" id="out-of-program-bucket" data-avatar-anchor="rotations-programmable-pending" open>
                   <summary class="group-bucket-head program-bucket-summary">
                     <span class="program-bucket-title-wrap">
                       <span class="program-bucket-kicker">Treball pendent</span>
@@ -77,7 +77,7 @@
                   <div class="program-bucket-list" id="out-of-program-list"></div>
                 </details>
 
-                <details class="group-bucket planner-program-bucket program-bucket-fold program-bucket-fold--done" id="programmed-bucket">
+                <details class="group-bucket planner-program-bucket program-bucket-fold program-bucket-fold--done" id="programmed-bucket" data-avatar-anchor="rotations-programmable-done">
                   <summary class="group-bucket-head program-bucket-summary">
                     <span class="program-bucket-title-wrap">
                       <span class="program-bucket-kicker">Consulta</span>
