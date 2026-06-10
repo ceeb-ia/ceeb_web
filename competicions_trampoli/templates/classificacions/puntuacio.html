@@ -219,10 +219,56 @@
         </div>
       </div>
 
-      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--limits" id="exerciseRestrictionsCard">
+      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--shared" id="globalParticipantsCard" style="display:none;">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">04</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Seleccio i agregacio entre membres <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="participants" aria-label="Ajuda seleccio de membres">?</button></p>
+                <p class="builder-subsection__desc">Aquest pas nomes apareix quan cada membre es calcula per separat en un sac compartit d'aparells. Primer es calcula una nota global per membre; despres aquest bloc decideix quins membres compten per a l'equip.</p>
+              </div>
+            </div>
+          </div>
+          <div class="builder-inline-note">Entre membres</div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-5 mb-2">
+            <label class="font-weight-bold">Membres que compten</label>
+            <select class="form-control" id="sParticipantsGlobalMode">
+              <option value="tots">Tots</option>
+              <option value="millor_1">Millor 1</option>
+              <option value="millor_n">Millors N</option>
+              <option value="pitjor_1">Pitjor 1</option>
+              <option value="pitjor_n">Pitjors N</option>
+            </select>
+            <div class="small text-muted mt-1" id="participantsGlobalHint">La seleccio es fa sobre la nota global ja calculada de cada membre.</div>
+          </div>
+          <div class="col-12 col-md-2 mb-2" id="participantsGlobalNBox" style="display:none;">
+            <label class="small text-muted">N</label>
+            <input class="form-control" id="iParticipantsGlobalN" type="number" min="1" value="1">
+          </div>
+          <div class="col-12 col-md-5 mb-2">
+            <label class="font-weight-bold">Agregacio dels membres seleccionats</label>
+            <select class="form-control" id="sAggParticipantsGlobal">
+              <option value="sum">Suma</option>
+              <option value="avg">Mitjana</option>
+              <option value="median">Mediana</option>
+              <option value="max">Maxim</option>
+              <option value="min">Minim</option>
+            </select>
+            <div class="small text-muted mt-1">Transforma els membres seleccionats en la puntuacio final de l'equip.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--limits" id="exerciseRestrictionsCard">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">05</span>
             <div class="classif-panel-title-row">
               <span class="classif-panel-icon" aria-hidden="true">
                 <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
@@ -249,7 +295,7 @@
       <div class="builder-subsection builder-subsection--muted classif-puntuacio-panel classif-puntuacio-panel--final" id="appAggregationCard">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">05</span>
+            <span class="classif-step-index">06</span>
             <div class="classif-panel-title-row">
               <span class="classif-panel-icon" aria-hidden="true">
                 <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
@@ -279,7 +325,7 @@
       <div class="builder-subsection builder-subsection--highlight classif-puntuacio-panel classif-puntuacio-panel--summary">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
-            <span class="classif-step-index">06</span>
+            <span class="classif-step-index">07</span>
             <div class="classif-panel-title-row">
               <span class="classif-panel-icon" aria-hidden="true">
                 <img src="{% static 'classificacions/sections/puntuacio/resum.png' %}" alt="">

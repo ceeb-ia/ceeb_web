@@ -45,6 +45,7 @@ from .selection import (
     _normalize_exercicis_cfg,
     _normalize_field_mode,
     _normalize_optional_agg,
+    _normalize_participants_cfg,
     _pick_exercicis_rows,
     _pick_exercicis_tuples,
     _pick_participants,
@@ -201,12 +202,22 @@ def compute_classificacio(competicio, cfg_obj):
         and exercise_selection_scope == EXERCISE_SELECTION_SCOPE_PER_MEMBER
         and mode_seleccio_exercicis != "global_pool"
     )
+    allow_global_participant_selection_step = (
+        tipus == "equips"
+        and team_mode == "derived_from_individual"
+        and exercise_selection_scope == EXERCISE_SELECTION_SCOPE_PER_MEMBER
+        and mode_seleccio_exercicis == "global_pool"
+    )
     participants_per_aparell = punt.get("participants_per_aparell") if isinstance(punt.get("participants_per_aparell"), dict) else {}
     agregacio_participants_per_aparell = (
         punt.get("agregacio_participants_per_aparell")
         if isinstance(punt.get("agregacio_participants_per_aparell"), dict)
         else {}
     )
+    participants_global = _normalize_participants_cfg(
+        punt.get("participants_global") if isinstance(punt.get("participants_global"), dict) else {}
+    )
+    agregacio_participants_global = _normalize_optional_agg(punt.get("agregacio_participants_global")) or "sum"
     allow_candidate_source = (
         tipus == "individual"
         or (tipus == "equips" and team_mode in ("derived_from_individual", "native_team"))
@@ -560,6 +571,9 @@ def compute_classificacio(competicio, cfg_obj):
     _get_selected_rows_for_derived_team_field = selection_exports["get_selected_rows_for_derived_team_field"]
     _get_main_selected_rows_for_group_field = selection_exports["get_main_selected_rows_for_group_field"]
 
+    def resolve_global_participants():
+        return dict(participants_global or {"mode": "tots"}), agregacio_participants_global
+
     for ins_id, obj in per_ins.items():
         selected_rows_by_app = _get_selected_rows_agg_for_ins(ins_id)
         for ca in aparells:
@@ -906,11 +920,15 @@ def compute_classificacio(competicio, cfg_obj):
             agg_aparells=agg_aparells,
             exercise_selection_scope=exercise_selection_scope,
             allow_main_participant_selection_step=allow_main_participant_selection_step,
+            allow_global_participant_selection_step=allow_global_participant_selection_step,
             desempat=desempat,
             get_main_selected_rows_agg_for_team=_get_main_selected_rows_agg_for_team,
             get_selected_rows_agg_for_derived_team=_get_selected_rows_agg_for_derived_team,
+            get_selected_rows_agg_for_ins=_get_selected_rows_agg_for_ins,
             resolve_agregacio_exercicis_for_app=resolve_agregacio_exercicis_for_app,
             resolve_participants_for_app=resolve_participants_for_app,
+            resolve_global_participants=resolve_global_participants,
+            global_member_agg_exercicis=agg_exercicis,
             tie_key_resolver=_tie_key,
             is_pipeline_tie=_is_pipeline_tie,
             pipeline_metric_map_for_crit=_pipeline_metric_map_for_crit,

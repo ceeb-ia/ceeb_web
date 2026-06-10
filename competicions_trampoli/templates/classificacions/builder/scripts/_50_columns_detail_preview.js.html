@@ -2615,6 +2615,9 @@
     if (!punt.candidate_source_per_aparell || typeof punt.candidate_source_per_aparell !== "object" || Array.isArray(punt.candidate_source_per_aparell)) {
       punt.candidate_source_per_aparell = {};
     }
+    if (!punt.participants_global || typeof punt.participants_global !== "object" || Array.isArray(punt.participants_global)) {
+      punt.participants_global = JSON.parse(JSON.stringify(fallback.puntuacio.participants_global || { mode: "tots" }));
+    }
     punt.exercise_selection_scope = normalizeExerciseSelectionScope(punt.exercise_selection_scope);
 
     const victories = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : {};

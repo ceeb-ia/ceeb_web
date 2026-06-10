@@ -258,7 +258,7 @@
       const actor = _summarySelectionActor(showScope, isTeamPool, true);
       const aggEx = _describeAggLabel((punt || {}).agregacio_exercicis || "sum");
       if (showScope && !isTeamPool) {
-        return `${actor} aplica ${globalLabel}; despres s'agreguen els subtotals de membres`;
+        return `${actor} aplica ${globalLabel} i es redueix per ${aggEx}; despres es resol la seleccio entre membres`;
       }
       return `${actor} aplica ${globalLabel} i es redueix per ${aggEx}`;
     }
@@ -329,6 +329,21 @@
       .join("; ");
   }
 
+  function _getGlobalParticipantsForUi(punt) {
+    return _copyPuntuacioParticipantsCfg((punt && punt.participants_global) || {});
+  }
+
+  function _getGlobalAggParticipantsForUi(punt) {
+    return _normalizeAggCampsValue((punt && punt.agregacio_participants_global) || "sum");
+  }
+
+  function _buildGlobalMemberSelectionSegment(punt) {
+    if (!isGlobalMemberSelectionAvailable()) return "";
+    const cfg = _getGlobalParticipantsForUi(punt || ((currentCfg() || {}).schema || DEFAULT_SCHEMA).puntuacio || {});
+    const agg = _getGlobalAggParticipantsForUi(punt || {});
+    return `del resultat global de cada membre, es seleccionen ${_describeParticipantSelectionMode(cfg.mode, cfg.n)} i s'agreguen per ${_describeAggLabel(agg)}`;
+  }
+
   function _buildTeamPoolModeSegment(showScope, isTeamPool, perAppEntries) {
     const entries = Array.isArray(perAppEntries) ? perAppEntries : [];
     if (!(showScope && isTeamPool) || !entries.length) return "";
@@ -348,7 +363,9 @@
 
   function _summarySelectionLabel(showScope, isTeamPool) {
     if (showScope && !isTeamPool) return "Seleccio d'exercicis per membre";
-    if (showScope && isTeamPool && isTeamPoolPerExerciseTreatmentActive()) return "Seleccio de subtotals d'exercici";
+    if (showScope && isTeamPool && isTeamPoolPerExerciseTreatmentActive()) return getModeSeleccioExercicisFromUI() === "global_pool"
+      ? "Seleccio de subtotals aparell-exercici"
+      : "Seleccio de subtotals d'exercici";
     if (showScope && isTeamPool) return "Seleccio de notes de l'equip";
     return "Seleccio d'exercicis";
   }
@@ -516,6 +533,15 @@
       getEquipsUiState().effectiveTeamMode === TEAM_MODE_DERIVED &&
       getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_PER_MEMBER &&
       _isPerAppExerciseResolutionActive()
+    );
+  }
+
+  function isGlobalMemberSelectionAvailable() {
+    return (
+      isTipusEquips() &&
+      getEquipsUiState().effectiveTeamMode === TEAM_MODE_DERIVED &&
+      getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_PER_MEMBER &&
+      getModeSeleccioExercicisFromUI() === "global_pool"
     );
   }
 
@@ -1106,11 +1132,13 @@
         els.perAppConfigIntro.textContent = isCombinedApps
           ? (isCandidateSourceAvailable()
               ? "Cada targeta mostra la base comuna de camps, el tractament comu o per exercici i el pretractament de l'aparell. La seleccio final es resol sobre una sola bossa comuna."
-              : "Cada targeta defineix els camps de l'aparell. La seleccio final es resol despres en un sol sac compartit.")
+              : (showScope && !isTeamPool
+                  ? "Cada targeta defineix els camps de l'aparell i aporta notes al sac compartit que es resol dins de cada membre."
+                  : "Cada targeta defineix els camps de l'aparell. La seleccio final es resol despres en un sol sac compartit."))
           : (isCandidateSourceAvailable()
               ? "Cada targeta mostra la base comuna de camps, el tractament comu o per exercici, el pretractament, la seleccio d'exercicis, la seleccio i agregacio de membres i l'agregacio final d'exercicis propis d'aquest aparell."
               : (showScope && !isTeamPool
-                  ? "Cada targeta calcula una nota per membre, selecciona quins membres compten i agrega el subtotal de l'aparell."
+                  ? "Cada targeta calcula una nota per membre dins de l'aparell; despres selecciona quins membres compten i agrega el subtotal de l'aparell."
                   : "Cada targeta defineix camps, selecciona exercicis i agrega el subtotal propi de l'aparell."));
       }
     }
@@ -1137,6 +1165,7 @@
     const subjectLabel = _summarySubjectLabel(showScope, isTeamPool);
     const finalSegment = _buildFinalSegment(modeSel, selectedAppIds.length, punt.agregacio_aparells || els.sAggAparells?.value || "sum");
     const memberSelectionSegment = _buildMemberSelectionSegment(perAppEntries);
+    const globalMemberSelectionSegment = _buildGlobalMemberSelectionSegment(punt);
     const teamPoolModeSegment = _buildTeamPoolModeSegment(showScope, isTeamPool, perAppEntries);
     const summaryLines = [
       { label: "Resultat", text: `${resultMode} en ordre ${orderLabel}` },
@@ -1148,6 +1177,9 @@
     }
     if (memberSelectionSegment) {
       summaryLines.push({ label: "Seleccio de membres", text: memberSelectionSegment });
+    }
+    if (globalMemberSelectionSegment) {
+      summaryLines.push({ label: "Seleccio de membres", text: globalMemberSelectionSegment });
     }
 
     if (resultMode === "victories") {
@@ -1191,6 +1223,12 @@
 
   function _perAppExerciseSelectionCopy() {
     if (isTeamPoolPerExerciseTreatmentActive()) {
+      if (getModeSeleccioExercicisFromUI() === "global_pool") {
+        return {
+          title: "Seleccio de subtotals aparell-exercici",
+          hint: "Cada subtotal correspon a un numero d'exercici dins d'aquest aparell; despres els subtotals seleccionats entren al sac compartit.",
+        };
+      }
       return {
         title: "Seleccio de subtotals d'exercici",
         hint: "Despres de calcular una bossa per numero d'exercici, aquest criteri escull quins subtotals d'exercici compten per a l'aparell.",
@@ -1216,6 +1254,12 @@
 
   function _perAppExerciseAggregationCopy() {
     if (isTeamPoolPerExerciseTreatmentActive()) {
+      if (getModeSeleccioExercicisFromUI() === "global_pool") {
+        return {
+          title: "Agregacio dels subtotals aparell-exercici",
+          hint: "Combina els subtotals seleccionats d'aquest aparell abans que entrin al sac compartit.",
+        };
+      }
       return {
         title: "Agregacio dels subtotals seleccionats",
         hint: "Combina els subtotals d'exercici seleccionats per obtenir el subtotal de l'aparell.",
@@ -1616,6 +1660,14 @@
   }
 
   function perAppGlobalPoolContextHTML(compAparellId){
+    let body = "Aquest aparell aporta les seves notes o subtotals al sac compartit. La seleccio final es configura al bloc compartit d'aquesta seccio.";
+    if (isDerivedExerciseSelectionScopeAvailable() && getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_PER_MEMBER) {
+      body = "Aquest aparell aporta notes al sac compartit de cada membre. Despres es calcula una nota global per membre i, si cal, se seleccionen membres en el bloc entre membres.";
+    } else if (isTeamPoolPerExerciseTreatmentActive()) {
+      body = "Aquest aparell calcula subtotals per numero d'exercici dins de l'aparell. Aquests subtotals aparell-exercici entren despres al sac compartit.";
+    } else if (isTeamPoolFlatTreatmentActive()) {
+      body = "Aquest aparell aporta notes a la bossa plana de l'equip. La seleccio global es configura al bloc compartit d'aquesta seccio.";
+    }
     return `
       <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-pool-context="${esc(compAparellId)}">
         <label class="small text-muted mb-1">Aporta al sac compartit</label>
@@ -1624,7 +1676,7 @@
           <div class="puntuacio-step-card__badge">Bloc compartit</div>
         </div>
         <div class="puntuacio-step-card__body">
-          <div class="small text-muted">Aquest aparell aporta les seves notes o subtotals al sac compartit. La seleccio final es configura al bloc compartit d'aquesta seccio.</div>
+          <div class="small text-muted">${esc(body)}</div>
         </div>
       </div>
     `;
@@ -2184,6 +2236,19 @@
     return map;
   }
 
+  function readGlobalParticipantsFromUI() {
+    if (!isGlobalMemberSelectionAvailable()) return null;
+    return _copyPuntuacioParticipantsCfg({
+      mode: els.sParticipantsGlobalMode?.value || "tots",
+      n: els.iParticipantsGlobalN?.value || 1,
+    });
+  }
+
+  function readGlobalAggParticipantsFromUI() {
+    if (!isGlobalMemberSelectionAvailable()) return "sum";
+    return _normalizeAggCampsValue(els.sAggParticipantsGlobal?.value || "sum");
+  }
+
   function readMainExercicisFromUI() {
     const mode = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
     const bestN = Math.max(1, Number(els.iExBestN?.value || 1));
@@ -2246,6 +2311,39 @@
     return values.every(value => value === values[0]) ? values[0] : "sum";
   }
 
+  function refreshGlobalParticipantsUI(schema) {
+    const currentSchema = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const punt = (currentSchema.puntuacio || {});
+    const showCard = isGlobalMemberSelectionAvailable();
+    if (els.globalParticipantsCard) els.globalParticipantsCard.style.display = showCard ? "" : "none";
+    if (!showCard) return;
+
+    const cfg = _getGlobalParticipantsForUi({
+      participants_global: readGlobalParticipantsFromUI() || punt.participants_global || {},
+    });
+    const mode = cfg.mode || "tots";
+    if (els.sParticipantsGlobalMode) {
+      ensureSelectOption(els.sParticipantsGlobalMode, mode, value => `${value} (legacy)`);
+      els.sParticipantsGlobalMode.value = mode;
+    }
+    if (els.iParticipantsGlobalN && !els.iParticipantsGlobalN.value) {
+      els.iParticipantsGlobalN.value = Math.max(1, Number(cfg.n || 1));
+    }
+    if (els.participantsGlobalNBox) {
+      els.participantsGlobalNBox.style.display = (mode === "millor_n" || mode === "pitjor_n") ? "" : "none";
+    }
+    if (els.sAggParticipantsGlobal) {
+      const agg = readGlobalAggParticipantsFromUI() || _getGlobalAggParticipantsForUi(punt);
+      ensureSelectOption(els.sAggParticipantsGlobal, agg, value => `${value} (legacy)`);
+      els.sAggParticipantsGlobal.value = agg;
+    }
+    if (els.participantsGlobalHint) {
+      els.participantsGlobalHint.textContent = (mode === "millor_n" || mode === "pitjor_n")
+        ? "La N s'aplica sobre les notes globals dels membres, un cop resolt el sac compartit d'aparells dins de cada membre."
+        : "La seleccio es fa sobre la nota global ja calculada de cada membre.";
+    }
+  }
+
   function refreshMainExercicisUI() {
     const schema = (currentCfg() || {}).schema || DEFAULT_SCHEMA;
     const appCount = _puntuacioSelectedAppCount(schema);
@@ -2272,9 +2370,9 @@
     if (els.exerciseRestrictionsCard) els.exerciseRestrictionsCard.style.display = (showScope && isTeamPool && isCombinedPool && isTeamPoolFlatTreatmentActive()) ? "" : "none";
     if (els.exerciseModeLabel) {
       els.exerciseModeLabel.firstChild.textContent = showScope && !isTeamPool
-        ? "Criteri de seleccio per membre "
+        ? "Criteri de seleccio dins de cada membre "
         : (showScope && isTeamPool && isTeamPoolPerExerciseTreatmentActive()
-            ? "Criteri de seleccio de subtotals "
+            ? (isCombinedPool ? "Criteri de seleccio de subtotals aparell-exercici " : "Criteri de seleccio de subtotals ")
             : "Criteri de seleccio ");
     }
     if (els.globalExerciseCriteriaWrap) els.globalExerciseCriteriaWrap.style.display = isCombinedPool ? "" : "none";
@@ -2290,7 +2388,13 @@
       const label = describeExerciseMode(m, els.iExBestN?.value, els.iExIndex?.value, els.tExIds?.value);
       let hint = "";
       if (isCombinedPool) {
-        hint = "Aquest bloc defineix la seleccio i agregacio final dins del sac compartit d'aparells.";
+        if (showScope && !isTeamPool) {
+          hint = "Aquest bloc defineix la seleccio i agregacio dins del sac compartit d'aparells de cada membre.";
+        } else if (showScope && isTeamPoolPerExerciseTreatmentActive()) {
+          hint = "Aquest bloc selecciona subtotals aparell-exercici ja calculats dins de cada aparell.";
+        } else {
+          hint = "Aquest bloc defineix la seleccio i agregacio final dins del sac compartit d'aparells.";
+        }
       } else {
         hint = "Aquest bloc nomes informa del flux local; quan els aparells es resolen per separat, la seleccio es configura a cada targeta.";
       }
@@ -2305,6 +2409,7 @@
       }
       els.exModeHint.textContent = hint;
     }
+    refreshGlobalParticipantsUI(schema);
   }
 
   function isVictoriesModeActive() {
@@ -2354,6 +2459,20 @@
       ensureSelectOption(els.sExerciseSelectionScope, memberTreatmentMode, value => `${value} (legacy)`);
       els.sExerciseSelectionScope.value = memberTreatmentMode;
     }
+    if (els.sParticipantsGlobalMode) {
+      const cfg = _getGlobalParticipantsForUi(punt);
+      ensureSelectOption(els.sParticipantsGlobalMode, cfg.mode || "tots", value => `${value} (legacy)`);
+      els.sParticipantsGlobalMode.value = cfg.mode || "tots";
+    }
+    if (els.iParticipantsGlobalN) {
+      const cfg = _getGlobalParticipantsForUi(punt);
+      els.iParticipantsGlobalN.value = Math.max(1, Number(cfg.n || 1));
+    }
+    if (els.sAggParticipantsGlobal) {
+      const agg = _getGlobalAggParticipantsForUi(punt);
+      ensureSelectOption(els.sAggParticipantsGlobal, agg, value => `${value} (legacy)`);
+      els.sAggParticipantsGlobal.value = agg;
+    }
     bindPuntuacioEvents();
     syncPuntuacioSelectChoiceButtons();
     renderPuntuacioSection(currentSchema);
@@ -2395,6 +2514,8 @@
     const candidateSourcePerApp = readPerAppCandidateSourceFromUI();
     const participantsPerApp = readPerAppParticipantsFromUI();
     const aggParticipantsPerApp = readPerAppAggParticipantsFromUI();
+    const globalParticipants = readGlobalParticipantsFromUI();
+    const globalAggParticipants = readGlobalAggParticipantsFromUI();
     const legacyAggCamps = buildLegacyAggCampsMirror(apIdKeys, agregacio_camps_per_aparell);
     const legacyAggExercicis = apMode === "per_aparell_override"
       ? buildLegacyAggExercicisMirror(apIdKeys, aggExPerAppCfg)
@@ -2429,6 +2550,10 @@
       ...(isMemberSelectionAggregationAvailable() ? {
         participants_per_aparell: participantsPerApp,
         agregacio_participants_per_aparell: aggParticipantsPerApp,
+      } : {}),
+      ...(isGlobalMemberSelectionAvailable() ? {
+        participants_global: globalParticipants,
+        agregacio_participants_global: globalAggParticipants,
       } : {}),
       victories: {
         punts_victoria: 1,
@@ -2474,6 +2599,9 @@
       els.iExMaxPerParticipant,
       els.tExIds,
       els.sAggExercicis,
+      els.sParticipantsGlobalMode,
+      els.iParticipantsGlobalN,
+      els.sAggParticipantsGlobal,
       els.sAggAparells,
     ].forEach((node) => {
       if (!node) return;

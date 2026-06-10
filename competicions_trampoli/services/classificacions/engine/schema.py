@@ -66,6 +66,8 @@ DEFAULT_SCHEMA = {
         "candidate_source_per_aparell": {},
         "agregacio_exercicis": "sum",
         "agregacio_aparells": "sum",
+        "participants_global": {"mode": "tots"},
+        "agregacio_participants_global": "sum",
         "participants_per_aparell": {},
         "agregacio_participants_per_aparell": {},
         "mode_resultat_aparells": "score",
@@ -123,6 +125,10 @@ def _merge_puntuacio(raw_puntuacio):
     out["victories"] = {
         **DEFAULT_SCHEMA["puntuacio"]["victories"],
         **_dict_or_empty(raw.get("victories")),
+    }
+    out["participants_global"] = {
+        **DEFAULT_SCHEMA["puntuacio"]["participants_global"],
+        **_dict_or_empty(raw.get("participants_global")),
     }
     for key in (
         "exercicis_per_aparell",
