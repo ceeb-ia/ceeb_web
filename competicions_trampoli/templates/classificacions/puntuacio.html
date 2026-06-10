@@ -5,7 +5,7 @@
     <div>
       <div class="builder-section__eyebrow">Logica</div>
       <h4 class="builder-section__title">Puntuacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda puntuacio">?</button></h4>
-      <p class="builder-section__desc">Defineix d'on surten les notes d'exercici candidates, com se seleccionen i com es combinen per obtenir el resultat numeric final.</p>
+      <p class="builder-section__desc">Defineix quines notes entren al calcul, en quin conjunt es seleccionen i com s'agreguen fins al resultat numeric final.</p>
     </div>
     <div class="builder-help-badge">Bloc central</div>
   </div>
@@ -21,7 +21,7 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Context del calcul <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda context del calcul">?</button></p>
-                <p class="builder-subsection__desc">Defineix la base, els aparells, la fase font i com es tracten les notes abans d'editar cada aparell.</p>
+                <p class="builder-subsection__desc">Defineix la base, els aparells, la fase font i si les notes es resolen per aparell, en un sac compartit o per membres.</p>
               </div>
             </div>
           </div>
@@ -116,23 +116,24 @@
                 <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
               </span>
               <span>
-                <span class="classif-puntuacio-context-card__title">Tractament</span>
-                <span class="classif-puntuacio-context-card__desc">Per aparell, sac global i membres.</span>
+                <span class="classif-puntuacio-context-card__title">Flux del calcul</span>
+                <span class="classif-puntuacio-context-card__desc">Relacio entre aparells i, si cal, entre membres.</span>
               </span>
             </div>
             <div class="classif-puntuacio-context-card__stack">
               <div>
-                <label class="font-weight-bold">Aparells</label>
+                <label class="font-weight-bold">Relacio entre aparells</label>
                 <select class="form-control" id="sModeSeleccioExercicis">
-                  <option value="per_aparell_override">Notes per aparell per separat</option>
-                  <option value="global_pool">Totes les notes dels aparells junts</option>
+                  <option value="per_aparell_override">Cada aparell es calcula per separat</option>
+                  <option value="global_pool">Un sol sac compartit amb tots els aparells</option>
                 </select>
               </div>
               <div id="exerciseSelectionScopeWrap" style="display:none;">
-                <label class="font-weight-bold">Membres</label>
+                <label class="font-weight-bold">Relacio entre membres</label>
                 <select class="form-control" id="sExerciseSelectionScope">
-                  <option value="per_member">Notes per membre per separat</option>
-                  <option value="team_pool">Totes les notes de l'equip juntes</option>
+                  <option value="per_member">Cada membre es calcula per separat</option>
+                  <option value="team_pool_flat">Una bossa d'equip amb totes les notes</option>
+                  <option value="team_pool_per_exercici">Una bossa d'equip per numero d'exercici</option>
                 </select>
               </div>
             </div>
@@ -172,7 +173,7 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Seleccio dins del sac compartit <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
-                <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
+                <p class="builder-subsection__desc">Aquest pas nomes apareix quan diversos aparells comparteixen un sol sac. La seleccio s'aplica sobre les notes o subtotals que arriben d'aquests aparells.</p>
               </div>
             </div>
           </div>
@@ -205,7 +206,7 @@
               <input class="form-control" id="tExIds" type="text" placeholder="1,3,4">
             </div>
             <div class="col-12 col-md-6 mb-2">
-              <label class="small text-muted">Agregacio d'exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_exercicis" aria-label="Ajuda agregacio d'exercicis">?</button></label>
+              <label class="small text-muted">Agregacio del conjunt seleccionat <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_exercicis" aria-label="Ajuda agregacio d'exercicis">?</button></label>
               <select class="form-control" id="sAggExercicis">
                 <option value="sum">Suma</option>
                 <option value="avg">Mitjana</option>
@@ -228,16 +229,16 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Limits i restriccions</p>
-                <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
+                <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten quantes notes pot aportar cada participant dins d'una bossa plana.</p>
               </div>
             </div>
           </div>
         </div>
         <div class="row">
           <div class="col-12 col-md-4 mb-2" id="exMaxPerParticipantBox" style="display:none;">
-            <label class="font-weight-bold">Aportacio maxima per participant <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda aportacio maxima per participant">?</button></label>
+            <label class="font-weight-bold">Quota per participant <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda aportacio maxima per participant">?</button></label>
             <input class="form-control" id="iExMaxPerParticipant" type="number" min="0" value="0">
-            <div class="small text-muted mt-1">Cap participant no pot aportar mes de N notes a la seleccio final. `0` vol dir sense limit.</div>
+            <div class="small text-muted mt-1">Cap participant no pot aportar mes de N notes dins de la bossa plana. `0` vol dir sense limit.</div>
           </div>
           <div class="col-12 col-md-8 mb-2">
             <div id="restrictionsHint" class="small text-muted pt-2"></div>
