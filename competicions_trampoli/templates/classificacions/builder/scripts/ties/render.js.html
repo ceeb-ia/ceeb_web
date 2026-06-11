@@ -288,7 +288,7 @@
     }
     const fallbackPipeline = buildTiePipelineFromPuntuacioSchema(readPuntuacioSchemaFromUI ? readPuntuacioSchemaFromUI() : {});
     const candidateSourceMode = getTieVisibleCandidateSourceMode(tie, fallbackPipeline);
-    if (candidateSourceMode && candidateSourceMode !== "hereta") {
+    if (candidateSourceMode && candidateSourceMode !== "hereta" && candidateSourceMode !== "raw_exercise") {
       parts.push(describeTieCandidateSourceMode(candidateSourceMode, fallbackPipeline));
     }
     const exScope = getTieBuilderUiExerciseSelectionScope(tie) || normalizeTieExerciseSelectionScope((tie || {}).exercise_selection_scope || "hereta");
@@ -387,6 +387,17 @@
   }
 
   function readTieCampsFromRow(tr) {
+    const perAppMap = readTieCampsPerAppFromRow(tr);
+    const perAppValues = Object.values(perAppMap).filter(list => Array.isArray(list) && list.length);
+    if (perAppValues.length) {
+      const first = perAppValues[0] || [];
+      const aggMap = readTieAggCampsPerAppFromRow(tr);
+      const firstAgg = normalizeTieAggValue(aggMap[Object.keys(perAppMap)[0]] || "sum", "sum");
+      return {
+        camps: first,
+        agregacio_camps: firstAgg,
+      };
+    }
     const campsSel = tr.querySelector('[data-k="camps"]');
     const aggSel = tr.querySelector('[data-k="agg_camps"]');
     const camps = Array.from(campsSel?.selectedOptions || []).map(o => String(o.value)).filter(Boolean);
@@ -395,6 +406,55 @@
       camps: camps,
       agregacio_camps: ["hereta","sum","avg","median","max","min"].includes(agg) ? agg : "hereta",
     };
+  }
+
+  function readTieSelectedAppIdsFromRow(tr) {
+    const checked = Array.from(tr?.querySelectorAll?.('[data-k="tie_app_id"]:checked') || [])
+      .map(node => Number(node.value))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (checked.length) return _uniquePositiveInts(checked);
+    const selected = tr?.querySelector?.('[data-k="tie_app_ids"]');
+    if (selected) {
+      const ids = String(selected.value || "")
+        .split(",")
+        .map(value => Number(String(value || "").trim()))
+        .filter(value => Number.isFinite(value) && value > 0);
+      if (ids.length) return _uniquePositiveInts(ids);
+    }
+    return [];
+  }
+
+  function readTieCampsPerAppFromRow(tr) {
+    const out = {};
+    (tr?.querySelectorAll?.('[data-k="tie_app_camps"]') || []).forEach(sel => {
+      const appId = Number(sel.getAttribute("data-app-id") || 0);
+      if (!Number.isFinite(appId) || appId <= 0) return;
+      const camps = Array.from(sel.selectedOptions || []).map(o => String(o.value || "").trim()).filter(Boolean);
+      if (camps.length) out[String(appId)] = camps;
+    });
+    return out;
+  }
+
+  function readTieAggCampsPerAppFromRow(tr) {
+    const out = {};
+    (tr?.querySelectorAll?.('[data-k="tie_app_agg_camps"]') || []).forEach(sel => {
+      const appId = Number(sel.getAttribute("data-app-id") || 0);
+      if (!Number.isFinite(appId) || appId <= 0) return;
+      out[String(appId)] = normalizeTieAggValue(sel.value || "sum", "sum");
+    });
+    return out;
+  }
+
+  function readTieAggExercicisFromRow(tr) {
+    const sel = tr?.querySelector?.('[data-k="ex_agg"]');
+    if (!sel) return null;
+    return normalizeTieAggValue(sel?.value || "sum", "sum");
+  }
+
+  function readTieAggAparellsFromRow(tr) {
+    const sel = tr?.querySelector?.('[data-k="agg_aparells"]');
+    if (!sel) return null;
+    return normalizeTieAggValue(sel?.value || "sum", "sum");
   }
 
   function readParticipantsFromRow(tr) {
@@ -466,6 +526,7 @@
   function readTieBuilderUiFromRow(tr, includeParticipants, baseTie) {
     const campCfg = readTieCampsFromRow(tr);
     const appScopeValue = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta").trim();
+    const selectedAppIds = readTieSelectedAppIdsFromRow(tr);
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
     const inputSourceMode = normalizeTieInputSourceMode(tr.querySelector('[data-k="input_source_mode"]')?.value || "raw_exercises");
     const candidateSourceMode = normalizeTieCandidateSourceUiMode(tr.querySelector('[data-k="tie_candidate_source_mode"]')?.value || "hereta");
@@ -487,7 +548,7 @@
     const allowMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable()
       || getEffectiveTieExerciseSelectionScope(exScope) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
     const builderUi = {
-      app_scope: { mode: "hereta" },
+      app_scope: selectedAppIds.length ? { mode: "seleccionar", ids: selectedAppIds } : { mode: "hereta" },
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       input_source_mode_ui: inputSourceMode,
@@ -497,7 +558,9 @@
       scope_exercicis_ui: { mode: "hereta" },
     };
 
-    if (appScopeValue === "tots") {
+    if (selectedAppIds.length) {
+      builderUi.app_scope = { mode: "seleccionar", ids: selectedAppIds };
+    } else if (appScopeValue === "tots") {
       builderUi.app_scope = { mode: "tots" };
     } else if (appScopeValue.startsWith("app:")) {
       const appId = Number(appScopeValue.split(":")[1]);
@@ -524,6 +587,10 @@
       builderUi.exercicis_per_aparell_ui = readTiePerAppExercicisFromRow(tr);
       builderUi.agregacio_exercicis_per_aparell_ui = readTiePerAppAggExercicisFromRow(tr);
     }
+    const campsPerApp = readTieCampsPerAppFromRow(tr);
+    const aggCampsPerApp = readTieAggCampsPerAppFromRow(tr);
+    if (Object.keys(campsPerApp).length) builderUi.camps_per_aparell_ui = campsPerApp;
+    if (Object.keys(aggCampsPerApp).length) builderUi.agregacio_camps_per_aparell_ui = aggCampsPerApp;
 
     if (includeParticipants && !fixedTeamPool) {
       const { pMode, pN, pAgg } = readParticipantsFromRow(tr);
@@ -584,6 +651,7 @@
     const ordre = tr.querySelector('[data-k="ordre"]').value;
     const nom = String(tr.querySelector('[data-k="tie_nom"]')?.value || "").trim();
 
+    const selectedAppIds = readTieSelectedAppIdsFromRow(tr);
     const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|app:<id>
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
     const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScope);
@@ -617,11 +685,20 @@
       candidate_source_cfg: candidateSourceCfg,
       ordre,
     };
+    const campsPerApp = readTieCampsPerAppFromRow(tr);
+    const aggCampsPerApp = readTieAggCampsPerAppFromRow(tr);
+    if (Object.keys(campsPerApp).length) obj.camps_per_aparell = campsPerApp;
+    if (Object.keys(aggCampsPerApp).length) obj.agregacio_camps_per_aparell = aggCampsPerApp;
     obj.scope = {
       aparells: { mode: "hereta" },
     };
 
-    if (appScope.startsWith("app:")) {
+    if (selectedAppIds.length) {
+      obj.scope.aparells.mode = "seleccionar";
+      obj.scope.aparells.ids = selectedAppIds;
+    } else if (appScope === "tots") {
+      obj.scope.aparells.mode = "tots";
+    } else if (appScope.startsWith("app:")) {
       const id = Number(appScope.split(":")[1]);
       if (!isNaN(id)) {
         obj.scope.aparells.mode = "seleccionar";
@@ -648,8 +725,13 @@
         obj.exercicis_per_aparell = exPerApp;
         obj.agregacio_exercicis_per_aparell = aggExPerApp;
         obj.agregacio_exercicis = buildLegacyAggFromPerAppMap(getTieTargetAppIds(tr), aggExPerApp, "sum");
+      } else {
+        const aggExercicis = readTieAggExercicisFromRow(tr);
+        if (aggExercicis) obj.agregacio_exercicis = aggExercicis;
       }
     }
+    const aggAparells = readTieAggAparellsFromRow(tr);
+    if (aggAparells) obj.agregacio_aparells = aggAparells;
 
     if (includeParticipants && !fixedTeamPool) {
       applyParticipantsToObj(obj, readParticipantsFromRow(tr));
@@ -678,6 +760,143 @@
       if (includeInvalid || (item.camps || []).length) out.push(item);
     });
     return out;
+  }
+
+  function tieAggOptionsHTML(selected, prefix) {
+    const value = normalizeTieAggValue(selected || "sum", "sum");
+    const label = prefix || "Agregacio";
+    return `
+      <option value="sum" ${value === "sum" ? "selected" : ""}>${label}: Suma</option>
+      <option value="avg" ${value === "avg" ? "selected" : ""}>${label}: Mitjana</option>
+      <option value="median" ${value === "median" ? "selected" : ""}>${label}: Mediana</option>
+      <option value="max" ${value === "max" ? "selected" : ""}>${label}: Maxim</option>
+      <option value="min" ${value === "min" ? "selected" : ""}>${label}: Minim</option>
+    `;
+  }
+
+  function tieExerciseModeOptionsHTML(selected) {
+    const mode = String(selected || "tots").toLowerCase().trim();
+    return `
+      <option value="tots" ${mode === "tots" ? "selected" : ""}>Tots</option>
+      <option value="millor_1" ${mode === "millor_1" ? "selected" : ""}>Millor 1</option>
+      <option value="millor_n" ${mode === "millor_n" ? "selected" : ""}>Millors N</option>
+      <option value="pitjor_1" ${mode === "pitjor_1" ? "selected" : ""}>Pitjor 1</option>
+      <option value="pitjor_n" ${mode === "pitjor_n" ? "selected" : ""}>Pitjors N</option>
+      <option value="primer" ${mode === "primer" ? "selected" : ""}>Primer existent</option>
+      <option value="ultim" ${mode === "ultim" ? "selected" : ""}>Ultim existent</option>
+      <option value="index" ${mode === "index" ? "selected" : ""}>Exercici concret</option>
+      <option value="llista" ${mode === "llista" ? "selected" : ""}>Llista</option>
+    `;
+  }
+
+  function getTieDirectInitialAppIds(rawTie, selectedMainIds) {
+    const pipelineIds = getTiePipelineVisibleAppIds(rawTie);
+    if (pipelineIds.length) return pipelineIds;
+    const builderScope = getTieBuilderUiAppScopeValue(rawTie);
+    if (builderScope === "tots") return getAppChoices([], { includeStale: false }).map(app => app.id);
+    if (builderScope && builderScope.startsWith("app:")) {
+      const id = Number(builderScope.split(":")[1]);
+      if (Number.isFinite(id) && id > 0) return [id];
+    }
+    const mainIds = sanitizeAppIds(selectedMainIds || []);
+    if (mainIds.length) return mainIds;
+    return getTieInheritedAppIds();
+  }
+
+  function getTieDirectPipelineMap(rawTie, key) {
+    const pipeline = rawTie && typeof rawTie.pipeline === "object" && !Array.isArray(rawTie.pipeline)
+      ? rawTie.pipeline
+      : {};
+    const direct = rawTie && typeof rawTie === "object" && !Array.isArray(rawTie) ? rawTie : {};
+    const raw = pipeline[key] || direct[key] || {};
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  }
+
+  function getTieDirectCampsMapSeed(rawTie, appIds, fallbackCamps) {
+    const map = getTieDirectPipelineMap(rawTie, "camps_per_aparell");
+    const fallback = normalizeTieCampsFromObj({ camps: fallbackCamps || [] });
+    const out = {};
+    (appIds || []).forEach(appId => {
+      const key = String(appId);
+      const camps = normalizeTieCampsFromObj({ camps: map[key] ?? map[Number(key)] ?? fallback });
+      out[key] = camps;
+    });
+    return out;
+  }
+
+  function getTieDirectAggCampsMapSeed(rawTie, appIds, fallbackAgg) {
+    const pipeline = rawTie && typeof rawTie.pipeline === "object" && !Array.isArray(rawTie.pipeline)
+      ? rawTie.pipeline
+      : {};
+    const map = getTieDirectPipelineMap(rawTie, "agregacio_camps_per_aparell");
+    const base = normalizeTieAggValue(fallbackAgg || pipeline.agregacio_camps || "sum", "sum");
+    const out = {};
+    (appIds || []).forEach(appId => {
+      const key = String(appId);
+      out[key] = normalizeTieAggValue(map[key] ?? map[Number(key)] ?? base, base);
+    });
+    return out;
+  }
+
+  function tieDirectFieldSelectHTML(appId, selectedCamps) {
+    const opts = extendOptionsWithSelectedValues(
+      (APARELL_FIELD_OPTIONS[String(appId)] || []).filter(o => !!o?.scoreable),
+      selectedCamps,
+      value => value
+    );
+    const selected = new Set((selectedCamps || []).map(String));
+    return `
+      <select class="form-control form-control-sm" data-k="tie_app_camps" data-app-id="${esc(appId)}" multiple size="7">
+        ${opts.map(o => {
+          const kind = String(o.kind || "");
+          const kindLabel = kind === "field" ? "input" : (kind === "computed" ? "computed" : (kind || "camp"));
+          const judgesCount = Number(o.judges_count || 1);
+          const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
+          const label = `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}${o.stale ? " (no disponible)" : ""}`;
+          return `<option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""} ${o.injected ? 'data-injected="1"' : ""} ${o.stale ? 'data-stale="1"' : ""}>${esc(label)}</option>`;
+        }).join("")}
+      </select>
+    `;
+  }
+
+  function tieDirectAppCardHTML(tr, appId, fieldsMap, aggFieldsMap, includeExercise) {
+    const app = getAparellById(appId);
+    const key = String(appId);
+    const appName = app ? app.nom : `Aparell ${key}`;
+    return `
+      <div class="classif-tie-app-mini-card classif-tie-app-mini-card--tone-${Math.abs(Number(appId) || 0) % 4}" data-k="tie_direct_app_card" data-app-id="${esc(key)}">
+        <div class="classif-tie-app-mini-card__head">
+          <div>
+            <div class="classif-tie-app-mini-card__eyebrow">Aparell</div>
+            <div class="classif-tie-app-mini-card__title">${esc(appName)} (${esc(key)})</div>
+          </div>
+        </div>
+        <div class="classif-tie-app-mini-card__body">
+          <div class="classif-tie-mini-section">
+            <label class="classif-tie-mini-label">Camps</label>
+            <div>
+              ${tieDirectFieldSelectHTML(key, fieldsMap[key] || [])}
+            </div>
+          </div>
+          <div class="classif-tie-mini-section">
+            <label class="classif-tie-mini-label">Agregacio de camps</label>
+            <div>
+              <select class="form-control form-control-sm" data-k="tie_app_agg_camps" data-app-id="${esc(key)}">
+                ${tieAggOptionsHTML(aggFieldsMap[key] || "sum", "Camps")}
+              </select>
+            </div>
+          </div>
+          ${includeExercise ? `
+            <div class="classif-tie-mini-section classif-tie-mini-section--exercise">
+              <label class="classif-tie-mini-label">Exercicis</label>
+              <div>
+                ${tiePerAppExercicisHTML(tr, key, readTiePerAppState(tr)[key] || {})}
+              </div>
+            </div>
+          ` : ""}
+        </div>
+      </div>
+    `;
   }
 
   // Compat test literals from the legacy inline builder:
@@ -766,6 +985,356 @@
       // options aparells single
       const appScopeOpts = buildTieAppScopeOptionsHTML(appScope);
       const showSelectionScope = isDerivedExerciseSelectionScopeAvailable();
+
+      if (uxVariant === "direct") {
+        tr.dataset.tieUx = "direct";
+        const initialAppIds = _uniquePositiveInts(getTieDirectInitialAppIds(rawTie, selectedMainIds));
+        const initialFieldsMap = getTieDirectCampsMapSeed(rawTie, initialAppIds, tieCamps);
+        const initialAggFieldsMap = getTieDirectAggCampsMapSeed(rawTie, initialAppIds, tieAggCamps);
+        const pipelineForDirect = rawTie && typeof rawTie.pipeline === "object" && !Array.isArray(rawTie.pipeline)
+          ? rawTie.pipeline
+          : {};
+        const rawDirectMode = normalizeTieModeSeleccioExercicis(
+          exSelMode === "hereta"
+            ? (pipelineForDirect.mode_seleccio_exercicis || fallbackPuntuacio.mode_seleccio_exercicis || "per_aparell_override")
+            : exSelMode
+        );
+        const directMode = rawDirectMode === "global_pool" ? "global_pool" : "per_aparell_override";
+        const directGlobalEx = normalizeTieExercicisCfg(
+          exMode === "hereta"
+            ? (pipelineForDirect.exercicis || fallbackPuntuacio.exercicis || { mode: "tots" })
+            : { mode: exMode, best_n: exBestN, index: exIndex, ids: exIds }
+        );
+        const directPerAppSeed = (() => {
+          const normalized = normalizeTieExercicisPerAparellMap(exPerAppSeed || {});
+          if (Object.keys(normalized).length) return normalized;
+          return Object.fromEntries(initialAppIds.map(appId => [String(appId), directGlobalEx]));
+        })();
+        const directAggPerAppSeed = (() => {
+          const normalized = normalizeTiePipelineAggMap(exAggPerAppSeed || {}, {}, initialAppIds, "sum");
+          if (Object.keys(normalized).length) return normalized;
+          return Object.fromEntries(initialAppIds.map(appId => [String(appId), normalizeTieAggValue(pipelineForDirect.agregacio_exercicis || "sum", "sum")]));
+        })();
+        const directAggEx = normalizeTieAggValue(pipelineForDirect.agregacio_exercicis || fallbackPuntuacio.agregacio_exercicis || "sum", "sum");
+        const directAggApps = normalizeTieAggValue(pipelineForDirect.agregacio_aparells || fallbackPuntuacio.agregacio_aparells || "sum", "sum");
+        const appChoices = getAppChoices(initialAppIds, { includeStale: true });
+        const selectedSet = new Set(initialAppIds.map(id => String(id)));
+        const firstAppValue = initialAppIds.length ? `app:${initialAppIds[0]}` : "hereta";
+
+        tr.innerHTML = `
+          <td colspan="5">
+            <div class="classif-tie-direct" data-k="tie_direct_builder">
+              <div class="classif-tie-direct-grid">
+                <section class="classif-tie-flow-card classif-tie-flow-card--criterion">
+                  <div class="classif-tie-flow-card__head">
+                    <span class="classif-tie-flow-card__step">01</span>
+                    <span class="classif-tie-flow-card__title">Criteri</span>
+                  </div>
+                  <div class="classif-tie-flow-card__body classif-tie-flow-card__body--grid">
+                    <div>
+                      <label class="classif-tie-mini-label">Nom</label>
+                      <input class="form-control form-control-sm" data-k="tie_nom" type="text" value="${esc(tieNom)}" placeholder="Nom del criteri">
+                    </div>
+                    <div>
+                      <label class="classif-tie-mini-label">Entrada</label>
+                      <select class="form-control form-control-sm" data-k="input_source_mode">
+                        <option value="raw_exercises">Tots els exercicis disponibles</option>
+                        <option value="main_selected_contributors">Nomes exercicis que han contribuit</option>
+                      </select>
+                      <div class="small text-muted mt-1" data-k="input_source_hint"></div>
+                    </div>
+                    <div>
+                      <label class="classif-tie-mini-label">Ordre</label>
+                      <select class="form-control form-control-sm" data-k="ordre">
+                        <option value="desc">Mes es millor</option>
+                        <option value="asc">Menys es millor</option>
+                      </select>
+                    </div>
+                  </div>
+                <select data-k="tie_candidate_source_mode" style="display:none;"><option value="raw_exercise" selected>Exercicis originals</option></select>
+                <select data-k="tie_candidate_source_ex_mode" style="display:none;"><option value="tots" selected>Tots</option></select>
+                <input data-k="tie_candidate_source_best_n" type="hidden" value="1">
+                <input data-k="tie_candidate_source_index" type="hidden" value="1">
+                <input data-k="tie_candidate_source_ids" type="hidden" value="">
+                <select data-k="tie_candidate_source_agg" style="display:none;"><option value="sum" selected>Suma</option></select>
+                <select data-k="ex_scope" style="display:none;"><option value="per_member" selected>Per subjecte</option></select>
+                <select data-k="app_scope" style="display:none;"><option value="${esc(firstAppValue)}" selected>${esc(firstAppValue)}</option></select>
+                <input data-k="tie_app_ids" type="hidden" value="${esc(initialAppIds.join(","))}">
+                </section>
+
+                <section class="classif-tie-flow-card classif-tie-flow-card--apps">
+                  <div class="classif-tie-flow-card__head">
+                    <span class="classif-tie-flow-card__step">02</span>
+                    <span class="classif-tie-flow-card__title">Aparells</span>
+                  </div>
+                  <div class="classif-tie-flow-card__body">
+                    <div class="classif-tie-app-check-grid" data-k="direct_app_checks">
+                      ${appChoices.map(app => `
+                        <label class="form-check classif-tie-app-check">
+                          <input class="form-check-input" type="checkbox" data-k="tie_app_id" value="${esc(app.id)}" ${selectedSet.has(String(app.id)) ? "checked" : ""} ${app.stale ? 'data-stale="1"' : ""}>
+                          <span class="form-check-label">${esc(app.nom)}${app.stale ? " (no disponible)" : ""}</span>
+                        </label>
+                      `).join("")}
+                    </div>
+                    <div class="classif-tie-flow-inline" data-k="direct_flow_box">
+                      <label class="classif-tie-mini-label">Flux</label>
+                      <select class="form-control form-control-sm" data-k="ex_sel_mode">
+                        <option value="per_aparell_override">Cada aparell per separat</option>
+                        <option value="global_pool">Sac compartit</option>
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="classif-tie-flow-card classif-tie-flow-card--config">
+                  <div class="classif-tie-flow-card__head">
+                    <span class="classif-tie-flow-card__step">03</span>
+                    <span class="classif-tie-flow-card__title">Aparells seleccionats</span>
+                  </div>
+                  <div class="classif-tie-flow-card__body">
+                    <input type="hidden" data-k="ex_per_app_state" value="{}">
+                    <input type="hidden" data-k="ex_agg_per_app_state" value="{}">
+                    <div data-k="ex_per_app_box" class="classif-tie-app-mini-list"></div>
+                  </div>
+                </section>
+
+                <section class="classif-tie-flow-card classif-tie-flow-card--global" data-k="direct_global_ex_box">
+                  <div class="classif-tie-flow-card__head">
+                    <span class="classif-tie-flow-card__step">04</span>
+                    <span class="classif-tie-flow-card__title">Sac compartit</span>
+                  </div>
+                  <div class="classif-tie-flow-card__body classif-tie-flow-card__body--grid">
+                    <div>
+                      <label class="classif-tie-mini-label">Exercicis</label>
+                      <select class="form-control form-control-sm" data-k="ex_mode">${tieExerciseModeOptionsHTML(directGlobalEx.mode || "tots")}</select>
+                    </div>
+                    <div>
+                      <label class="classif-tie-mini-label">N</label>
+                      <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="${esc(directGlobalEx.best_n || 1)}">
+                    </div>
+                    <div>
+                      <label class="classif-tie-mini-label">Index</label>
+                      <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="${esc(directGlobalEx.index || 1)}">
+                    </div>
+                    <div>
+                      <label class="classif-tie-mini-label">Llista</label>
+                      <input class="form-control form-control-sm" data-k="ex_ids" type="text" value="${esc(Array.isArray(directGlobalEx.ids) ? directGlobalEx.ids.join(",") : "")}" placeholder="1,3,4">
+                    </div>
+                    <div>
+                      <label class="classif-tie-mini-label">Agregacio</label>
+                      <select class="form-control form-control-sm" data-k="ex_agg">${tieAggOptionsHTML(directAggEx, "Exercicis")}</select>
+                    </div>
+                    <input class="form-control form-control-sm" data-k="ex_max_pp" type="hidden" value="0">
+                    <div class="classif-tie-flow-note" data-k="ex_summary"></div>
+                    <div class="classif-tie-flow-note" data-k="ex_hint" style="display:none;"></div>
+                  </div>
+                </section>
+
+                <section class="classif-tie-flow-card classif-tie-flow-card--final" data-k="direct_app_agg_box">
+                  <div class="classif-tie-flow-card__head">
+                    <span class="classif-tie-flow-card__step">05</span>
+                    <span class="classif-tie-flow-card__title">Final entre aparells</span>
+                  </div>
+                  <div class="classif-tie-flow-card__body">
+                    <div class="classif-tie-flow-inline">
+                      <label class="classif-tie-mini-label">Agregacio</label>
+                      <select class="form-control form-control-sm" data-k="agg_aparells">${tieAggOptionsHTML(directAggApps, "Aparells")}</select>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="classif-tie-direct-summary">
+                <span data-k="tie_summary">${esc(tieSummaryText)}</span>
+                <span data-k="tie_flow_title"></span>
+                <span data-k="tie_candidate_source_hint" style="display:none;"></span>
+              </div>
+            </div>
+          </td>
+          <td class="text-right">
+            <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">x</button>
+          </td>
+        `;
+
+        const appScopeSel = tr.querySelector('[data-k="app_scope"]');
+        const exSelModeSel = tr.querySelector('[data-k="ex_sel_mode"]');
+        const exModeSel = tr.querySelector('[data-k="ex_mode"]');
+        const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
+        const exIndexEl = tr.querySelector('[data-k="ex_index"]');
+        const exIdsEl = tr.querySelector('[data-k="ex_ids"]');
+        const inputSourceSel = tr.querySelector('[data-k="input_source_mode"]');
+        const inputSourceHint = tr.querySelector('[data-k="input_source_hint"]');
+        const ordSel = tr.querySelector('[data-k="ordre"]');
+        const tieSummary = tr.querySelector('[data-k="tie_summary"]');
+        const tieNomInput = tr.querySelector('[data-k="tie_nom"]');
+        const globalExBox = tr.querySelector('[data-k="direct_global_ex_box"]');
+        const appAggBox = tr.querySelector('[data-k="direct_app_agg_box"]');
+        const flowBox = tr.querySelector('[data-k="direct_flow_box"]');
+        const appIdsHidden = tr.querySelector('[data-k="tie_app_ids"]');
+        const appCardsBox = tr.querySelector('[data-k="ex_per_app_box"]');
+        const candidateSourceModeSel = tr.querySelector('[data-k="tie_candidate_source_mode"]');
+        const tieFlowTitle = tr.querySelector('[data-k="tie_flow_title"]');
+        const exSummary = tr.querySelector('[data-k="ex_summary"]');
+        const exHint = tr.querySelector('[data-k="ex_hint"]');
+
+        inputSourceSel.value = inputSourceMode;
+        ordSel.value = ordre === "asc" ? "asc" : "desc";
+        candidateSourceModeSel.value = "raw_exercise";
+        exSelModeSel.value = directMode;
+        writeTiePerAppState(tr, directPerAppSeed);
+        writeTiePerAppAggState(tr, directAggPerAppSeed);
+
+        function getDirectSelectedAppIds() {
+          return readTieSelectedAppIdsFromRow(tr);
+        }
+
+        function refreshDirectInputSourceUI() {
+          const mode = normalizeTieInputSourceMode(inputSourceSel?.value || "raw_exercises");
+          if (inputSourceHint) {
+            inputSourceHint.textContent = mode === "main_selected_contributors"
+              ? "Reutilitza nomes les notes que ja han comptat a la puntuacio principal."
+              : "";
+          }
+        }
+
+        function refreshDirectGlobalExerciseUI() {
+          const mode = String(exModeSel?.value || "tots").toLowerCase().trim();
+          const bestWrap = exBestNEl ? exBestNEl.closest(".classif-tie-field-wrap") || exBestNEl.parentElement : null;
+          const indexWrap = exIndexEl ? exIndexEl.closest(".classif-tie-field-wrap") || exIndexEl.parentElement : null;
+          const idsWrap = exIdsEl ? exIdsEl.closest(".classif-tie-field-wrap") || exIdsEl.parentElement : null;
+          if (bestWrap) bestWrap.style.display = isBestNMode(mode) ? "" : "none";
+          if (indexWrap) indexWrap.style.display = mode === "index" ? "" : "none";
+          if (idsWrap) idsWrap.style.display = mode === "llista" ? "" : "none";
+          if (exSummary) {
+            exSummary.textContent = `Sac global: ${describeExerciseMode(mode, exBestNEl?.value, exIndexEl?.value, exIdsEl?.value)}.`;
+          }
+          if (exHint) {
+            exHint.style.display = mode === "index" || mode === "llista" ? "" : "none";
+            exHint.textContent = mode === "index" ? "Agafa l'exercici amb aquest index." : (mode === "llista" ? "Indexs separats per comes." : "");
+          }
+        }
+
+        function refreshDirectTieBuilderState() {
+          const next = buildTieBuilderStateFromRow(tr, false, selectedMainIds, fallbackPuntuacio);
+          if (tieSummary) tieSummary.textContent = getTieVisibleSummary(next || tr.__tieBuilderState || rawTie || t);
+          return next;
+        }
+
+        function bindDirectAppCardListeners() {
+          appCardsBox.querySelectorAll('[data-k="tie_app_camps"], [data-k="tie_app_agg_camps"], [data-k="tie_app_ex_agg"]').forEach(node => {
+            node.addEventListener("change", () => {
+              collectVisibleTiePerAppOverrides(tr);
+              collectVisibleTiePerAppAggOverrides(tr);
+              refreshDirectTieBuilderState();
+              syncAdvancedFromUI();
+            });
+          });
+          appCardsBox.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_max_pp"], [data-k="tie_app_ex_ids"]').forEach(node => {
+            node.addEventListener("change", () => {
+              const card = node.closest('[data-k="tie_app_ex_card"]');
+              if (card) refreshTiePerAppExCardUI(card);
+              collectVisibleTiePerAppOverrides(tr);
+              collectVisibleTiePerAppAggOverrides(tr);
+              refreshDirectTieBuilderState();
+              syncAdvancedFromUI();
+            });
+            node.addEventListener("input", () => {
+              collectVisibleTiePerAppOverrides(tr);
+              collectVisibleTiePerAppAggOverrides(tr);
+              refreshDirectTieBuilderState();
+              syncAdvancedFromUI();
+            });
+          });
+          appCardsBox.querySelectorAll('[data-k="tie_app_ex_card"]').forEach(card => refreshTiePerAppExCardUI(card));
+        }
+
+        function refreshDirectAppCards() {
+          const selectedIds = getDirectSelectedAppIds();
+          if (appIdsHidden) appIdsHidden.value = selectedIds.join(",");
+          if (appScopeSel) {
+            const firstId = selectedIds[0];
+            appScopeSel.innerHTML = firstId
+              ? `<option value="app:${esc(firstId)}" selected>app:${esc(firstId)}</option>`
+              : `<option value="hereta" selected>hereta</option>`;
+          }
+          const currentFields = { ...initialFieldsMap, ...readTieCampsPerAppFromRow(tr) };
+          const currentAggFields = { ...initialAggFieldsMap, ...readTieAggCampsPerAppFromRow(tr) };
+          selectedIds.forEach(appId => {
+            const key = String(appId);
+            if (!Array.isArray(currentFields[key])) currentFields[key] = tieCamps;
+            if (!currentAggFields[key]) currentAggFields[key] = tieAggCamps === "hereta" ? "sum" : tieAggCamps;
+          });
+          collectVisibleTiePerAppOverrides(tr);
+          collectVisibleTiePerAppAggOverrides(tr);
+          const modeSel = selectedIds.length > 1
+            ? normalizeTieModeSeleccioExercicis(exSelModeSel.value || "per_aparell_override")
+            : "per_aparell_override";
+          exSelModeSel.value = modeSel === "global_pool" ? "global_pool" : "per_aparell_override";
+          if (flowBox) flowBox.style.display = selectedIds.length > 1 ? "" : "none";
+          const includeExercise = exSelModeSel.value === "per_aparell_override";
+          if (globalExBox) globalExBox.style.display = exSelModeSel.value === "global_pool" ? "" : "none";
+          if (appAggBox) appAggBox.style.display = selectedIds.length > 1 && includeExercise ? "" : "none";
+          appCardsBox.innerHTML = selectedIds.length
+            ? selectedIds.map(appId => tieDirectAppCardHTML(tr, appId, currentFields, currentAggFields, includeExercise)).join("")
+            : `<div class="small text-muted">Selecciona almenys un aparell per configurar el desempat.</div>`;
+          bindDirectAppCardListeners();
+          refreshDirectGlobalExerciseUI();
+          if (tieFlowTitle) {
+            tieFlowTitle.textContent = exSelModeSel.value === "global_pool"
+              ? "Flux: sac compartit entre aparells"
+              : "Flux: cada aparell per separat";
+          }
+          refreshDirectTieBuilderState();
+        }
+
+        tr.querySelectorAll('[data-k="tie_app_id"]').forEach(node => {
+          node.addEventListener("change", () => {
+            refreshDirectAppCards();
+            syncAdvancedFromUI();
+          });
+        });
+        exSelModeSel.addEventListener("change", () => {
+          refreshDirectAppCards();
+          syncAdvancedFromUI();
+        });
+        [exModeSel, tr.querySelector('[data-k="ex_agg"]')].forEach(node => {
+          if (!node) return;
+          node.addEventListener("change", () => {
+            refreshDirectGlobalExerciseUI();
+            refreshDirectTieBuilderState();
+            syncAdvancedFromUI();
+          });
+        });
+        [exBestNEl, exIndexEl, exIdsEl].forEach(node => {
+          if (!node) return;
+          node.addEventListener("input", () => {
+            refreshDirectGlobalExerciseUI();
+            refreshDirectTieBuilderState();
+            syncAdvancedFromUI();
+          });
+        });
+        if (tieNomInput) tieNomInput.addEventListener("input", () => { refreshDirectTieBuilderState(); syncAdvancedFromUI(); });
+        if (inputSourceSel) inputSourceSel.addEventListener("change", () => {
+          refreshDirectInputSourceUI();
+          refreshDirectTieBuilderState();
+          syncAdvancedFromUI();
+        });
+        if (ordSel) ordSel.addEventListener("change", () => { refreshDirectTieBuilderState(); syncAdvancedFromUI(); });
+        const aggAppsSel = tr.querySelector('[data-k="agg_aparells"]');
+        if (aggAppsSel) aggAppsSel.addEventListener("change", () => { refreshDirectTieBuilderState(); syncAdvancedFromUI(); });
+        tr.querySelector('[data-act="del"]').addEventListener("click", () => {
+          const cur = readTieBuilderState(true);
+          cur.splice(idx, 1);
+          renderTieUI(cur);
+          syncAdvancedFromUI();
+        });
+
+        refreshDirectInputSourceUI();
+        refreshDirectAppCards();
+        els.tieBody.appendChild(tr);
+        refreshDirectTieBuilderState();
+        return;
+      }
 
       tr.innerHTML = `
         <td>

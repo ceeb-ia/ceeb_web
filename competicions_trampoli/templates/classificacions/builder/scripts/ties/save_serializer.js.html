@@ -264,8 +264,19 @@
     }
     if (!targetIds.length) return null;
 
+    const rawCampsPerApp = (
+      rawItem.camps_per_aparell &&
+      typeof rawItem.camps_per_aparell === "object" &&
+      !Array.isArray(rawItem.camps_per_aparell)
+    ) ? rawItem.camps_per_aparell : {};
+    const rawAggCampsPerApp = (
+      rawItem.agregacio_camps_per_aparell &&
+      typeof rawItem.agregacio_camps_per_aparell === "object" &&
+      !Array.isArray(rawItem.agregacio_camps_per_aparell)
+    ) ? rawItem.agregacio_camps_per_aparell : {};
     const camps = normalizeTieCampsFromObj(rawItem);
-    if (!camps.length) return null;
+    const hasPerAppCamps = Object.values(rawCampsPerApp).some(value => normalizeTieCampsFromObj({ camps: value }).length);
+    if (!camps.length && !hasPerAppCamps) return null;
 
     const canonical = {
       id: String(rawItem.id || rawBase.id || tr.dataset.tieId || "").trim(),
@@ -283,14 +294,25 @@
       { mode: "seleccionar", ids: targetIds },
       pipeline.aparells
     );
+    const campsPerAppSource = hasPerAppCamps
+      ? rawCampsPerApp
+      : Object.fromEntries(targetIds.map(appId => [String(appId), camps]));
     canonical.pipeline.camps_per_aparell = normalizeTiePipelineCampsPerApp(
-      Object.fromEntries(targetIds.map(appId => [String(appId), camps])),
+      campsPerAppSource,
       pipeline.camps_per_aparell,
       targetIds,
     );
 
     const aggCamps = normalizeTieAggCampsFromObj(rawItem);
-    if (aggCamps === "hereta") {
+    if (Object.keys(rawAggCampsPerApp).length) {
+      canonical.pipeline.agregacio_camps = normalizeTieAggValue(aggCamps, pipeline.agregacio_camps || fallbackFromPuntuacio.agregacio_camps || "sum");
+      canonical.pipeline.agregacio_camps_per_aparell = normalizeTiePipelineAggMap(
+        rawAggCampsPerApp,
+        pipeline.agregacio_camps_per_aparell,
+        targetIds,
+        canonical.pipeline.agregacio_camps,
+      );
+    } else if (aggCamps === "hereta") {
       canonical.pipeline.agregacio_camps = normalizeTieAggValue(
         pipeline.agregacio_camps,
         fallbackFromPuntuacio.agregacio_camps || "sum",
@@ -440,7 +462,7 @@
       } else {
         canonical.pipeline.exercicis_per_aparell = {};
         canonical.pipeline.agregacio_exercicis = normalizeTieAggValue(
-          pipeline.agregacio_exercicis,
+          rawItem.agregacio_exercicis || pipeline.agregacio_exercicis,
           fallbackFromPuntuacio.agregacio_exercicis || "sum",
         );
         canonical.pipeline.agregacio_exercicis_per_aparell = {};
@@ -448,7 +470,7 @@
     }
 
     canonical.pipeline.agregacio_aparells = normalizeTieAggValue(
-      pipeline.agregacio_aparells,
+      rawItem.agregacio_aparells || pipeline.agregacio_aparells,
       fallbackFromPuntuacio.agregacio_aparells || "sum",
     );
     canonical.pipeline.mode_resultat_aparells = "score";

@@ -413,6 +413,10 @@
   }
 
   function getTieTargetAppIds(tr){
+    if (typeof readTieSelectedAppIdsFromRow === "function") {
+      const directIds = readTieSelectedAppIdsFromRow(tr);
+      if (directIds.length) return directIds;
+    }
     const appScope = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta");
     if (appScope === "tots") return getAppChoices([], { includeStale: false }).map(a => a.id);
     if (appScope.startsWith("app:")) {
@@ -435,7 +439,11 @@
     const aggEx = normalizeTieAggValue(readTiePerAppAggState(tr)[String(compAparellId)] || "sum", "sum");
     const app = getAparellById(compAparellId);
     const appName = app ? app.nom : `Aparell ${compAparellId}`;
-    const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    const isDirectTie = !!tr?.matches?.('[data-tie-ux="direct"]');
+    const showMaxPerParticipant = !isDirectTie && (
+      !isDerivedExerciseSelectionScopeAvailable() ||
+      getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    );
     return `
       <div class="border rounded p-2 mt-2" data-k="tie_app_ex_card" data-app-id="${esc(compAparellId)}">
         <div class="small font-weight-bold mb-1">${esc(appName)} (${esc(compAparellId)})</div>
@@ -482,7 +490,11 @@
     const max = card.querySelector('[data-k="tie_app_ex_max_pp"]');
     const ids = card.querySelector('[data-k="tie_app_ex_ids"]');
     const tr = card.closest("tr");
-    const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    const isDirectTie = !!tr?.matches?.('[data-tie-ux="direct"]');
+    const showMaxPerParticipant = !isDirectTie && (
+      !isDerivedExerciseSelectionScopeAvailable() ||
+      getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    );
     if (best) best.style.display = isBestNMode(mode) ? "" : "none";
     if (idx) idx.style.display = (mode === "index") ? "" : "none";
     if (max) max.style.display = showMaxPerParticipant ? "" : "none";
@@ -549,7 +561,8 @@
       if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
       if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
       const maxPerParticipant = Math.max(0, Number(maxNode?.value || 0));
-      if ((!isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL) && maxPerParticipant > 0) {
+      const isDirectTie = !!tr?.matches?.('[data-tie-ux="direct"]');
+      if (!isDirectTie && (!isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL) && maxPerParticipant > 0) {
         cfg.max_per_participant = maxPerParticipant;
       }
       if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
