@@ -33,7 +33,6 @@ GENERAL_WALLPAPER_URL_NAMES = {
     "classificacions_live_data",
     "classificacions_live_export_excel",
     "public_live_qr_png",
-    "judge_messages_hub",
     "judge_messages_updates_org",
     "judge_messages_send_org",
     "judge_messages_set_status_org",
@@ -56,6 +55,7 @@ GENERAL_WALLPAPER_URL_NAMES = {
 NOTES_WALLPAPER_URL_NAMES = {
     "qr_admin_home",
     "qr_admin_detail",
+    "judge_messages_hub",
     "judges_qr_home",
     "judges_qr_print",
     "public_live_qr_home",

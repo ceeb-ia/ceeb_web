@@ -8,13 +8,14 @@
 
   <div class="card-surface">
     <!-- CAPÇALERA -->
-    <div class="notes-page-header mb-3">
+    <div class="notes-page-header mb-3" data-avatar-anchor="scores-qrs-header">
       <div class="notes-title-block">
         <h1 class="notes-page-title">
           <span class="notes-title-logo" aria-hidden="true">
             <img src="{% static 'dock/notes.png' %}" alt="">
           </span>
           <span>Notes i QRs</span>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="scores_qrs_overview" aria-label="Ajuda sobre Notes i QRs" title="Ajuda sobre Notes i QRs">?</button>
         </h1>
         <div class="notes-context-line">
           <span class="notes-context-main">{{ competicio.nom }}</span>
@@ -22,7 +23,7 @@
           <span>Entrada i càlcul per schema d'aparell</span>
         </div>
       </div>
-      <div class="notes-header-actions">
+      <div class="notes-header-actions" data-avatar-anchor="scores-qrs-top-actions">
         <div class="btn-group scoring-panel-dropdown">
           <button type="button"
                   class="btn btn-sm section-btn section-btn--notes dropdown-toggle scoring-panel-dropdown-toggle"
@@ -33,19 +34,21 @@
 
           <div class="dropdown-menu">
             <a class="dropdown-item"
-              href="{% url 'classificacions_live' competicio.id %}">
+              href="{% url 'classificacions_live' competicio.id %}"
+              data-avatar-action="scores-qrs-open-live">
               Classificacions en viu
             </a>
 
             <a class="dropdown-item"
-              href="{% url 'classificacions_loop_live' competicio.id %}?public=1">
+              href="{% url 'classificacions_loop_live' competicio.id %}?public=1"
+              data-avatar-action="scores-qrs-open-loop">
               Classificacions loop
             </a>
           </div>
         </div>
         
-        <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'qr_admin_home' competicio.id %}">Administrador QRs</a>
-        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
+        <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'qr_admin_home' competicio.id %}" data-avatar-action="scores-qrs-open-qr-admin">Administrador QRs</a>
+        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}" data-avatar-action="scores-qrs-open-support">Suport jutges</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       </div>
     </div>
@@ -110,7 +113,7 @@
     {% endif %}
 
     {% if groups_render or out_of_program_groups_render %}
-      <div class="notes-control-panel" data-notes-control-panel="1">
+      <div class="notes-control-panel" data-notes-control-panel="1" data-avatar-anchor="scores-qrs-filters">
         <div class="notes-toolbar">
           <div>
             <label for="notes-franja-select">Franja</label>
@@ -163,7 +166,7 @@
         <div class="notes-program-strip" data-notes-program-strip="1"></div>
       </div>
 
-      <div class="notes-main-shell" data-notes-main-shell="1">
+      <div class="notes-main-shell" data-notes-main-shell="1" data-avatar-anchor="scores-qrs-results">
         <div class="notes-main-head">
           <div>
             <div class="notes-main-title" data-notes-main-title="1">Selecciona una unitat</div>
@@ -174,15 +177,16 @@
             <a class="btn btn-sm btn-outline-primary d-none" href="#" data-notes-judges-link="1">Administrador QRs</a>
           </div>
         </div>
-        <div class="notes-status mb-2" data-notes-status="1">Preparant el programa...</div>
+        <div class="notes-status mb-2" data-notes-status="1" data-avatar-anchor="scores-qrs-live-status">Preparant el programa...</div>
         <div class="notes-results-panel" data-notes-results-panel="1"></div>
         <div class="table-scrollbar-top" data-scrollbar-top="1">
           <div data-scrollbar-inner="1"></div>
         </div>
-        <div class="table-responsive table-sticky" data-scroll-wrap="1">
+        <div class="table-responsive table-sticky" data-scroll-wrap="1" data-avatar-anchor="scores-qrs-collapsed-tables">
           <table class="table table-bordered table-sm align-middle"
                  data-scoring-table="1"
                  data-notes-main-table="1"
+                 data-avatar-anchor="scores-qrs-permissions"
                  data-group=""
                  data-exercici="1"
                  data-fase-id=""

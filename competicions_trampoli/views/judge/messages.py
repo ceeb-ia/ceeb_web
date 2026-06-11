@@ -19,6 +19,7 @@ from ...services.shared.incremental_feeds import (
     build_single_model_feed_meta,
     parse_feed_cursor,
 )
+from ...services.avatar.notes.suport import AVATAR_MESSAGES as JUDGE_SUPPORT_AVATAR_MESSAGES
 
 
 JUDGE_MESSAGE_MAX_LENGTH = 500
@@ -530,6 +531,8 @@ def judge_messages_hub(request, competicio_id):
             "competicio": competicio,
             "tokens": tokens,
             "updates_cursor_init": timezone.now().isoformat(),
+            "avatar_messages": JUDGE_SUPPORT_AVATAR_MESSAGES,
+            "avatar_initial_topic": "judge_support_overview",
         },
     )
 

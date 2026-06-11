@@ -30,6 +30,7 @@ from ...services.scoring.schema_resolution import resolve_scoring_schema_for_com
 from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
 from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
 from ...services.scoring.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
+from ...services.avatar.notes.overview import AVATAR_MESSAGES as NOTES_AVATAR_MESSAGES
 from .helpers import (
     _allowed_input_codes_for_schema,
     _bucket_app_id,
@@ -555,6 +556,8 @@ class ScoringNotesHome(TemplateView):
             "judge_video_presence_by_key": judge_video_presence_by_key,
             "team_issues_by_app": team_issues_by_app,
             "updates_cursor_init": timezone.now().isoformat(),
+            "avatar_messages": NOTES_AVATAR_MESSAGES,
+            "avatar_initial_topic": "scores_qrs_overview",
         })
         return ctx
 

@@ -152,6 +152,7 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
             ("scoring_notes_home", "notes"),
             ("qr_admin_home", "notes"),
             ("qr_admin_detail", "notes"),
+            ("judge_messages_hub", "notes"),
             ("judges_qr_home", "notes"),
             ("judges_qr_print", "notes"),
             ("public_live_qr_home", "notes"),
@@ -188,7 +189,6 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
             "public_live_loop",
             "judge_portal",
             "judge_portal_assignment",
-            "judge_messages_hub",
         )
 
         for url_name in cases:

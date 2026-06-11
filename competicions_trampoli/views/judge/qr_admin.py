@@ -14,6 +14,7 @@ from ...forms_judge import JudgeTokenCreateForm, PermissionRowForm
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell, CompeticioAparellFase
 from ...models.judging import JudgeDeviceToken, JudgePortalAssignment, PublicLiveToken
+from ...services.avatar.notes.qrs import AVATAR_MESSAGES as QR_ADMIN_AVATAR_MESSAGES
 from .admin import (
     MAX_TOKEN_PERMISSIONS,
     _app_catalog_for_template,
@@ -384,6 +385,8 @@ def qr_admin_home(request, competicio_id, token_id=None):
             "schema_field_catalog": selected_app_context["field_catalog"],
             "max_permissions": MAX_TOKEN_PERMISSIONS,
             "can_manage_public_live": can_manage_public_live,
+            "avatar_messages": QR_ADMIN_AVATAR_MESSAGES,
+            "avatar_initial_topic": "qr_admin_create_panel",
         },
     )
 

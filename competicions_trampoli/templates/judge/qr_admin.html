@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="container-fluid mt-4">
+  {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
   <style>
     .qr-admin-surface {
       --notes-base: #a16207;
@@ -539,13 +540,14 @@
   </style>
 
   <div class="card-surface qr-admin-surface">
-    <div class="qr-admin-header">
+    <div class="qr-admin-header" data-avatar-anchor="qr-admin-header">
       <div class="qr-admin-title-block">
         <h1 class="qr-admin-title">
           <span class="qr-admin-title-icon" aria-hidden="true">
             <img src="{% static 'notes/QRs/administrador.png' %}" alt="">
           </span>
           <span>Administrador QRs</span>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_detail" aria-label="Ajuda sobre l'administrador de QRs" title="Ajuda sobre l'administrador de QRs">?</button>
         </h1>
         <div class="qr-admin-context-line">
           <span class="qr-admin-context-main">{{ competicio.nom }}</span>
@@ -554,12 +556,13 @@
         </div>
       </div>
       <div class="qr-admin-header-actions">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
-        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_print' competicio.id %}" target="_blank">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}" data-avatar-action="qr-admin-back-notes">Tornar a notes</a>
+        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}" data-avatar-action="qr-admin-open-support">Suport jutges</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_print' competicio.id %}" target="_blank" data-avatar-anchor="qr-admin-print-qrs" data-avatar-action="qr-admin-print-qrs">
           <img class="qr-admin-button-icon" src="{% static 'notes/QRs/imprimir.png' %}" alt="">
           Imprimir QRs
         </a>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_print_qrs" aria-label="Ajuda per imprimir QRs" title="Ajuda per imprimir QRs">?</button>
       </div>
     </div>
 
@@ -571,7 +574,7 @@
 
     <div class="qr-admin-layout">
       <div class="qr-admin-stack">
-        <section class="qr-admin-panel qr-admin-panel--create">
+        <section class="qr-admin-panel qr-admin-panel--create" data-avatar-anchor="qr-admin-create-panel">
           <div class="qr-admin-section-head">
             <div>
               <div class="qr-admin-section-kicker">Creacio</div>
@@ -580,6 +583,7 @@
                   <img src="{% static 'notes/QRs/new.png' %}" alt="">
                 </span>
                 <span>Crear QR</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_create_panel" aria-label="Ajuda per crear QRs" title="Ajuda per crear QRs">?</button>
               </h2>
               <p class="qr-admin-section-copy">Tria el tipus i genera un nou acces.</p>
             </div>
@@ -587,11 +591,11 @@
           {% if create_form.non_field_errors %}
             <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
           {% endif %}
-          <form method="post" id="qrCreateForm">
+          <form method="post" id="qrCreateForm" data-avatar-anchor="qr-admin-create-form">
             {% csrf_token %}
             <input type="hidden" name="action" id="qrCreateAction" value="create_judge_qr">
 
-            <div class="mb-2">
+            <div class="mb-2" data-avatar-anchor="qr-admin-create-type">
               <label class="form-label small text-muted mb-1">Tipus</label>
               <div class="btn-group btn-group-sm d-flex qr-admin-type-toggle" role="group" aria-label="Tipus de QR">
                 <input class="btn-check d-none" type="radio" name="qr_access_type" id="qrTypeJudge" value="judge" checked>
@@ -607,7 +611,7 @@
               </div>
             </div>
 
-            <div class="mb-2">
+            <div class="mb-2" data-avatar-anchor="qr-admin-create-name">
               <label class="form-label small text-muted mb-1">Etiqueta</label>
               {{ create_form.label }}
               {% if create_form.label.errors %}
@@ -659,7 +663,7 @@
           </form>
         </section>
 
-        <section class="qr-admin-panel qr-admin-panel--list">
+        <section class="qr-admin-panel qr-admin-panel--list" data-avatar-anchor="qr-admin-list">
           <div class="qr-admin-section-head">
             <div>
               <div class="qr-admin-section-kicker">Llistat</div>
@@ -668,6 +672,7 @@
                   <img src="{% static 'notes/QRs/llistat.png' %}" alt="">
                 </span>
                 <span>Llistat de QRs</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_existing_list" aria-label="Ajuda sobre els QRs existents" title="Ajuda sobre els QRs existents">?</button>
               </h2>
               <p class="qr-admin-section-copy">L'element seleccionat queda marcat i alimenta el detall.</p>
             </div>
@@ -676,7 +681,9 @@
           <div class="qr-admin-stack">
             {% for row in token_rows %}
               <a class="qr-admin-row {% if row.is_selected %}is-selected{% endif %}"
-                 href="{{ row.url }}">
+                 href="{{ row.url }}"
+                 data-avatar-anchor="qr-admin-list-item"
+                 data-avatar-action="qr-admin-select-token">
                 <div class="d-flex justify-content-between gap-2">
                   <div>
                     <div class="fw-semibold qr-admin-row-title">{{ row.label }}</div>
@@ -694,7 +701,7 @@
                     </span>
                   </div>
                 </div>
-                <div class="mt-2 d-flex flex-wrap gap-1">
+                <div class="mt-2 d-flex flex-wrap gap-1" data-avatar-anchor="qr-admin-list-status">
                   {% if row.is_active %}
                     <span class="badge bg-success">Actiu</span>
                   {% else %}
@@ -712,7 +719,7 @@
         </section>
       </div>
 
-      <section class="qr-admin-panel qr-admin-panel--detail">
+      <section class="qr-admin-panel qr-admin-panel--detail" data-avatar-anchor="qr-admin-detail">
         <div class="qr-admin-section-head">
           <div>
             <div class="qr-admin-section-kicker">Detall</div>
@@ -721,6 +728,7 @@
                 <img src="{% static 'notes/QRs/detall.png' %}" alt="">
               </span>
               <span>Detall del QR</span>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_detail" aria-label="Ajuda sobre el detall del QR" title="Ajuda sobre el detall del QR">?</button>
             </h2>
             <p class="qr-admin-section-copy">Consulta l'estat i afegeix accessos o permisos.</p>
           </div>
@@ -776,15 +784,16 @@
                 {% endif %}
               </div>
             </div>
-            <div class="d-flex flex-wrap gap-1">
-              <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' selected_token.id %}" target="_blank">Obrir</a>
-              <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' selected_token.id %}" target="_blank">QR</a>
+            <div class="d-flex flex-wrap gap-1" data-avatar-anchor="qr-admin-detail-actions">
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' selected_token.id %}" target="_blank" data-avatar-anchor="qr-admin-open-portal" data-avatar-action="qr-admin-open-portal">Obrir</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' selected_token.id %}" target="_blank" data-avatar-anchor="qr-admin-open-qr" data-avatar-action="qr-admin-open-qr">QR</a>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_judge_actions" aria-label="Ajuda sobre les accions del jutge" title="Ajuda sobre les accions del jutge">?</button>
               {% if not selected_token.revoked_at and selected_token.is_active %}
                 <form method="post">
                   {% csrf_token %}
                   <input type="hidden" name="action" value="revoke_judge_qr">
                   <input type="hidden" name="token_id" value="{{ selected_token.id }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">Revocar QR</button>
+                  <button class="btn btn-sm btn-outline-danger" type="submit" data-avatar-anchor="qr-admin-revoke-access">Revocar QR</button>
                 </form>
               {% else %}
                 <form method="post" onsubmit="return confirm('Eliminar definitivament aquest QR de jutge revocat?');">
@@ -797,7 +806,7 @@
             </div>
           </div>
 
-          <div class="mb-4">
+          <div class="mb-4" data-avatar-anchor="qr-admin-judge-accesses">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div class="fw-semibold d-inline-flex align-items-center">
                 <img class="qr-admin-button-icon" src="{% static 'notes/QRs/configuracio.png' %}" alt="">
@@ -852,7 +861,7 @@
           </div>
 
           {% if selected_token.is_active and not selected_token.revoked_at %}
-            <div class="qr-admin-assignment-form pt-3">
+            <div class="qr-admin-assignment-form pt-3" data-avatar-anchor="qr-admin-add-judge-access">
               <div class="qr-admin-section-head">
                 <div>
                   <div class="qr-admin-section-kicker">Assignacio</div>
@@ -861,6 +870,7 @@
                       <img src="{% static 'notes/QRs/afegir.png' %}" alt="">
                     </span>
                     <span>Afegir acces de jutge</span>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_judge_access" aria-label="Ajuda per afegir acces de jutge" title="Ajuda per afegir acces de jutge">?</button>
                   </h3>
                   <p class="qr-admin-section-copy">Defineix aparell, fase i els camps que podra puntuar aquest QR.</p>
                 </div>
@@ -874,7 +884,7 @@
                   <input type="hidden" name="action" value="add_assignment">
                   <input type="hidden" name="token_id" value="{{ selected_token.id }}">
 
-                  <div class="row g-2 mb-2">
+                  <div class="row g-2 mb-2" data-avatar-anchor="qr-admin-access-apparatus-phase">
                     <div class="col-12 col-md-6">
                       <label class="form-label small text-muted mb-1">Aparell</label>
                       <select class="form-select form-select-sm" name="assignment_comp_aparell_id" id="assignmentAppSelect" required>
@@ -913,15 +923,15 @@
                   </div>
 
                   {{ assignment_formset.management_form }}
-                  <div class="table-responsive">
+                  <div class="table-responsive" data-avatar-anchor="qr-admin-access-fields">
                     <table class="table table-sm align-middle">
                       <thead>
                         <tr class="text-muted small">
                           <th style="min-width:220px;">Camp</th>
                           <th data-team-column="1">Abast</th>
                           <th style="min-width:220px;" data-team-column="1">Membres</th>
-                          <th>Jutge</th>
-                          <th>Start</th>
+                          <th data-avatar-anchor="qr-admin-access-judge-number">Jutge</th>
+                          <th data-avatar-anchor="qr-admin-access-items-limit">Start</th>
                           <th>Count</th>
                           <th></th>
                         </tr>
@@ -1018,7 +1028,7 @@
             </div>
           {% endif %}
         {% elif selected_public_token %}
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 qr-admin-detail-identity">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 qr-admin-detail-identity" data-avatar-anchor="qr-admin-public-detail">
             <div class="flex-grow-1">
               <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
                 <div class="qr-admin-token-title">{{ selected_public_token.label|default:"(sense etiqueta)" }}</div>
@@ -1069,10 +1079,10 @@
                 {% endif %}
               </div>
             </div>
-            <div class="d-flex flex-wrap gap-1">
-              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_portal' selected_public_token.id %}" target="_blank">Obrir</a>
-              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_loop' selected_public_token.id %}" target="_blank">Loop</a>
-              <a class="btn btn-sm btn-outline-secondary" href="{% url 'public_live_qr_png' selected_public_token.id %}" target="_blank">QR</a>
+            <div class="d-flex flex-wrap gap-1" data-avatar-anchor="qr-admin-detail-actions">
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_portal' selected_public_token.id %}" target="_blank" data-avatar-action="qr-admin-open-public-live">Obrir</a>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_loop' selected_public_token.id %}" target="_blank" data-avatar-action="qr-admin-open-public-loop">Loop</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'public_live_qr_png' selected_public_token.id %}" target="_blank" data-avatar-action="qr-admin-open-public-qr">QR</a>
               {% if not selected_public_token.revoked_at and selected_public_token.is_active %}
                 <form method="post">
                   {% csrf_token %}
