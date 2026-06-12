@@ -200,6 +200,89 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         }
         return schema
 
+    def test_compute_classificacio_excludes_inscripcio_from_single_selected_app(self):
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=9.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=8.0,
+        )
+        InscripcioAparellExclusio.objects.create(
+            inscripcio=self.ins_b,
+            comp_aparell=self.comp_app_a,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Exclusio app A",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=self._selected_total_schema([self.comp_app_a.id]),
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertEqual([row["participant"] for row in rows], ["Participant A"])
+
+    def test_compute_classificacio_uses_or_admission_for_multiple_selected_apps(self):
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=9.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=100.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_b,
+            inputs={},
+            outputs={},
+            total=7.0,
+        )
+        InscripcioAparellExclusio.objects.create(
+            inscripcio=self.ins_b,
+            comp_aparell=self.comp_app_a,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Exclusio OR A B",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=self._selected_total_schema([self.comp_app_a.id, self.comp_app_b.id]),
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        scores = {row["participant"]: row["score"] for row in rows}
+
+        self.assertEqual(scores.get("Participant A"), 9.0)
+        self.assertEqual(scores.get("Participant B"), 7.0)
+
     def test_compute_classificacio_uses_input_matrix_1x1_as_scalar(self):
         ScoringSchema.objects.create(
             aparell=self.app_a,

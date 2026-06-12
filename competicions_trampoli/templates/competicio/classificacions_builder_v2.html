@@ -4,8 +4,6 @@
 {% block title %}{{ builder_title|default:"Classificacions" }}{% if builder_subtitle %} - {{ builder_subtitle }}{% elif competicio %} - {{ competicio.nom }}{% endif %}{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="{% staticv 'css/classificacions_builder_help.css' %}">
-
 {% include "classificacions/builder/_styles.html" %}
 {% include "classificacions/builder/_page_chrome.html" %}
 {% include "classificacions/builder/_json_contract.html" %}
@@ -22,7 +20,5 @@
 {% include "classificacions/builder/scripts/_70_hydration_sync.js.html" %}
 {% include "classificacions/builder/scripts/_80_actions_init.js.html" %}
 </script>
-
-{% include "classificacions/builder/_help_drawer.html" %}
 
 {% endblock %}

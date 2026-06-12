@@ -319,6 +319,10 @@
         .join(',');
     }
 
+    function slotOrderScope(node) {
+      return node?.closest?.('[data-slot-order-workspace], [data-unit-preview-modal]') || null;
+    }
+
     function openSlotOrderWorkspace(id) {
       const workspace = slotOrderWorkspace(id);
       if (!workspace) return;
@@ -354,6 +358,59 @@
       }
     }
 
+    function unitPreviewModal(id) {
+      return id ? document.getElementById(id) : null;
+    }
+
+    function unitPreviewBackdrop(id) {
+      if (!id) return null;
+      return Array.from(document.querySelectorAll('[data-unit-preview-backdrop]'))
+        .find((node) => node.getAttribute('data-unit-preview-backdrop') === id) || null;
+    }
+
+    function openUnitPreviewModal(id) {
+      const modal = unitPreviewModal(id);
+      if (!modal) return;
+      closeOtherSlotMenus(null);
+      document.querySelectorAll('[data-slot-order-workspace]:not([hidden])').forEach((workspace) => {
+        closeSlotOrderWorkspace(workspace.id);
+      });
+      const previewBackdrop = unitPreviewBackdrop(id);
+      if (previewBackdrop && previewBackdrop.parentElement !== document.body) {
+        document.body.appendChild(previewBackdrop);
+      }
+      if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+      }
+      modal.hidden = false;
+      if (previewBackdrop) previewBackdrop.hidden = false;
+      document.body.classList.add('phase-unit-preview-open');
+      refreshSlotOrderIndexes(modal);
+      modal.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+        item.hidden = false;
+      });
+      const search = modal.querySelector('[data-slot-order-filter]');
+      if (search) search.value = '';
+      const closeButton = modal.querySelector('[data-close-unit-preview-modal]');
+      window.setTimeout(() => closeButton?.focus(), 0);
+    }
+
+    function closeUnitPreviewModal(id) {
+      const modal = unitPreviewModal(id);
+      if (modal) modal.hidden = true;
+      const previewBackdrop = unitPreviewBackdrop(id);
+      if (previewBackdrop) previewBackdrop.hidden = true;
+      if (!document.querySelector('[data-unit-preview-modal]:not([hidden])')) {
+        document.body.classList.remove('phase-unit-preview-open');
+      }
+    }
+
+    function closeOpenUnitPreviewModals() {
+      document.querySelectorAll('[data-unit-preview-modal]:not([hidden])').forEach((modal) => {
+        closeUnitPreviewModal(modal.id);
+      });
+    }
+
     function moveSlotOrderItem(item, direction) {
       if (!item) return;
       const list = item.closest('[data-slot-order-list]');
@@ -367,7 +424,7 @@
         while (next && next.hidden) next = next.nextElementSibling;
         if (next) list.insertBefore(next, item);
       }
-      refreshSlotOrderIndexes(item.closest('[data-slot-order-workspace]'));
+      refreshSlotOrderIndexes(slotOrderScope(item));
       item.focus?.();
     }
 
@@ -398,14 +455,18 @@
         closePhaseConfirm();
         return;
       }
-      if (event.key === 'Escape' && root.classList.contains('is-drawer-open')) {
-        setDrawerOpen(false);
-      }
       if (event.key === 'Escape') {
+        if (document.querySelector('[data-unit-preview-modal]:not([hidden])')) {
+          closeOpenUnitPreviewModals();
+          return;
+        }
         closeOtherSlotMenus(null);
         document.querySelectorAll('[data-slot-order-workspace]:not([hidden])').forEach((workspace) => {
           closeSlotOrderWorkspace(workspace.id);
         });
+        if (root.classList.contains('is-drawer-open')) {
+          setDrawerOpen(false);
+        }
       }
     });
     document.addEventListener('click', (event) => {
@@ -440,6 +501,11 @@
       link.addEventListener('click', saveScrollPosition);
     });
     root.addEventListener('submit', handleConfirmSubmit, true);
+    document.addEventListener('submit', (event) => {
+      if (event.target?.closest?.('[data-unit-preview-modal]')) {
+        handleConfirmSubmit(event);
+      }
+    }, true);
     document.querySelectorAll('.phase-child-create-form, .phase-drawer-body form, .phase-base-exercise-form').forEach((form) => {
       form.addEventListener('submit', saveScrollPosition);
     });
@@ -447,6 +513,11 @@
       form.addEventListener('submit', saveScrollPosition);
     });
     root.addEventListener('submit', saveScrollPosition, true);
+    document.addEventListener('submit', (event) => {
+      if (event.target?.closest?.('[data-unit-preview-modal]')) {
+        saveScrollPosition();
+      }
+    }, true);
     document.querySelectorAll('.phase-slot-actions').forEach((details) => {
       details.addEventListener('toggle', () => {
         if (details.open) {
@@ -489,6 +560,21 @@
         closeSlotOrderWorkspace(backdrop.getAttribute('data-slot-order-backdrop'));
       });
     });
+    document.querySelectorAll('[data-open-unit-preview-modal]').forEach((button) => {
+      button.addEventListener('click', () => {
+        openUnitPreviewModal(button.getAttribute('data-open-unit-preview-modal'));
+      });
+    });
+    document.querySelectorAll('[data-close-unit-preview-modal]').forEach((button) => {
+      button.addEventListener('click', () => {
+        closeUnitPreviewModal(button.getAttribute('data-close-unit-preview-modal'));
+      });
+    });
+    document.querySelectorAll('[data-unit-preview-backdrop]').forEach((previewBackdrop) => {
+      previewBackdrop.addEventListener('click', () => {
+        closeUnitPreviewModal(previewBackdrop.getAttribute('data-unit-preview-backdrop'));
+      });
+    });
     document.querySelectorAll('[data-slot-order-form]').forEach((form) => {
       form.addEventListener('submit', () => {
         saveScrollPosition();
@@ -518,7 +604,7 @@
       });
       item.addEventListener('dragend', () => {
         item.classList.remove('is-dragging');
-        refreshSlotOrderIndexes(item.closest('[data-slot-order-workspace]'));
+        refreshSlotOrderIndexes(slotOrderScope(item));
       });
     });
     document.querySelectorAll('[data-slot-order-list]').forEach((list) => {

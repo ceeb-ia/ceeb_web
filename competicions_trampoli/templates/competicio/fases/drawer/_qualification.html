@@ -9,22 +9,9 @@
     {% endif %}
   </div>
   <div class="phase-panel-note mb-2">
-    Requereix unitats ja generades a Grups. Previsualitza qui ompliria els slots existents i congela aquesta assignacio.
+    Requereix unitats ja generades a Grups.
   </div>
   <div class="phase-action-stack">
-    {% if selected_phase.ui_qualification_manual_pending %}
-      <form
-        method="post"
-        data-phase-confirm-title="Validar snapshot"
-        data-phase-confirm-message="Validar el snapshot actual amb els canvis manuals?"
-        data-phase-confirm-label="Validar snapshot"
-        data-phase-confirm-tone="warning">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="accept_current_qualification_snapshot">
-        <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
-        <button class="btn btn-sm btn-outline-success" type="submit">Validar snapshot actual</button>
-      </form>
-    {% endif %}
     <form method="post">
       {% csrf_token %}
       <input type="hidden" name="action" value="preview_qualification">
@@ -33,41 +20,20 @@
     </form>
     <form
       method="post"
-      data-phase-confirm-title="{% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}"
-      data-phase-confirm-message="Aplicar el snapshot de la fase amb la configuracio actual?"
-      data-phase-confirm-label="{% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}"
+      data-phase-confirm-title="{% if selected_phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
+      data-phase-confirm-message="{% if selected_phase.ui_qualification_run_id %}Substituir el snapshot actual amb la configuracio vigent?{% else %}Aplicar el snapshot de la fase amb la configuracio actual?{% endif %}"
+      data-phase-confirm-label="{% if selected_phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
       data-phase-confirm-tone="warning">
       {% csrf_token %}
       <input type="hidden" name="action" value="apply_qualification">
       <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
-      {% if selected_phase.ui_qualification_run_id %}
-        <div class="form-check mb-2">
-          <input class="form-check-input" id="confirm-regeneration" type="checkbox" name="confirm_regeneration" value="1">
-          <label class="form-check-label" for="confirm-regeneration">Substituir el snapshot congelat</label>
-        </div>
-      {% endif %}
       <button class="btn btn-sm btn-primary" type="submit">
-        {% if selected_phase.ui_qualification_run_id %}Recalcular snapshot{% else %}Congelar snapshot{% endif %}
+        {% if selected_phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}
       </button>
-    </form>
-    <form
-      method="post"
-      data-phase-confirm-title="Regenerar snapshot"
-      data-phase-confirm-message="Substituir la proposta actual de la fase amb la configuracio vigent?"
-      data-phase-confirm-label="Regenerar snapshot"
-      data-phase-confirm-tone="warning">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="regenerate_qualification">
-      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
-      <div class="form-check mb-2">
-        <input class="form-check-input" id="confirm-regenerate-qualification" type="checkbox" name="confirm_regeneration" value="1">
-        <label class="form-check-label" for="confirm-regenerate-qualification">Confirmar regeneracio</label>
-      </div>
-      <button class="btn btn-sm btn-outline-warning" type="submit">Regenerar snapshot</button>
     </form>
   </div>
   <div class="phase-panel-note mt-2">
-    Aquesta accio no defineix l'estructura de grups: omple slots existents amb classificats i conserva les reserves per a substitucions manuals.
+    Omple slots existents amb classificats i conserva les reserves per a substitucions manuals.
   </div>
   {% if qualification_preview %}
     <div class="phase-panel-note mt-3">

@@ -86,6 +86,7 @@
 
   function normalizeTieExerciseSelectionScope(raw) {
     const scope = String(raw || "").trim().toLowerCase();
+    if (scope === "team_pool_flat" || scope === "team_pool_per_exercici") return EXERCISE_SELECTION_SCOPE_TEAM_POOL;
     if ([EXERCISE_SELECTION_SCOPE_INHERIT, EXERCISE_SELECTION_SCOPE_PER_MEMBER, EXERCISE_SELECTION_SCOPE_TEAM_POOL].includes(scope)) return scope;
     return EXERCISE_SELECTION_SCOPE_INHERIT;
   }
@@ -762,10 +763,14 @@
       const disableDown = !reorderEnabled || state.reorderBusy || idx === items.length - 1;
       const moveUpTitle = disableUp ? (idx === 0 ? "Ja es la primera classificacio." : reorderTitle) : "Pujar classificacio";
       const moveDownTitle = disableDown ? (idx === items.length - 1 ? "Ja es l'ultima classificacio." : reorderTitle) : "Baixar classificacio";
-      const controlsHtml = showReorderControls ? `<div class="builder-cfg-controls">
+      const reorderButtonsHtml = showReorderControls ? `
           <button type="button" class="builder-cfg-move" data-move-dir="-1" data-cfg-move="${esc(String(cfg.id))}" aria-label="Pujar classificacio" title="${esc(moveUpTitle)}" ${disableUp ? "disabled" : ""}>&uarr;</button>
           <button type="button" class="builder-cfg-move" data-move-dir="1" data-cfg-move="${esc(String(cfg.id))}" aria-label="Baixar classificacio" title="${esc(moveDownTitle)}" ${disableDown ? "disabled" : ""}>&darr;</button>
-        </div>` : "";
+        ` : "";
+      const controlsHtml = `<div class="builder-cfg-controls">
+          ${reorderButtonsHtml}
+          <button type="button" class="builder-cfg-move builder-cfg-delete" data-cfg-delete="${esc(String(cfg.id))}" aria-label="Eliminar classificacio" title="Eliminar classificacio">&times;</button>
+        </div>`;
       row.innerHTML = `<div class="builder-cfg-row">
         <button type="button" class="builder-cfg-main" data-cfg-select="${esc(String(cfg.id))}">
           <div class="builder-cfg-main-layout">
@@ -783,6 +788,7 @@
       row.querySelectorAll("[data-cfg-move]").forEach(btn => {
         btn.addEventListener("click", () => moveCfgByOffset(cfg.id, Number(btn.getAttribute("data-move-dir") || 0)));
       });
+      row.querySelector("[data-cfg-delete]")?.addEventListener("click", () => deleteCfgById(cfg.id));
       els.list.appendChild(row);
     });
   }

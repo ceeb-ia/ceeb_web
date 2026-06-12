@@ -12,9 +12,6 @@
       <span class="badge badge-light border">Unitats buides</span>
     {% endif %}
   </div>
-  <div class="phase-panel-note mb-2">
-    Previsualitza les unitats competitives que es generaran a partir de la recepta. Les reserves no creen places dins les unitats; quedaran separades al snapshot.
-  </div>
   {% if selected_phase.ui_group_plan_stale %}
     <div class="alert alert-warning mb-2">
       {{ selected_phase.ui_group_plan_stale_reason }} Les unitats actuals poden no coincidir amb classificats, reserves o particions.

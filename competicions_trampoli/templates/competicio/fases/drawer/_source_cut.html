@@ -12,7 +12,14 @@
     <input type="hidden" name="action" value="configure_source_cut">
     <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
     <div class="mb-2">
-      {{ source_cut_form.classificacio.label_tag }}{{ source_cut_form.classificacio }}{{ source_cut_form.classificacio.errors }}
+      {{ source_cut_form.classificacio.label_tag }}{{ source_cut_form.classificacio }}
+      {% if source_cut_form.classificacio.errors %}
+        <div class="alert alert-warning py-2 px-3 small mt-2 mb-0">
+          {% for error in source_cut_form.classificacio.errors %}
+            <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
       {% if source_cut_form.classificacio.help_text %}<div class="text-muted small">{{ source_cut_form.classificacio.help_text }}</div>{% endif %}
     </div>
     <div class="mb-2">

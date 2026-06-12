@@ -14,7 +14,7 @@
       <label for="phase-status-select" class="form-label">Estat</label>
       <select class="form-select" id="phase-status-select" name="estat">
         {% for value,label in phase_status_choices %}
-          <option value="{{ value }}" {% if selected_phase.ui_user_status_value == value %}selected{% endif %}>{{ label }}</option>
+          <option value="{{ value }}" {% if selected_phase.ui_status_form_value == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -22,42 +22,5 @@
   </form>
 </section>
 
-<section class="phase-panel is-muted" data-avatar-anchor="phase-status-summary">
-  <div class="phase-panel-title">
-    <h5>Lectura rapida</h5>
-  </div>
-  <div class="phase-selected-summary">
-    <div class="phase-panel-note">
-      {% if selected_phase.parent %}
-        Penja de {{ selected_phase.parent.nom }}.
-      {% else %}
-        Penja de la preliminar implicita.
-      {% endif %}
-    </div>
-    <div class="phase-summary-badges">
-      <span class="badge badge-light border">{{ selected_phase.ui_user_status_label }}</span>
-      <span class="badge badge-light border">{{ selected_phase.ui_unit_count }} unitats</span>
-      <span class="badge badge-light border">{{ selected_phase.ui_competitive_slot_count }}/{{ selected_phase.ui_slot_count }} places</span>
-      {% if selected_phase.ui_pending_unit_count %}
-        <span class="badge badge-warning">{{ selected_phase.ui_pending_unit_count }} pendents</span>
-      {% else %}
-        <span class="badge badge-success">Programacio al dia</span>
-      {% endif %}
-      {% if selected_phase.ui_qualification_source_changed %}
-        <span class="badge badge-danger">Font canviada</span>
-      {% elif selected_phase.ui_qualification_manual_pending %}
-        <span class="badge badge-warning">Snapshot pendent de validar</span>
-      {% endif %}
-      {% if selected_phase.ui_group_plan_stale %}<span class="badge badge-danger">Revisar grups</span>{% endif %}
-    </div>
-    {% if selected_phase.ui_phase_alerts %}
-      <div class="phase-panel-note mt-2">
-        {% for alert in selected_phase.ui_phase_alerts %}
-          <span class="badge badge-light border">{{ alert }}</span>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </div>
-</section>
 
 {% include "competicio/fases/drawer/_delete_phase.html" %}

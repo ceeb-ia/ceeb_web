@@ -60,29 +60,6 @@ def validate_team_pool_tie_contract(tie, *, idx=0, main_scope=None):
     pipeline = _as_dict(tie.get("pipeline"))
     scope = _as_dict(tie.get("scope"))
 
-    # Keep the legacy error paths so the UI and existing tests continue to
-    # surface the same contract violations, while accepting pipeline-first
-    # shapes by looking at their normalized pipeline payload.
-    if _has_key(scope, "exercicis") or _has_key(pipeline, "exercicis"):
-        errors.append(
-            f"desempat[{idx}].scope.exercicis no es compatible amb exercise_selection_scope=team_pool."
-        )
-
-    if _has_key(tie, "mode_seleccio_exercicis") or _has_key(pipeline, "mode_seleccio_exercicis"):
-        errors.append(
-            f"desempat[{idx}].mode_seleccio_exercicis no es compatible amb exercise_selection_scope=team_pool."
-        )
-
-    if _has_key(tie, "exercicis_per_aparell") or _has_key(pipeline, "exercicis_per_aparell"):
-        errors.append(
-            f"desempat[{idx}].exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
-        )
-
-    if _has_key(tie, "agregacio_exercicis_per_aparell") or _has_key(pipeline, "agregacio_exercicis_per_aparell"):
-        errors.append(
-            f"desempat[{idx}].agregacio_exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
-        )
-
     if _has_key(scope, "participants") or _has_key(pipeline, "participants"):
         errors.append(
             f"desempat[{idx}].scope.participants no es compatible amb exercise_selection_scope=team_pool."
@@ -111,23 +88,14 @@ def strip_team_pool_tie_payload(tie, *, main_scope=None):
 
     pipeline = _as_dict(tie.get("pipeline"))
     scope = _as_dict(tie.get("scope"))
-    scope.pop("exercicis", None)
     scope.pop("participants", None)
     if scope:
         tie["scope"] = scope
     else:
         tie.pop("scope", None)
 
-    tie.pop("mode_seleccio_exercicis", None)
-    tie.pop("exercicis_per_aparell", None)
-    tie.pop("agregacio_exercicis_per_aparell", None)
     tie.pop("agregacio_participants", None)
 
-    pipeline.pop("exercicis", None)
-    pipeline.pop("mode_seleccio_exercicis", None)
-    pipeline.pop("exercicis_per_aparell", None)
-    pipeline.pop("agregacio_exercicis", None)
-    pipeline.pop("agregacio_exercicis_per_aparell", None)
     pipeline.pop("participants", None)
     pipeline.pop("agregacio_participants", None)
     if pipeline:
@@ -206,9 +174,6 @@ def validate_raw_desempat_legacy_payload(desempat):
     allowed_selection_modes = {"hereta", "per_aparell_global", "per_aparell_override", "global_pool"}
     forbidden_pipeline_keys = {
         "victories",
-        "camps_mode_per_aparell",
-        "camps_per_exercici_per_aparell",
-        "agregacio_camps_per_exercici_per_aparell",
     }
     for idx, tie in enumerate(desempat if isinstance(desempat, list) else []):
         if not isinstance(tie, dict):

@@ -9,6 +9,7 @@ from .program_units import (
 )
 from .dashboard import phase_dashboard_context
 from .qualification import (
+    CIRCULAR_SOURCE_PHASE_MESSAGE,
     QualificationError,
     apply_qualification,
     confirm_qualification_partition,
@@ -17,6 +18,7 @@ from .qualification import (
     preview_qualification,
     qualification_is_stale,
     record_qualification_preview,
+    validate_classificacio_not_circular_source,
 )
 from .group_plan import (
     GroupPlanPreview,
@@ -29,6 +31,7 @@ from .group_plan import (
 __all__ = [
     "GroupPlanPreview",
     "GroupPlanUnitPreview",
+    "CIRCULAR_SOURCE_PHASE_MESSAGE",
     "QualificationError",
     "SlotSubject",
     "apply_group_plan",
@@ -48,4 +51,5 @@ __all__ = [
     "preview_qualification",
     "qualification_is_stale",
     "record_qualification_preview",
+    "validate_classificacio_not_circular_source",
 ]

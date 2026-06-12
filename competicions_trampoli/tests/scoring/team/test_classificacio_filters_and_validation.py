@@ -1911,7 +1911,7 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
             },
         )
 
-    def test_classificacio_validation_rejects_team_pool_tie_reselection_fields(self):
+    def test_classificacio_validation_rejects_team_pool_tie_global_participant_fields(self):
         individual_app = self._create_aparell("TRV", "Tramp validation")
         individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
         schema = {
@@ -1955,13 +1955,13 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
             tipus="equips",
         )
 
-        self.assertTrue(any("desempat[0].scope.exercicis" in err for err in errors))
-        self.assertTrue(any("desempat[0].mode_seleccio_exercicis" in err for err in errors))
-        self.assertTrue(any("desempat[0].exercicis_per_aparell" in err for err in errors))
+        self.assertFalse(any("desempat[0].scope.exercicis" in err for err in errors))
+        self.assertFalse(any("desempat[0].mode_seleccio_exercicis" in err for err in errors))
+        self.assertFalse(any("desempat[0].exercicis_per_aparell" in err for err in errors))
         self.assertTrue(any("desempat[0].scope.participants" in err for err in errors))
         self.assertTrue(any("desempat[0].agregacio_participants" in err for err in errors))
 
-    def test_classificacio_validation_rejects_team_pool_pipeline_first_reselection_fields(self):
+    def test_classificacio_validation_rejects_team_pool_pipeline_first_global_participant_fields(self):
         individual_app = self._create_aparell("TRV", "Tramp validation")
         individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
         schema = {
@@ -2024,9 +2024,9 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
             tipus="equips",
         )
 
-        self.assertTrue(any("desempat[0].scope.exercicis" in err for err in errors))
-        self.assertTrue(any("desempat[0].mode_seleccio_exercicis" in err for err in errors))
-        self.assertTrue(any("desempat[0].exercicis_per_aparell" in err for err in errors))
+        self.assertFalse(any("desempat[0].scope.exercicis" in err for err in errors))
+        self.assertFalse(any("desempat[0].mode_seleccio_exercicis" in err for err in errors))
+        self.assertFalse(any("desempat[0].exercicis_per_aparell" in err for err in errors))
         self.assertTrue(any("desempat[0].scope.participants" in err for err in errors))
         self.assertTrue(any("desempat[0].agregacio_participants" in err for err in errors))
 
@@ -2218,7 +2218,7 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
             )
         )
 
-    def test_classificacio_validation_rejects_team_pool_per_exercici_inside_desempat(self):
+    def test_classificacio_validation_accepts_team_pool_per_exercici_inside_desempat(self):
         individual_app = self._create_aparell("TRV_TP_TIE", "Tramp team pool tie")
         individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
         schema = {
@@ -2277,17 +2277,9 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
             tipus="equips",
         )
 
-        self.assertTrue(any("desempat[0].team_pool_mode_per_aparell" in err for err in errors))
-        self.assertTrue(any("desempat[0].pipeline.team_pool_mode_per_aparell" in err for err in errors))
-        self.assertTrue(
-            any("desempat[0].pipeline.team_pool_participants_per_exercici_per_aparell" in err for err in errors)
-        )
-        self.assertTrue(
-            any(
-                "desempat[0].pipeline.team_pool_agregacio_participants_per_exercici_per_aparell" in err
-                for err in errors
-            )
-        )
+        self.assertFalse(any("team_pool_mode_per_aparell" in err for err in errors))
+        self.assertFalse(any("team_pool_participants_per_exercici_per_aparell" in err for err in errors))
+        self.assertFalse(any("team_pool_agregacio_participants_per_exercici_per_aparell" in err for err in errors))
 
     def test_classificacio_validation_accepts_puntuacio_member_selection_step_for_derived_per_member(self):
         individual_app = self._create_aparell("TRV_PM", "Tramp validation per member")
@@ -2399,7 +2391,7 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
 
         self.assertTrue(any("participants_per_aparell" in err for err in errors))
 
-    def test_prepare_schema_for_persistence_strips_team_pool_tie_pipeline_reselection_fields(self):
+    def test_prepare_schema_for_persistence_keeps_team_pool_tie_pipeline_exercise_fields(self):
         individual_app = self._create_aparell("TRW", "Tramp save validation")
         individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=3)
         schema = {
@@ -2461,11 +2453,17 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertEqual(prepared["errors"], [])
         pipeline = (((prepared["schema"] or {}).get("desempat") or [])[0].get("pipeline") or {})
         self.assertEqual(pipeline.get("exercise_selection_scope"), "team_pool")
-        self.assertNotIn("exercicis", pipeline)
-        self.assertNotIn("mode_seleccio_exercicis", pipeline)
-        self.assertNotIn("exercicis_per_aparell", pipeline)
-        self.assertNotIn("agregacio_exercicis", pipeline)
-        self.assertNotIn("agregacio_exercicis_per_aparell", pipeline)
+        self.assertEqual(pipeline.get("exercicis"), {"mode": "tots"})
+        self.assertEqual(pipeline.get("mode_seleccio_exercicis"), "per_aparell_override")
+        self.assertEqual(
+            pipeline.get("exercicis_per_aparell"),
+            {str(individual_comp_app.id): {"mode": "millor_1"}},
+        )
+        self.assertEqual(pipeline.get("agregacio_exercicis"), "sum")
+        self.assertEqual(
+            pipeline.get("agregacio_exercicis_per_aparell"),
+            {str(individual_comp_app.id): "sum"},
+        )
         self.assertNotIn("participants", pipeline)
         self.assertNotIn("agregacio_participants", pipeline)
 

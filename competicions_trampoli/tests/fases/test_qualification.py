@@ -4,11 +4,13 @@ from datetime import date
 from django.test import TestCase
 
 from ..base import _BaseTrampoliDataMixin
+from ...forms import PhaseSourceCutForm
 from ...models.classificacions import ClassificacioConfig
 from ...models.competicio import CompeticioAparellFase, FasePartitionState, ProgramUnit, ProgramUnitSlot, QualificationRun
 from ...models.scoring import ScoreEntry
 from ...services.classificacions.compute import DEFAULT_SCHEMA
 from ...services.fases import (
+    CIRCULAR_SOURCE_PHASE_MESSAGE,
     QualificationError,
     SlotSubject,
     apply_group_plan,
@@ -20,6 +22,7 @@ from ...services.fases import (
     qualification_is_stale,
     record_qualification_preview,
 )
+from ...services.fases.planner import configure_phase_source_cut
 
 
 class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
@@ -81,6 +84,24 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
             },
         )
 
+    def _source_cut_config(self, cfg, *, tie_policy="classification_order"):
+        return {
+            "source": {
+                "classificacio_id": cfg.id,
+                "classificacio_nom": cfg.nom,
+                "tipus": cfg.tipus,
+            },
+            "cut": {
+                "mode": "top_n",
+                "qualifiers_count": 2,
+                "reserve_count": 1,
+                "partition_mode": "global",
+                "tie_policy": tie_policy,
+                "unit_capacity": 2,
+                "unit_name_template": "{fase} - {particio}",
+            },
+        }
+
     def _score(self, inscripcio, total, *, phase=None):
         return ScoreEntry.objects.create(
             competicio=self.competicio,
@@ -92,6 +113,68 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
             inputs={"total": total},
             outputs={"total": total},
         )
+
+    def test_preview_rejects_classification_scoped_to_same_phase(self):
+        dest = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Semifinal",
+            codi="SEMI",
+            ordre=1,
+        )
+        cfg = self._source_cfg(phase=dest)
+        dest.config = self._source_cut_config(cfg)
+        dest.save(update_fields=["config", "updated_at"])
+        create_program_unit_from_subjects(
+            fase=dest,
+            nom="Semifinal",
+            subjects=[SlotSubject("inscripcio", self.ins_1.id), SlotSubject("inscripcio", self.ins_2.id)],
+        )
+
+        with self.assertRaisesMessage(QualificationError, CIRCULAR_SOURCE_PHASE_MESSAGE):
+            preview_qualification(dest)
+
+    def test_group_plan_rejects_classification_scoped_to_same_phase(self):
+        dest = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Semifinal",
+            codi="SEMI",
+            ordre=1,
+        )
+        cfg = self._source_cfg(phase=dest)
+        dest.config = self._source_cut_config(cfg)
+        dest.save(update_fields=["config", "updated_at"])
+
+        with self.assertRaisesMessage(QualificationError, CIRCULAR_SOURCE_PHASE_MESSAGE):
+            preview_group_plan(dest)
+
+    def test_configure_source_cut_rejects_classification_scoped_to_same_phase(self):
+        dest = CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            nom="Semifinal",
+            codi="SEMI",
+            ordre=1,
+        )
+        cfg = self._source_cfg(phase=dest)
+        form = PhaseSourceCutForm(
+            {
+                "classificacio": str(cfg.id),
+                "cut_mode": PhaseSourceCutForm.CUT_MODE_TOP_N,
+                "qualifiers_count": "2",
+                "reserve_count": "0",
+                "partition_mode": PhaseSourceCutForm.PARTITION_GLOBAL,
+                "tie_policy": PhaseSourceCutForm.TIE_CLASSIFICATION_ORDER,
+                "unit_capacity": "2",
+                "unit_name_template": "{fase} - {particio}",
+            },
+            competicio=self.competicio,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+        with self.assertRaisesMessage(QualificationError, CIRCULAR_SOURCE_PHASE_MESSAGE):
+            configure_phase_source_cut(dest, form)
 
     def test_preview_and_apply_freezes_classification_cut_into_slots(self):
         self._score(self.ins_1, 9.0)

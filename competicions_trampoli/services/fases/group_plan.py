@@ -27,6 +27,7 @@ from .qualification import (
     _source_classificacio,
     _source_phase_for_classificacio,
     _source_phase_warning,
+    validate_classificacio_not_circular_source,
 )
 
 
@@ -224,6 +225,7 @@ def _build_units_by_count(
 def preview_group_plan(fase: CompeticioAparellFase) -> GroupPlanPreview:
     classificacio = _source_classificacio(fase)
     source_phase = _source_phase_for_classificacio(classificacio, comp_aparell_id=fase.comp_aparell_id)
+    validate_classificacio_not_circular_source(fase, classificacio, source_phase=source_phase)
     _source, cut = _phase_config(fase)
     config = fase.config if isinstance(fase.config, dict) else {}
     settings = config.get("group_plan_settings") if isinstance(config.get("group_plan_settings"), dict) else {}

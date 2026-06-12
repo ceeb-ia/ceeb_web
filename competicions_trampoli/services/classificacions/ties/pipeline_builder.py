@@ -19,11 +19,7 @@ from .pipeline_helpers import (
 )
 
 
-UNSUPPORTED_PER_EXERCISE_FIELD_PIPELINE_KEYS = (
-    "camps_mode_per_aparell",
-    "camps_per_exercici_per_aparell",
-    "agregacio_camps_per_exercici_per_aparell",
-)
+UNSUPPORTED_PER_EXERCISE_FIELD_PIPELINE_KEYS = ()
 
 TIE_INPUT_SOURCE_RAW_EXERCISES = "raw_exercises"
 TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS = "main_selected_contributors"

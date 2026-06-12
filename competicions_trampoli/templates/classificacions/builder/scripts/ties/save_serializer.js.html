@@ -287,7 +287,7 @@
     };
     if (!canonical.id) canonical.id = `tie_${Math.random().toString(16).slice(2)}`;
     if (!canonical.nom) {
-      canonical.nom = `Desempat ${Array.from(document.querySelectorAll("#tieBody tr")).indexOf(tr) + 1}`;
+      canonical.nom = `Desempat ${getTieRowIndex(tr) + 1}`;
     }
 
     canonical.pipeline.aparells = normalizeTiePipelineAppScope(
@@ -332,6 +332,43 @@
         canonical.pipeline.agregacio_camps,
       );
     }
+    const rawCampsModePerApp = rawItem.camps_mode_per_aparell && typeof rawItem.camps_mode_per_aparell === "object" && !Array.isArray(rawItem.camps_mode_per_aparell)
+      ? rawItem.camps_mode_per_aparell
+      : {};
+    const rawCampsPerExercisePerApp = rawItem.camps_per_exercici_per_aparell && typeof rawItem.camps_per_exercici_per_aparell === "object" && !Array.isArray(rawItem.camps_per_exercici_per_aparell)
+      ? rawItem.camps_per_exercici_per_aparell
+      : {};
+    const rawAggCampsPerExercisePerApp = rawItem.agregacio_camps_per_exercici_per_aparell && typeof rawItem.agregacio_camps_per_exercici_per_aparell === "object" && !Array.isArray(rawItem.agregacio_camps_per_exercici_per_aparell)
+      ? rawItem.agregacio_camps_per_exercici_per_aparell
+      : {};
+    canonical.pipeline.camps_mode_per_aparell = {};
+    canonical.pipeline.camps_per_exercici_per_aparell = {};
+    canonical.pipeline.agregacio_camps_per_exercici_per_aparell = {};
+    targetIds.forEach(appId => {
+      const key = String(appId);
+      const mode = String(rawCampsModePerApp[key] ?? rawCampsModePerApp[appId] ?? "").trim().toLowerCase() === "per_exercici" ? "per_exercici" : "comu";
+      if (mode !== "per_exercici") return;
+      canonical.pipeline.camps_mode_per_aparell[key] = "per_exercici";
+      const fieldsByEx = rawCampsPerExercisePerApp[key] ?? rawCampsPerExercisePerApp[appId] ?? {};
+      const aggByEx = rawAggCampsPerExercisePerApp[key] ?? rawAggCampsPerExercisePerApp[appId] ?? {};
+      if (fieldsByEx && typeof fieldsByEx === "object" && !Array.isArray(fieldsByEx)) {
+        Object.entries(fieldsByEx).forEach(([exercise, values]) => {
+          const exKey = String(Math.max(1, Number(exercise || 0)));
+          const campsList = normalizeTieCampsFromObj({ camps: values });
+          if (!campsList.length) return;
+          canonical.pipeline.camps_per_exercici_per_aparell[key] = canonical.pipeline.camps_per_exercici_per_aparell[key] || {};
+          canonical.pipeline.camps_per_exercici_per_aparell[key][exKey] = campsList;
+          canonical.pipeline.agregacio_camps_per_exercici_per_aparell[key] = canonical.pipeline.agregacio_camps_per_exercici_per_aparell[key] || {};
+          canonical.pipeline.agregacio_camps_per_exercici_per_aparell[key][exKey] = normalizeTieAggValue(
+            aggByEx?.[exKey] ?? aggByEx?.[Number(exKey)] ?? canonical.pipeline.agregacio_camps_per_aparell?.[key] ?? canonical.pipeline.agregacio_camps,
+            canonical.pipeline.agregacio_camps || "sum",
+          );
+        });
+      }
+    });
+    if (!Object.keys(canonical.pipeline.camps_mode_per_aparell).length) delete canonical.pipeline.camps_mode_per_aparell;
+    if (!Object.keys(canonical.pipeline.camps_per_exercici_per_aparell).length) delete canonical.pipeline.camps_per_exercici_per_aparell;
+    if (!Object.keys(canonical.pipeline.agregacio_camps_per_exercici_per_aparell).length) delete canonical.pipeline.agregacio_camps_per_exercici_per_aparell;
 
     const rawExerciseSelectionScope = isDerivedExerciseSelectionScopeAvailable()
       ? normalizeTieExerciseSelectionScope(rawItem.exercise_selection_scope || EXERCISE_SELECTION_SCOPE_INHERIT)
@@ -384,6 +421,52 @@
     } else {
       delete canonical.pipeline.exercise_selection_scope;
     }
+    if (effectiveExerciseSelectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL) {
+      const teamPoolMode = String(rawItem.team_pool_mode || "flat").trim().toLowerCase() === "per_exercici"
+        ? "per_exercici"
+        : "flat";
+      if (teamPoolMode === "per_exercici") {
+        rawCandidateSourceMode = "raw_exercise";
+      }
+      canonical.pipeline.team_pool_mode_per_aparell = Object.fromEntries(
+        targetIds.map(appId => [String(appId), teamPoolMode])
+      );
+      if (teamPoolMode === "per_exercici") {
+        canonical.pipeline.team_pool_participants_per_exercici_per_aparell = {};
+        canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell = {};
+        const rawTeamPoolParticipants = rawItem.team_pool_participants_per_exercici_per_aparell && typeof rawItem.team_pool_participants_per_exercici_per_aparell === "object" && !Array.isArray(rawItem.team_pool_participants_per_exercici_per_aparell)
+          ? rawItem.team_pool_participants_per_exercici_per_aparell
+          : {};
+        const rawTeamPoolAggParticipants = rawItem.team_pool_agregacio_participants_per_exercici_per_aparell && typeof rawItem.team_pool_agregacio_participants_per_exercici_per_aparell === "object" && !Array.isArray(rawItem.team_pool_agregacio_participants_per_exercici_per_aparell)
+          ? rawItem.team_pool_agregacio_participants_per_exercici_per_aparell
+          : {};
+        targetIds.forEach(appId => {
+          const key = String(appId);
+          const participantsByEx = rawTeamPoolParticipants[key] ?? rawTeamPoolParticipants[appId] ?? {};
+          const aggByEx = rawTeamPoolAggParticipants[key] ?? rawTeamPoolAggParticipants[appId] ?? {};
+          if (!participantsByEx || typeof participantsByEx !== "object" || Array.isArray(participantsByEx)) return;
+          Object.entries(participantsByEx).forEach(([exercise, cfg]) => {
+            const exKey = String(Math.max(1, Number(exercise || 0)));
+            canonical.pipeline.team_pool_participants_per_exercici_per_aparell[key] = canonical.pipeline.team_pool_participants_per_exercici_per_aparell[key] || {};
+            canonical.pipeline.team_pool_participants_per_exercici_per_aparell[key][exKey] = normalizeTiePipelineParticipants(cfg || {}, {});
+            canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell[key] = canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell[key] || {};
+            canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell[key][exKey] = normalizeTieAggValue(
+              aggByEx?.[exKey] ?? aggByEx?.[Number(exKey)] ?? "sum",
+              "sum",
+            );
+          });
+        });
+        if (!Object.keys(canonical.pipeline.team_pool_participants_per_exercici_per_aparell).length) delete canonical.pipeline.team_pool_participants_per_exercici_per_aparell;
+        if (!Object.keys(canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell).length) delete canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell;
+      } else {
+        delete canonical.pipeline.team_pool_participants_per_exercici_per_aparell;
+        delete canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell;
+      }
+    } else {
+      delete canonical.pipeline.team_pool_mode_per_aparell;
+      delete canonical.pipeline.team_pool_participants_per_exercici_per_aparell;
+      delete canonical.pipeline.team_pool_agregacio_participants_per_exercici_per_aparell;
+    }
 
     applyTieCandidateSourceToPipeline(
       canonical.pipeline,
@@ -392,9 +475,6 @@
       fallbackFromPuntuacio,
     );
 
-    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(
-      effectiveExerciseSelectionScope || EXERCISE_SELECTION_SCOPE_INHERIT
-    );
     const rawExerciseScope = (
       rawItem.scope &&
       typeof rawItem.scope === "object" &&
@@ -402,20 +482,14 @@
       rawItem.scope.exercicis &&
       typeof rawItem.scope.exercicis === "object" &&
       !Array.isArray(rawItem.scope.exercicis)
-      ) ? rawItem.scope.exercicis : null;
+    ) ? rawItem.scope.exercicis : null;
     const rawExerciseMode = String((rawExerciseScope || {}).mode || "hereta").toLowerCase().trim();
     const rawSelectionMode = normalizeTieModeSeleccioExercicis(rawItem.mode_seleccio_exercicis || "hereta");
-    if (fixedTeamPool) {
-      delete canonical.pipeline.exercicis;
-      delete canonical.pipeline.mode_seleccio_exercicis;
-      delete canonical.pipeline.exercicis_per_aparell;
-      delete canonical.pipeline.agregacio_exercicis;
-      delete canonical.pipeline.agregacio_exercicis_per_aparell;
-    } else if (
+    if (
       (
         rawSelectionMode === "per_aparell_override" ||
         (
-          rawSelectionMode === "hereta" &&
+        rawSelectionMode === "hereta" &&
           normalizeTieModeSeleccioExercicis(
             pipeline.mode_seleccio_exercicis || fallbackFromPuntuacio.mode_seleccio_exercicis || "per_aparell_global"
           ) === "per_aparell_override"
@@ -436,37 +510,35 @@
       );
     }
 
-    if (!fixedTeamPool) {
-      canonical.pipeline.mode_seleccio_exercicis = rawSelectionMode === "hereta"
-        ? normalizeTieModeSeleccioExercicis(
-            pipeline.mode_seleccio_exercicis || fallbackFromPuntuacio.mode_seleccio_exercicis || "per_aparell_global"
-          )
-        : rawSelectionMode;
+    canonical.pipeline.mode_seleccio_exercicis = rawSelectionMode === "hereta"
+      ? normalizeTieModeSeleccioExercicis(
+          pipeline.mode_seleccio_exercicis || fallbackFromPuntuacio.mode_seleccio_exercicis || "per_aparell_global"
+        )
+      : rawSelectionMode;
 
-      if (canonical.pipeline.mode_seleccio_exercicis === "per_aparell_override") {
-        canonical.pipeline.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
-          rawItem.exercicis_per_aparell || {},
-          pipeline.exercicis_per_aparell,
-          targetIds,
-        );
-        canonical.pipeline.agregacio_exercicis = normalizeTieAggValue(
-          rawItem.agregacio_exercicis || pipeline.agregacio_exercicis || "sum",
-          pipeline.agregacio_exercicis || fallbackFromPuntuacio.agregacio_exercicis || "sum",
-        );
-        canonical.pipeline.agregacio_exercicis_per_aparell = normalizeTiePipelineAggMap(
-          rawItem.agregacio_exercicis_per_aparell || {},
-          pipeline.agregacio_exercicis_per_aparell,
-          targetIds,
-          canonical.pipeline.agregacio_exercicis,
-        );
-      } else {
-        canonical.pipeline.exercicis_per_aparell = {};
-        canonical.pipeline.agregacio_exercicis = normalizeTieAggValue(
-          rawItem.agregacio_exercicis || pipeline.agregacio_exercicis,
-          fallbackFromPuntuacio.agregacio_exercicis || "sum",
-        );
-        canonical.pipeline.agregacio_exercicis_per_aparell = {};
-      }
+    if (canonical.pipeline.mode_seleccio_exercicis === "per_aparell_override") {
+      canonical.pipeline.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
+        rawItem.exercicis_per_aparell || {},
+        pipeline.exercicis_per_aparell,
+        targetIds,
+      );
+      canonical.pipeline.agregacio_exercicis = normalizeTieAggValue(
+        rawItem.agregacio_exercicis || pipeline.agregacio_exercicis || "sum",
+        pipeline.agregacio_exercicis || fallbackFromPuntuacio.agregacio_exercicis || "sum",
+      );
+      canonical.pipeline.agregacio_exercicis_per_aparell = normalizeTiePipelineAggMap(
+        rawItem.agregacio_exercicis_per_aparell || {},
+        pipeline.agregacio_exercicis_per_aparell,
+        targetIds,
+        canonical.pipeline.agregacio_exercicis,
+      );
+    } else {
+      canonical.pipeline.exercicis_per_aparell = {};
+      canonical.pipeline.agregacio_exercicis = normalizeTieAggValue(
+        rawItem.agregacio_exercicis || pipeline.agregacio_exercicis,
+        fallbackFromPuntuacio.agregacio_exercicis || "sum",
+      );
+      canonical.pipeline.agregacio_exercicis_per_aparell = {};
     }
 
     canonical.pipeline.agregacio_aparells = normalizeTieAggValue(
@@ -481,7 +553,7 @@
       delete canonical.pipeline.input_source;
     }
 
-    if (includeParticipants && !fixedTeamPool) {
+    if (includeParticipants && !isTieExerciseSelectionLockedToMainPool(effectiveExerciseSelectionScope || EXERCISE_SELECTION_SCOPE_INHERIT)) {
       const participantsScope = (
         rawItem.scope &&
         typeof rawItem.scope === "object" &&
@@ -511,7 +583,7 @@
     const includeParticipants = isTipusEquips() && getEquipsUiState().effectiveTeamMode !== TEAM_MODE_NATIVE;
     const selectedMainIds = selectedAparellIdsFromUI();
     const fallbackPuntuacio = readPuntuacioSchemaFromUI();
-    document.querySelectorAll("#tieBody tr").forEach(tr => {
+    getTieRowNodes().forEach(tr => {
       const item = buildTieCanonicalForSaveFromRow(
         tr,
         includeParticipants,

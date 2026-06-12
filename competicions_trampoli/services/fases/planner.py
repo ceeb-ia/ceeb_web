@@ -11,6 +11,7 @@ from .program_units import (
     create_program_unit_with_empty_slots,
     create_units_one_per_partition,
 )
+from .qualification import validate_classificacio_not_circular_source
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ def create_partition_unit_for_phase(fase: CompeticioAparellFase, form) -> list[P
 
 def configure_phase_source_cut(fase: CompeticioAparellFase, form) -> CompeticioAparellFase:
     classificacio = form.cleaned_data["classificacio"]
+    validate_classificacio_not_circular_source(fase, classificacio)
     config = deepcopy(fase.config if isinstance(fase.config, dict) else {})
     old_group_plan = config.get("group_plan") if isinstance(config.get("group_plan"), dict) else {}
     old_cut_signature = structural_cut_signature(config.get("cut") if isinstance(config.get("cut"), dict) else {})

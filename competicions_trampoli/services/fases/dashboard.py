@@ -71,6 +71,34 @@ def _to_int(value) -> int | None:
         return None
 
 
+def _group_plan_is_stale_from_config(phase_config: dict) -> bool:
+    group_plan = phase_config.get("group_plan") if isinstance(phase_config.get("group_plan"), dict) else {}
+    cut = phase_config.get("cut") if isinstance(phase_config.get("cut"), dict) else {}
+    stored = str(group_plan.get("cut_signature") or "").strip()
+    return bool(group_plan.get("stale") or (stored and stored != structural_cut_signature(cut)))
+
+
+def _phase_publish_blockers(phase: CompeticioAparellFase, phase_config: dict) -> list[str]:
+    blockers = []
+    if _group_plan_is_stale_from_config(phase_config):
+        blockers.append("revisa o regenera el pla de grups")
+    if not getattr(phase, "ui_unit_count", 0):
+        blockers.append("genera unitats de grups")
+    qualification = phase_config.get("qualification") if isinstance(phase_config.get("qualification"), dict) else {}
+    if not qualification.get("run_id"):
+        blockers.append("congela el snapshot")
+    elif qualification.get("stale") or getattr(phase, "ui_qualification_stale", False):
+        blockers.append("recalcula el snapshot")
+    stale_partitions = [
+        state
+        for state in getattr(phase, "ui_partition_states", [])
+        if str(getattr(state, "status", "") or "") == FasePartitionState.Status.STALE
+    ]
+    if stale_partitions:
+        blockers.append("revisa les particions obsoletes")
+    return blockers
+
+
 def _ordinal_ca(value: int | None) -> str:
     if not value:
         return ""
@@ -234,21 +262,23 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         group_plan_config = phase_config.get("group_plan") if isinstance(phase_config.get("group_plan"), dict) else {}
         current_cut_signature = structural_cut_signature(cut_config)
         stored_cut_signature = str(group_plan_config.get("cut_signature") or "").strip()
-        phase.ui_group_plan_stale = bool(
-            group_plan_config.get("stale")
-            or (stored_cut_signature and stored_cut_signature != current_cut_signature)
-        )
+        phase.ui_group_plan_stale = _group_plan_is_stale_from_config(phase_config)
         phase.ui_group_plan_stale_reason = (
             group_plan_config.get("stale_reason")
             or "La recepta d'origen i tall ha canviat."
         )
-        phase.ui_user_status_value = (
+        phase.ui_status_form_value = (
             phase.estat
             if phase.estat in {CompeticioAparellFase.Estat.PUBLISHED, CompeticioAparellFase.Estat.CLOSED}
             else CompeticioAparellFase.Estat.PLANNED
         )
+        phase.ui_user_status_value = phase.estat
         phase.ui_user_status_label = {
             CompeticioAparellFase.Estat.PLANNED: "Esborrany",
+            CompeticioAparellFase.Estat.GENERATED: "Planificada",
+            CompeticioAparellFase.Estat.CONFIRMED: "Planificada",
+            CompeticioAparellFase.Estat.PARTIALLY_CONFIRMED: "Revisar",
+            CompeticioAparellFase.Estat.STALE: "Revisar",
             CompeticioAparellFase.Estat.PUBLISHED: "Publicada",
             CompeticioAparellFase.Estat.CLOSED: "Tancada",
         }.get(phase.ui_user_status_value, "Esborrany")
@@ -358,6 +388,12 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_slot_count = sum(unit.ui_slot_count for unit in units)
         phase.ui_has_generated_slots = any(unit.ui_has_generated_slots for unit in units)
         phase.ui_generation_mode = "classification" if phase.ui_has_generated_slots else ("manual" if units else "none")
+        phase.ui_publish_blockers = _phase_publish_blockers(phase, phase_config)
+        phase.ui_can_publish = (
+            phase.estat in {CompeticioAparellFase.Estat.GENERATED, CompeticioAparellFase.Estat.CONFIRMED}
+            and not phase.ui_publish_blockers
+        )
+        phase.ui_publish_blockers_label = "; ".join(phase.ui_publish_blockers)
         phase.ui_phase_alerts = []
         if phase.ui_group_plan_stale:
             phase.ui_phase_alerts.append("Grups pendents de revisar")

@@ -18,6 +18,32 @@ from ...services.classificacions.ties.ui_projection import project_tie_ui_state
 
 
 class TieSerializerSaveTests(SimpleTestCase):
+    def _tie_with_pipeline(self, pipeline, *, tie_id="tie_contract"):
+        return {
+            "id": tie_id,
+            "nom": "Desempat contracte",
+            "ordre": "desc",
+            "pipeline_version": 1,
+            "pipeline": pipeline,
+        }
+
+    def _base_pipeline(self, *, app_id=161, exercise_selection_scope="per_member"):
+        return {
+            "aparells": {"mode": "seleccionar", "ids": [app_id]},
+            "camps_per_aparell": {str(app_id): ["TOTAL"]},
+            "agregacio_camps_per_aparell": {str(app_id): "sum"},
+            "agregacio_camps": "sum",
+            "exercicis": {"mode": "tots"},
+            "exercise_selection_scope": exercise_selection_scope,
+            "mode_seleccio_exercicis": "per_aparell_override",
+            "exercicis_per_aparell": {str(app_id): {"mode": "millor_1"}},
+            "agregacio_exercicis_per_aparell": {str(app_id): "sum"},
+            "agregacio_exercicis": "sum",
+            "agregacio_aparells": "sum",
+            "mode_resultat_aparells": "score",
+            "ordre": "desc",
+        }
+
     def test_resolve_tie_context_detects_derived_team_contract(self):
         tie = {
             "pipeline": {
@@ -63,7 +89,7 @@ class TieSerializerSaveTests(SimpleTestCase):
 
         self.assertEqual(context.input_source_mode, TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS)
 
-    def test_derived_team_serializer_strips_team_pool_forbidden_fields(self):
+    def test_derived_team_serializer_keeps_team_pool_exercise_fields(self):
         raw_tie = {
             "id": "tie_395a11fbe48cb8",
             "nom": "Desempat 1",
@@ -98,11 +124,11 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertEqual(serialized["ordre"], "desc")
         self.assertEqual(serialized["pipeline_version"], 1)
         self.assertEqual(pipeline["exercise_selection_scope"], "team_pool")
-        self.assertNotIn("exercicis", pipeline)
-        self.assertNotIn("mode_seleccio_exercicis", pipeline)
-        self.assertNotIn("exercicis_per_aparell", pipeline)
-        self.assertNotIn("agregacio_exercicis_per_aparell", pipeline)
-        self.assertNotIn("agregacio_exercicis", pipeline)
+        self.assertEqual(pipeline["exercicis"], {"mode": "tots"})
+        self.assertEqual(pipeline["mode_seleccio_exercicis"], "per_aparell_override")
+        self.assertEqual(pipeline["exercicis_per_aparell"], {"161": {"mode": "millor_1"}})
+        self.assertEqual(pipeline["agregacio_exercicis_per_aparell"], {"161": "sum"})
+        self.assertEqual(pipeline["agregacio_exercicis"], "sum")
         self.assertNotIn("participants", pipeline)
         self.assertNotIn("agregacio_participants", pipeline)
 
@@ -182,6 +208,115 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertEqual(pipeline["mode_seleccio_exercicis"], "per_aparell_override")
         self.assertEqual(pipeline["exercicis_per_aparell"], {"161": {"mode": "millor_1"}})
         self.assertEqual(pipeline["agregacio_exercicis_per_aparell"], {"161": "sum"})
+
+    def test_per_member_serializer_keeps_participants_and_drops_stale_team_pool_maps(self):
+        pipeline = self._base_pipeline(exercise_selection_scope="per_member")
+        pipeline["participants"] = {"mode": "millor_n", "n": 2}
+        pipeline["agregacio_participants"] = "avg"
+        pipeline["team_pool_mode_per_aparell"] = {"161": "per_exercici"}
+        pipeline["team_pool_participants_per_exercici_per_aparell"] = {
+            "161": {"1": {"mode": "millor_1"}}
+        }
+
+        serialized = serialize_tie_for_save(
+            self._tie_with_pipeline(pipeline),
+            tipus="equips",
+            team_mode="derived_from_individual",
+        )
+
+        saved = serialized["pipeline"]
+        self.assertEqual(saved["exercise_selection_scope"], "per_member")
+        self.assertEqual(saved["participants"], {"mode": "millor_n", "n": 2})
+        self.assertEqual(saved["agregacio_participants"], "avg")
+        self.assertNotIn("team_pool_mode_per_aparell", saved)
+        self.assertNotIn("team_pool_participants_per_exercici_per_aparell", saved)
+
+    def test_team_pool_flat_serializer_keeps_exercises_and_drops_global_participants(self):
+        pipeline = self._base_pipeline(exercise_selection_scope="team_pool")
+        pipeline["participants"] = {"mode": "millor_1"}
+        pipeline["agregacio_participants"] = "max"
+        pipeline["team_pool_mode_per_aparell"] = {"161": "flat"}
+        pipeline["team_pool_participants_per_exercici_per_aparell"] = {
+            "161": {"1": {"mode": "pitjor_1"}}
+        }
+
+        serialized = serialize_tie_for_save(
+            self._tie_with_pipeline(pipeline),
+            tipus="equips",
+            team_mode="derived_from_individual",
+        )
+
+        saved = serialized["pipeline"]
+        self.assertEqual(saved["exercise_selection_scope"], "team_pool")
+        self.assertEqual(saved["team_pool_mode_per_aparell"], {"161": "flat"})
+        self.assertEqual(saved["exercicis_per_aparell"], {"161": {"mode": "millor_1"}})
+        self.assertNotIn("participants", saved)
+        self.assertNotIn("agregacio_participants", saved)
+        self.assertNotIn("team_pool_participants_per_exercici_per_aparell", saved)
+
+    def test_team_pool_per_exercici_serializer_keeps_per_exercise_buckets(self):
+        pipeline = self._base_pipeline(exercise_selection_scope="team_pool")
+        pipeline["team_pool_mode_per_aparell"] = {"161": "per_exercici"}
+        pipeline["team_pool_participants_per_exercici_per_aparell"] = {
+            "161": {
+                "1": {"mode": "millor_n", "n": 2},
+                "2": {"mode": "millor_1"},
+            }
+        }
+        pipeline["team_pool_agregacio_participants_per_exercici_per_aparell"] = {
+            "161": {"1": "sum", "2": "avg"}
+        }
+
+        serialized = serialize_tie_for_save(
+            self._tie_with_pipeline(pipeline),
+            tipus="equips",
+            team_mode="derived_from_individual",
+        )
+
+        saved = serialized["pipeline"]
+        self.assertEqual(saved["team_pool_mode_per_aparell"], {"161": "per_exercici"})
+        self.assertEqual(
+            saved["team_pool_participants_per_exercici_per_aparell"],
+            {
+                "161": {
+                    "1": {"mode": "millor_n", "n": 2},
+                    "2": {"mode": "millor_1"},
+                }
+            },
+        )
+        self.assertEqual(
+            saved["team_pool_agregacio_participants_per_exercici_per_aparell"],
+            {"161": {"1": "sum", "2": "avg"}},
+        )
+
+    def test_serializer_keeps_per_exercise_fields_only_for_active_field_mode(self):
+        pipeline = self._base_pipeline(app_id=161, exercise_selection_scope="per_member")
+        pipeline["aparells"]["ids"] = [161, 162]
+        pipeline["camps_per_aparell"]["162"] = ["TOTAL"]
+        pipeline["agregacio_camps_per_aparell"]["162"] = "sum"
+        pipeline["camps_mode_per_aparell"] = {"161": "per_exercici", "162": "comu"}
+        pipeline["camps_per_exercici_per_aparell"] = {
+            "161": {"1": ["E"], "2": ["D"]},
+            "162": {"1": ["STALE"]},
+        }
+        pipeline["agregacio_camps_per_exercici_per_aparell"] = {
+            "161": {"1": "sum", "2": "max"},
+            "162": {"1": "min"},
+        }
+
+        serialized = serialize_tie_for_save(
+            self._tie_with_pipeline(pipeline),
+            tipus="equips",
+            team_mode="derived_from_individual",
+        )
+
+        saved = serialized["pipeline"]
+        self.assertEqual(saved["camps_mode_per_aparell"], {"161": "per_exercici"})
+        self.assertEqual(saved["camps_per_exercici_per_aparell"], {"161": {"1": ["E"], "2": ["D"]}})
+        self.assertEqual(
+            saved["agregacio_camps_per_exercici_per_aparell"],
+            {"161": {"1": "sum", "2": "max"}},
+        )
 
     def test_serializer_keeps_explicit_input_source_mode(self):
         raw_tie = {
@@ -328,7 +463,43 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertEqual((projected.get("_builder_ui") or {}).get("exercise_selection_scope_ui"), "hereta")
         self.assertIsNone((projected.get("_builder_ui") or {}).get("participants_ui"))
 
-    def test_validation_materialization_strips_team_pool_payload_and_legacy_scope(self):
+    def test_builder_rehydration_preserves_per_exercise_fields_and_team_pool_buckets(self):
+        raw_tie = self._tie_with_pipeline(
+            {
+                **self._base_pipeline(exercise_selection_scope="team_pool"),
+                "camps_mode_per_aparell": {"161": "per_exercici"},
+                "camps_per_exercici_per_aparell": {"161": {"1": ["E"], "2": ["D"]}},
+                "agregacio_camps_per_exercici_per_aparell": {"161": {"1": "sum", "2": "max"}},
+                "team_pool_mode_per_aparell": {"161": "per_exercici"},
+                "team_pool_participants_per_exercici_per_aparell": {
+                    "161": {"1": {"mode": "millor_1"}}
+                },
+                "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                    "161": {"1": "avg"}
+                },
+            },
+            tie_id="tie_builder_per_exercise",
+        )
+        main_pipeline = self._base_pipeline(exercise_selection_scope="team_pool")
+
+        projected = project_tie_for_builder_rehydration(
+            raw_tie,
+            tipus="equips",
+            team_mode="derived_from_individual",
+            selected_main_ids=[161],
+            fallback_pipeline=main_pipeline,
+        )
+
+        pipeline = projected.get("pipeline") or {}
+        self.assertEqual(pipeline.get("camps_mode_per_aparell"), {"161": "per_exercici"})
+        self.assertEqual(pipeline.get("camps_per_exercici_per_aparell"), {"161": {"1": ["E"], "2": ["D"]}})
+        self.assertEqual(pipeline.get("team_pool_mode_per_aparell"), {"161": "per_exercici"})
+        self.assertEqual(
+            pipeline.get("team_pool_participants_per_exercici_per_aparell"),
+            {"161": {"1": {"mode": "millor_1"}}},
+        )
+
+    def test_validation_materialization_keeps_team_pool_exercises_and_strips_participants(self):
         raw_tie = {
             "id": "tie_validation",
             "nom": "Desempat validacio",
@@ -360,7 +531,8 @@ class TieSerializerSaveTests(SimpleTestCase):
         tie = materialized[0]
         self.assertNotIn("exercise_selection_scope", tie)
         self.assertNotIn("exercise_selection_scope", tie["pipeline"])
-        self.assertNotIn("exercicis", tie["pipeline"])
+        self.assertEqual(tie["pipeline"]["exercicis"]["mode"], "tots")
+        self.assertEqual(tie["pipeline"]["mode_seleccio_exercicis"], "per_aparell_global")
         self.assertNotIn("participants", tie["pipeline"])
         self.assertNotIn("agregacio_participants", tie)
         self.assertEqual(tie["scope"]["aparells"], {"mode": "seleccionar", "ids": [161]})

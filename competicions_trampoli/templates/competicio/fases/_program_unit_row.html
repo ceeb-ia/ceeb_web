@@ -7,6 +7,14 @@
       {% else %}
         <span class="badge badge-warning phase-unit-status-badge" title="Pendent de programar">Pendent</span>
       {% endif %}
+      {% if unit.slots.all %}
+        <button
+          class="btn btn-sm btn-outline-primary phase-unit-preview-open-btn"
+          type="button"
+          data-open-unit-preview-modal="unit-preview-modal-{{ unit.id }}">
+          Vista ampliada
+        </button>
+      {% endif %}
     </div>
     <div class="phase-unit-meta text-muted small">
       <span>{{ unit.get_tipus_display }}</span>
@@ -48,6 +56,15 @@
               </span>
               {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
               {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
+              {% if slot.ui_qualification_preview_candidate %}
+                <span class="phase-slot-preview">
+                  <span class="phase-slot-preview-badge">Preview</span>
+                  <strong>{{ slot.ui_qualification_preview_candidate.label }}</strong>
+                  {% if slot.ui_qualification_preview_candidate.meta %}
+                    <small>{{ slot.ui_qualification_preview_candidate.meta }}</small>
+                  {% endif %}
+                </span>
+              {% endif %}
             </span>
             {% if not slot.locked %}
               <details class="phase-slot-actions">
@@ -168,16 +185,26 @@
           </div>
         {% endfor %}
       </div>
+      {% if unit.ui_qualification_preview_reserves %}
+        <div class="phase-slot-preview-reserves">
+          <span class="phase-slot-preview-reserves-label">Reserves preview</span>
+          {% for reserve in unit.ui_qualification_preview_reserves %}
+            <span class="phase-slot-preview-reserve">
+              <strong>{{ reserve.label }}</strong>
+              {% if reserve.meta %}<small>{{ reserve.meta }}</small>{% endif %}
+            </span>
+          {% endfor %}
+        </div>
+      {% endif %}
     {% endif %}
   </div>
+  
   <div class="phase-unit-actions-wrap">
     <details class="phase-slot-actions phase-unit-actions">
+      
       <summary title="Accions de la unitat" aria-label="Accions de la unitat">...</summary>
       <div class="phase-slot-actions-menu phase-unit-actions-menu">
         {% if unit.slots.all %}
-          <button class="btn btn-sm btn-outline-secondary" type="button" data-open-slot-order-workspace="slot-order-workspace-{{ unit.id }}" {% if unit.ui_has_locked_slots %}disabled title="No es pot ordenar una unitat amb places bloquejades"{% endif %}>
-            Ordenar places
-          </button>
           {% if phase.ui_user_status_value == 'planned' %}
             <form
               method="post"
@@ -231,72 +258,142 @@
 </div>
 
 {% if unit.slots.all %}
-  <div class="phase-slot-order-backdrop" data-slot-order-backdrop="slot-order-workspace-{{ unit.id }}" hidden></div>
+  <div class="phase-unit-preview-backdrop" data-unit-preview-backdrop="unit-preview-modal-{{ unit.id }}" hidden></div>
   <section
-    class="phase-slot-order-workspace"
-    id="slot-order-workspace-{{ unit.id }}"
-    data-slot-order-workspace
+    class="phase-unit-preview-modal"
+    id="unit-preview-modal-{{ unit.id }}"
+    data-unit-preview-modal
     hidden
     role="dialog"
     aria-modal="true"
-    aria-labelledby="slot-order-title-{{ unit.id }}">
-    <div class="phase-slot-order-head">
+    aria-labelledby="unit-preview-title-{{ unit.id }}">
+    <header class="phase-unit-preview-head">
       <div>
-        <div class="phase-slot-order-kicker">Ordre custom</div>
-        <h6 id="slot-order-title-{{ unit.id }}">{{ unit.nom }}</h6>
+        <p class="phase-unit-preview-kicker">Unitats i places</p>
+        <h5 id="unit-preview-title-{{ unit.id }}">{{ unit.nom }}</h5>
+        <div class="phase-unit-preview-meta">
+          <span>{{ unit.ui_slot_count }} places</span>
+          <span>{{ unit.ui_competitive_slots_count }} omplertes</span>
+          {% if unit.partition_key %}<span>{{ unit.partition_key }}</span>{% endif %}
+          {% if unit.ui_qualification_preview %}
+            <span>Preview activa</span>
+          {% else %}
+            <span>Sense preview activa</span>
+          {% endif %}
+        </div>
       </div>
-      <button class="btn btn-sm btn-outline-secondary" type="button" data-close-slot-order-workspace="slot-order-workspace-{{ unit.id }}">Tancar</button>
-    </div>
-    <div class="phase-slot-order-toolbar">
-      <input
-        class="form-control form-control-sm"
-        type="search"
-        data-slot-order-filter="slot-order-workspace-{{ unit.id }}"
-        placeholder="Cerca per ordre, estat, participant, entitat o categoria">
-      <span class="phase-slot-actions-note">{{ unit.ui_slot_count }} places</span>
-    </div>
-    <form method="post" class="phase-slot-order-form" data-slot-order-form>
-      {% csrf_token %}
-      <input type="hidden" name="action" value="reorder_program_unit_slots">
-      <input type="hidden" name="fase_id" value="{{ phase.id }}">
-      <input type="hidden" name="unit_id" value="{{ unit.id }}">
-      <input type="hidden" name="slot_order" value="" data-slot-order-input>
-      <div class="phase-slot-order-list" data-slot-order-list>
-        {% for slot in unit.slots.all %}
-          <article
-            class="phase-slot-order-item"
-            draggable="{% if slot.locked %}false{% else %}true{% endif %}"
-            data-slot-order-item
-            data-slot-id="{{ slot.id }}"
-            data-search-text="plaça {{ forloop.counter }} ordre {{ slot.ordre }} {{ slot.ui_origin_label }} {{ slot.ui_origin_detail }} {{ slot.get_status_display }} {{ slot.ui_subject_label }} {{ slot.ui_subject_meta }} {{ slot.ui_subject_fallback }}">
-            <span class="phase-slot-order-handle" aria-hidden="true">::</span>
-            <span class="phase-slot-order-index" data-slot-order-index>{{ forloop.counter }}</span>
-            <span class="phase-slot-order-main">
-              <span>Plaça {{ forloop.counter }} - {{ slot.ui_origin_label }}</span>
-              <strong>{{ slot.get_status_display }}{% if slot.locked %} · bloquejada{% endif %}</strong>
-              <span>
-                {% if slot.ui_subject_label %}
-                  {{ slot.ui_subject_label }}
-                {% elif slot.ui_subject_fallback %}
-                  {{ slot.ui_subject_fallback }}
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-close-unit-preview-modal="unit-preview-modal-{{ unit.id }}">Tancar</button>
+    </header>
+
+    <div class="phase-unit-preview-body">
+      <div class="phase-unit-preview-toolbar">
+        <input
+          class="form-control form-control-sm"
+          type="search"
+          data-slot-order-filter="unit-preview-modal-{{ unit.id }}"
+          placeholder="Cerca per ordre, estat, participant, entitat o categoria">
+        <span class="phase-slot-actions-note">{{ unit.ui_slot_count }} places</span>
+        {% if unit.ui_has_locked_slots %}
+          <span class="phase-slot-actions-note">Ordre bloquejat</span>
+        {% else %}
+          <span class="phase-slot-actions-note">Arrossega o usa les fletxes</span>
+        {% endif %}
+      </div>
+
+      <form id="unit-preview-order-form-{{ unit.id }}" method="post" class="phase-unit-preview-order-form" data-slot-order-form>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="reorder_program_unit_slots">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <input type="hidden" name="slot_order" value="" data-slot-order-input>
+        <div class="phase-unit-preview-grid" data-slot-order-list>
+          {% for slot in unit.slots.all %}
+            <article
+              class="phase-unit-preview-row"
+              draggable="{% if unit.ui_has_locked_slots or slot.locked %}false{% else %}true{% endif %}"
+              data-slot-order-item
+              data-slot-id="{{ slot.id }}"
+              data-search-text="plaça {{ forloop.counter }} ordre {{ slot.ordre }} {{ slot.ui_origin_label }} {{ slot.ui_origin_detail }} {{ slot.get_status_display }} {{ slot.ui_subject_label }} {{ slot.ui_subject_meta }} {{ slot.ui_subject_fallback }} {{ slot.ui_qualification_preview_candidate.label }} {{ slot.ui_qualification_preview_candidate.meta }}">
+              <div class="phase-unit-preview-place">
+                <span class="phase-slot-order-handle" aria-hidden="true">::</span>
+                <span class="phase-slot-order-index" data-slot-order-index>{{ forloop.counter }}</span>
+                <strong>Plaça {{ forloop.counter }}</strong>
+                <span>{{ slot.get_status_display }}{% if slot.locked %} · bloquejada{% endif %}</span>
+              </div>
+              <div class="phase-unit-preview-card {% if slot.status == 'empty' %}is-empty{% elif slot.status == 'withdrawn' %}is-warning{% else %}is-current{% endif %}">
+                <span class="phase-unit-preview-label">Actual</span>
+                <strong>
+                  {% if slot.ui_subject_label %}
+                    {{ slot.ui_subject_label }}
+                  {% elif slot.ui_subject_fallback %}
+                    {{ slot.ui_subject_fallback }}
+                  {% else %}
+                    Plaça buida
+                  {% endif %}
+                </strong>
+                {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
+                {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
+                <span>{{ slot.ui_origin_label }}</span>
+              </div>
+              <div class="phase-unit-preview-card {% if slot.ui_qualification_preview_candidate %}is-preview{% else %}is-empty{% endif %}">
+                <span class="phase-unit-preview-label">Preview</span>
+                {% if slot.ui_qualification_preview_candidate %}
+                  <strong>{{ slot.ui_qualification_preview_candidate.label }}</strong>
+                  {% if slot.ui_qualification_preview_candidate.meta %}
+                    <small>{{ slot.ui_qualification_preview_candidate.meta }}</small>
+                  {% endif %}
                 {% else %}
-                  Plaça buida
+                  <strong>Sense candidat preview</strong>
                 {% endif %}
+              </div>
+              <div class="phase-unit-preview-order-actions">
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="up" title="Pujar" {% if unit.ui_has_locked_slots or slot.locked %}disabled{% endif %}>↑</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="down" title="Baixar" {% if unit.ui_has_locked_slots or slot.locked %}disabled{% endif %}>↓</button>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      </form>
+
+      {% if unit.ui_qualification_preview_reserves %}
+        <div class="phase-unit-preview-reserves">
+          <span class="phase-unit-preview-section-label">Reserves</span>
+          <div>
+            {% for reserve in unit.ui_qualification_preview_reserves %}
+              <span class="phase-unit-preview-reserve">
+                <strong>{{ reserve.label }}</strong>
+                {% if reserve.meta %}<small>{{ reserve.meta }}</small>{% endif %}
               </span>
-              {% if slot.ui_subject_meta %}<small>{{ slot.ui_subject_meta }}</small>{% endif %}
-              {% if slot.ui_origin_detail %}<small>{{ slot.ui_origin_detail }}</small>{% endif %}
-            </span>
-            <span class="phase-slot-order-actions">
-              <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="up" title="Pujar">↑</button>
-              <button class="btn btn-sm btn-outline-secondary" type="button" data-slot-order-move="down" title="Baixar">↓</button>
-            </span>
-          </article>
-        {% endfor %}
-      </div>
-      <div class="phase-slot-order-footer">
-        <button class="btn btn-sm btn-primary" type="submit">Desar ordre</button>
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-close-slot-order-workspace="slot-order-workspace-{{ unit.id }}">Cancel·lar</button>
-      </div>
-    </form>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <footer class="phase-unit-preview-foot">
+      <button
+        class="btn btn-sm btn-outline-primary"
+        type="submit"
+        form="unit-preview-order-form-{{ unit.id }}"
+        {% if unit.ui_has_locked_slots %}disabled title="No es pot ordenar una unitat amb places bloquejades"{% endif %}>
+        Desar ordre
+      </button>
+      {% if unit.ui_qualification_preview %}
+        <form
+          method="post"
+          data-phase-confirm-title="{% if phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
+          data-phase-confirm-message="{% if phase.ui_qualification_run_id %}Substituir el snapshot actual amb aquesta previsualitzacio?{% else %}Congelar aquesta previsualitzacio com a snapshot de la fase?{% endif %}"
+          data-phase-confirm-label="{% if phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
+          data-phase-confirm-tone="warning">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="apply_qualification">
+          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <button class="btn btn-sm btn-primary" type="submit">Confirmar previsualitzacio</button>
+        </form>
+      {% else %}
+        <button class="btn btn-sm btn-primary" type="button" disabled>Previsualitza primer</button>
+      {% endif %}
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-close-unit-preview-modal="unit-preview-modal-{{ unit.id }}">Tancar</button>
+    </footer>
   </section>
 {% endif %}

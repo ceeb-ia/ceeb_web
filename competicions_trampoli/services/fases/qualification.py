@@ -30,6 +30,10 @@ SOURCE_PHASE_READY_STATES = {
     CompeticioAparellFase.Estat.CONFIRMED,
     CompeticioAparellFase.Estat.CLOSED,
 }
+CIRCULAR_SOURCE_PHASE_MESSAGE = (
+    "La classificacio origen seleccionada calcula notes d'aquesta mateixa fase. "
+    "Tria una classificacio d'una fase anterior o una classificacio global abans de congelar el tall."
+)
 TIE_POLICIES = {"classification_order", "include_all_at_cut", "manual_decision"}
 
 
@@ -226,6 +230,23 @@ def _source_phase_warning(source_phase: CompeticioAparellFase | None) -> str:
         f"La fase origen '{source_phase.nom}' encara esta en estat "
         f"'{source_phase.estat}'. Cal confirmar-la o tancar-la abans de congelar el tall."
     )
+
+
+def validate_classificacio_not_circular_source(
+    fase: CompeticioAparellFase,
+    classificacio: ClassificacioConfig,
+    *,
+    source_phase: CompeticioAparellFase | None = None,
+) -> CompeticioAparellFase | None:
+    resolved_source_phase = source_phase
+    if resolved_source_phase is None:
+        resolved_source_phase = _source_phase_for_classificacio(
+            classificacio,
+            comp_aparell_id=fase.comp_aparell_id,
+        )
+    if resolved_source_phase is not None and int(resolved_source_phase.id) == int(fase.id):
+        raise QualificationError(CIRCULAR_SOURCE_PHASE_MESSAGE)
+    return resolved_source_phase
 
 
 def _subject_from_row(row: dict) -> tuple[str, int] | None:
@@ -690,6 +711,7 @@ def _build_existing_unit_previews(
 def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
     classificacio = _source_classificacio(fase)
     source_phase = _source_phase_for_classificacio(classificacio, comp_aparell_id=fase.comp_aparell_id)
+    validate_classificacio_not_circular_source(fase, classificacio, source_phase=source_phase)
     _source, cut = _phase_config(fase)
     qualifiers_count = _positive_int(cut.get("qualifiers_count"), default=0)
     reserve_count = _positive_int(cut.get("reserve_count"), default=0)
@@ -1064,6 +1086,7 @@ def preview_as_dict(preview: QualificationPreview) -> dict:
         "reserves": dict(preview.reserves),
         "units": [
             {
+                "unit_id": unit.unit_id,
                 "label": unit.label,
                 "partition_key": unit.partition_key,
                 "capacity": unit.capacity,
@@ -1075,6 +1098,7 @@ def preview_as_dict(preview: QualificationPreview) -> dict:
 
 
 __all__ = [
+    "CIRCULAR_SOURCE_PHASE_MESSAGE",
     "QualificationError",
     "QualificationPreview",
     "QualificationUnitPreview",
@@ -1087,4 +1111,5 @@ __all__ = [
     "qualification_source_changed",
     "qualification_is_stale",
     "record_qualification_preview",
+    "validate_classificacio_not_circular_source",
 ]

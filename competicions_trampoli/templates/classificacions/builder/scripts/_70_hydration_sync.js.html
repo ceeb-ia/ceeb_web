@@ -145,6 +145,8 @@
     advancedDirty.filtres = false;
     state.detailUiTouched = false;
     state.detailActiveSectionIdx = 0;
+    state.tieActiveId = "";
+    state.tieActiveAppByTieId = {};
     els.tDesempat.value = JSON.stringify(schemaForEditor.desempat || [], null, 2);
     els.tFiltres.value = JSON.stringify(schemaForEditor.filtres || {}, null, 2);
     els.advancedJson.value = JSON.stringify(schemaForEditor, null, 2);

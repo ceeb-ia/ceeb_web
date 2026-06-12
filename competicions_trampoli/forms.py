@@ -710,6 +710,11 @@ class CompeticioAparellFaseForm(forms.ModelForm):
         )
 
         self.fields["ordre"].required = False
+        self.fields["estat"].choices = (
+            (CompeticioAparellFase.Estat.PLANNED, "Esborrany"),
+            (CompeticioAparellFase.Estat.PUBLISHED, "Publicada"),
+            (CompeticioAparellFase.Estat.CLOSED, "Tancada"),
+        )
 
     def clean_codi(self):
         return str(self.cleaned_data.get("codi") or "").strip().upper()

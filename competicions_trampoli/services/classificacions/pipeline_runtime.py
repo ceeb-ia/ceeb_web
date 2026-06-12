@@ -1,5 +1,6 @@
 import hashlib
 import json
+from copy import deepcopy
 
 from .filters import (
     EXERCISE_SELECTION_SCOPE_PER_MEMBER,
@@ -40,6 +41,9 @@ SCORING_PIPELINE_ALLOWED_KEYS = {
     "ordre",
     "participants_per_aparell",
     "agregacio_participants_per_aparell",
+    "team_pool_mode_per_aparell",
+    "team_pool_participants_per_exercici_per_aparell",
+    "team_pool_agregacio_participants_per_exercici_per_aparell",
     "participants",
     "agregacio_participants",
 }
@@ -449,6 +453,21 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
         if isinstance(pipeline_in.get("agregacio_participants_per_aparell"), dict)
         else {}
     )
+    team_pool_mode_raw = (
+        pipeline_in.get("team_pool_mode_per_aparell")
+        if isinstance(pipeline_in.get("team_pool_mode_per_aparell"), dict)
+        else {}
+    )
+    team_pool_participants_raw = (
+        pipeline_in.get("team_pool_participants_per_exercici_per_aparell")
+        if isinstance(pipeline_in.get("team_pool_participants_per_exercici_per_aparell"), dict)
+        else {}
+    )
+    team_pool_agg_raw = (
+        pipeline_in.get("team_pool_agregacio_participants_per_exercici_per_aparell")
+        if isinstance(pipeline_in.get("team_pool_agregacio_participants_per_exercici_per_aparell"), dict)
+        else {}
+    )
     field_mode_map = {}
     camps_per_aparell = {}
     ex_camps_map = {}
@@ -459,6 +478,9 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
     agg_ex_map = {}
     part_map = {}
     agg_part_map = {}
+    team_pool_mode_map = {}
+    team_pool_participants_map = {}
+    team_pool_agg_map = {}
     for app_id in app_ids:
         key = str(app_id)
         field_mode_map[key] = _normalize_field_mode(
@@ -504,6 +526,31 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
                 agg_part_map_raw.get(key) or agg_part_map_raw.get(app_id),
                 fallback="sum",
             )
+        if selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            raw_team_pool_mode = str(team_pool_mode_raw.get(key) or team_pool_mode_raw.get(app_id) or "").strip().lower()
+            if raw_team_pool_mode in {"flat", "per_exercici"}:
+                team_pool_mode_map[key] = raw_team_pool_mode
+                if raw_team_pool_mode == "per_exercici":
+                    participants_by_ex = team_pool_participants_raw.get(key) or team_pool_participants_raw.get(app_id) or {}
+                    if isinstance(participants_by_ex, dict):
+                        team_pool_participants_map[key] = {}
+                        for raw_ex_key, raw_cfg in participants_by_ex.items():
+                            ex_key = _to_positive_int(raw_ex_key)
+                            if ex_key is None:
+                                continue
+                            team_pool_participants_map[key][str(ex_key)] = _normalize_participants_cfg(raw_cfg)
+                        if not team_pool_participants_map[key]:
+                            team_pool_participants_map.pop(key, None)
+                    agg_by_ex = team_pool_agg_raw.get(key) or team_pool_agg_raw.get(app_id) or {}
+                    if isinstance(agg_by_ex, dict):
+                        team_pool_agg_map[key] = {}
+                        for raw_ex_key, raw_agg in agg_by_ex.items():
+                            ex_key = _to_positive_int(raw_ex_key)
+                            if ex_key is None:
+                                continue
+                            team_pool_agg_map[key][str(ex_key)] = _normalize_aggregation(raw_agg, "sum")
+                        if not team_pool_agg_map[key]:
+                            team_pool_agg_map.pop(key, None)
     ordre = "asc" if str(pipeline_in.get("ordre") or "desc").strip().lower() == "asc" else "desc"
     pipeline = {
         "aparells": {
@@ -538,6 +585,12 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
         pipeline["participants_per_aparell"] = part_map
     if "agregacio_participants_per_aparell" in pipeline_in:
         pipeline["agregacio_participants_per_aparell"] = agg_part_map
+    if selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL and team_pool_mode_map:
+        pipeline["team_pool_mode_per_aparell"] = team_pool_mode_map
+        if team_pool_participants_map:
+            pipeline["team_pool_participants_per_exercici_per_aparell"] = team_pool_participants_map
+        if team_pool_agg_map:
+            pipeline["team_pool_agregacio_participants_per_exercici_per_aparell"] = team_pool_agg_map
     if (
         tipus_norm == "equips"
         and team_mode_norm == "derived_from_individual"
@@ -756,6 +809,9 @@ def _compact_pipeline_for_persistence(raw_pipeline):
         "candidate_source_mode": _normalize_candidate_source_mode(pipeline.get("candidate_source_mode")),
         "candidate_source_cfg": _compact_candidate_source_cfg_for_persistence(pipeline.get("candidate_source_cfg")),
         "candidate_source_per_aparell": {},
+        "team_pool_mode_per_aparell": {},
+        "team_pool_participants_per_exercici_per_aparell": {},
+        "team_pool_agregacio_participants_per_exercici_per_aparell": {},
         "exercicis": _compact_exercicis_cfg_for_persistence(pipeline.get("exercicis")),
         "mode_seleccio_exercicis": str(pipeline.get("mode_seleccio_exercicis") or "per_aparell_global").strip().lower() or "per_aparell_global",
         "exercicis_per_aparell": {},
@@ -783,6 +839,21 @@ def _compact_pipeline_for_persistence(raw_pipeline):
         if isinstance(pipeline.get("agregacio_camps_per_exercici_per_aparell"), dict)
         else {}
     )
+    team_pool_mode_map = (
+        pipeline.get("team_pool_mode_per_aparell")
+        if isinstance(pipeline.get("team_pool_mode_per_aparell"), dict)
+        else {}
+    )
+    team_pool_participants_map = (
+        pipeline.get("team_pool_participants_per_exercici_per_aparell")
+        if isinstance(pipeline.get("team_pool_participants_per_exercici_per_aparell"), dict)
+        else {}
+    )
+    team_pool_agg_map = (
+        pipeline.get("team_pool_agregacio_participants_per_exercici_per_aparell")
+        if isinstance(pipeline.get("team_pool_agregacio_participants_per_exercici_per_aparell"), dict)
+        else {}
+    )
     for app_id in _resolve_pipeline_target_app_ids(pipeline):
         key = str(app_id)
         mode = _normalize_field_mode(field_mode_map.get(key) or field_mode_map.get(app_id), fallback="comu")
@@ -791,12 +862,23 @@ def _compact_pipeline_for_persistence(raw_pipeline):
             ex_agg_camps_map.get(key) or ex_agg_camps_map.get(app_id),
             fallback=((out.get("agregacio_camps_per_aparell") or {}).get(key) or out.get("agregacio_camps", "sum")),
         )
-        if mode != "comu" or ex_fields or ex_aggs:
-            out["camps_mode_per_aparell"][key] = mode
-        if ex_fields:
-            out["camps_per_exercici_per_aparell"][key] = ex_fields
-        if ex_aggs:
-            out["agregacio_camps_per_exercici_per_aparell"][key] = ex_aggs
+        if mode == "per_exercici":
+            out["camps_mode_per_aparell"][key] = "per_exercici"
+            if ex_fields:
+                out["camps_per_exercici_per_aparell"][key] = ex_fields
+            if ex_aggs:
+                out["agregacio_camps_per_exercici_per_aparell"][key] = ex_aggs
+        if out.get("exercise_selection_scope") == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            team_pool_mode = str(team_pool_mode_map.get(key) or team_pool_mode_map.get(app_id) or "").strip().lower()
+            if team_pool_mode in {"flat", "per_exercici"}:
+                out["team_pool_mode_per_aparell"][key] = team_pool_mode
+                if team_pool_mode == "per_exercici":
+                    participants_by_ex = team_pool_participants_map.get(key) or team_pool_participants_map.get(app_id)
+                    if participants_by_ex:
+                        out["team_pool_participants_per_exercici_per_aparell"][key] = deepcopy(participants_by_ex)
+                    aggs_by_ex = team_pool_agg_map.get(key) or team_pool_agg_map.get(app_id)
+                    if aggs_by_ex:
+                        out["team_pool_agregacio_participants_per_exercici_per_aparell"][key] = deepcopy(aggs_by_ex)
     for raw_key, raw_value in source_map.items():
         app_id = _to_positive_int(raw_key)
         if app_id is None:
@@ -828,6 +910,12 @@ def _compact_pipeline_for_persistence(raw_pipeline):
         out.pop("camps_per_exercici_per_aparell", None)
     if not out["agregacio_camps_per_exercici_per_aparell"]:
         out.pop("agregacio_camps_per_exercici_per_aparell", None)
+    if not out["team_pool_mode_per_aparell"]:
+        out.pop("team_pool_mode_per_aparell", None)
+    if not out["team_pool_participants_per_exercici_per_aparell"]:
+        out.pop("team_pool_participants_per_exercici_per_aparell", None)
+    if not out["team_pool_agregacio_participants_per_exercici_per_aparell"]:
+        out.pop("team_pool_agregacio_participants_per_exercici_per_aparell", None)
     if not out["agregacio_exercicis_per_aparell"]:
         out.pop("agregacio_exercicis_per_aparell", None)
     if not out["exercicis_per_aparell"]:

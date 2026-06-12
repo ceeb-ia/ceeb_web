@@ -1,18 +1,18 @@
 {% load static %}
 
-<section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section>
+<section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section data-avatar-anchor="classifications-filters-section">
   <div class="builder-section__header">
     <div>
       <div class="builder-section__eyebrow">Entrada</div>
-      <h4 class="builder-section__title">Filtres <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="filtres_overview" aria-label="Ajuda filtres">?</button></h4>
-      <p class="builder-section__desc">Decideixen qui entra a la classificacio abans de calcular resultats o mostrar particions.</p>
+      <h4 class="builder-section__title">Filtres <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button></h4>
+      <p class="builder-section__desc">Decideixen qui entra a la classificacio abans de calcular resultats o mostrar particions. <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters_partitions" aria-label="Ajuda sobre filtres i particions" title="Ajuda sobre filtres i particions">?</button></p>
     </div>
     <div class="builder-help-badge">Abans del calcul</div>
   </div>
 
   <div class="builder-section__body">
     <div class="builder-section__stack classif-filtres-flow">
-      <div class="builder-subsection classif-filtres-panel classif-filtres-panel--simple">
+      <div class="builder-subsection classif-filtres-panel classif-filtres-panel--simple" data-avatar-anchor="classifications-filters-simple">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">01</span>
@@ -21,7 +21,7 @@
                 <img src="{% static 'classificacions/sections/filtres.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Filtres simples</p>
+                <p class="builder-subsection__title">Filtres simples <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters_fields" aria-label="Ajuda sobre camps dels filtres" title="Ajuda sobre camps dels filtres">?</button></p>
                 <p class="builder-subsection__desc">Combina entitats, categories, subcategories i grups per limitar la mostra de participants.</p>
               </div>
             </div>
@@ -29,7 +29,7 @@
           <div class="builder-inline-note">Mostra</div>
         </div>
 
-        <div class="row classif-filtres-grid">
+        <div class="row classif-filtres-grid" data-avatar-anchor="classifications-filters-fields">
           <div class="col-12 col-md-6 mb-3">
             <div class="classif-filter-card">
               <label class="font-weight-bold">Entitats</label>
@@ -73,12 +73,12 @@
         </div>
       </div>
 
-      <div class="builder-subsection builder-subsection--muted classif-filtres-panel classif-filtres-panel--advanced">
+      <div class="builder-subsection builder-subsection--muted classif-filtres-panel classif-filtres-panel--advanced" data-avatar-anchor="classifications-filters-advanced">
         <div class="builder-subsection__head">
           <div class="classif-step-heading">
             <span class="classif-step-index">02</span>
             <span>
-              <p class="builder-subsection__title">Filtres avancats</p>
+              <p class="builder-subsection__title">Filtres avancats <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters_advanced" aria-label="Ajuda sobre filtres avançats" title="Ajuda sobre filtres avançats">?</button></p>
               <p class="builder-subsection__desc">Acces directe al JSON dels filtres per manteniment o compatibilitat.</p>
             </span>
           </div>

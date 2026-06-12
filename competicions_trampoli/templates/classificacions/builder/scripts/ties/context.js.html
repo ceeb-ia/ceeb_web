@@ -121,13 +121,13 @@
     if (ctx.contractCode) {
       return tieNormalizeText(ctx.contractCode, "per_member");
     }
-    if (ctx.exerciseSelectionScope === "team_pool") {
-      return "team_pool";
-    }
     if (ctx.tipus === "equips") {
       const nativeMode = typeof TEAM_MODE_NATIVE !== "undefined" ? TEAM_MODE_NATIVE : "native_team";
       if (ctx.teamMode === nativeMode) return "native_team";
       return "derived_team";
+    }
+    if (ctx.exerciseSelectionScope === "team_pool") {
+      return "team_pool";
     }
     return "per_member";
   }
@@ -236,7 +236,6 @@
         allowParticipants: false,
       },
       derived_team: {
-        forceExerciseSelectionScope: "per_member",
         allowExerciseConfig: true,
         allowPerAppOverrides: true,
         allowParticipants: true,

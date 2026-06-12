@@ -5,7 +5,6 @@
     <div>
       <div class="phase-node-title">
         <strong>{{ phase.nom }}</strong>
-        <span class="badge badge-light border">{{ phase.codi }}</span>
         <span class="badge badge-secondary">{{ phase.ui_user_status_label }}</span>
         <span class="badge badge-light border">{{ phase.ui_nombre_exercicis }} exercici(s)</span>
         {% if phase.ui_generation_mode == "classification" %}
@@ -33,16 +32,26 @@
     </div>
     <div class="phase-node-controls">
       <div class="phase-unit-statuses">
-        <span class="badge badge-light border">{{ phase.ui_unit_count }} unitats</span>
-        <span class="badge badge-light border">{{ phase.ui_competitive_slot_count }}/{{ phase.ui_slot_count }} places assignades</span>
-        {% if phase.ui_pending_unit_count %}
-          <span class="badge badge-warning">{{ phase.ui_pending_unit_count }} pendents de rotacions</span>
-        {% else %}
-          <span class="badge badge-success">Programacio al dia</span>
+        {% if phase.ui_can_publish %}
+          <form
+            method="post"
+            class="phase-node-inline-form"
+            data-phase-confirm-title="Publicar fase"
+            data-phase-confirm-message="Publicar la fase {{ phase.nom }}? Quedara disponible al flux operatiu."
+            data-phase-confirm-label="Publicar"
+            data-phase-confirm-tone="warning">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_phase_status">
+            <input type="hidden" name="fase_id" value="{{ phase.id }}">
+            <input type="hidden" name="estat" value="published">
+            <button class="btn btn-sm btn-primary" type="submit">Publicar</button>
+          </form>
+        {% elif phase.ui_user_status_value == "generated" or phase.ui_user_status_value == "confirmed" %}
+          <button class="btn btn-sm btn-outline-secondary" type="button" disabled title="{{ phase.ui_publish_blockers_label|default:'No es pot publicar encara' }}">
+            Publicar
+          </button>
         {% endif %}
-        {% if phase.ui_qualification_source_changed %}
-          <span class="badge badge-danger">Font canviada</span>
-        {% elif phase.ui_qualification_manual_pending %}
+        {% if phase.ui_qualification_manual_pending %}
           <span class="badge badge-warning">Snapshot pendent de validar</span>
         {% endif %}
       </div>

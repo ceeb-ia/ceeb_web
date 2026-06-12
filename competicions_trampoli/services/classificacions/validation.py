@@ -2565,15 +2565,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             errors.append(f"desempat[{idx}] ha de ser un objecte.")
             continue
         raw_pipeline = tie.get("pipeline")
-        for key in (
-            "team_pool_mode_per_aparell",
-            "team_pool_participants_per_exercici_per_aparell",
-            "team_pool_agregacio_participants_per_exercici_per_aparell",
-        ):
-            if key in tie:
-                errors.append(f"desempat[{idx}].{key} no esta permes.")
-            if isinstance(raw_pipeline, dict) and key in raw_pipeline:
-                errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
         if allow_pipeline_exercise_scope:
             raw_team_pool_contract_errors = validate_team_pool_tie_contract(
                 tie,
@@ -2586,13 +2577,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             continue
         pipeline_for_shape = raw_pipeline
         if isinstance(raw_pipeline, dict):
-            for key in (
-                "camps_mode_per_aparell",
-                "camps_per_exercici_per_aparell",
-                "agregacio_camps_per_exercici_per_aparell",
-            ):
-                if key in raw_pipeline:
-                    errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
             errors.extend(
                 _validate_tie_pipeline_input_source(
                     raw_pipeline,

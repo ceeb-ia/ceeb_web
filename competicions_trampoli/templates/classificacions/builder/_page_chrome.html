@@ -2,13 +2,16 @@
 
 <div id="classif-builder-v2" class="container-fluid mt-4">
   <div class="card-surface classif-builder-surface">
-    <header class="classif-builder-header">
+    <header class="classif-builder-header" data-avatar-anchor="classifications-header">
       <div class="classif-builder-title-group">
         <span class="classif-builder-title-logo" aria-hidden="true">
           <img src="{% static 'dock/classificacions.png' %}" alt="">
         </span>
         <div>
-          <h1 class="classif-builder-page-title">{{ builder_title|default:"Classificacions" }}</h1>
+          <div class="classif-builder-page-title-row">
+            <h1 class="classif-builder-page-title">{{ builder_title|default:"Classificacions" }}</h1>
+            <button type="button" class="classif-context-help" data-avatar-topic="competition_classifications" aria-label="Ajuda sobre classificacions" title="Ajuda sobre classificacions">?</button>
+          </div>
           <div class="classif-builder-subtitle">
             {% if builder_subtitle %}
               <span class="classif-builder-context-main">{{ builder_subtitle }}</span>
@@ -23,23 +26,23 @@
           <a class="btn btn-sm btn-outline-secondary" href="{{ global_templates_url }}">Plantilles globals</a>
         {% endif %}
         <button type="button" class="btn btn-sm btn-primary" id="btnSave">Guardar</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" id="btnDelete">Eliminar</button>
       </div>
     </header>
+    {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
 
     <div id="saveMsg" class="alert alert-success py-2 px-3 mb-2" style="display:none;">
       Guardat correctament
     </div>
     <div id="saveErrorsBox" class="alert alert-danger py-2 px-3 mb-2 builder-save-errors" style="display:none;"></div>
 
-    <div class="classif-builder-workspace">
-      <aside class="classif-builder-pane classif-builder-pane--configs" aria-label="Classificacions">
+    <div class="classif-builder-workspace" data-avatar-anchor="classifications-workspace">
+      <aside class="classif-builder-pane classif-builder-pane--configs" aria-label="Classificacions" data-avatar-anchor="classifications-config-list">
         <div class="classif-pane-head">
           <div>
             <div class="classif-pane-kicker">Classificacio</div>
             <h4 class="classif-pane-title">Configuracions</h4>
           </div>
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd">+ Afegir</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd" data-avatar-anchor="classifications-add-button">+ Afegir</button>
         </div>
         <div class="list-group list-group-flush builder-config-list" id="cfgList"></div>
         <div class="classif-pane-note">
@@ -70,7 +73,7 @@
       </div>
 
       <div id="editorBody" class="classif-builder-editor-grid" style="display:none;">
-        <aside class="builder-nav" aria-label="Navegacio interna del builder">
+        <aside class="builder-nav" aria-label="Navegacio interna del builder" data-avatar-anchor="classifications-section-nav">
           <div class="builder-nav-card">
             <div class="builder-nav-eyebrow">Seccio</div>
             <div class="builder-nav-title">Configura per ordre</div>
@@ -121,13 +124,12 @@
           </div>
         </aside>
 
-        <section class="classif-builder-detail-pane" id="builderDetailPane" aria-label="Detall de la seccio">
+        <section class="classif-builder-detail-pane" id="builderDetailPane" aria-label="Detall de la seccio" data-avatar-anchor="classifications-detail-pane">
           <div class="builder-detail-toolbar">
             <div>
               <div class="builder-detail-kicker">Detall</div>
               <div class="builder-detail-title">Editor de classificacio</div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-info classif-help-trigger" data-help-key="global_overview" aria-label="Obrir manual del builder de classificacions">Ajuda</button>
           </div>
           <div class="builder-main">
             {% include "classificacions/builder/sections/_meta.html" %}

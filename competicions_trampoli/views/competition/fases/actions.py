@@ -77,8 +77,8 @@ def _publish_blockers(phase) -> list[str]:
         blockers.append("congela el snapshot")
     elif qualification.get("stale") or qualification_is_stale(phase):
         blockers.append("recalcula el snapshot")
-    if phase.partition_states.exists() and phase.partition_states.exclude(status="confirmed").exists():
-        blockers.append("confirma les particions pendents")
+    if phase.partition_states.filter(status="stale").exists():
+        blockers.append("revisa les particions obsoletes")
     return blockers
 
 
@@ -271,7 +271,11 @@ def handle_phase_post(view, request):
         if action == "configure_source_cut":
             form = PhaseSourceCutForm(request.POST, competicio=view.competicio)
             if form.is_valid():
-                configure_phase_source_cut(phase, form)
+                try:
+                    configure_phase_source_cut(phase, form)
+                except QualificationError as exc:
+                    form.add_error("classificacio", str(exc))
+                    return None, {"source_cut_form": form}
                 messages.success(request, f"Origen i tall de '{phase.nom}' configurats.")
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             return None, {"source_cut_form": form}
@@ -442,17 +446,14 @@ def handle_phase_post(view, request):
 
         if action == "apply_qualification":
             has_snapshot = _phase_has_applied_snapshot(phase)
-            if has_snapshot and request.POST.get("confirm_regeneration") != "1":
-                messages.error(request, "Cal marcar 'Substituir el snapshot congelat' abans de recalcular-lo.")
-                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             preview = _apply_qualification(phase, replace_existing=has_snapshot)
             summary = preview.summary()
-            action_label = "recalculat" if has_snapshot else "congelat"
+            action_label = "actualitzat" if has_snapshot else "congelat"
             messages.success(
                 request,
                 (
                     f"Snapshot {action_label} per '{phase.nom}': {summary['candidates']} participants/reserves "
-                    f"assignats als slots existents."
+                    f"assignats als slots existents. Fase planificada i llesta per publicar."
                 ),
             )
             return view.redirect_to_selected_app(phase.comp_aparell), {}
@@ -461,27 +462,6 @@ def handle_phase_post(view, request):
             partition_key = request.POST.get("partition_key") or ""
             state = confirm_qualification_partition(phase, partition_key)
             messages.success(request, f"Particio '{state.partition_key}' confirmada per '{phase.nom}'.")
-            return view.redirect_to_selected_app(phase.comp_aparell), {}
-
-        if action == "regenerate_qualification":
-            if request.POST.get("confirm_regeneration") != "1":
-                messages.error(request, "Cal confirmar explicitament la regeneracio abans de substituir la proposta.")
-                return view.redirect_to_selected_app(phase.comp_aparell), {}
-            is_stale = qualification_is_stale(phase)
-            preview = _apply_qualification(
-                phase,
-                replace_existing=True,
-                allow_replace_protected=False,
-            )
-            summary = preview.summary()
-            stale_label = "actualitzada" if is_stale else "regenerada"
-            messages.success(
-                request,
-                (
-                    f"Snapshot {stale_label} per '{phase.nom}': {summary['candidates']} participants/reserves "
-                    f"assignats als slots existents."
-                ),
-            )
             return view.redirect_to_selected_app(phase.comp_aparell), {}
 
         messages.error(request, "Accio no reconeguda.")

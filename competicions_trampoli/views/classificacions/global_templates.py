@@ -30,6 +30,7 @@ from ...services.classificacions.builder_shared import (
     build_metric_meta_for_schema_owner as _build_metric_meta_for_schema_owner,
     build_validation_error_details as _build_validation_error_details,
 )
+from ...services.avatar.classificacions.messages import AVATAR_MESSAGES as CLASSIFICACIONS_AVATAR_MESSAGES
 
 
 def _is_global_templates_admin(user) -> bool:
@@ -248,6 +249,8 @@ class ClassificacioTemplateGlobalBuilder(TemplateView):
                     _build_metric_meta_for_schema_owner,
                 ),
                 "can_manage_global_templates": False,
+                "avatar_messages": CLASSIFICACIONS_AVATAR_MESSAGES,
+                "avatar_initial_topic": "competition_classifications",
             }
         )
         return ctx

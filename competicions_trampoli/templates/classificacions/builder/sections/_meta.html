@@ -1,10 +1,10 @@
 {% load static %}
 
-<section id="section-meta" class="builder-section builder-section--meta" data-builder-section>
+<section id="section-meta" class="builder-section builder-section--meta" data-builder-section data-avatar-anchor="classifications-metadata-section">
   <div class="builder-section__header">
     <div>
       <div class="builder-section__eyebrow">Base</div>
-      <h4 class="builder-section__title">Metadades <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="meta_overview" aria-label="Ajuda metadades">?</button></h4>
+      <h4 class="builder-section__title">Metadades <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata" aria-label="Ajuda sobre metadades" title="Ajuda sobre metadades">?</button></h4>
       <p class="builder-section__desc">Nom, tipus i estat general de la classificacio abans d'entrar en la logica.</p>
     </div>
     <div class="classif-section-badges">
@@ -16,7 +16,7 @@
     <div class="builder-section__stack">
       <div id="classifStatusBox" class="builder-status-stack"></div>
 
-      <div class="builder-subsection classif-meta-panel">
+      <div class="builder-subsection classif-meta-panel" data-avatar-anchor="classifications-metadata-identity">
         <div class="builder-subsection__head">
           <div class="classif-panel-title-row">
             <span class="classif-panel-icon" aria-hidden="true">
@@ -40,8 +40,8 @@
             <input class="form-control" id="fSlug" type="text">
           </div>
           {% endif %}
-          <div class="col-12 {% if is_global_builder %}col-xl-4{% else %}col-xl-7{% endif %} mb-3">
-            <label class="font-weight-bold">Tipus <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="field_tipus" aria-label="Ajuda tipus">?</button></label>
+          <div class="col-12 {% if is_global_builder %}col-xl-4{% else %}col-xl-7{% endif %} mb-3" data-avatar-anchor="classifications-metadata-type">
+            <label class="font-weight-bold">Tipus <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_type" aria-label="Ajuda sobre tipus de classificacio" title="Ajuda sobre tipus de classificacio">?</button></label>
             <select class="form-control classif-hidden-native-select" id="fTipus" aria-hidden="true" tabindex="-1">
               <option value="individual">Individual</option>
               <option value="equips">Equips</option>
@@ -65,10 +65,10 @@
           </div>
         </div>
 
-        <div id="equipMetaBox" class="classif-team-meta-panel" style="display:none;">
+        <div id="equipMetaBox" class="classif-team-meta-panel" style="display:none;" data-avatar-anchor="classifications-metadata-team-context">
           <div class="builder-subsection__head">
             <div>
-              <p class="builder-subsection__title">Context d'equips</p>
+              <p class="builder-subsection__title">Context d'equips <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_team_context" aria-label="Ajuda sobre context d'equips" title="Ajuda sobre context d'equips">?</button></p>
               <p class="builder-subsection__desc">Defineix si la classificacio d'equips deriva de notes individuals o treballa amb equips natius.</p>
             </div>
             <div class="builder-inline-note">Equips</div>
@@ -79,8 +79,8 @@
               <select class="form-control form-control-sm" id="eqAssignmentContext"></select>
               <div class="small text-muted mt-1" id="eqAssignmentContextHint"></div>
             </div>
-            <div class="col-12 col-md-6 mb-3" id="eqTeamModeWrap" style="display:none;">
-              <label class="small text-muted mb-1">Mode d'equips</label>
+            <div class="col-12 col-md-6 mb-3" id="eqTeamModeWrap" style="display:none;" data-avatar-anchor="classifications-metadata-team-mode">
+              <label class="small text-muted mb-1">Mode d'equips <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_team_mode" aria-label="Ajuda sobre mode d'equips" title="Ajuda sobre mode d'equips">?</button></label>
               <select class="form-control form-control-sm" id="eqTeamMode">
                 <option value="derived_from_individual">Derivada d'individual</option>
                 <option value="native_team">Nativa d'equip</option>
@@ -92,14 +92,14 @@
         </div>
       </div>
 
-      <div class="builder-subsection builder-subsection--muted classif-meta-panel">
+      <div class="builder-subsection builder-subsection--muted classif-meta-panel" data-avatar-anchor="classifications-metadata-status">
         <div class="builder-subsection__head">
           <div class="classif-panel-title-row">
             <span class="classif-panel-icon" aria-hidden="true">
               <img src="{% static 'classificacions/sections/metadades/estat.png' %}" alt="">
             </span>
             <div class="classif-panel-title-copy">
-              <p class="builder-subsection__title">Estat i visualitzacio</p>
+              <p class="builder-subsection__title">Estat i visualitzacio <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_status" aria-label="Ajuda sobre estat" title="Ajuda sobre estat">?</button></p>
               <p class="builder-subsection__desc">Controla si aquesta classificacio participa en el programa i si es pot veure al live public.</p>
             </div>
           </div>

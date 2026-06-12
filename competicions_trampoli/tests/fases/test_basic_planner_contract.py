@@ -343,7 +343,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'value="apply_group_plan"')
         self.assertContains(response, 'value="preview_qualification"')
         self.assertContains(response, 'value="apply_qualification"')
-        self.assertContains(response, 'value="regenerate_qualification"')
+        self.assertNotContains(response, 'value="regenerate_qualification"')
         self.assertContains(response, "Pla de grups")
         self.assertContains(response, "Generar unitats buides")
         self.assertContains(response, "Snapshot de la fase")
@@ -554,6 +554,82 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         messages = [str(message) for message in get_messages(response.wsgi_request)]
         self.assertIn("Cal configurar una classificacio origen abans de generar la fase.", messages)
 
+    def test_post_preview_qualification_shows_candidates_in_unit_slots(self):
+        phase = self._create_phase()
+        unit = create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Global",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="global",
+        )
+        preview = SimpleNamespace(
+            summary=Mock(
+                return_value={
+                    "candidates": 2,
+                    "slots": 2,
+                    "units": 1,
+                }
+            )
+        )
+        candidate = SimpleNamespace(
+            source_particio_key="global",
+            source_row={"participant": "Abril Casas", "entitat": "Club A"},
+            subject_kind="inscripcio",
+            subject_id=101,
+            status=ProgramUnitSlot.Status.FILLED,
+            source_position=2,
+            source_score=9.45,
+        )
+        reserve = SimpleNamespace(
+            source_particio_key="global",
+            source_row={"participant": "Reserva Global", "entitat": "Club R"},
+            subject_kind="inscripcio",
+            subject_id=102,
+            status=ProgramUnitSlot.Status.RESERVE,
+            source_position=3,
+            source_score=8.8,
+        )
+        serializer = Mock(
+            return_value={
+                "summary": {"candidates": 2, "slots": 2, "units": 1},
+                "warnings": [],
+                "units": [
+                    {
+                        "unit_id": unit.id,
+                        "label": unit.nom,
+                        "partition_key": "global",
+                        "capacity": 2,
+                        "candidates": [candidate],
+                    }
+                ],
+                "reserves": {"global": [reserve]},
+            }
+        )
+
+        with patch("competicions_trampoli.views.competition.fases.actions.record_qualification_preview", return_value=preview):
+            with patch("competicions_trampoli.views.competition.fases.actions.preview_as_dict", serializer):
+                response = self.client.post(
+                    self._planner_url(),
+                    data={"action": "preview_qualification", "fase_id": phase.id},
+                    follow=True,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Semifinal Global")
+        self.assertContains(response, "Vista ampliada")
+        self.assertContains(response, f'data-open-unit-preview-modal="unit-preview-modal-{unit.id}"')
+        self.assertContains(response, f'form="unit-preview-order-form-{unit.id}"')
+        self.assertContains(response, "Desar ordre")
+        self.assertNotContains(response, "Ordenar places")
+        self.assertContains(response, "Preview")
+        self.assertContains(response, "Actual")
+        self.assertContains(response, "Abril Casas")
+        self.assertContains(response, "#2")
+        self.assertContains(response, "Reserves preview")
+        self.assertContains(response, "Reserva Global")
+        self.assertContains(response, "Confirmar previsualitzacio")
+
     def test_post_apply_qualification_calls_service_when_available(self):
         phase = self._create_phase()
         preview = SimpleNamespace(
@@ -610,24 +686,15 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'value="confirm_partition"')
         self.assertContains(response, "Confirmar particio")
 
-    def test_post_regenerate_qualification_requires_explicit_confirmation(self):
+    def test_post_apply_qualification_updates_existing_snapshot_without_checkbox(self):
         phase = self._create_phase()
-        service = Mock()
-
-        with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
-            response = self.client.post(
-                self._planner_url(),
-                data={"action": "regenerate_qualification", "fase_id": phase.id},
-                follow=True,
-            )
-
-        self.assertEqual(response.status_code, 200)
-        service.assert_not_called()
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("Cal confirmar explicitament la regeneracio abans de substituir la proposta.", messages)
-
-    def test_post_regenerate_qualification_calls_service_with_replace_existing(self):
-        phase = self._create_phase()
+        phase.config = {
+            "qualification": {
+                "run_id": 123,
+                "snapshot_hash": "old",
+            }
+        }
+        phase.save(update_fields=["config", "updated_at"])
         preview = SimpleNamespace(
             summary=Mock(
                 return_value={
@@ -639,21 +706,16 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         )
         service = Mock(return_value=preview)
 
-        with patch("competicions_trampoli.views.competition.fases.actions.qualification_is_stale", Mock(return_value=True)):
-            with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
-                response = self.client.post(
-                    self._planner_url(),
-                    data={
-                        "action": "regenerate_qualification",
-                        "fase_id": phase.id,
-                        "confirm_regeneration": "1",
-                    },
-                    follow=True,
-                )
+        with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
+            response = self.client.post(
+                self._planner_url(),
+                data={"action": "apply_qualification", "fase_id": phase.id},
+                follow=True,
+            )
 
         self.assertEqual(response.status_code, 200)
         service.assert_called_once_with(phase, replace_existing=True, allow_replace_protected=False)
-        self.assertContains(response, "Snapshot actualitzada per")
+        self.assertContains(response, "Snapshot actualitzat per")
         self.assertContains(response, "slots existents")
 
     def test_post_delete_phase_only_removes_empty_leaf_phase(self):
@@ -768,6 +830,54 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.status_code, 302)
         phase.refresh_from_db()
         self.assertEqual(phase.estat, CompeticioAparellFase.Estat.CLOSED)
+
+    def test_generated_phase_is_shown_as_planned_with_publish_action(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.GENERATED
+        phase.config = {"qualification": {"run_id": 123, "snapshot_hash": "stable"}}
+        phase.save(update_fields=["estat", "config", "updated_at"])
+        create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Global",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+
+        with patch("competicions_trampoli.services.fases.dashboard.qualification_is_stale", Mock(return_value=False)):
+            with patch("competicions_trampoli.services.fases.dashboard.qualification_source_changed", Mock(return_value=False)):
+                response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Planificada")
+        self.assertContains(response, "Publicar")
+        self.assertContains(response, 'name="estat" value="published"')
+        self.assertNotContains(response, "No es pot publicar encara")
+
+    def test_post_publish_generated_phase_from_card(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.GENERATED
+        phase.config = {"qualification": {"run_id": 123, "snapshot_hash": "stable"}}
+        phase.save(update_fields=["estat", "config", "updated_at"])
+        create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Global",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+
+        with patch("competicions_trampoli.views.competition.fases.actions.qualification_is_stale", Mock(return_value=False)):
+            response = self.client.post(
+                self._common_planner_url(self.comp_aparell),
+                data={
+                    "action": "update_phase_status",
+                    "fase_id": phase.id,
+                    "estat": CompeticioAparellFase.Estat.PUBLISHED,
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        phase.refresh_from_db()
+        self.assertEqual(phase.estat, CompeticioAparellFase.Estat.PUBLISHED)
 
     def test_post_update_phase_status_rejects_invalid_status(self):
         phase = self._create_phase()
