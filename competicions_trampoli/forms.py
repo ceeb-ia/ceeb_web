@@ -669,7 +669,7 @@ class CompeticioAparellForm(forms.ModelForm):
                     self.add_error(
                         "codi_local",
                         ValidationError(
-                            _("Ja existeix una instancia d'aparell amb aquest codi local en aquesta competicio."),
+                            _("Ja existeix una instància d'aparell amb aquest codi local en aquesta competició."),
                             code="duplicate_local_code",
                         ),
                     )
@@ -696,8 +696,8 @@ class CompeticioAparellForm(forms.ModelForm):
             "nombre_exercicis": "Nombre d'exercicis",
         }
         help_texts = {
-            "nom_local": "Nom visible d'aquesta instancia dins la competicio. Si el deixes buit, s'usara el nom base.",
-            "codi_local": "Codi unic dins la competicio. Si el deixes buit, es genera automaticament.",
+            "nom_local": "Nom visible d'aquesta instància dins la competició. Si el deixes buit, s'usarà el nom base.",
+            "codi_local": "Codi únic dins la competició. Si el deixes buit, es genera automàticament.",
         }
 
 
@@ -877,37 +877,37 @@ class PhaseGroupPlanForm(forms.Form):
     split_mode = forms.ChoiceField(
         label="Com crear unitats",
         choices=[
-            (SPLIT_BY_COUNT, "Nombre de grups per particio/global"),
-            (SPLIT_BY_CAPACITY, "Mida maxima de cada grup"),
+            (SPLIT_BY_COUNT, "Nombre de grups per partició/global"),
+            (SPLIT_BY_CAPACITY, "Mida màxima de cada grup"),
         ],
         initial=SPLIT_BY_COUNT,
         required=False,
         widget=forms.Select(attrs={"class": "form-select"}),
     )
     units_per_partition = forms.IntegerField(
-        label="Grups per particio/global",
+        label="Grups per partició/global",
         min_value=1,
         max_value=50,
         initial=1,
         required=False,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 50}),
-        help_text="S'aplica a cada particio si el tall es per particio; en global s'aplica una sola vegada.",
+        help_text="S'aplica a cada partició si el tall és per partició; en global s'aplica una sola vegada.",
     )
     unit_capacity = forms.IntegerField(
-        label="Mida maxima",
+        label="Mida màxima",
         min_value=1,
         max_value=200,
         initial=8,
         required=False,
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 200}),
-        help_text="S'usa quan tries repartir per mida maxima.",
+        help_text="S'usa quan tries repartir per mida màxima.",
     )
     formation_strategy = forms.ChoiceField(
         label="Criteri de repartiment",
         choices=[
-            (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificacio"),
+            (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificació"),
             (FORMATION_SERPENTINE, "Serpentina"),
-            (FORMATION_FIRST_LAST, "Primer amb ultim"),
+            (FORMATION_FIRST_LAST, "Primer amb últim"),
             (FORMATION_RANDOM, "Aleatori"),
         ],
         initial=FORMATION_CLASSIFICATION_ORDER,
@@ -915,7 +915,7 @@ class PhaseGroupPlanForm(forms.Form):
         widget=forms.Select(attrs={"class": "form-select"}),
     )
     unit_name_template = forms.CharField(
-        label="Nom automatic de les unitats",
+        label="Nom automàtic de les unitats",
         max_length=180,
         required=False,
         initial="{fase} - {particio}",
@@ -987,9 +987,9 @@ class ProgramUnitEditForm(forms.Form):
     formation_strategy = forms.ChoiceField(
         label="Criteri",
         choices=[
-            (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificacio"),
+            (FORMATION_CLASSIFICATION_ORDER, "Ordre de classificació"),
             (FORMATION_SERPENTINE, "Serpentina"),
-            (FORMATION_FIRST_LAST, "Primer amb ultim"),
+            (FORMATION_FIRST_LAST, "Primer amb últim"),
             (FORMATION_RANDOM, "Aleatori"),
         ],
         initial=FORMATION_CLASSIFICATION_ORDER,
@@ -1004,7 +1004,7 @@ class ProgramUnitPartitionForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: Infantil F"}),
     )
     key = forms.CharField(
-        label="Particio / criteri manual",
+        label="Partició / criteri manual",
         max_length=255,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: categoria=Infantil|subcategoria=F"}),
     )

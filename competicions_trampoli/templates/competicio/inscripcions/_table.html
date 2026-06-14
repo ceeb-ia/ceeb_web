@@ -42,7 +42,10 @@
           aria-labelledby="tab-{{ forloop.counter0 }}">
 
           {% if group_key == active_group_key %}
-            <div class="table-responsive">
+            <div class="inscripcions-table-scrollbar-top" data-insc-scrollbar-top>
+              <div data-insc-scrollbar-inner></div>
+            </div>
+            <div class="table-responsive" data-insc-scroll-wrap>
               <table class="table table-striped table-bordered table-sm align-middle">
                 <thead class="table-light" data-avatar-anchor="inscriptions-table-header">
                   <tr>
@@ -169,7 +172,10 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="table-responsive">
+    <div class="inscripcions-table-scrollbar-top" data-insc-scrollbar-top>
+      <div data-insc-scrollbar-inner></div>
+    </div>
+    <div class="table-responsive" data-insc-scroll-wrap>
       <table class="table table-striped table-bordered table-sm align-middle">
         <thead class="table-light" data-avatar-anchor="inscriptions-table-header">
           <tr>

@@ -184,7 +184,7 @@ def handle_phase_post(view, request):
             )
             logo_path = str(request.POST.get("logo_path") or "").strip()
             if logo_path not in logo_choice_paths(view.competicio):
-                messages.error(request, "Logo d'aparell no valid per aquesta competicio.")
+                messages.error(request, "Logo d'aparell no vàlid per aquesta competició.")
                 return view.redirect_to_selected_app(comp_aparell), {}
             config = comp_aparell.judge_ui_config if isinstance(comp_aparell.judge_ui_config, dict) else {}
             config["phase_planner_logo"] = logo_path
@@ -214,10 +214,10 @@ def handle_phase_post(view, request):
 
         if action == "delete_phase":
             if phase.children.exists():
-                messages.error(request, "No es pot eliminar una fase que te fases filles.")
+                messages.error(request, "No es pot eliminar una fase que té fases filles.")
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             if phase.program_units.exists():
-                messages.error(request, "No es pot eliminar una fase que te blocs previstos.")
+                messages.error(request, "No es pot eliminar una fase que té blocs previstos.")
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             phase_name = phase.nom
             phase.delete()
@@ -226,7 +226,7 @@ def handle_phase_post(view, request):
 
         if action == "delete_phase_branch":
             if request.POST.get("confirm_branch_delete") != "1":
-                messages.error(request, "Cal confirmar l'eliminacio de la branca.")
+                messages.error(request, "Cal confirmar l'eliminació de la branca.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             branch_phase_ids = _phase_branch_delete_order(phase)
             programmed_units = _programmed_units_in_branch(branch_phase_ids)
@@ -235,7 +235,7 @@ def handle_phase_post(view, request):
                 suffix = f": {', '.join(sample)}" if sample else ""
                 messages.error(
                     request,
-                    "No es pot eliminar aquesta branca perque te unitats programades a rotacions" + suffix + ".",
+                    "No es pot eliminar aquesta branca perquè té unitats programades a rotacions" + suffix + ".",
                 )
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             phase_name = phase.nom
@@ -247,7 +247,7 @@ def handle_phase_post(view, request):
             except ProtectedError:
                 messages.error(
                     request,
-                    "No es pot eliminar aquesta branca perque alguna fase ja te dades protegides.",
+                    "No es pot eliminar aquesta branca perquè alguna fase ja té dades protegides.",
                 )
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             messages.success(request, f"Branca '{phase_name}' eliminada ({phase_count} fase/s).")
@@ -256,7 +256,7 @@ def handle_phase_post(view, request):
         if action == "update_phase_status":
             status = str(request.POST.get("estat") or "").strip()
             if status not in USER_PHASE_STATUSES:
-                messages.error(request, "Estat de fase no valid.")
+                messages.error(request, "Estat de fase no vàlid.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             if status == CompeticioAparellFase.Estat.PUBLISHED:
                 blockers = _publish_blockers(phase)
@@ -302,7 +302,7 @@ def handle_phase_post(view, request):
             form = ProgramUnitPartitionForm(request.POST)
             if form.is_valid():
                 units = create_partition_unit_for_phase(phase, form)
-                messages.success(request, f"S'ha creat {len(units)} bloc de particio.")
+                messages.success(request, f"S'ha creat {len(units)} bloc de partició.")
                 return view.redirect_to_selected_app(phase.comp_aparell), {}
             return None, {"partition_unit_form": form}
 
@@ -312,14 +312,14 @@ def handle_phase_post(view, request):
                 unit = update_program_unit_for_phase(phase, form)
                 messages.success(request, f"Unitat '{unit.nom}' actualitzada.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
-            messages.error(request, "Revisa la configuracio de la unitat.")
+            messages.error(request, "Revisa la configuració de la unitat.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "delete_program_unit":
             unit_id = request.POST.get("unit_id")
             unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
             if unit.rotacio_links.exists():
-                messages.error(request, "No es pot eliminar una unitat que ja esta programada a rotacions.")
+                messages.error(request, "No es pot eliminar una unitat que ja està programada a rotacions.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             unit_name = unit.nom
             unit.delete()
@@ -342,7 +342,7 @@ def handle_phase_post(view, request):
 
         if action == "clear_program_unit_slots":
             if not _phase_is_draft(phase):
-                messages.error(request, "Nomes es poden buidar places mentre la fase esta en esborrany.")
+                messages.error(request, "Només es poden buidar places mentre la fase està en esborrany.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             unit_id = int(request.POST.get("unit_id") or 0)
             unit, cleared_count = clear_program_unit_slots(phase, unit_id)
@@ -367,7 +367,7 @@ def handle_phase_post(view, request):
             slot_id = int(request.POST.get("slot_id") or 0)
             inscripcio_id = int(request.POST.get("inscripcio_id") or 0)
             slot = assign_inscripcio_to_slot(phase, slot_id, inscripcio_id)
-            messages.success(request, f"Inscripcio assignada manualment a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            messages.success(request, f"Inscripció assignada manualment a '{slot.unit.nom}' en ordre {slot.ordre}.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "assign_team_unit_to_slot":
@@ -469,13 +469,13 @@ def handle_phase_post(view, request):
         if action == "confirm_partition":
             partition_key = request.POST.get("partition_key") or ""
             state = confirm_qualification_partition(phase, partition_key)
-            messages.success(request, f"Particio '{state.partition_key}' confirmada per '{phase.nom}'.")
+            messages.success(request, f"Partició '{state.partition_key}' confirmada per '{phase.nom}'.")
             return view.redirect_to_selected_app(phase.comp_aparell), {}
 
-        messages.error(request, "Accio no reconeguda.")
+        messages.error(request, "Acció no reconeguda.")
         return view.redirect_to_selected_app(selected_app), {}
     except IntegrityError:
-        messages.error(request, "No s'ha pogut completar l'accio per una restriccio d'unicitat.")
+        messages.error(request, "No s'ha pogut completar l'acció per una restricció d'unicitat.")
         return view.redirect_to_selected_app(selected_app), {}
     except QualificationError as exc:
         messages.error(request, str(exc))

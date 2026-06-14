@@ -42,6 +42,19 @@
             href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=summary.app.id %}?next={{ request.get_full_path|urlencode }}">
             Participació
           </a>
+          <form method="post" action="{% url 'competicio_aparell_delete' competicio.id summary.app.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'trampoli_fases' competicio.id %}">
+            <button
+              class="phase-app-tab-action phase-app-tab-action--danger"
+              type="submit"
+              data-phase-confirm-title="Eliminar aparell"
+              data-phase-confirm-message="<strong>Eliminar {{ summary.app.display_nom }} de la competició?</strong> \nS'eliminarà tota la seva configuració local. Si existeixen notes associades, puntuacions d'equip o assignacions protegides del portal de jutges, l'acció es bloquejarà."
+              data-phase-confirm-label="Eliminar aparell"
+              data-phase-confirm-tone="danger">
+              &#128465;
+            </button>
+          </form>
         </span>
       </div>
     {% endfor %}
@@ -50,7 +63,7 @@
         <img class="phase-app-tab-logo" src="{% static 'fases/nova_fase.png' %}" alt="">
         <span class="phase-app-tab-copy">
           <span class="phase-app-tab-title">Afegir aparell</span>
-          <span class="phase-app-tab-detail">Configura una nova instancia local</span>
+          <span class="phase-app-tab-detail">Configura una nova instància local</span>
         </span>
       </span>
     </a>

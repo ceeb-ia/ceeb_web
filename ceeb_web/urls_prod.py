@@ -1,13 +1,8 @@
 from django.contrib import admin
 from django.urls import path, include
-from django.http import HttpResponse
-from django.shortcuts import render
-from django.conf import settings
-from django.conf.urls.static import static
+from django.views.generic import RedirectView
 from ceeb_web import views
 from certificats.views import CertificatsUploadView as CertificatsAppUploadView
-from ceeb_web.access import app_authenticated_view
-from competicions_trampoli.views.competition.competicio import CompeticioHomeView
 
 urlpatterns = [
     path("accounts/", include("django.contrib.auth.urls")),
@@ -17,7 +12,7 @@ urlpatterns = [
     path('formacio/certificats/', include("certificats.urls")),
     path('task-status/<str:task_id>/', views.task_status_view, name='task_status'),
     path("logs/<str:task_id>/stream", views.sse_logs, name="sse_logs"),
-    path("", app_authenticated_view(CompeticioHomeView.as_view(), "competicions"), name="home"),
+    path("", RedirectView.as_view(pattern_name="competicions_home", permanent=False), name="home"),
     path("calendar/events/", views.CalendarEventsJsonView.as_view(), name="calendar_events_json"),
     path("calendar/events/create/", views.CalendarEventCreateView.as_view(), name="calendar_event_create"),
     path("calendar/events/<int:event_id>/update/", views.CalendarEventUpdateView.as_view(), name="calendar_event_update"),

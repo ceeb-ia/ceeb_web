@@ -4,7 +4,7 @@
       <div class="phase-program-unit-card-title">{{ unit.nom }}</div>
       <div class="phase-unit-meta text-muted small">
         <span>{{ unit.get_tipus_display }}</span>
-        {% if unit.partition_key %}<span>Particio: {{ unit.partition_key }}</span>{% endif %}
+        {% if unit.partition_key %}<span>Partició: {{ unit.partition_key }}</span>{% endif %}
         <span>{{ unit.ui_formation_strategy_label }}</span>
       </div>
     </div>
@@ -51,9 +51,9 @@
       <label>
         <span>Criteri</span>
         <select class="form-select form-select-sm" name="formation_strategy">
-          <option value="classification_order" {% if unit.ui_formation_strategy == "classification_order" %}selected{% endif %}>Ordre de classificacio</option>
+          <option value="classification_order" {% if unit.ui_formation_strategy == "classification_order" %}selected{% endif %}>Ordre de classificació</option>
           <option value="serpentine" {% if unit.ui_formation_strategy == "serpentine" %}selected{% endif %}>Ordre invers</option>
-          <option value="first_last" {% if unit.ui_formation_strategy == "first_last" %}selected{% endif %}>Primer amb ultim</option>
+          <option value="first_last" {% if unit.ui_formation_strategy == "first_last" %}selected{% endif %}>Primer amb últim</option>
           <option value="random" {% if unit.ui_formation_strategy == "random" %}selected{% endif %}>Aleatori</option>
         </select>
       </label>

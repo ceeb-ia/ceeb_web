@@ -1,9 +1,12 @@
+from collections import Counter
+
 from django.contrib import messages
 from django.db import IntegrityError
 from django.db.models import Count, Exists, OuterRef, Subquery
 from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import CreateView, ListView, UpdateView, View
 
 from ...forms import AparellForm, CompeticioAparellForm
@@ -331,13 +334,52 @@ class AparellDeleteView(View):
 
 
 class CompeticioAparellDeleteView(View):
+    def _redirect_url(self, request, pk):
+        next_url = str(request.POST.get("next") or request.GET.get("next") or "").strip()
+        if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            return next_url
+        return reverse("trampoli_config", kwargs={"pk": pk})
+
+    def _protected_message(self, comp_aparell, exc: ProtectedError) -> str:
+        protected_objects = list(getattr(exc, "protected_objects", []) or [])
+        if not protected_objects:
+            return (
+                f"No pots eliminar '{comp_aparell.display_nom}': hi ha dades protegides vinculades "
+                "a aquest aparell."
+            )
+        labels = {
+            "scoreentry": "notes de fase",
+            "teamscoreentry": "puntuacions d'equip de fase",
+            "judgeportalassignment": "assignacions del portal de jutges",
+        }
+        counts = Counter(
+            labels.get(obj._meta.model_name, obj._meta.verbose_name_plural)
+            for obj in protected_objects
+        )
+        details = ", ".join(
+            f"{count} {label}"
+            for label, count in counts.most_common(4)
+        )
+        if len(counts) > 4:
+            details += ", ..."
+        return (
+            f"No pots eliminar '{comp_aparell.display_nom}' perquè té dades protegides: {details}. "
+            "Revisa notes de fases, puntuacions d'equip o assignacions del portal de jutges abans d'eliminar-lo."
+        )
+
     def post(self, request, pk, app_id):
         qs = CompeticioAparell.objects.filter(pk=app_id, competicio_id=pk)
         if not (request.user.is_superuser or request.user.groups.filter(name="platform_admin").exists()):
             qs = qs.filter(aparell__created_by=request.user)
         comp_aparell = get_object_or_404(qs)
-        comp_aparell.delete()
-        return redirect(reverse("trampoli_config", kwargs={"pk": pk}))
+        display_nom = comp_aparell.display_nom
+        try:
+            comp_aparell.delete()
+        except ProtectedError as exc:
+            messages.error(request, self._protected_message(comp_aparell, exc))
+            return redirect(self._redirect_url(request, pk))
+        messages.success(request, f"Aparell '{display_nom}' eliminat de la competició.")
+        return redirect(self._redirect_url(request, pk))
 
 
 __all__ = [

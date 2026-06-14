@@ -104,7 +104,7 @@
                   <form
                     method="post"
                     data-phase-confirm-title="Eliminar plaça"
-                    data-phase-confirm-message="{% if slot.status != 'empty' %}Aquesta plaça esta ocupada o marcada amb estat. Si l elimines, es perdra aquesta assignacio. Vols continuar?{% else %}Eliminar aquesta plaça buida?{% endif %}"
+                    data-phase-confirm-message="{% if slot.status != 'empty' %}Aquesta plaça està ocupada o marcada amb estat. Si l'elimines, es perdrà aquesta assignació. Vols continuar?{% else %}Eliminar aquesta plaça buida?{% endif %}"
                     data-phase-confirm-label="Eliminar plaça"
                     data-phase-confirm-tone="danger">
                     {% csrf_token %}
@@ -184,24 +184,24 @@
                         <input type="hidden" name="action" value="assign_inscripcio_to_slot">
                         <input type="hidden" name="fase_id" value="{{ phase.id }}">
                         <input type="hidden" name="slot_id" value="{{ slot.id }}">
-                        <label for="manual-inscripcio-{{ slot.id }}">Cerca i tria inscripcio</label>
+                        <label for="manual-inscripcio-{{ slot.id }}">Cerca i tria inscripció</label>
                         <input
                           class="form-control form-control-sm"
                           type="search"
                           data-slot-manual-filter="{{ slot.id }}"
                           placeholder="Filtra per nom, entitat o categoria">
                         <select class="form-select form-select-sm" id="manual-inscripcio-{{ slot.id }}" name="inscripcio_id" required>
-                          <option value="">Selecciona una inscripcio</option>
+                          <option value="">Selecciona una inscripció</option>
                           {% for option in phase.ui_manual_inscripcio_options %}
                             <option value="{{ option.inscripcio_id }}" {% if option.assigned %}disabled{% endif %}>
                               {{ option.label }}{% if option.meta %} - {{ option.meta }}{% endif %}{% if option.assigned %} - ja assignada{% endif %}{% if option.excluded_from_app %} - exclosa de l'aparell{% endif %}
                             </option>
                           {% endfor %}
                         </select>
-                        <button class="btn btn-sm btn-outline-primary" type="submit">Assignar inscripcio</button>
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Assignar inscripció</button>
                       </form>
                     {% endif %}
-                    <div class="phase-slot-actions-note">Aquesta assignacio queda marcada com a manual.</div>
+                    <div class="phase-slot-actions-note">Aquesta assignació queda marcada com a manual.</div>
                   </details>
                 </div>
               </details>
@@ -244,7 +244,7 @@
               <button class="btn btn-sm btn-outline-warning" type="submit">Buidar places</button>
             </form>
           {% else %}
-            <button class="btn btn-sm btn-outline-warning" type="button" disabled title="Nomes es pot buidar una unitat en esborrany">
+            <button class="btn btn-sm btn-outline-warning" type="button" disabled title="Només es pot buidar una unitat en esborrany">
               Buidar places
             </button>
           {% endif %}
@@ -406,13 +406,13 @@
         <form
           method="post"
           data-phase-confirm-title="{% if phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
-          data-phase-confirm-message="{% if phase.ui_qualification_run_id %}Substituir el snapshot actual amb aquesta previsualitzacio?{% else %}Congelar aquesta previsualitzacio com a snapshot de la fase?{% endif %}"
+          data-phase-confirm-message="{% if phase.ui_qualification_run_id %}Substituir el snapshot actual amb aquesta previsualització?{% else %}Congelar aquesta previsualització com a snapshot de la fase?{% endif %}"
           data-phase-confirm-label="{% if phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
           data-phase-confirm-tone="warning">
           {% csrf_token %}
           <input type="hidden" name="action" value="apply_qualification">
           <input type="hidden" name="fase_id" value="{{ phase.id }}">
-          <button class="btn btn-sm btn-primary" type="submit">Confirmar previsualitzacio</button>
+        <button class="btn btn-sm btn-primary" type="submit">Confirmar previsualització</button>
         </form>
       {% else %}
         <button class="btn btn-sm btn-primary" type="button" disabled>Previsualitza primer</button>

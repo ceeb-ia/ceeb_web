@@ -100,7 +100,7 @@
 
     #series-main-card .quick-actions-banners {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 6px;
       flex-wrap: wrap;
       min-width: 0;
@@ -110,10 +110,13 @@
     #series-main-card .quick-actions-banner {
       display: inline-flex;
       align-items: center;
+      flex: 0 1 auto;
+      min-width: 0;
       min-height: 26px;
-      max-width: 100%;
+      max-width: min(100%, 340px);
       padding: 0.22rem 0.56rem;
       overflow: hidden;
+      overflow-wrap: anywhere;
       border: 1px solid #99f6e4;
       border-radius: 999px;
       background: #f0fdfa;
@@ -121,8 +124,8 @@
       font-size: 0.73rem;
       font-weight: 760;
       line-height: 1.15;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      text-overflow: clip;
+      white-space: normal;
     }
 
     #series-main-card .quick-actions-buttons .btn {

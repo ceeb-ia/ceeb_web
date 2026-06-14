@@ -4544,6 +4544,26 @@
       box-shadow: 0 8px 22px rgba(15, 118, 110, 0.07);
     }
 
+    #inscripcions-table-fragment .inscripcions-table-scrollbar-top {
+      width: 100%;
+      height: 14px;
+      margin: 8px 0 3px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      border: 1px solid var(--insc-grid-border);
+      border-radius: 8px;
+      background: #f8fafc;
+      scrollbar-width: thin;
+    }
+
+    #inscripcions-table-fragment .inscripcions-table-scrollbar-top.is-hidden {
+      display: none;
+    }
+
+    #inscripcions-table-fragment .inscripcions-table-scrollbar-top > div {
+      height: 1px;
+    }
+
     #inscripcions-table-fragment .table {
       margin-bottom: 0;
       border-collapse: separate;
@@ -4675,11 +4695,25 @@
     }
 
     #inscripcions-table-fragment .th-col-head {
+      align-items: center;
       min-height: 24px;
     }
 
     #inscripcions-table-fragment .th-col-label-wrap {
-      max-width: 260px;
+      align-items: center;
+      align-content: center;
+      flex-wrap: wrap;
+      row-gap: 2px;
+      max-width: 220px;
+      white-space: normal;
+    }
+
+    #inscripcions-table-fragment thead th .th-col-label-wrap > span:first-child {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #inscripcions-table-fragment .js-col-sort-toggle,
@@ -4701,13 +4735,18 @@
     #inscripcions-table-fragment .col-sort-indicator,
     #inscripcions-table-fragment .col-filter-indicator,
     #inscripcions-table-fragment .custom-sort-badge {
+      max-width: 112px;
+      overflow: hidden;
       border-radius: 6px;
       font-size: 0.68rem;
       font-weight: 700;
       line-height: 1.15;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #inscripcions-table-fragment .col-sort-indicator {
+      max-width: 150px;
       border-color: #bfdbfe;
       background: #eff6ff;
       color: #1e3a8a;
@@ -4720,6 +4759,7 @@
     }
 
     #inscripcions-table-fragment .custom-sort-badge {
+      max-width: 92px;
       border-color: #cbd5e1;
       background: #f8fafc;
       color: #475569;

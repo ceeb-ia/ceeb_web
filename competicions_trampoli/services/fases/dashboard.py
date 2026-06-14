@@ -44,7 +44,7 @@ def _rotacio_label(link: RotacioAssignacioProgramUnit) -> str:
     estacio = assignacio.estacio
     interval = f"{_time_label(franja.hora_inici)}-{_time_label(franja.hora_fi)}"
     franja_label = str(getattr(franja, "display_label", "") or "Franja").strip()
-    estacio_label = str(getattr(estacio, "nom", "") or "Estacio").strip()
+    estacio_label = str(getattr(estacio, "nom", "") or "Estació").strip()
     return f"{franja_label} {interval} / {estacio_label}".strip()
 
 
@@ -195,10 +195,10 @@ def _decorate_slot_subjects(
         origin_parts = []
         partition = str(slot.source_particio_key or "").strip()
         if partition:
-            origin_parts.append(f"Particio: {partition}")
+            origin_parts.append(f"Partició: {partition}")
         if slot.status != ProgramUnitSlot.Status.EMPTY:
             if seed_position and source_position and seed_position != source_position:
-                origin_parts.append(f"Posicio classificacio: #{source_position}")
+                origin_parts.append(f"Posició classificació: #{source_position}")
             if slot.source_score is not None:
                 origin_parts.append(f"Punts: {slot.source_score}")
         slot.ui_origin_label = origin_label
@@ -404,11 +404,11 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
             unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
             unit.ui_formation_strategy_label = {
-                "classification_order": "Ordre de classificacio",
+                "classification_order": "Ordre de classificació",
                 "serpentine": "Serpentina",
-                "first_last": "Primer amb ultim",
+                "first_last": "Primer amb últim",
                 "random": "Aleatori",
-            }.get(unit.ui_formation_strategy, "Ordre de classificacio")
+            }.get(unit.ui_formation_strategy, "Ordre de classificació")
             unit.ui_group_plan_strategy = str(metadata.get("group_plan_strategy") or "")
         phase.ui_units = units
         phase.ui_unit_count = len(units)
@@ -450,7 +450,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
                 "label": "Origen i tall",
                 "state": "done" if phase.ui_source_configured and phase.ui_cut_configured else "todo",
                 "detail": (
-                    "Encara no hi ha classificacio origen ni regla de tall desades."
+                    "Encara no hi ha classificació origen ni regla de tall desades."
                     if not (phase.ui_source_configured and phase.ui_cut_configured)
                     else (
                         f"{phase.ui_source_label} · {phase.ui_cut_label} · "

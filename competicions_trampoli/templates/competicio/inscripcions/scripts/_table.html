@@ -263,6 +263,46 @@
     });
   }
 
+  function syncTableTopScrollbars() {
+    document.querySelectorAll('[data-insc-scroll-wrap]').forEach((wrap) => {
+      const topbar = wrap.previousElementSibling?.matches?.('[data-insc-scrollbar-top]')
+        ? wrap.previousElementSibling
+        : wrap.parentElement?.querySelector('[data-insc-scrollbar-top]');
+      const inner = topbar ? topbar.querySelector('[data-insc-scrollbar-inner]') : null;
+      const table = wrap.querySelector('table');
+      if (!topbar || !inner || !table) return;
+
+      const scrollWidth = table.scrollWidth || wrap.scrollWidth || 0;
+      inner.style.width = `${scrollWidth}px`;
+      topbar.classList.toggle('is-hidden', scrollWidth <= wrap.clientWidth + 1);
+
+      if (wrap.dataset.inscScrollBound === '1') {
+        topbar.scrollLeft = wrap.scrollLeft;
+        return;
+      }
+
+      wrap.dataset.inscScrollBound = '1';
+      let syncing = false;
+      topbar.addEventListener('scroll', () => {
+        if (syncing) return;
+        syncing = true;
+        wrap.scrollLeft = topbar.scrollLeft;
+        syncing = false;
+      });
+      wrap.addEventListener('scroll', () => {
+        if (syncing) return;
+        syncing = true;
+        topbar.scrollLeft = wrap.scrollLeft;
+        syncing = false;
+      });
+    });
+  }
+
+  function scheduleTableTopScrollbarSync() {
+    syncTableTopScrollbars();
+    window.requestAnimationFrame(() => syncTableTopScrollbars());
+  }
+
   function setDragging(on) {
     document.body.classList.toggle('dragging', !!on);
   }
@@ -1050,6 +1090,7 @@
     initSortableRows();
     applyGroupBands();
     renderAllAparellsSelectSummaries();
+    scheduleTableTopScrollbarSync();
     scheduleRefreshGroupHeaderIndicators();
     ensureActiveGroupTabLoaded();
   }
@@ -1058,6 +1099,7 @@
     bindDraggingStateCleanup();
     wireTableActions();
     hydrateTableFragment();
+    window.addEventListener('resize', scheduleTableTopScrollbarSync, { passive: true });
     if (window.jQuery) {
       window.jQuery(document).on('shown.bs.tab', 'a[data-toggle="tab"]', function () {
         const groupKey = String(this.closest('li.nav-item')?.getAttribute('data-group-key') || '').trim();

@@ -79,10 +79,17 @@ class ProdCompetitionShellTests(TestCase):
         )
         self.user.groups.add(group)
 
-    def test_prod_root_renders_competition_home_with_logout_only(self):
+    def test_prod_root_redirects_to_competitions_home(self):
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("home"))
+
+        self.assertRedirects(response, reverse("competicions_home"))
+
+    def test_prod_competitions_home_renders_with_logout_only(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("competicions_home"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Competicions")
@@ -90,4 +97,4 @@ class ProdCompetitionShellTests(TestCase):
         self.assertContains(response, "competicions-app")
         self.assertNotContains(response, 'class="navbar-brand"')
         self.assertNotContains(response, 'class="footer_section"')
-        self.assertNotContains(response, "<strong>Nova competicio</strong>", html=True)
+        self.assertContains(response, "<strong>Nova competició</strong>", html=True)

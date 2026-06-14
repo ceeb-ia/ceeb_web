@@ -873,7 +873,7 @@
 
     <div class="competition-card-grid" id="competitionCardGrid">
       <button class="competition-context-help competition-context-help--cards" type="button" data-avatar-topic="competition_cards" aria-label="Ajuda sobre les competicions" title="Ajuda sobre les competicions">?</button>
-      {% if can_manage_global_competicions and not IS_PROD %}
+      {% if can_manage_global_competicions %}
       <div class="competition-new-card-shell" data-static-card="true">
         <button class="competition-context-help competition-context-help--new-card" type="button" data-avatar-topic="create_competition" aria-label="Ajuda per crear competició" title="Ajuda per crear competició">?</button>
         <a class="competition-new-card" href="{% url 'create' %}" data-avatar-action="create_competition">

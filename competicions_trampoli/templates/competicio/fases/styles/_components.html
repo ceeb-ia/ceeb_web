@@ -227,8 +227,14 @@
 
   .phase-app-tab-actions {
     display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     justify-content: flex-end;
     min-width: 0;
+  }
+
+  .phase-app-tab-actions form {
+    margin: 0;
   }
 
   .phase-app-tab-action {
@@ -243,12 +249,26 @@
     font-size: 0.76rem;
     font-weight: 750;
     text-decoration: none;
+    cursor: pointer;
   }
 
   .phase-app-tab-action:hover {
     border-color: var(--phase-base);
     color: var(--phase-text);
     text-decoration: none;
+  }
+
+  .phase-app-tab-action--danger {
+    border-color: #fecaca;
+    background: #fff7f7;
+    color: #b91c1c;
+  }
+
+  .phase-app-tab-action--danger:hover,
+  .phase-app-tab-action--danger:focus {
+    border-color: #ef4444;
+    background: #fee2e2;
+    color: #991b1b;
   }
 
   .phase-app-tab:hover {

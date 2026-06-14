@@ -146,12 +146,12 @@
     function confirmConfigFromSubmit(event) {
       const submitter = event.submitter;
       const source = submitter?.getAttribute?.('data-phase-confirm-message') ? submitter : event.target;
-      const message = source?.getAttribute?.('data-phase-confirm-message') || '';
+      const message = (source?.getAttribute?.('data-phase-confirm-message') || '').replace(/\\n/g, '\n');
       if (!message) return null;
       return {
         source,
         message,
-        title: source.getAttribute('data-phase-confirm-title') || 'Confirmar accio',
+        title: source.getAttribute('data-phase-confirm-title') || 'Confirmar acció',
         label: source.getAttribute('data-phase-confirm-label') || 'Continuar',
         tone: source.getAttribute('data-phase-confirm-tone') || 'primary',
       };
@@ -171,13 +171,22 @@
       confirmAccept.className = buttonClass;
     }
 
+    function renderConfirmMessage(message) {
+      const wrapper = document.createElement('div');
+      wrapper.textContent = message || '';
+      return wrapper.innerHTML
+        .replace(/&lt;strong&gt;/gi, '<strong>')
+        .replace(/&lt;\/strong&gt;/gi, '</strong>')
+        .replace(/\n/g, '<br>');
+    }
+
     function openPhaseConfirm(form, submitter, config) {
       if (!confirmModal || !confirmBackdrop || !confirmAccept) {
         return true;
       }
       pendingConfirm = { form, submitter };
       if (confirmTitle) confirmTitle.textContent = config.title;
-      if (confirmMessage) confirmMessage.textContent = config.message;
+      if (confirmMessage) confirmMessage.innerHTML = renderConfirmMessage(config.message);
       confirmAccept.textContent = config.label;
       setConfirmTone(config.tone);
       if (confirmModal.parentElement !== document.body) document.body.appendChild(confirmModal);

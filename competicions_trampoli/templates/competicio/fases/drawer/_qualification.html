@@ -21,7 +21,7 @@
     <form
       method="post"
       data-phase-confirm-title="{% if selected_phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
-      data-phase-confirm-message="{% if selected_phase.ui_qualification_run_id %}Substituir el snapshot actual amb la configuracio vigent?{% else %}Aplicar el snapshot de la fase amb la configuracio actual?{% endif %}"
+      data-phase-confirm-message="{% if selected_phase.ui_qualification_run_id %}Substituir el snapshot actual amb la configuració vigent?{% else %}Aplicar el snapshot de la fase amb la configuració actual?{% endif %}"
       data-phase-confirm-label="{% if selected_phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
       data-phase-confirm-tone="warning">
       {% csrf_token %}
