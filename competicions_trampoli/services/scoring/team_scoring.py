@@ -13,8 +13,8 @@ from ...models.competicio import (
     Aparell,
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
-    InscripcioAparellExclusio,
 )
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from .judge_presence import is_strict_presence_field, presence_key
 from ..teams.team_series import enrich_team_subjects_with_series
 
@@ -604,11 +604,8 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
             "reasons": ["Aquest aparell d'equip no te cap context configurat al workspace d'equips."],
         }]
 
-    excluded_ids = set(
-        InscripcioAparellExclusio.objects
-        .filter(comp_aparell=comp_aparell, inscripcio__competicio=competicio)
-        .values_list("inscripcio_id", flat=True)
-    )
+    excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, [comp_aparell.id])
+    excluded_ids = {ins_id for ins_id, app_ids in excluded_by_ins.items() if int(comp_aparell.id) in app_ids}
     subjects: List[Dict[str, Any]] = []
     issues: List[Dict[str, Any]] = []
     expected_team_size = _expected_team_size_for_comp_aparell(comp_aparell)

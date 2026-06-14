@@ -62,6 +62,7 @@ from ...models.competicio import (
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
     InscripcioAparellExclusio,
+    InscripcioBaixa,
 )
 from ...models import CompeticioMembership
 from ...scoring_engine import ScoringEngine
@@ -74,6 +75,8 @@ from ...services.inscripcions.history import (
     apply_inscripcions_history_snapshot,
     capture_inscripcions_history_snapshot,
 )
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
+from ...services.scoring.scoring_subjects import inscripcio_exclosa_en_aparell
 from ...services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
@@ -138,6 +141,114 @@ class InscripcioAparellExclusioModelTests(_BaseTrampoliDataMixin, TestCase):
         with self.assertRaises(ValidationError):
             ex.full_clean()
 
+
+class InscripcioBaixaTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio()
+        self.user = self._login_competicio_user(
+            self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            username_prefix="baixes_editor",
+        )
+        app1 = self._create_aparell("TRAMP_BAIXA", "Tramp Baixa")
+        app2 = self._create_aparell("DMT_BAIXA", "DMT Baixa")
+        self.comp_app_1 = self._create_comp_aparell(self.comp, app1, ordre=1, actiu=True)
+        self.comp_app_2 = self._create_comp_aparell(self.comp, app2, ordre=2, actiu=True)
+        self.ins = self._create_inscripcio(self.comp, "Gimnasta baixa")
+
+    def test_global_baixa_blocks_all_requested_apps(self):
+        InscripcioBaixa.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            motiu="Lesio",
+            marcada_per=self.user,
+        )
+
+        excluded = load_excluded_app_ids_by_inscripcio(
+            self.comp,
+            [self.comp_app_1.id, self.comp_app_2.id],
+        )
+
+        self.assertEqual(excluded[self.ins.id], {self.comp_app_1.id, self.comp_app_2.id})
+        self.assertTrue(inscripcio_exclosa_en_aparell(self.ins.id, self.comp_app_1.id))
+
+    def test_app_baixa_blocks_only_that_app(self):
+        InscripcioBaixa.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            comp_aparell=self.comp_app_2,
+            motiu="No es presenta",
+        )
+
+        excluded = load_excluded_app_ids_by_inscripcio(
+            self.comp,
+            [self.comp_app_1.id, self.comp_app_2.id],
+        )
+
+        self.assertEqual(excluded[self.ins.id], {self.comp_app_2.id})
+        self.assertFalse(inscripcio_exclosa_en_aparell(self.ins.id, self.comp_app_1.id))
+        self.assertTrue(inscripcio_exclosa_en_aparell(self.ins.id, self.comp_app_2.id))
+
+    def test_set_and_clear_baixa_endpoints_record_state(self):
+        set_url = reverse("inscripcions_set_baixa", kwargs={"pk": self.comp.id})
+        clear_url = reverse("inscripcions_clear_baixa", kwargs={"pk": self.comp.id})
+
+        response = self.client.post(
+            set_url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins.id,
+                    "scope": "apps",
+                    "comp_aparell_ids": [self.comp_app_1.id],
+                    "motiu": "Malaltia",
+                    "notes": "Avisat per l'entitat",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            InscripcioBaixa.objects.filter(
+                competicio=self.comp,
+                inscripcio=self.ins,
+                comp_aparell=self.comp_app_1,
+                anul_lada_at__isnull=True,
+            ).exists()
+        )
+
+        response = self.client.post(
+            clear_url,
+            data=json.dumps({"inscripcio_id": self.ins.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            InscripcioBaixa.objects.filter(
+                competicio=self.comp,
+                inscripcio=self.ins,
+                anul_lada_at__isnull=True,
+            ).exists()
+        )
+
+    def test_baixes_export_contains_active_baixa(self):
+        InscripcioBaixa.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            comp_aparell=self.comp_app_1,
+            motiu="Lesio",
+            notes="No surt a competir",
+            marcada_per=self.user,
+        )
+
+        response = self.client.get(reverse("inscripcions_baixes_export", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        wb = load_workbook(BytesIO(response.content))
+        ws = wb.active
+        values = [cell.value for cell in ws[2]]
+        self.assertIn("Gimnasta baixa", values)
+        self.assertIn("Lesio", values)
+        self.assertIn("No surt a competir", values)
 
 
 class InscripcionsSetAparellsViewTests(_BaseTrampoliDataMixin, TestCase):

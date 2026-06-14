@@ -45,9 +45,12 @@ from ..views.inscripcions.groups import (
 )
 from ..views.inscripcions.listing import (
     InscripcionsListNewView,
+    inscripcions_baixes_export,
+    inscripcions_clear_baixa,
     inscripcions_save_birth_year_range_config,
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
     inscripcions_set_aparells as inscripcions_set_aparells_new,
+    inscripcions_set_baixa,
     inscripcions_set_group_name as inscripcions_set_group_name_new,
 )
 from ..views.inscripcions.media import (
@@ -313,6 +316,21 @@ urlpatterns = [
         "competicio/<int:pk>/inscripcions/set-aparells/",
         competition_view(inscripcions_set_aparells_new, "inscripcions.edit"),
         name="inscripcions_set_aparells",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/set-baixa/",
+        competition_view(inscripcions_set_baixa, "inscripcions.edit"),
+        name="inscripcions_set_baixa",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/clear-baixa/",
+        competition_view(inscripcions_clear_baixa, "inscripcions.edit"),
+        name="inscripcions_clear_baixa",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/baixes.xlsx",
+        competition_view(inscripcions_baixes_export, "inscripcions.view"),
+        name="inscripcions_baixes_export",
     ),
     path(
         "competicio/<int:pk>/inscripcions/media/upload/",

@@ -217,6 +217,9 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-team-preview-count"')
         self.assertContains(response, 'id="btn-team-create-size"')
         self.assertContains(response, 'id="btn-team-auto-buckets-set"')
+        self.assertContains(response, 'data-team-auto-context-criteria')
+        self.assertContains(response, 'id="team-auto-fields-summary"')
+        self.assertContains(response, 'id="btn-team-auto-fields-clear"')
         self.assertContains(response, 'id="team-auto-buckets-grid"')
         self.assertContains(response, 'id="btn-team-auto-buckets-all"')
         self.assertContains(response, 'id="btn-team-auto-buckets-none"')
@@ -230,6 +233,12 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-team-board-filters-toggle"')
         self.assertContains(response, 'id="team-board-filters-panel"')
         self.assertContains(response, "Flux complet d'equips")
+        self.assertNotContains(response, 'team-field-chips')
+
+        body = response.content.decode("utf-8")
+        field_inputs = re.findall(r'<input[^>]+class="js-team-field"[^>]*>', body)
+        self.assertGreater(len(field_inputs), 0)
+        self.assertTrue(all("checked" not in field_input for field_input in field_inputs))
 
     def test_inscripcions_list_renders_team_context_metric_anchors(self):
         response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
@@ -300,6 +309,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "__teamsWorkspaceSelectionBridgeBound")
         self.assertContains(response, "detail.source === 'team_workspace'")
         self.assertContains(response, "workspaceApi.setExternalSelection(ids, { source: 'main' })")
+        self.assertContains(response, "setSelection: (selectionIds, options = {}) => applySelectionChange(selectionIds, 'set', options)")
 
     def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
         response = self.client.post(

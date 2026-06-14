@@ -6,8 +6,16 @@ from django.test import TestCase
 from ..base import _BaseTrampoliDataMixin
 from ...forms import PhaseSourceCutForm
 from ...models.classificacions import ClassificacioConfig
-from ...models.competicio import CompeticioAparellFase, FasePartitionState, ProgramUnit, ProgramUnitSlot, QualificationRun
-from ...models.scoring import ScoreEntry
+from ...models.competicio import (
+    Aparell,
+    CompeticioAparellEquipContextSource,
+    CompeticioAparellFase,
+    FasePartitionState,
+    ProgramUnit,
+    ProgramUnitSlot,
+    QualificationRun,
+)
+from ...models.scoring import ScoreEntry, TeamScoreEntry
 from ...services.classificacions.compute import DEFAULT_SCHEMA
 from ...services.fases import (
     CIRCULAR_SOURCE_PHASE_MESSAGE,
@@ -17,12 +25,15 @@ from ...services.fases import (
     apply_qualification,
     confirm_qualification_partition,
     create_program_unit_from_subjects,
+    create_program_unit_with_empty_slots,
     preview_group_plan,
     preview_qualification,
     qualification_is_stale,
     record_qualification_preview,
 )
+from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell
 from ...services.fases.planner import configure_phase_source_cut
+from ...services.fases.slot_overrides import assign_team_unit_to_slot, manual_team_unit_options_for_phase
 
 
 class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
@@ -114,6 +125,76 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
             outputs={"total": total},
         )
 
+    def _team_fixture(self):
+        team_aparell = self._create_aparell("TEAM_Q", "Equip Sync")
+        team_aparell.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_aparell.save(update_fields=["competition_unit"])
+        comp_team_app = self._create_comp_aparell(self.competicio, team_aparell, ordre=2)
+        context = self._ensure_native_equip_context(self.competicio)
+        equip = self._create_equip(self.competicio, "Equip A", context=context)
+        member_1 = self._create_inscripcio(self.competicio, "Equip A 1", ordre=10)
+        member_2 = self._create_inscripcio(self.competicio, "Equip A 2", ordre=11)
+        self._assign_equip(self.competicio, member_1, equip, context=context)
+        self._assign_equip(self.competicio, member_2, equip, context=context)
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.competicio,
+            comp_aparell=comp_team_app,
+            context=context,
+        )
+        subjects, issues = build_team_subjects_for_comp_aparell(self.competicio, comp_team_app)
+        self.assertFalse(issues)
+        subject = next(item for item in subjects if int(item["equip_id"]) == int(equip.id))
+        return comp_team_app, equip, subject
+
+    def _native_team_schema_for_app(self, comp_aparell):
+        schema = deepcopy(DEFAULT_SCHEMA)
+        schema["particions"] = []
+        schema["particions_v2"] = []
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [comp_aparell.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(comp_aparell.id): ["total"]}
+        schema["puntuacio"]["agregacio_camps"] = "sum"
+        schema["puntuacio"]["exercicis"] = {"mode": "tots", "best_n": 1, "index": 1, "ids": []}
+        schema["puntuacio"]["agregacio_exercicis"] = "sum"
+        schema["puntuacio"]["agregacio_aparells"] = "sum"
+        schema["puntuacio"]["ordre"] = "desc"
+        schema["equips"] = {"team_mode": "native_team", "context_code": "native"}
+        return schema
+
+    def _team_source_cfg(self, comp_aparell):
+        return ClassificacioConfig.objects.create(
+            competicio=self.competicio,
+            nom="Classificacio equips",
+            activa=True,
+            ordre=2,
+            tipus="equips",
+            schema=self._native_team_schema_for_app(comp_aparell),
+        )
+
+    def _dest_team_phase(self, comp_aparell, cfg):
+        return CompeticioAparellFase.objects.create(
+            competicio=self.competicio,
+            comp_aparell=comp_aparell,
+            nom="Final equips",
+            codi="FINAL-EQ",
+            ordre=2,
+            config={
+                "source": {
+                    "classificacio_id": cfg.id,
+                    "classificacio_nom": cfg.nom,
+                    "tipus": cfg.tipus,
+                },
+                "cut": {
+                    "mode": "top_n",
+                    "qualifiers_count": 1,
+                    "reserve_count": 0,
+                    "partition_mode": "global",
+                    "tie_policy": "classification_order",
+                    "unit_capacity": 1,
+                    "unit_name_template": "{fase} - {particio}",
+                },
+            },
+        )
+
     def test_preview_rejects_classification_scoped_to_same_phase(self):
         dest = CompeticioAparellFase.objects.create(
             competicio=self.competicio,
@@ -175,6 +256,85 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
 
         with self.assertRaisesMessage(QualificationError, CIRCULAR_SOURCE_PHASE_MESSAGE):
             configure_phase_source_cut(dest, form)
+
+    def test_team_phase_source_form_only_accepts_native_team_classifications(self):
+        comp_team_app, _equip, _subject = self._team_fixture()
+        individual_cfg = self._source_cfg()
+        team_cfg = self._team_source_cfg(comp_team_app)
+        dest = self._dest_team_phase(comp_team_app, team_cfg)
+
+        form = PhaseSourceCutForm(competicio=self.competicio, fase=dest)
+
+        self.assertEqual(list(form.fields["classificacio"].queryset), [team_cfg])
+        bound = PhaseSourceCutForm(
+            {
+                "classificacio": str(individual_cfg.id),
+                "cut_mode": PhaseSourceCutForm.CUT_MODE_TOP_N,
+                "qualifiers_count": "1",
+                "reserve_count": "0",
+                "partition_mode": PhaseSourceCutForm.PARTITION_GLOBAL,
+                "tie_policy": PhaseSourceCutForm.TIE_CLASSIFICATION_ORDER,
+                "unit_capacity": "1",
+                "unit_name_template": "{fase} - {particio}",
+            },
+            competicio=self.competicio,
+            fase=dest,
+        )
+        self.assertFalse(bound.is_valid())
+
+    def test_native_team_cut_is_frozen_as_team_unit_slots(self):
+        comp_team_app, equip, subject = self._team_fixture()
+        TeamScoreEntry.objects.create(
+            competicio=self.competicio,
+            comp_aparell=comp_team_app,
+            team_subject_id=int(subject["subject_id"]),
+            exercici=1,
+            total=9.5,
+            inputs={"total": 9.5},
+            outputs={"total": 9.5},
+        )
+        cfg = self._team_source_cfg(comp_team_app)
+        dest = self._dest_team_phase(comp_team_app, cfg)
+        create_program_unit_with_empty_slots(
+            fase=dest,
+            nom="Final equips",
+            capacity=1,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="global",
+        )
+
+        preview = preview_qualification(dest)
+        applied = apply_qualification(dest)
+        slot = ProgramUnitSlot.objects.get(unit__fase=dest)
+
+        self.assertEqual(preview.summary()["candidates"], 1)
+        self.assertEqual(applied.summary()["candidates"], 1)
+        self.assertEqual(slot.subject_kind, "team_unit")
+        self.assertEqual(slot.subject_id, int(subject["subject_id"]))
+        self.assertEqual(slot.source_row["equip_id"], equip.id)
+
+    def test_manual_assignment_for_team_phase_uses_team_unit(self):
+        comp_team_app, _equip, subject = self._team_fixture()
+        cfg = self._team_source_cfg(comp_team_app)
+        dest = self._dest_team_phase(comp_team_app, cfg)
+        unit = create_program_unit_with_empty_slots(
+            fase=dest,
+            nom="Final equips",
+            capacity=1,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="global",
+        )
+        slot = unit.slots.get()
+
+        options = manual_team_unit_options_for_phase(dest)
+        assigned = assign_team_unit_to_slot(dest, slot.id, int(subject["subject_id"]))
+        slot.refresh_from_db()
+
+        self.assertTrue(any(option.team_subject_id == int(subject["subject_id"]) for option in options))
+        self.assertEqual(assigned.subject_kind, "team_unit")
+        self.assertEqual(slot.subject_kind, "team_unit")
+        self.assertEqual(slot.subject_id, int(subject["subject_id"]))
+        self.assertEqual(slot.status, ProgramUnitSlot.Status.MANUAL)
 
     def test_preview_and_apply_freezes_classification_cut_into_slots(self):
         self._score(self.ins_1, 9.0)

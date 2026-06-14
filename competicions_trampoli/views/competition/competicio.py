@@ -3,7 +3,7 @@ from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
-from django.views.generic import CreateView, DeleteView, ListView
+from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
 from ceeb_web.access import user_has_any_global_group
 
@@ -35,9 +35,11 @@ class CompeticioDashboardMixin:
 
     def _competition_status(self, competicio):
         today = timezone.localdate()
-        if competicio.data == today:
+        start = competicio.data
+        end = competicio.data_fi or competicio.data
+        if start and end and start <= today <= end:
             return {"key": "active", "label": "Activa"}
-        if competicio.data and competicio.data < today:
+        if end and end < today:
             return {"key": "finished", "label": "Finalitzada"}
         return {"key": "preparation", "label": "Preparacio"}
 
@@ -67,6 +69,7 @@ class CompeticioDashboardMixin:
                 "can_view_rotacions": user_has_competicio_capability(user, comp, "rotacions.view"),
                 "can_view_classificacions": user_has_competicio_capability(user, comp, "classificacions.view"),
                 "can_view_notes": user_has_competicio_capability(user, comp, "scoring.view"),
+                "can_edit_competicio": user_has_competicio_capability(user, comp, "competition.edit"),
                 "can_delete_competicio": user_has_competicio_capability(user, comp, "competition.delete"),
             }
 
@@ -117,6 +120,13 @@ class CompeticioCreateView(CreateView):
         return response
 
 
+class CompeticioUpdateView(UpdateView):
+    model = Competicio
+    form_class = CompeticioForm
+    template_name = "competicio/competicio_form.html"
+    success_url = reverse_lazy("created")
+
+
 class CompeticioDeleteView(DeleteView):
     model = Competicio
     template_name = "competicio/competicio_confirm_delete.html"
@@ -140,5 +150,6 @@ __all__ = [
     "CompeticioDeleteView",
     "CompeticioHomeView",
     "CompeticioListView",
+    "CompeticioUpdateView",
     "notes_home_router",
 ]

@@ -4,7 +4,8 @@ from django.db.models import Count
 from django.db.models import Prefetch
 
 from ...models import Inscripcio, InscripcioMedia
-from ...models.competicio import CompeticioAparell, CompeticioAparellFase, InscripcioAparellExclusio, ProgramUnit, ProgramUnitSlot
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
 from ...models.scoring import SerieEquipItem
 from ...services.rotacions.rotacions_ordering import (
@@ -101,17 +102,7 @@ def _inscripcions_by_group(competicio):
 
 
 def _excluded_by_inscripcio(competicio, app_ids):
-    excluded = defaultdict(set)
-    if not app_ids:
-        return excluded
-    rows = (
-        InscripcioAparellExclusio.objects
-        .filter(inscripcio__competicio=competicio, comp_aparell_id__in=app_ids)
-        .values_list("inscripcio_id", "comp_aparell_id")
-    )
-    for inscripcio_id, app_id in rows:
-        excluded[int(inscripcio_id)].add(int(app_id))
-    return excluded
+    return load_excluded_app_ids_by_inscripcio(competicio, app_ids)
 
 
 def serialize_phase(phase):

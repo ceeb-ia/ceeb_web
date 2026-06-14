@@ -592,6 +592,94 @@ class InscripcioAparellExclusio(models.Model):
         return f"Exclusio inscripcio={self.inscripcio_id} comp_aparell={self.comp_aparell_id}"
 
 
+class InscripcioBaixa(models.Model):
+    """
+    Baixa administrativa d'una inscripcio.
+    Si comp_aparell es buit, la baixa afecta tota la competicio.
+    """
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="inscripcions_baixes",
+    )
+    inscripcio = models.ForeignKey(
+        Inscripcio,
+        on_delete=models.CASCADE,
+        related_name="baixes",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="baixes",
+    )
+    motiu = models.CharField(max_length=250, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    marcada_per = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inscripcions_baixes_marcades",
+    )
+    anul_lada_at = models.DateTimeField(null=True, blank=True)
+    anul_lada_per = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inscripcions_baixes_anullades",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "inscripcio"],
+                condition=models.Q(comp_aparell__isnull=True) & models.Q(anul_lada_at__isnull=True),
+                name="uniq_baixa_global_activa_inscripcio",
+            ),
+            models.UniqueConstraint(
+                fields=["competicio", "inscripcio", "comp_aparell"],
+                condition=models.Q(comp_aparell__isnull=False) & models.Q(anul_lada_at__isnull=True),
+                name="uniq_baixa_aparell_activa_inscripcio",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "inscripcio"], name="baixacomp_inscripcio_idx"),
+            models.Index(fields=["competicio", "comp_aparell"], name="baixacomp_aparell_idx"),
+            models.Index(fields=["competicio", "anul_lada_at"], name="baixacomp_activa_idx"),
+        ]
+
+    @property
+    def activa(self):
+        return self.anul_lada_at is None
+
+    @property
+    def es_global(self):
+        return self.comp_aparell_id is None
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        ins_comp_id = getattr(self.inscripcio, "competicio_id", None)
+        app_comp_id = getattr(self.comp_aparell, "competicio_id", None)
+        if ins_comp_id and self.competicio_id and ins_comp_id != self.competicio_id:
+            errors["inscripcio"] = "La inscripcio no pertany a aquesta competicio."
+        if app_comp_id and self.competicio_id and app_comp_id != self.competicio_id:
+            errors["comp_aparell"] = "L'aparell no pertany a aquesta competicio."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        scope = "global" if self.comp_aparell_id is None else f"aparell={self.comp_aparell_id}"
+        return f"Baixa ins={self.inscripcio_id} {scope}"
+
+
 # OBSOLETA
 class TrampoliConfiguracio(models.Model):
     competicio = models.OneToOneField(Competicio, on_delete=models.CASCADE, related_name="cfg_trampoli")

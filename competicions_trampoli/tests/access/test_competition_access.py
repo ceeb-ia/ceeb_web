@@ -258,6 +258,75 @@ class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(membership.is_active)
         self.assertEqual(membership.granted_by_id, self.manager_user.id)
 
+    def test_editor_membership_can_edit_competition_general_details(self):
+        User = get_user_model()
+        editor_user = User.objects.create_user(username="editor_user", password="testpass123")
+        CompeticioMembership.objects.create(
+            user=editor_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+
+        url = reverse("competicio_update", kwargs={"pk": self.comp.id})
+        self.client.force_login(editor_user)
+        res = self.client.post(
+            url,
+            data={
+                "nom": "Comp Accessos Editada",
+                "tipus": Competicio.Tipus.TRAMPOLI,
+                "data": "2026-06-14",
+                "data_fi": "2026-06-16",
+            },
+        )
+        self.assertEqual(res.status_code, 302)
+
+        self.comp.refresh_from_db()
+        self.assertEqual(self.comp.nom, "Comp Accessos Editada")
+        self.assertEqual(self.comp.data, date(2026, 6, 14))
+        self.assertEqual(self.comp.data_fi, date(2026, 6, 16))
+
+    def test_readonly_membership_cannot_edit_competition_general_details(self):
+        url = reverse("competicio_update", kwargs={"pk": self.comp.id})
+        self.client.force_login(self.readonly_user)
+        res = self.client.post(
+            url,
+            data={
+                "nom": "Intent No Autoritzat",
+                "tipus": Competicio.Tipus.TRAMPOLI,
+                "data": "2026-06-14",
+                "data_fi": "2026-06-16",
+            },
+        )
+        self.assertEqual(res.status_code, 403)
+
+        self.comp.refresh_from_db()
+        self.assertNotEqual(self.comp.nom, "Intent No Autoritzat")
+
+    def test_competition_end_date_cannot_be_before_start_date(self):
+        User = get_user_model()
+        editor_user = User.objects.create_user(username="editor_range_user", password="testpass123")
+        CompeticioMembership.objects.create(
+            user=editor_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+
+        url = reverse("competicio_update", kwargs={"pk": self.comp.id})
+        self.client.force_login(editor_user)
+        res = self.client.post(
+            url,
+            data={
+                "nom": self.comp.nom,
+                "tipus": Competicio.Tipus.TRAMPOLI,
+                "data": "2026-06-16",
+                "data_fi": "2026-06-14",
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertFormError(res.context["form"], "data_fi", "La data de fi no pot ser anterior a la data d'inici.")
+
     def test_public_live_token_creation_persists_media_permission(self):
         url = reverse("public_live_qr_home", kwargs={"competicio_id": self.comp.id})
         self.client.force_login(self.judge_admin_user)

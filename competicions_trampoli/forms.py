@@ -26,6 +26,7 @@ from .services.inscripcions.import_excel import (
     _norm_text_key,
 )
 from .services.scoring.scoring_schema_validation import validate_schema
+from .services.fases.qualification import classificacio_is_valid_source_for_phase
 
 
 def _text_sort_key(value):
@@ -35,11 +36,20 @@ def _text_sort_key(value):
 class CompeticioForm(forms.ModelForm):
     class Meta:
         model = Competicio
-        fields = ["nom", "data", "tipus"]
+        fields = ["nom", "data", "data_fi", "tipus"]
         widgets = {
             "data": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "data_fi": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
             "nom": forms.TextInput(attrs={"class": "form-control"}),
         }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        data = cleaned_data.get("data")
+        data_fi = cleaned_data.get("data_fi")
+        if data and data_fi and data_fi < data:
+            self.add_error("data_fi", "La data de fi no pot ser anterior a la data d'inici.")
+        return cleaned_data
 
 
 class ImportInscripcionsExcelForm(forms.Form):
@@ -834,10 +844,18 @@ class PhaseSourceCutForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         self.competicio = kwargs.pop("competicio", None)
+        self.fase = kwargs.pop("fase", None)
         super().__init__(*args, **kwargs)
         qs = ClassificacioConfig.objects.none()
         if self.competicio is not None and getattr(self.competicio, "id", None):
             qs = ClassificacioConfig.objects.filter(competicio=self.competicio, activa=True).order_by("ordre", "id")
+        if self.fase is not None and getattr(self.fase, "id", None):
+            valid_ids = [
+                cfg.id
+                for cfg in qs
+                if classificacio_is_valid_source_for_phase(self.fase, cfg)
+            ]
+            qs = ClassificacioConfig.objects.filter(id__in=valid_ids).order_by("ordre", "id")
         self.fields["classificacio"].queryset = qs
 
     def clean_unit_name_template(self):

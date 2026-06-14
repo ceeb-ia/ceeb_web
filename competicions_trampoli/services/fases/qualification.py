@@ -11,6 +11,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from ...models.classificacions import ClassificacioConfig
+from ...models.scoring import TeamCompetitiveSubject
+from ...services.classificacions.filters import normalize_classificacio_equips_cfg, normalize_team_mode
 from ...models.competicio import (
     CompeticioAparellFase,
     FasePartitionState,
@@ -197,7 +199,62 @@ def _source_classificacio(fase: CompeticioAparellFase) -> ClassificacioConfig:
     )
     if classificacio is None:
         raise QualificationError("La classificacio origen configurada no existeix o no esta activa.")
+    validate_classificacio_subject_contract(fase, classificacio)
     return classificacio
+
+
+def _classificacio_selected_app_ids(classificacio: ClassificacioConfig) -> set[int]:
+    schema = classificacio.schema if isinstance(classificacio.schema, dict) else {}
+    puntuacio = schema.get("puntuacio") if isinstance(schema.get("puntuacio"), dict) else {}
+    aparells = puntuacio.get("aparells") if isinstance(puntuacio.get("aparells"), dict) else {}
+    if str(aparells.get("mode") or "").strip().lower() != "seleccionar":
+        return set()
+    ids = set()
+    for raw_id in aparells.get("ids") or []:
+        clean = _positive_int(raw_id)
+        if clean:
+            ids.add(clean)
+    return ids
+
+
+def classificacio_is_native_team_source(classificacio: ClassificacioConfig) -> bool:
+    schema = classificacio.schema if isinstance(classificacio.schema, dict) else {}
+    equips_cfg = normalize_classificacio_equips_cfg(schema.get("equips") or {})
+    return (
+        str(classificacio.tipus or "").strip().lower() == "equips"
+        and normalize_team_mode(equips_cfg.get("team_mode")) == "native_team"
+    )
+
+
+def classificacio_is_valid_source_for_phase(
+    fase: CompeticioAparellFase,
+    classificacio: ClassificacioConfig,
+) -> bool:
+    selected_app_ids = _classificacio_selected_app_ids(classificacio)
+    if selected_app_ids and int(fase.comp_aparell_id) not in selected_app_ids:
+        return False
+    is_team_phase = bool(getattr(fase.comp_aparell, "is_team_competition_unit", False))
+    if is_team_phase:
+        return classificacio_is_native_team_source(classificacio)
+    return not classificacio_is_native_team_source(classificacio)
+
+
+def validate_classificacio_subject_contract(
+    fase: CompeticioAparellFase,
+    classificacio: ClassificacioConfig,
+) -> None:
+    selected_app_ids = _classificacio_selected_app_ids(classificacio)
+    if selected_app_ids and int(fase.comp_aparell_id) not in selected_app_ids:
+        raise QualificationError("La classificacio origen no calcula aquest aparell.")
+    is_team_phase = bool(getattr(fase.comp_aparell, "is_team_competition_unit", False))
+    if is_team_phase and not classificacio_is_native_team_source(classificacio):
+        raise QualificationError(
+            "Un aparell d'equip nomes pot congelar el tall des d'una classificacio d'equips nativa."
+        )
+    if not is_team_phase and classificacio_is_native_team_source(classificacio):
+        raise QualificationError(
+            "Una fase individual no pot congelar el tall des d'una classificacio nativa d'equip."
+        )
 
 
 def _source_phase_for_classificacio(
@@ -262,6 +319,56 @@ def _subject_from_row(row: dict) -> tuple[str, int] | None:
     return None
 
 
+def _team_subject_id_for_equip(fase: CompeticioAparellFase, equip_id: int) -> int | None:
+    if not equip_id:
+        return None
+    subject = (
+        TeamCompetitiveSubject.objects
+        .filter(
+            competicio=fase.competicio,
+            comp_aparell=fase.comp_aparell,
+            equip_id=equip_id,
+        )
+        .order_by("id")
+        .first()
+    )
+    return int(subject.id) if subject is not None else None
+
+
+def _subject_from_row_for_phase(fase: CompeticioAparellFase, row: dict) -> tuple[str, int] | None:
+    is_team_phase = bool(getattr(fase.comp_aparell, "is_team_competition_unit", False))
+    if is_team_phase:
+        team_subject_id = _positive_int(row.get("team_subject_id") or row.get("subject_id"))
+        if team_subject_id:
+            exists = TeamCompetitiveSubject.objects.filter(
+                competicio=fase.competicio,
+                comp_aparell=fase.comp_aparell,
+                id=team_subject_id,
+            ).exists()
+            if not exists:
+                raise QualificationError("La classificacio origen referencia una unitat d'equip que no pertany a aquest aparell.")
+            return "team_unit", team_subject_id
+        equip_id = _positive_int(row.get("equip_id") or row.get("team_id"))
+        team_subject_id = _team_subject_id_for_equip(fase, equip_id)
+        if team_subject_id:
+            return "team_unit", team_subject_id
+        if equip_id:
+            raise QualificationError(
+                "La classificacio origen conte un equip que no es pot resoldre com a unitat competitiva d'aquest aparell."
+            )
+        if _positive_int(row.get("inscripcio_id")):
+            raise QualificationError("El tall d'un aparell d'equip no pot omplir places amb inscripcions individuals.")
+        return None
+
+    subject = _subject_from_row(row)
+    if subject is None:
+        return None
+    subject_kind, subject_id = subject
+    if subject_kind != "inscripcio":
+        raise QualificationError("El tall d'una fase individual no pot omplir places amb equips.")
+    return subject_kind, subject_id
+
+
 def _clean_source_row(row: dict) -> dict:
     out = {}
     for key, value in (row or {}).items():
@@ -276,17 +383,20 @@ def _clean_source_row(row: dict) -> dict:
 
 
 def _candidate_from_row(
+    fase: CompeticioAparellFase,
     row: dict,
     *,
     particio_key: str,
     status: str,
     seed_position: int | None = None,
 ) -> QualificationCandidate | None:
-    subject = _subject_from_row(row)
+    subject = _subject_from_row_for_phase(fase, row)
     if subject is None:
         return None
     subject_kind, subject_id = subject
     source_row = _clean_source_row(row)
+    if subject_kind == "team_unit":
+        source_row.setdefault("team_subject_id", subject_id)
     if seed_position:
         source_row["phase_seed_position"] = seed_position
     return QualificationCandidate(
@@ -406,6 +516,7 @@ def _build_units_for_partition(
     strategy: str = "classification_order",
 ) -> list[QualificationUnitPreview]:
     selected = _select_candidates_for_partition(
+        fase=fase,
         partition_key=partition_key,
         rows=rows,
         qualifiers_count=qualifiers_count,
@@ -468,6 +579,7 @@ def _split_reserve_candidates(
 
 def _select_candidates_for_partition(
     *,
+    fase: CompeticioAparellFase,
     partition_key: str,
     rows: list[dict],
     qualifiers_count: int,
@@ -497,6 +609,7 @@ def _select_candidates_for_partition(
     )
     for seed_position, (row, status) in enumerate(selected_rows, start=1):
         candidate = _candidate_from_row(
+            fase,
             row,
             particio_key=partition_key,
             status=status,
@@ -742,6 +855,7 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
     reserves = {}
     for partition_key, rows in _rows_for_cut(result, partition_mode):
         selected = _select_candidates_for_partition(
+            fase=fase,
             partition_key=partition_key,
             rows=rows,
             qualifiers_count=qualifiers_count,
@@ -1104,6 +1218,7 @@ __all__ = [
     "QualificationUnitPreview",
     "accept_current_qualification_snapshot",
     "apply_qualification",
+    "classificacio_is_valid_source_for_phase",
     "confirm_qualification_partition",
     "mark_qualification_stale_if_needed",
     "preview_as_dict",
@@ -1111,5 +1226,6 @@ __all__ = [
     "qualification_source_changed",
     "qualification_is_stale",
     "record_qualification_preview",
+    "validate_classificacio_subject_contract",
     "validate_classificacio_not_circular_source",
 ]

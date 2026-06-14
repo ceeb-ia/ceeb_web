@@ -168,6 +168,7 @@ def _build_units_by_count(
     partition_warnings: dict[str, list[str]],
 ) -> list:
     selected = _select_candidates_for_partition(
+        fase=fase,
         partition_key=partition_key,
         rows=rows,
         qualifiers_count=qualifiers_count,

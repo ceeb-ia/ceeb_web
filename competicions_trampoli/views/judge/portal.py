@@ -12,7 +12,6 @@ from ...models import Inscripcio
 from ...models.competicio import (
     CompeticioAparell,
     CompeticioAparellFase,
-    InscripcioAparellExclusio,
     ProgramUnit,
     ProgramUnitSlot,
 )
@@ -44,6 +43,7 @@ from ...services.judging.assignments import (
     resolve_effective_assignment,
 )
 from ...services.scoring.notes_units import effective_exercise_count
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...services.scoring.phase_eligibility import (
     is_phase_published,
     is_program_unit_scoreable,
@@ -252,11 +252,8 @@ def _phase_subjects_for_portal(competicio, comp_aparell, phase):
         registry = build_team_subject_registry(competicio, comp_aparell)
         subjects_by_id = {int(item["subject_id"]): dict(item) for item in registry["subjects"]}
     else:
-        excluded_ins_ids = set(
-            InscripcioAparellExclusio.objects
-            .filter(comp_aparell=comp_aparell)
-            .values_list("inscripcio_id", flat=True)
-        )
+        excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, [comp_aparell.id])
+        excluded_ins_ids = {ins_id for ins_id, app_ids in excluded_by_ins.items() if int(comp_aparell.id) in app_ids}
         subjects_by_id = {
             int(ins.id): ins
             for ins in (
@@ -489,11 +486,8 @@ def judge_portal(request, token, assignment_id=None):
             item["group_label"] = team_subject_bucket_label(item, app_name)
     else:
         schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell)
-        excluded_ins_ids = set(
-            InscripcioAparellExclusio.objects
-            .filter(comp_aparell=comp_aparell)
-            .values_list("inscripcio_id", flat=True)
-        )
+        excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, [comp_aparell.id])
+        excluded_ins_ids = {ins_id for ins_id, app_ids in excluded_by_ins.items() if int(comp_aparell.id) in app_ids}
         ins_base_qs = (
             Inscripcio.objects
             .filter(competicio=competicio)

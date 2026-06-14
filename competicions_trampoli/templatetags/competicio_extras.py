@@ -1,5 +1,6 @@
 from django import template
 from django.contrib.staticfiles import finders
+from django.conf import settings
 from django.templatetags.static import static
 
 from competicions_trampoli.models import Competicio
@@ -144,6 +145,10 @@ def _get_active_competicio_id_from_request(request):
 
 
 def get_competicio_background_url_from_request(request):
+    path = str(getattr(request, "path", "") or "")
+    if getattr(settings, "APP_ENV", "dev") == "prod" and path.startswith("/accounts/"):
+        return static(DEFAULT_COMPETITION_WALLPAPER)
+
     if _is_competition_program_request(request):
         return static(_resolve_competition_wallpaper_static_path(request))
 

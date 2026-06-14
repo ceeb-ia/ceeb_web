@@ -11,11 +11,16 @@ from django.core.exceptions import ObjectDoesNotExist
 from ...models.competicio import (
     CompeticioAparellFase,
     Inscripcio,
-    InscripcioAparellExclusio,
     ProgramUnit,
     ProgramUnitSlot,
     QualificationRun,
 )
+from ...models.scoring import TeamCompetitiveSubject
+from ...services.inscripcions.admission import (
+    inscripcio_exclosa_en_aparell,
+    load_excluded_app_ids_by_inscripcio,
+)
+from ...services.scoring.team_subject_contract import build_team_subject_registry
 
 
 class SlotOverrideError(ValueError):
@@ -67,6 +72,16 @@ class ManualInscripcioOption:
     meta: str
     assigned: bool
     excluded_from_app: bool
+
+
+@dataclass(frozen=True)
+class ManualTeamUnitOption:
+    team_subject_id: int
+    label: str
+    meta: str
+    assigned: bool
+    unavailable: bool
+    unavailable_reason: str
 
 
 def _source_row_text(source_row: dict, *keys: str) -> str:
@@ -291,17 +306,16 @@ def _snapshot_by_key(fase: CompeticioAparellFase, candidate_key: str) -> Snapsho
 
 
 def manual_inscripcio_options_for_phase(fase: CompeticioAparellFase) -> list[ManualInscripcioOption]:
+    if getattr(fase.comp_aparell, "is_team_competition_unit", False):
+        return []
     comp_aparell = fase.comp_aparell
     active_inscripcio_ids = {
         subject_id
         for subject_kind, subject_id in active_subject_refs_for_phase(fase)
         if subject_kind == "inscripcio"
     }
-    excluded_ids = set(
-        InscripcioAparellExclusio.objects
-        .filter(comp_aparell=comp_aparell)
-        .values_list("inscripcio_id", flat=True)
-    )
+    excluded_by_ins = load_excluded_app_ids_by_inscripcio(fase.competicio, [comp_aparell.id])
+    excluded_ids = {ins_id for ins_id, app_ids in excluded_by_ins.items() if int(comp_aparell.id) in app_ids}
     options: list[ManualInscripcioOption] = []
     qs = (
         Inscripcio.objects
@@ -325,6 +339,47 @@ def manual_inscripcio_options_for_phase(fase: CompeticioAparellFase) -> list[Man
                 meta=" / ".join(part for part in meta_parts if part),
                 assigned=int(inscripcio.id) in active_inscripcio_ids,
                 excluded_from_app=int(inscripcio.id) in excluded_ids,
+            )
+        )
+    return options
+
+
+def manual_team_unit_options_for_phase(fase: CompeticioAparellFase) -> list[ManualTeamUnitOption]:
+    if not getattr(fase.comp_aparell, "is_team_competition_unit", False):
+        return []
+    active_team_subject_ids = {
+        subject_id
+        for subject_kind, subject_id in active_subject_refs_for_phase(fase)
+        if subject_kind == "team_unit"
+    }
+    registry = build_team_subject_registry(fase.competicio, fase.comp_aparell)
+    eligible_ids = {int(subject_id) for subject_id in registry.get("eligible_by_id", {})}
+    options: list[ManualTeamUnitOption] = []
+    for subject in registry.get("subjects") or []:
+        subject_id = _to_int(subject.get("subject_id"))
+        if not subject_id:
+            continue
+        invalid_reasons = list(subject.get("invalid_reasons") or [])
+        if str(subject.get("series_state") or "") == "invalid":
+            invalid_reasons.append("Serie no valida")
+        label = (
+            str(subject.get("label") or "").strip()
+            or str(subject.get("name") or "").strip()
+            or f"Equip {subject_id}"
+        )
+        meta_parts = [
+            str(subject.get("context_name") or "").strip(),
+            str(subject.get("members_text") or "").strip(),
+            str(subject.get("meta") or "").strip(),
+        ]
+        options.append(
+            ManualTeamUnitOption(
+                team_subject_id=subject_id,
+                label=label,
+                meta=" / ".join(part for part in meta_parts if part),
+                assigned=subject_id in active_team_subject_ids,
+                unavailable=subject_id not in eligible_ids,
+                unavailable_reason="; ".join(str(reason) for reason in invalid_reasons if reason),
             )
         )
     return options
@@ -480,6 +535,8 @@ def assign_snapshot_candidate_to_slot(fase: CompeticioAparellFase, slot_id: int,
 
 
 def assign_inscripcio_to_slot(fase: CompeticioAparellFase, slot_id: int, inscripcio_id: int) -> ProgramUnitSlot:
+    if getattr(fase.comp_aparell, "is_team_competition_unit", False):
+        raise SlotOverrideError("En un aparell d'equip cal assignar una unitat competitiva d'equip.")
     try:
         slot = ProgramUnitSlot.objects.select_related("unit").get(id=slot_id, unit__fase=fase)
     except ObjectDoesNotExist as exc:
@@ -494,10 +551,7 @@ def assign_inscripcio_to_slot(fase: CompeticioAparellFase, slot_id: int, inscrip
     if subject_ref in active_subject_refs_for_phase(fase, exclude_slot_id=slot.id):
         raise SlotOverrideError("Aquesta inscripcio ja esta assignada a una altra placa activa.")
 
-    excluded = InscripcioAparellExclusio.objects.filter(
-        inscripcio=inscripcio,
-        comp_aparell=fase.comp_aparell,
-    ).exists()
+    excluded = inscripcio_exclosa_en_aparell(inscripcio.id, fase.comp_aparell_id)
     source_row = {
         "participant": str(inscripcio.nom_i_cognoms or "").strip(),
         "entitat": str(inscripcio.entitat or "").strip(),
@@ -522,6 +576,77 @@ def assign_inscripcio_to_slot(fase: CompeticioAparellFase, slot_id: int, inscrip
     slot.source_row = _slot_metadata_source_row(
         source_row,
         override_type="manual_inscripcio",
+        previous_slot=slot,
+    )
+    slot.full_clean()
+    slot.save(update_fields=[
+        "subject_kind",
+        "subject_id",
+        "status",
+        "source_classificacio",
+        "source_particio_key",
+        "source_position",
+        "source_score",
+        "source_row",
+        "updated_at",
+    ])
+    return slot
+
+
+def assign_team_unit_to_slot(fase: CompeticioAparellFase, slot_id: int, team_subject_id: int) -> ProgramUnitSlot:
+    if not getattr(fase.comp_aparell, "is_team_competition_unit", False):
+        raise SlotOverrideError("Aquesta fase no accepta unitats competitives d'equip.")
+    try:
+        slot = ProgramUnitSlot.objects.select_related("unit").get(id=slot_id, unit__fase=fase)
+    except ObjectDoesNotExist as exc:
+        raise SlotOverrideError("Slot no valid per aquesta fase.") from exc
+    if slot.locked:
+        raise SlotOverrideError("Aquest slot esta bloquejat.")
+    registry = build_team_subject_registry(fase.competicio, fase.comp_aparell)
+    clean_subject_id = _to_int(team_subject_id)
+    subject_meta = (registry.get("eligible_by_id") or {}).get(clean_subject_id)
+    if subject_meta is None:
+        raise SlotOverrideError("Aquesta unitat competitiva d'equip no es elegible en aquest aparell.")
+    try:
+        team_subject = TeamCompetitiveSubject.objects.select_related("equip", "context").get(
+            id=clean_subject_id,
+            competicio=fase.competicio,
+            comp_aparell=fase.comp_aparell,
+        )
+    except ObjectDoesNotExist as exc:
+        raise SlotOverrideError("Unitat competitiva d'equip no valida per aquesta fase.") from exc
+
+    subject_ref = ("team_unit", int(team_subject.id))
+    if subject_ref in active_subject_refs_for_phase(fase, exclude_slot_id=slot.id):
+        raise SlotOverrideError("Aquesta unitat d'equip ja esta assignada a una altra placa activa.")
+
+    label = (
+        str(subject_meta.get("label") or "").strip()
+        or str(subject_meta.get("name") or "").strip()
+        or str(getattr(team_subject.equip, "nom", "") or "").strip()
+    )
+    source_row = {
+        "participant": label,
+        "equip_nom": str(getattr(team_subject.equip, "nom", "") or "").strip(),
+        "context": str(getattr(team_subject.context, "nom", "") or "").strip(),
+        "context_code": str(getattr(team_subject.context, "code", "") or "").strip(),
+        "team_subject_id": int(team_subject.id),
+        "equip_id": int(team_subject.equip_id),
+        "members_text": str(subject_meta.get("members_text") or "").strip(),
+        "manual_assignment": {
+            "from_workspace": True,
+        },
+    }
+    slot.subject_kind = "team_unit"
+    slot.subject_id = int(team_subject.id)
+    slot.status = ProgramUnitSlot.Status.MANUAL
+    slot.source_classificacio = None
+    slot.source_particio_key = str(slot.source_particio_key or slot.unit.partition_key or "global").strip() or "global"
+    slot.source_position = None
+    slot.source_score = None
+    slot.source_row = _slot_metadata_source_row(
+        source_row,
+        override_type="manual_team_unit",
         previous_slot=slot,
     )
     slot.full_clean()

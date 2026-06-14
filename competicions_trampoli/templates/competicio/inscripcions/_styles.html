@@ -5889,12 +5889,16 @@
 
     #inscripcions-table-fragment .row-action-link {
       display: block;
+      width: 100%;
       padding: 0.36rem 0.5rem;
+      border: 0;
       border-radius: 6px;
+      background: transparent;
       color: #334155;
       font-size: 0.78rem;
       font-weight: 650;
       text-decoration: none;
+      text-align: left;
     }
 
     #inscripcions-table-fragment .row-action-link:hover {
@@ -5910,6 +5914,205 @@
     #inscripcions-table-fragment .row-action-link-danger:hover {
       background: #fef2f2;
       color: #991b1b;
+    }
+
+    .baixa-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1080;
+      display: none;
+      background: rgba(15, 23, 42, 0.42);
+    }
+
+    .baixa-modal-backdrop.is-visible {
+      display: block;
+    }
+
+    .baixa-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1081;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      pointer-events: none;
+    }
+
+    .baixa-modal.d-none {
+      display: none;
+    }
+
+    .baixa-modal-panel {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 2rem);
+      overflow: auto;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+      pointer-events: auto;
+    }
+
+    .baixa-modal-head,
+    .baixa-modal-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.9rem 1rem;
+    }
+
+    .baixa-modal-head {
+      border-bottom: 1px solid #fee2e2;
+      background: #fff7f7;
+    }
+
+    .baixa-modal-foot {
+      border-top: 1px solid #e5e7eb;
+      background: #f8fafc;
+    }
+
+    .baixa-modal-kicker {
+      color: #b91c1c;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .baixa-modal h3 {
+      margin: 0;
+      color: #111827;
+      font-size: 1rem;
+      font-weight: 800;
+    }
+
+    .baixa-modal-subtitle {
+      margin-top: 0.15rem;
+      color: #64748b;
+      font-size: 0.82rem;
+    }
+
+    .baixa-modal-close {
+      width: 2rem;
+      height: 2rem;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #64748b;
+      font-size: 1.35rem;
+      line-height: 1;
+    }
+
+    .baixa-modal-close:hover {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .baixa-modal-body {
+      display: grid;
+      gap: 0.9rem;
+      padding: 1rem;
+    }
+
+    .baixa-scope-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .baixa-scope-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.55rem;
+      min-height: 78px;
+      margin: 0;
+      padding: 0.75rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #ffffff;
+      cursor: pointer;
+    }
+
+    .baixa-scope-option:has(input:checked) {
+      border-color: #ef4444;
+      background: #fff7f7;
+    }
+
+    .baixa-scope-option input {
+      margin-top: 0.2rem;
+    }
+
+    .baixa-scope-option strong,
+    .baixa-scope-option small {
+      display: block;
+      line-height: 1.25;
+    }
+
+    .baixa-scope-option strong {
+      color: #111827;
+      font-size: 0.86rem;
+    }
+
+    .baixa-scope-option small {
+      margin-top: 0.25rem;
+      color: #64748b;
+      font-size: 0.76rem;
+    }
+
+    .baixa-field-label {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: #475569;
+      font-size: 0.74rem;
+      font-weight: 780;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .baixa-app-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.45rem;
+    }
+
+    .baixa-app-list.is-disabled {
+      opacity: 0.52;
+    }
+
+    .baixa-app-option {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 34px;
+      margin: 0;
+      padding: 0.45rem 0.55rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 0.82rem;
+      font-weight: 650;
+    }
+
+    .baixa-app-option:has(input:checked) {
+      border-color: #f87171;
+      background: #fef2f2;
+      color: #991b1b;
+    }
+
+    .baixa-app-empty,
+    .baixa-app-hint {
+      color: #64748b;
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 640px) {
+      .baixa-scope-grid,
+      .baixa-app-list {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     #inscripcions-table-fragment .inscripcio-row.sortable-chosen > td,

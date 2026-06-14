@@ -206,6 +206,7 @@ class CompeticioFasesPlanner(View):
             "phase_form": phase_form or CompeticioAparellFaseForm(comp_aparell=selected_app, initial=phase_initial),
             "source_cut_form": source_cut_form or PhaseSourceCutForm(
                 competicio=self.competicio,
+                fase=selected_phase,
                 initial=self._source_cut_initial(selected_phase),
             ),
             "manual_unit_form": manual_unit_form or ProgramUnitManualForm(),

@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ....models import Inscripcio
-from ....models.competicio import CompeticioAparell, InscripcioAparellExclusio, ProgramUnitSlot
+from ....models.competicio import CompeticioAparell, ProgramUnitSlot
 from ....models.scoring import ScoreEntry, TeamScoreEntry
 from ..phase_scope import PHASE_SCOPE_PER_APP, normalize_phase_scope_payload
 from ...scoring.team_scoring import is_team_context_app
+from ...inscripcions.admission import load_excluded_app_ids_by_inscripcio as load_admission_excluded_app_ids_by_inscripcio
 from ...teams.equip_contexts import normalize_equip_context_code
 from .common import (
     get_effective_team_context_code,
@@ -69,23 +70,7 @@ def load_comp_aparells(competicio, *, punt=None) -> list[CompeticioAparell]:
 
 
 def load_excluded_app_ids_by_inscripcio(competicio, app_ids=None) -> dict[int, set[int]]:
-    clean_app_ids = {
-        app_id
-        for app_id in (normalize_positive_int(raw_id) for raw_id in (app_ids or []))
-        if app_id is not None
-    }
-    if not clean_app_ids:
-        return defaultdict(set)
-
-    excluded = defaultdict(set)
-    rows = (
-        InscripcioAparellExclusio.objects
-        .filter(inscripcio__competicio=competicio, comp_aparell_id__in=clean_app_ids)
-        .values_list("inscripcio_id", "comp_aparell_id")
-    )
-    for inscripcio_id, app_id in rows:
-        excluded[int(inscripcio_id)].add(int(app_id))
-    return excluded
+    return load_admission_excluded_app_ids_by_inscripcio(competicio, app_ids)
 
 
 def filter_inscripcions_by_app_admission(inscripcions, app_ids=None, excluded_by_inscripcio=None) -> list[Inscripcio]:

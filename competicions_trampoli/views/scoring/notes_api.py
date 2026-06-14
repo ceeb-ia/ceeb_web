@@ -1,12 +1,10 @@
 import json
 
-from django.db.models import Exists, OuterRef
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET, require_POST
 
 from ...models import Competicio
-from ...models.competicio import InscripcioAparellExclusio
 from ...models.scoring import (
     ScoreEntry,
     ScoreEntryVideo,
@@ -31,6 +29,7 @@ from ...services.scoring.notes_units import (
 from ...services.scoring.score_warnings import generate_score_warnings
 from ...services.scoring.judge_presence import is_judge_shaped_field, presence_key
 from ...services.scoring.scoring_subjects import score_store_key
+from ...services.inscripcions.admission import filter_score_entries_admeses
 from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
 from ...services.scoring.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
 from .helpers import (
@@ -365,24 +364,13 @@ def _serialize_scores(competicio, comp_aparell, exercici, subjects, logical_sche
     if not subject_ids:
         return scores
     allowed_inputs = _allowed_input_codes_for_schema(logical_schema, comp_aparell)
-    qs = (
-        ScoreEntry.objects
-        .filter(
-            competicio=competicio,
-            comp_aparell=comp_aparell,
-            exercici=exercici,
-            inscripcio_id__in=subject_ids,
-        )
-        .annotate(
-            _excluded=Exists(
-                InscripcioAparellExclusio.objects.filter(
-                    inscripcio_id=OuterRef("inscripcio_id"),
-                    comp_aparell_id=OuterRef("comp_aparell_id"),
-                )
-            )
-        )
-        .filter(_excluded=False)
+    qs = ScoreEntry.objects.filter(
+        competicio=competicio,
+        comp_aparell=comp_aparell,
+        exercici=exercici,
+        inscripcio_id__in=subject_ids,
     )
+    qs = filter_score_entries_admeses(qs)
     qs = _score_phase_filter(qs, phase_id)
     for score in qs:
         key = score_store_key("inscripcio", score.inscripcio_id, score.exercici, score.comp_aparell_id, score.fase_id)

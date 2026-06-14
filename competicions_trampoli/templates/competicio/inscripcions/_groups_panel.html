@@ -369,19 +369,7 @@
                         <div class="groups-auto-context-meta">
                           <div class="groups-auto-context-meta-item">
                             <span class="groups-auto-context-meta-label">Origen</span>
-                            <span class="badge badge-light border" id="groups-auto-context-source">Tota la competicio</span>
-                          </div>
-                          <div class="groups-auto-context-meta-item">
-                            <span class="groups-auto-context-meta-label">Divisions</span>
-                            <span id="groups-detected-group-fields" class="groups-auto-context-chipline">
-                              <span class="text-muted">Carregant...</span>
-                            </span>
-                          </div>
-                          <div class="groups-auto-context-meta-item">
-                            <span class="groups-auto-context-meta-label">Ordenacions</span>
-                            <span id="groups-detected-sort-fields" class="groups-auto-context-chipline">
-                              <span class="text-muted">Carregant...</span>
-                            </span>
+                            <span class="badge badge-light border" id="groups-auto-context-source">Seleccio activa</span>
                           </div>
                         </div>
 
@@ -399,7 +387,7 @@
                               </summary>
                               <div class="groups-filter-panel groups-filter-panel-wide">
                                 <div class="groups-filter-panel-head">
-                                  <span>Criteris afegits</span>
+                                  <span>Criteris de bucket</span>
                                   <button type="button" class="groups-filter-clear" id="btn-groups-workspace-bucket-fields-clear">Netejar</button>
                                 </div>
                                 <div class="groups-filter-options">
@@ -424,7 +412,7 @@
                         <div class="groups-auto-context-buckets-head">
                           <div>
                             <div class="groups-auto-context-buckets-title">Blocs proposats</div>
-                            <div class="text-muted small" id="groups-buckets-count">Blocs proposats sobre tota la competicio: 0</div>
+                            <div class="text-muted small" id="groups-buckets-count">Blocs proposats sobre la seleccio activa: 0</div>
                           </div>
                           <div class="groups-auto-context-buckets-actions">
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-preview-per-bucket">Previsualitzar</button>
@@ -435,7 +423,7 @@
                         </div>
                         <div class="groups-auto-context-hidden-status" id="groups-resolution-label">Blocs proposats</div>
                         <div class="groups-auto-context-hidden-status" id="groups-resolution-status">Carregant el context automatic dels grups.</div>
-                        <div class="groups-auto-context-hidden-status" id="groups-buckets-selection-summary">Seleccionades globalment: 0</div>
+                        <div class="groups-auto-context-hidden-status" id="groups-buckets-selection-summary">Seleccio activa: 0</div>
 
                         <div class="groups-auto-buckets-filter-grid mb-2">
                           <div>
@@ -454,9 +442,7 @@
                             <label class="small text-muted mb-1 d-block" for="groups-buckets-filter-kind">Origen</label>
                             <select id="groups-buckets-filter-kind" class="form-control form-control-sm">
                               <option value="all">Tots</option>
-                              <option value="tabs">Divisions</option>
-                              <option value="sort">Ordenacions</option>
-                              <option value="workspace">Criteris afegits</option>
+                              <option value="workspace">Criteris de bucket</option>
                               <option value="combined">Combinats</option>
                             </select>
                           </div>

@@ -71,6 +71,15 @@
                 <div class="row-actions-popover">
                   <a class="row-action-link" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ inscripcions_return_url|urlencode }}">Editar</a>
                   {% if can_edit_inscripcions %}
+                    {% with rid=r.id|stringformat:"s" %}
+                      {% with baixa=table_runtime.inscripcio_baixes_map|get_item:rid %}
+                        {% if baixa %}
+                          <button type="button" class="row-action-link js-clear-baixa" data-ins-id="{{ r.id }}">Treure baixa</button>
+                        {% else %}
+                          <button type="button" class="row-action-link js-set-baixa" data-ins-id="{{ r.id }}" data-ins-name="{{ r.nom_i_cognoms|default:'' }}">Marcar baixa</button>
+                        {% endif %}
+                      {% endwith %}
+                    {% endwith %}
                     <div class="row-action-media-upload">
                       <div class="row-action-upload-title">Pujar fitxer</div>
                       <div class="media-upload-row">
@@ -91,6 +100,14 @@
               <span class="participant-avatar" aria-hidden="true">{{ r.nom_i_cognoms|initials }}</span>
               <span class="participant-copy">
                 <span class="participant-name">{{ r.nom_i_cognoms|default:"-" }}</span>
+                {% with rid=r.id|stringformat:"s" %}
+                  {% with baixa=table_runtime.inscripcio_baixes_map|get_item:rid %}
+                    {% if baixa %}
+                      <span class="badge badge-danger ml-1" title="{{ baixa.motiu|default:'Baixa' }}">Baixa</span>
+                      <span class="small text-muted">{{ baixa.label|default:"" }}</span>
+                    {% endif %}
+                  {% endwith %}
+                {% endwith %}
               </span>
             </div>
           {% elif col.code == "equip" %}

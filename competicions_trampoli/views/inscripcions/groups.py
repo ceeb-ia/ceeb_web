@@ -155,9 +155,9 @@ def _resolve_group_workspace_target_ids(competicio, payload):
 
 
 def _normalize_group_workspace_auto_context_source_scope(raw_scope):
-    scope = str(raw_scope or "competition_all").strip().lower()
-    if scope not in {"competition_all", "selected"}:
-        scope = "competition_all"
+    scope = str(raw_scope or "selected").strip().lower()
+    if scope not in {"competition_all", "filtered", "selected"}:
+        scope = "selected"
     return scope
 
 
@@ -211,7 +211,6 @@ def _resolve_group_workspace_auto_context_inputs(competicio, request, payload):
     workspace_bucket_codes = _normalize_group_workspace_bucket_fields(
         payload.get("workspace_bucket_fields"),
         allowed_group_codes,
-        used_codes=set(selected_group_codes) | set(partition_codes),
     )
 
     group_field_label_by_code = {field["code"]: field.get("ui_label") or field.get("label") or field["code"] for field in allowed_group_fields if isinstance(field, dict) and field.get("code")}
@@ -236,19 +235,31 @@ def _build_group_workspace_auto_context(competicio, request, payload, include_bu
     selected_id_set = set(selected_ids)
     workspace_visible_ids = set(_resolve_group_workspace_filtered_target_ids(competicio, inputs["workspace_filters"])["target_ids"])
 
-    resolution_codes = list(dict.fromkeys(list(inputs["selected_group_codes"]) + list(inputs["partition_codes"]) + list(inputs["workspace_bucket_codes"])))
+    resolution_codes = list(inputs["workspace_bucket_codes"])
     resolution_builtin_fields = [code for code in resolution_codes if hasattr(Inscripcio, code)]
 
-    if inputs["source_scope"] == "selected":
-        records_qs = Inscripcio.objects.filter(competicio=competicio, id__in=selected_ids)
-    else:
+    target_scope = inputs["source_scope"]
+    if inputs["source_scope"] == "competition_all":
         records_qs = Inscripcio.objects.filter(competicio=competicio)
+    else:
+        records_qs = _build_group_workspace_candidates_qs(competicio, inputs["workspace_filters"])
+        if selected_ids and inputs["source_scope"] == "selected":
+            records_qs = records_qs.filter(id__in=selected_ids)
+            target_scope = "selected"
+        else:
+            target_scope = "filtered"
     if resolution_codes:
         records_qs = annotate_inscripcions_queryset_for_group_codes(records_qs, competicio, resolution_codes)
     records = list(records_qs.order_by("ordre_sortida", "id").only("id", "extra", "data_naixement", *resolution_builtin_fields))
 
-    resolution = _resolve_group_creation_buckets(competicio, records, group_codes=inputs["selected_group_codes"], partition_codes=inputs["partition_codes"], workspace_codes=inputs["workspace_bucket_codes"], fallback_mode="strict")
-    buckets_raw = (resolution.get("buckets") if resolution.get("ok") else []) or []
+    if inputs["workspace_bucket_codes"]:
+        resolution = _resolve_group_creation_buckets(competicio, records, group_codes=[], partition_codes=[], workspace_codes=inputs["workspace_bucket_codes"], fallback_mode="strict")
+        buckets_raw = (resolution.get("buckets") if resolution.get("ok") else []) or []
+        layers_used = list(resolution.get("layers_used") or []) if resolution.get("ok") else []
+    else:
+        resolution = {"ok": True}
+        buckets_raw = []
+        layers_used = []
     bucket_ids_by_key = {}
     buckets = []
     for bucket in buckets_raw:
@@ -274,15 +285,16 @@ def _build_group_workspace_auto_context(competicio, request, payload, include_bu
         "selection_count": len(selected_ids),
         "selected_ids": selected_ids,
         "source_scope": inputs["source_scope"],
+        "target_scope": target_scope,
         "source_total": len(records),
         "buckets": buckets,
         "buckets_total": len(buckets),
-        "layers_used": list(resolution.get("layers_used") or []) if resolution.get("ok") else [],
+        "layers_used": layers_used,
         "used_fallback": False,
         "fallback_reason": "",
         "default_bucket_keys": [bucket["key"] for bucket in buckets],
-        "detected_group_fields": [{"code": code, "label": inputs["group_field_label_by_code"].get(code, code)} for code in inputs["selected_group_codes"]],
-        "detected_sort_fields": [{"priority": priority, "code": code, "label": inputs["sort_field_label_by_code"].get(code, code)} for priority, code in enumerate(inputs["partition_codes"], start=1)],
+        "detected_group_fields": [],
+        "detected_sort_fields": [],
         "detected_workspace_fields": [{"code": code, "label": inputs["group_field_label_by_code"].get(code, code)} for code in inputs["workspace_bucket_codes"]],
         "workspace_bucket_fields": list(inputs["workspace_bucket_codes"]),
     }
@@ -1741,7 +1753,6 @@ def inscripcions_groups_from_sort(request, pk):
     workspace_bucket_codes = _normalize_group_workspace_bucket_fields(
         payload.get("workspace_bucket_fields"),
         allowed_group_codes,
-        used_codes=set(selected_group_codes_context) | set(partition_codes),
     )
 
     if scope == "selected":
@@ -1758,14 +1769,21 @@ def inscripcions_groups_from_sort(request, pk):
     if not records:
         return JsonResponse(with_inscripcions_history_payload({"ok": True, "preview_only": preview_only, "updated": 0, "groups_created": 0, "buckets_total": 0, "buckets_applied": 0, "stack_used": partition_codes, "workspace_bucket_fields": workspace_bucket_codes, "resolution_mode": "auto", "layers_used": [], "effective_bucket_count": 0, "strategy": strategy, "used_fallback": False, "preview": {"groups_total": 0, "members_total": 0, "groups": [], "existing_groups_total": 0, "existing_members_total": 0, "existing_groups": [], "resolution_mode": "auto", "layers_used": [], "effective_bucket_count": 0, "strategy": strategy, "workspace_bucket_fields": workspace_bucket_codes} if preview_only else None}, request, competicio.id))
 
-    resolution = _resolve_group_creation_buckets(competicio, records, group_codes=selected_group_codes_context, partition_codes=partition_codes, workspace_codes=workspace_bucket_codes, fallback_mode=fallback_mode)
-    if not resolution.get("ok"):
-        return HttpResponseBadRequest(resolution.get("error") or "No hi ha criteris resolubles per construir blocs d'origen")
-
-    buckets = list(resolution.get("buckets") or [])
-    layers_used = list(resolution.get("layers_used") or [])
-    used_fallback = bool(resolution.get("used_fallback"))
-    fallback_reason = str(resolution.get("fallback_reason") or "")
+    if workspace_bucket_codes:
+        resolution = _resolve_group_creation_buckets(competicio, records, group_codes=[], partition_codes=[], workspace_codes=workspace_bucket_codes, fallback_mode=fallback_mode)
+        if not resolution.get("ok"):
+            return HttpResponseBadRequest(resolution.get("error") or "No hi ha criteris resolubles per construir blocs d'origen")
+        buckets = list(resolution.get("buckets") or [])
+        layers_used = list(resolution.get("layers_used") or [])
+        used_fallback = bool(resolution.get("used_fallback"))
+        fallback_reason = str(resolution.get("fallback_reason") or "")
+    else:
+        if strategy == "per_bucket":
+            return HttpResponseBadRequest("Selecciona criteris de bucket per crear grups per bloc")
+        buckets = []
+        layers_used = []
+        used_fallback = False
+        fallback_reason = ""
     bucket_by_key = {bucket["key"]: bucket for bucket in buckets}
     selected_keys_raw = payload.get("selected_keys")
     if not isinstance(selected_keys_raw, list):
@@ -1786,7 +1804,8 @@ def inscripcions_groups_from_sort(request, pk):
 
     target_ids = []
     seen_ids = set()
-    for bucket in buckets_to_apply:
+    target_sources = buckets_to_apply if buckets else [{"ids": [record.id for record in records]}]
+    for bucket in target_sources:
         for ins_id in bucket["ids"]:
             if ins_id in seen_ids:
                 continue

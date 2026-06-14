@@ -16,7 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ...models import Competicio, Inscripcio
-from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio, ProgramUnit
+from ...models.competicio import CompeticioAparell, ProgramUnit
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
 from ...services.shared.competition_groups import (
@@ -33,6 +33,7 @@ from ...services.rotacions.rotacions_ordering import (
     rotation_unit_key,
     unique_ordered,
 )
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
 from ...services.teams.team_series import serie_label
 from ._shared import (
@@ -270,12 +271,13 @@ def franges_export_excel(request, pk):
             ins_ids.append(ins.id)
 
         if ins_ids and comp_aparell_ids:
-            excluded_pairs = set(
-                InscripcioAparellExclusio.objects.filter(
-                    inscripcio_id__in=ins_ids,
-                    comp_aparell_id__in=comp_aparell_ids,
-                ).values_list("inscripcio_id", "comp_aparell_id")
-            )
+            excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, comp_aparell_ids)
+            excluded_pairs = {
+                (ins_id, app_id)
+                for ins_id, app_ids in excluded_by_ins.items()
+                if ins_id in ins_ids
+                for app_id in app_ids
+            }
 
     series_by_id = {
         int(serie.id): serie

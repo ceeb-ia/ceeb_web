@@ -41,6 +41,7 @@ from ....services.fases.slot_overrides import (
     assign_inscripcio_to_slot,
     assign_reserve_to_slot,
     assign_snapshot_candidate_to_slot,
+    assign_team_unit_to_slot,
     clear_program_unit_slots,
     clear_slot_assignment,
     delete_program_slot,
@@ -269,7 +270,7 @@ def handle_phase_post(view, request):
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "configure_source_cut":
-            form = PhaseSourceCutForm(request.POST, competicio=view.competicio)
+            form = PhaseSourceCutForm(request.POST, competicio=view.competicio, fase=phase)
             if form.is_valid():
                 try:
                     configure_phase_source_cut(phase, form)
@@ -367,6 +368,13 @@ def handle_phase_post(view, request):
             inscripcio_id = int(request.POST.get("inscripcio_id") or 0)
             slot = assign_inscripcio_to_slot(phase, slot_id, inscripcio_id)
             messages.success(request, f"Inscripcio assignada manualment a '{slot.unit.nom}' en ordre {slot.ordre}.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "assign_team_unit_to_slot":
+            slot_id = int(request.POST.get("slot_id") or 0)
+            team_subject_id = int(request.POST.get("team_subject_id") or 0)
+            slot = assign_team_unit_to_slot(phase, slot_id, team_subject_id)
+            messages.success(request, f"Equip assignat manualment a '{slot.unit.nom}' en ordre {slot.ordre}.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "mark_slot_withdrawn":

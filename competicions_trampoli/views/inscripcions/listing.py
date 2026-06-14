@@ -1,13 +1,17 @@
 import json
+from io import BytesIO
 
 from django.db import transaction
 from django.db.models import Count
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from ...access import user_has_competicio_capability
 from .base import InscripcionsListView
@@ -37,6 +41,12 @@ from ...services.inscripcions.history import (
     with_inscripcions_history_payload,
 )
 from ...services.inscripcions.media_matching import normalize_media_matching_config
+from ...services.inscripcions.admission import (
+    active_baixes_qs,
+    baixa_summary_by_inscripcio,
+    clear_inscripcio_baixa,
+    set_inscripcio_baixa,
+)
 from ...services.avatar.competition.overview import AVATAR_MESSAGES as COMPETITION_AVATAR_MESSAGES
 from ...services.avatar.inscripcions.messages import AVATAR_MESSAGES as INSCRIPCIONS_AVATAR_MESSAGES
 from ...services.inscripcions.queries import (
@@ -462,10 +472,7 @@ class InscripcionsListNewView(InscripcionsListView):
                 team_context_code = NATIVE_EQUIP_CONTEXT_CODE
                 selected_team_context = get_equip_context(self.competicio, team_context_code)
             team_fields = group_field_options
-            team_field_codes = {field["code"] for field in team_fields}
-            default_team_fields = [code for code in ("entitat", "subcategoria", "sexe") if code in team_field_codes]
             ctx["team_partition_fields"] = team_fields
-            ctx["team_partition_default_fields"] = default_team_fields
             ctx["team_context_selected_code"] = team_context_code
             ctx["team_context_selected_label"] = str(
                 getattr(selected_team_context, "nom", "") or (
@@ -641,6 +648,13 @@ class InscripcionsListNewView(InscripcionsListView):
                     excluded_map.setdefault(str(ins_id), [])
                 table_runtime["inscripcio_aparells_excluded_map"] = excluded_map
 
+            if visible_ins_ids:
+                table_runtime["inscripcio_baixes_map"] = baixa_summary_by_inscripcio(
+                    self.competicio,
+                    active_app_ids,
+                    inscripcio_ids=visible_ins_ids,
+                )
+
             if "__media__" in selected_table_column_codes:
                 media_map = {}
                 if visible_ins_ids:
@@ -685,6 +699,9 @@ class InscripcionsListNewView(InscripcionsListView):
                     "saveTableColumns": reverse("inscripcions_save_table_columns", kwargs={"pk": self.competicio.id}),
                     "setGroupName": reverse("inscripcions_set_group_name", kwargs={"pk": self.competicio.id}),
                     "setAparells": reverse("inscripcions_set_aparells", kwargs={"pk": self.competicio.id}),
+                    "setBaixa": reverse("inscripcions_set_baixa", kwargs={"pk": self.competicio.id}),
+                    "clearBaixa": reverse("inscripcions_clear_baixa", kwargs={"pk": self.competicio.id}),
+                    "exportBaixes": reverse("inscripcions_baixes_export", kwargs={"pk": self.competicio.id}),
                     "mergeTabs": reverse("inscripcions_merge_tabs", kwargs={"pk": self.competicio.id}),
                     "groupCompetitionOrderPreview": reverse("inscripcions_group_competition_order_preview", kwargs={"pk": self.competicio.id}),
                     "saveGroupCompetitionOrder": reverse("inscripcions_save_group_competition_order", kwargs={"pk": self.competicio.id}),
@@ -697,6 +714,10 @@ class InscripcionsListNewView(InscripcionsListView):
                     "mediaMatchingConfig": normalize_media_matching_config(
                         (self.competicio.inscripcions_view or {}).get("media_matching")
                     ),
+                    "baixaAparells": [
+                        {"id": int(app.id), "label": str(getattr(app, "display_nom", "") or app.id)}
+                        for app in individual_aparells_cfg
+                    ],
                 },
             }
         return ctx
@@ -888,12 +909,172 @@ def inscripcions_set_aparells(request, pk):
     )
 
 
+@require_POST
+@csrf_protect
+def inscripcions_set_baixa(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        inscripcio_id = int(payload.get("inscripcio_id"))
+    except Exception:
+        return HttpResponseBadRequest("inscripcio_id invalid")
+
+    inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
+    scope = str(payload.get("scope") or "").strip().lower()
+    global_scope = scope in {"global", "all", "tota", "tot"}
+    app_ids_raw = payload.get("comp_aparell_ids") or payload.get("app_ids") or []
+    if not isinstance(app_ids_raw, list):
+        return HttpResponseBadRequest("comp_aparell_ids ha de ser una llista")
+    if not global_scope and not app_ids_raw:
+        return HttpResponseBadRequest("Cal indicar almenys un aparell o marcar baixa global")
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    try:
+        set_inscripcio_baixa(
+            competicio,
+            inscripcio,
+            app_ids=app_ids_raw,
+            global_scope=global_scope,
+            motiu=payload.get("motiu") or "",
+            notes=payload.get("notes") or "",
+            user=request.user if getattr(request.user, "is_authenticated", False) else None,
+        )
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="set_baixa",
+        action_label="Marcar baixa",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    summary = baixa_summary_by_inscripcio(competicio, inscripcio_ids=[inscripcio.id]).get(str(inscripcio.id), {})
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "inscripcio_id": inscripcio.id,
+                "baixa": summary,
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_clear_baixa(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        inscripcio_id = int(payload.get("inscripcio_id"))
+    except Exception:
+        return HttpResponseBadRequest("inscripcio_id invalid")
+    inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    clear_inscripcio_baixa(
+        competicio,
+        inscripcio,
+        user=request.user if getattr(request.user, "is_authenticated", False) else None,
+    )
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="clear_baixa",
+        action_label="Treure baixa",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "inscripcio_id": inscripcio.id, "baixa": {}},
+            request,
+            competicio.id,
+        )
+    )
+
+
+def inscripcions_baixes_export(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    rows = list(
+        active_baixes_qs(competicio)
+        .select_related("inscripcio", "comp_aparell", "marcada_per")
+        .order_by("inscripcio__nom_i_cognoms", "comp_aparell__ordre", "comp_aparell_id", "id")
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Baixes"
+    headers = [
+        "Nom i cognoms",
+        "Document",
+        "Entitat",
+        "Categoria",
+        "Subcategoria",
+        "Abast",
+        "Aparell",
+        "Motiu",
+        "Notes",
+        "Data baixa",
+        "Marcada per",
+    ]
+    header_fill = PatternFill("solid", fgColor="FCE4E4")
+    for col_idx, label in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=label)
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+
+    for row_idx, baixa in enumerate(rows, start=2):
+        ins = baixa.inscripcio
+        app = baixa.comp_aparell
+        user = baixa.marcada_per
+        ws.cell(row=row_idx, column=1, value=getattr(ins, "nom_i_cognoms", "") or "")
+        ws.cell(row=row_idx, column=2, value=getattr(ins, "document", "") or "")
+        ws.cell(row=row_idx, column=3, value=getattr(ins, "entitat", "") or "")
+        ws.cell(row=row_idx, column=4, value=getattr(ins, "categoria", "") or "")
+        ws.cell(row=row_idx, column=5, value=getattr(ins, "subcategoria", "") or "")
+        ws.cell(row=row_idx, column=6, value="Tota la competicio" if app is None else "Aparell")
+        ws.cell(row=row_idx, column=7, value=str(getattr(app, "display_nom", "") or "") if app is not None else "")
+        ws.cell(row=row_idx, column=8, value=baixa.motiu or "")
+        ws.cell(row=row_idx, column=9, value=baixa.notes or "")
+        ws.cell(row=row_idx, column=10, value=baixa.created_at.strftime("%d/%m/%Y %H:%M") if baixa.created_at else "")
+        ws.cell(row=row_idx, column=11, value=getattr(user, "username", "") if user is not None else "")
+
+    for col_idx, label in enumerate(headers, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = max(14, min(42, len(label) + 8))
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    response = HttpResponse(
+        out.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="baixes_competicio_{competicio.pk}.xlsx"'
+    return response
+
+
 __all__ = [
     "InscripcionsListNewView",
     "get_available_table_columns",
     "get_selected_table_columns",
+    "inscripcions_baixes_export",
+    "inscripcions_clear_baixa",
     "inscripcions_save_birth_year_range_config",
     "inscripcions_save_table_columns",
+    "inscripcions_set_baixa",
     "inscripcions_set_aparells",
     "inscripcions_set_group_name",
 ]

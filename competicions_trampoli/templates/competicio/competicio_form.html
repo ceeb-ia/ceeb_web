@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Nova competició{% endblock %}
+{% block title %}{% if object %}Editar competició{% else %}Nova competició{% endif %}{% endblock %}
 
 {% block content %}
 <style>
@@ -396,10 +396,16 @@
 
         <div class="competition-create-kicker">
           <img src="{% static 'general/new.png' %}" alt="">
-          <span>Nou espai de competició</span>
+          <span>{% if object %}Editar competició{% else %}Nou espai de competició{% endif %}</span>
         </div>
-        <h1 class="competition-create-title">Nova competició</h1>
-        <p class="competition-create-subtitle">Defineix la identitat bàsica i crea el panell des d'on prepararàs inscripcions, fases, rotacions, classificacions i notes.</p>
+        <h1 class="competition-create-title">{% if object %}Editar competició{% else %}Nova competició{% endif %}</h1>
+        <p class="competition-create-subtitle">
+          {% if object %}
+            Ajusta la identitat bàsica i les dates generals de la competició.
+          {% else %}
+            Defineix la identitat bàsica i crea el panell des d'on prepararàs inscripcions, fases, rotacions, classificacions i notes.
+          {% endif %}
+        </p>
 
         {% if form.non_field_errors %}
           <div class="alert alert-danger">
@@ -416,10 +422,18 @@
         </div>
 
         <div class="competition-create-field">
-          <label for="{{ form.data.id_for_label }}">Data</label>
+          <label for="{{ form.data.id_for_label }}">Data d'inici</label>
           {{ form.data }}
           {% if form.data.errors %}
             <div class="competition-create-error">{{ form.data.errors|striptags }}</div>
+          {% endif %}
+        </div>
+
+        <div class="competition-create-field">
+          <label for="{{ form.data_fi.id_for_label }}">Data de fi</label>
+          {{ form.data_fi }}
+          {% if form.data_fi.errors %}
+            <div class="competition-create-error">{{ form.data_fi.errors|striptags }}</div>
           {% endif %}
         </div>
 
@@ -469,7 +483,9 @@
 
         <div class="competition-create-actions">
           <a href="javascript:history.back()" class="competition-create-btn">Cancel·la</a>
-          <button type="submit" class="competition-create-btn competition-create-btn--primary">Crear competició</button>
+          <button type="submit" class="competition-create-btn competition-create-btn--primary">
+            {% if object %}Guardar canvis{% else %}Crear competició{% endif %}
+          </button>
         </div>
       </form>
 
@@ -507,6 +523,7 @@
   (function () {
     var nameInput = document.getElementById("{{ form.nom.id_for_label }}");
     var dateInput = document.getElementById("{{ form.data.id_for_label }}");
+    var endDateInput = document.getElementById("{{ form.data_fi.id_for_label }}");
     var sportInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='{{ form.tipus.html_name }}']"));
     var previewName = document.getElementById("competitionPreviewName");
     var previewDate = document.getElementById("competitionPreviewDate");
@@ -535,7 +552,11 @@
     function updatePreview() {
       var card = selectedSportCard();
       previewName.textContent = (nameInput.value || "").trim() || "Nom de la competició";
-      previewDate.textContent = formatDate(dateInput.value || "");
+      var startLabel = formatDate(dateInput.value || "");
+      var endLabel = formatDate(endDateInput ? endDateInput.value || "" : "");
+      previewDate.textContent = endDateInput && endDateInput.value
+        ? startLabel + " - " + endLabel
+        : startLabel;
       if (card) {
         previewSport.textContent = card.dataset.sportLabel || "Esport";
         previewImage.src = card.dataset.sportImage || previewImage.src;
@@ -552,6 +573,10 @@
     if (dateInput) {
       dateInput.addEventListener("input", updatePreview);
       dateInput.addEventListener("change", updatePreview);
+    }
+    if (endDateInput) {
+      endDateInput.addEventListener("input", updatePreview);
+      endDateInput.addEventListener("change", updatePreview);
     }
     sportInputs.forEach(function (input) {
       input.addEventListener("change", updatePreview);

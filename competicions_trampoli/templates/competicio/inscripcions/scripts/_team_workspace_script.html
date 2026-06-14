@@ -218,10 +218,67 @@ window.initTeamsWorkspace = async function () {
     }
   };
   const getSelectedTeamPartitionFields = () => (
-    typeof getSelectedTeamFields === 'function'
-      ? (getSelectedTeamFields() || []).map((code) => String(code || '').trim()).filter(Boolean)
-      : []
+    selectedOptionValues(document.getElementById('team-auto-fields'))
+      .map((code) => String(code || '').trim())
+      .filter(Boolean)
   );
+  function updateTeamPartitionFieldsPickerUi() {
+    const select = document.getElementById('team-auto-fields');
+    const choices = Array.from(document.querySelectorAll('.js-team-field'));
+    const selectedValues = new Set(getSelectedTeamPartitionFields());
+    choices.forEach((choice) => {
+      choice.checked = selectedValues.has(String(choice.value || '').trim());
+    });
+    const selected = Array.from(select?.selectedOptions || []);
+    const summary = document.getElementById('team-auto-fields-summary');
+    const chipline = document.getElementById('team-auto-selected-fields');
+    if (summary) {
+      if (!selected.length) summary.textContent = 'Qualsevol';
+      else if (selected.length <= 2) {
+        summary.textContent = selected
+          .map((option) => String(option.textContent || option.value || '').trim())
+          .join(', ');
+      } else {
+        summary.textContent = `${selected.length} criteris`;
+      }
+    }
+    if (chipline) {
+      chipline.innerHTML = '';
+      if (!selected.length) {
+        const empty = document.createElement('span');
+        empty.className = 'text-muted';
+        empty.textContent = 'cap';
+        chipline.appendChild(empty);
+      } else {
+        selected.forEach((option) => {
+          const badge = document.createElement('span');
+          badge.className = 'badge badge-secondary';
+          badge.textContent = String(option.textContent || option.value || '').trim();
+          chipline.appendChild(badge);
+        });
+      }
+    }
+  }
+  function setTeamPartitionFieldValue(value, checked) {
+    const select = document.getElementById('team-auto-fields');
+    if (!select) return;
+    const cleanValue = String(value || '').trim();
+    Array.from(select.options || []).forEach((option) => {
+      if (String(option.value || '').trim() === cleanValue) option.selected = !!checked;
+    });
+    updateTeamPartitionFieldsPickerUi();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function clearTeamPartitionFields() {
+    const select = document.getElementById('team-auto-fields');
+    if (select) {
+      Array.from(select.options || []).forEach((option) => {
+        option.selected = false;
+      });
+    }
+    updateTeamPartitionFieldsPickerUi();
+    select?.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   const buildBucketSignature = (fields = getSelectedTeamPartitionFields()) => JSON.stringify({
     contextCode: String(state.contextCode || 'native'),
     fields: [...fields],
@@ -959,6 +1016,7 @@ window.initTeamsWorkspace = async function () {
     if (mode === 'remove') rows.forEach((id) => state.selectedIds.delete(id));
     if (mode === 'clear') state.selectedIds = new Set();
     renderSelectionState(options);
+    if (!options.skipSave) saveWorkspaceState();
     if (!options.skipSyncToMain) {
       const api = mainSelectionApi();
       if (api) {
@@ -2891,6 +2949,13 @@ window.initTeamsWorkspace = async function () {
         showAlert("No s'han pogut crear equips.");
         return false;
       }
+      if (String(requestPayload.strategy || 'per_bucket') === 'per_bucket') {
+        const createdCount = Number(data.created || 0);
+        const successMessage = createdCount === 1
+          ? "S'ha creat 1 equip per bloc."
+          : `S'han creat ${createdCount} equips per bloc.`;
+        showAlert(successMessage);
+      }
       resetPreview();
       await refreshWorkspace();
       return true;
@@ -3198,10 +3263,35 @@ window.initTeamsWorkspace = async function () {
     });
   }
 
-  document.querySelectorAll('.js-team-field,#team-auto-replace').forEach((el) => {
-    el.addEventListener('change', () => {
+  const teamAutoFields = document.getElementById('team-auto-fields');
+  if (teamAutoFields) {
+    teamAutoFields.addEventListener('change', () => {
+      updateTeamPartitionFieldsPickerUi();
       dirtyPreview();
       refreshAutoContext({ force: true }).catch(() => {});
+    });
+  }
+
+  document.querySelectorAll('.js-team-field').forEach((choice) => {
+    choice.addEventListener('change', () => {
+      setTeamPartitionFieldValue(choice.value, choice.checked);
+    });
+  });
+
+  document.getElementById('team-auto-replace')?.addEventListener('change', () => {
+    dirtyPreview();
+    refreshAutoContext({ force: true }).catch(() => {});
+  });
+
+  document.getElementById('btn-team-auto-fields-clear')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    clearTeamPartitionFields();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('[data-team-auto-context-criteria]')) return;
+    document.querySelectorAll('[data-team-auto-context-criteria] details[open]').forEach((details) => {
+      details.removeAttribute('open');
     });
   });
 
@@ -4180,6 +4270,7 @@ window.initTeamsWorkspace = async function () {
     root: teamWorkspaceShell,
     refresh: refreshWorkspace,
     setExternalSelection: syncExternalSelection,
+    setSelection: (selectionIds, options = {}) => applySelectionChange(selectionIds, 'set', options),
     getState: () => ({
       compactScope: state.compactScope,
       selectedIds: ids(),
@@ -4198,6 +4289,7 @@ window.initTeamsWorkspace = async function () {
   setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
   renderTeamBoardFilterPopovers();
   setAutoBucketViewFiltersToDom(state.autoBucketViewFilters);
+  updateTeamPartitionFieldsPickerUi();
   setAutoBucketsExpanded(state.autoBucketsExpanded, { skipSave: true });
   clearTeamPreview();
   await refreshWorkspace({ resetPage: !state.candidatePage, clearSelection: true });

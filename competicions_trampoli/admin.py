@@ -8,6 +8,7 @@ from .models.competicio import (
     CompeticioAparell,
     CompeticioAparellFase,
     FasePartitionState,
+    InscripcioBaixa,
     ProgramUnit,
     ProgramUnitSlot,
     QualificationRun,
@@ -32,7 +33,7 @@ class CompeticioMembershipByUserInline(admin.TabularInline):
 
 @admin.register(Competicio)
 class CompeticioAdmin(admin.ModelAdmin):
-    list_display = ("nom", "tipus", "data", "created_at")
+    list_display = ("nom", "tipus", "data", "data_fi", "created_at")
     search_fields = ("nom",)
     list_filter = ("tipus",)
     inlines = (CompeticioMembershipByCompeticioInline,)
@@ -86,6 +87,15 @@ class QualificationRunAdmin(admin.ModelAdmin):
     list_filter = ("status", "fase__competicio")
     search_fields = ("fase__nom", "source_classificacio__nom", "snapshot_hash")
     autocomplete_fields = ("fase", "source_phase")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(InscripcioBaixa)
+class InscripcioBaixaAdmin(admin.ModelAdmin):
+    list_display = ("inscripcio", "competicio", "comp_aparell", "motiu", "anul_lada_at", "created_at")
+    list_filter = ("competicio", "comp_aparell", "anul_lada_at")
+    search_fields = ("inscripcio__nom_i_cognoms", "inscripcio__document", "motiu", "notes")
+    autocomplete_fields = ("competicio", "comp_aparell", "marcada_per", "anul_lada_per")
     readonly_fields = ("created_at", "updated_at")
 
 

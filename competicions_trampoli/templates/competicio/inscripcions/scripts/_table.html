@@ -450,6 +450,224 @@
     return data;
   }
 
+  const baixaModalState = {
+    inscripcioId: '',
+    participantName: '',
+    trigger: null,
+  };
+
+  function baixaApps() {
+    return Array.isArray(API.app.initial.baixaAparells) ? API.app.initial.baixaAparells : [];
+  }
+
+  function getBaixaModalEls() {
+    return {
+      backdrop: document.getElementById('baixa-modal-backdrop'),
+      modal: document.getElementById('baixa-modal'),
+      title: document.getElementById('baixa-modal-title'),
+      subtitle: document.getElementById('baixa-modal-subtitle'),
+      scopeGlobal: document.getElementById('baixa-scope-global'),
+      scopeApps: document.getElementById('baixa-scope-apps'),
+      appList: document.getElementById('baixa-app-list'),
+      appHint: document.getElementById('baixa-app-hint'),
+      motiu: document.getElementById('baixa-motiu'),
+      notes: document.getElementById('baixa-notes'),
+      close: document.getElementById('baixa-modal-close'),
+      cancel: document.getElementById('baixa-modal-cancel'),
+      save: document.getElementById('baixa-modal-save'),
+    };
+  }
+
+  function ensureBaixaModalRoot() {
+    let els = getBaixaModalEls();
+    if (!els.backdrop) {
+      const backdrop = document.createElement('div');
+      backdrop.id = 'baixa-modal-backdrop';
+      backdrop.className = 'baixa-modal-backdrop';
+      document.body.appendChild(backdrop);
+    }
+    if (!els.modal) {
+      const modal = document.createElement('div');
+      modal.id = 'baixa-modal';
+      modal.className = 'baixa-modal d-none';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'baixa-modal-title');
+      modal.innerHTML = `
+        <div class="baixa-modal-panel">
+          <div class="baixa-modal-head">
+            <div>
+              <div class="baixa-modal-kicker">Baixa</div>
+              <h3 id="baixa-modal-title">Marcar baixa</h3>
+              <div id="baixa-modal-subtitle" class="baixa-modal-subtitle"></div>
+            </div>
+            <button type="button" class="baixa-modal-close" id="baixa-modal-close" aria-label="Tancar">&times;</button>
+          </div>
+          <div class="baixa-modal-body">
+            <div class="baixa-scope-grid">
+              <label class="baixa-scope-option">
+                <input type="radio" name="baixa_scope" id="baixa-scope-global" value="global" checked>
+                <span>
+                  <strong>Tota la competicio</strong>
+                  <small>No competira en cap aparell.</small>
+                </span>
+              </label>
+              <label class="baixa-scope-option">
+                <input type="radio" name="baixa_scope" id="baixa-scope-apps" value="apps">
+                <span>
+                  <strong>Aparells concrets</strong>
+                  <small>Selecciona els aparells afectats.</small>
+                </span>
+              </label>
+            </div>
+            <div class="baixa-app-section">
+              <div class="baixa-field-label">Aparells</div>
+              <div id="baixa-app-list" class="baixa-app-list"></div>
+              <div id="baixa-app-hint" class="baixa-app-hint"></div>
+            </div>
+            <label class="baixa-field">
+              <span class="baixa-field-label">Motiu</span>
+              <input type="text" id="baixa-motiu" class="form-control form-control-sm" maxlength="250" placeholder="Lesio, malaltia, no presentat...">
+            </label>
+            <label class="baixa-field">
+              <span class="baixa-field-label">Notes</span>
+              <textarea id="baixa-notes" class="form-control form-control-sm" rows="3" placeholder="Detalls opcionals"></textarea>
+            </label>
+          </div>
+          <div class="baixa-modal-foot">
+            <button type="button" class="btn btn-sm btn-light" id="baixa-modal-cancel">Cancelar</button>
+            <button type="button" class="btn btn-sm btn-danger" id="baixa-modal-save">Marcar baixa</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+    els = getBaixaModalEls();
+    renderBaixaAppOptions(els);
+    return els;
+  }
+
+  function renderBaixaAppOptions(els = getBaixaModalEls()) {
+    if (!els.appList) return;
+    const apps = baixaApps();
+    els.appList.innerHTML = '';
+    if (!apps.length) {
+      els.appList.innerHTML = '<div class="baixa-app-empty">No hi ha aparells individuals actius.</div>';
+      if (els.scopeApps) els.scopeApps.disabled = true;
+      if (els.appHint) els.appHint.textContent = 'La baixa nomes es pot marcar per tota la competicio.';
+      return;
+    }
+    if (els.scopeApps) els.scopeApps.disabled = false;
+    apps.forEach((app) => {
+      const label = document.createElement('label');
+      label.className = 'baixa-app-option';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.className = 'js-baixa-app-check';
+      input.value = String(app.id || '');
+      const span = document.createElement('span');
+      span.textContent = String(app.label || `Aparell ${app.id}`);
+      label.appendChild(input);
+      label.appendChild(span);
+      els.appList.appendChild(label);
+    });
+    if (els.appHint) els.appHint.textContent = '';
+  }
+
+  function updateBaixaModalScope() {
+    const els = getBaixaModalEls();
+    const appScope = !!els.scopeApps?.checked;
+    if (els.appList) els.appList.classList.toggle('is-disabled', !appScope);
+    document.querySelectorAll('#baixa-app-list .js-baixa-app-check').forEach((input) => {
+      input.disabled = !appScope;
+    });
+    if (els.appHint) {
+      els.appHint.textContent = appScope
+        ? 'Marca un o mes aparells.'
+        : 'La baixa afectara tots els aparells de la competicio.';
+    }
+  }
+
+  function openBaixaModal(inscripcioId, participantName, trigger) {
+    const els = ensureBaixaModalRoot();
+    baixaModalState.inscripcioId = String(inscripcioId || '').trim();
+    baixaModalState.participantName = String(participantName || '').trim();
+    baixaModalState.trigger = trigger || document.activeElement;
+    if (els.title) els.title.textContent = 'Marcar baixa';
+    if (els.subtitle) els.subtitle.textContent = baixaModalState.participantName || `Inscripcio ${baixaModalState.inscripcioId}`;
+    if (els.scopeGlobal) els.scopeGlobal.checked = true;
+    if (els.motiu) els.motiu.value = '';
+    if (els.notes) els.notes.value = '';
+    document.querySelectorAll('#baixa-app-list .js-baixa-app-check').forEach((input) => {
+      input.checked = false;
+    });
+    updateBaixaModalScope();
+    if (els.backdrop) els.backdrop.classList.add('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('d-none');
+      els.modal.classList.add('is-visible');
+      window.setTimeout(() => els.scopeGlobal?.focus(), 0);
+    }
+    document.body.classList.add('baixa-modal-open');
+  }
+
+  function closeBaixaModal(options = {}) {
+    const els = getBaixaModalEls();
+    if (els.backdrop) els.backdrop.classList.remove('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('is-visible');
+      els.modal.classList.add('d-none');
+    }
+    document.body.classList.remove('baixa-modal-open');
+    if (options.restoreFocus !== false && baixaModalState.trigger && typeof baixaModalState.trigger.focus === 'function') {
+      window.setTimeout(() => baixaModalState.trigger.focus(), 0);
+    }
+    baixaModalState.inscripcioId = '';
+    baixaModalState.participantName = '';
+    baixaModalState.trigger = null;
+  }
+
+  async function submitBaixaModal() {
+    const els = getBaixaModalEls();
+    const inscripcioId = parseInt(baixaModalState.inscripcioId, 10);
+    if (!Number.isInteger(inscripcioId) || inscripcioId <= 0) return;
+    const appScope = !!els.scopeApps?.checked;
+    const appIds = appScope
+      ? Array.from(document.querySelectorAll('#baixa-app-list .js-baixa-app-check:checked'))
+        .map((input) => parseInt(input.value || '0', 10))
+        .filter((value) => Number.isInteger(value) && value > 0)
+      : [];
+    if (appScope && !appIds.length) {
+      API.showAlert('Selecciona almenys un aparell.');
+      return;
+    }
+    if (els.save) els.save.disabled = true;
+    try {
+      const data = await API.postJson(API.app.urls.setBaixa, {
+        inscripcio_id: inscripcioId,
+        scope: appScope ? 'apps' : 'global',
+        comp_aparell_ids: appIds,
+        motiu: els.motiu?.value || '',
+        notes: els.notes?.value || '',
+      });
+      if (!data?.ok) throw new Error("No s'ha pogut marcar la baixa.");
+      closeBaixaModal({ restoreFocus: false });
+      await refreshFragmentsKeepingActiveTab(['table', 'history']);
+    } finally {
+      if (els.save) els.save.disabled = false;
+    }
+  }
+
+  async function clearBaixa(inscripcioId) {
+    const ok = await API.showConfirm('Treure la baixa activa d aquesta inscripcio?');
+    if (!ok) return;
+    const data = await API.postJson(API.app.urls.clearBaixa, {
+      inscripcio_id: parseInt(inscripcioId, 10),
+    });
+    if (!data?.ok) throw new Error("No s'ha pogut treure la baixa.");
+    await refreshFragmentsKeepingActiveTab(['table', 'history']);
+  }
+
   function ensureAparellsSaveState(selectEl) {
     const insId = apparellsSelectInsId(selectEl);
     if (!insId) return null;
@@ -745,6 +963,24 @@
         return;
       }
 
+      const setBaixaBtn = event.target.closest('.js-set-baixa');
+      if (setBaixaBtn) {
+        event.preventDefault();
+        openBaixaModal(setBaixaBtn.dataset.insId, setBaixaBtn.dataset.insName || '', setBaixaBtn);
+        return;
+      }
+
+      const clearBaixaBtn = event.target.closest('.js-clear-baixa');
+      if (clearBaixaBtn) {
+        event.preventDefault();
+        try {
+          await clearBaixa(clearBaixaBtn.dataset.insId);
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
       const saveBtn = event.target.closest('.js-save-group-order');
       if (saveBtn) {
         event.preventDefault();
@@ -780,7 +1016,28 @@
       });
     }
 
+    const baixaEls = ensureBaixaModalRoot();
+    if (baixaEls.backdrop) baixaEls.backdrop.addEventListener('click', closeBaixaModal);
+    if (baixaEls.close) baixaEls.close.addEventListener('click', closeBaixaModal);
+    if (baixaEls.cancel) baixaEls.cancel.addEventListener('click', closeBaixaModal);
+    if (baixaEls.scopeGlobal) baixaEls.scopeGlobal.addEventListener('change', updateBaixaModalScope);
+    if (baixaEls.scopeApps) baixaEls.scopeApps.addEventListener('change', updateBaixaModalScope);
+    if (baixaEls.save) {
+      baixaEls.save.addEventListener('click', async () => {
+        try {
+          await submitBaixaModal();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+      });
+    }
+
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && document.body.classList.contains('baixa-modal-open')) {
+        event.preventDefault();
+        closeBaixaModal();
+        return;
+      }
       if (event.key === 'Escape' && document.body.classList.contains('group-competition-modal-open')) {
         event.preventDefault();
         closeGroupCompetitionModal();

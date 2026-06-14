@@ -4,9 +4,16 @@ from django.test import TestCase
 from django.urls import reverse
 
 from ....models import CompeticioMembership
-from ....models.competicio import CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
+from ....models.competicio import (
+    Aparell,
+    CompeticioAparellEquipContextSource,
+    CompeticioAparellFase,
+    ProgramUnit,
+    ProgramUnitSlot,
+)
 from ....models.scoring import ScoreEntry, ScoringSchema
 from ....services.fases import SlotSubject, create_program_unit_from_subjects
+from ....services.scoring.team_scoring import build_team_subjects_for_comp_aparell
 from ...base import _BaseTrampoliDataMixin
 
 
@@ -49,6 +56,36 @@ class NotesPhaseEligibilityTests(_BaseTrampoliDataMixin, TestCase):
             subjects=subjects,
             status=status,
         )
+
+    def _create_team_app_subject(self):
+        team_app = self._create_aparell("TEAM_PHASE", "Equip phase")
+        team_app.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_app.save(update_fields=["competition_unit"])
+        comp_team_app = self._create_comp_aparell(self.comp, team_app, ordre=2, actiu=True)
+        ScoringSchema.objects.create(
+            aparell=team_app,
+            schema={
+                "fields": [
+                    {"label": "Execucio", "code": "E", "type": "number", "min": 0, "max": 10},
+                ],
+                "computed": [],
+            },
+        )
+        context = self._ensure_native_equip_context(self.comp)
+        equip = self._create_equip(self.comp, "Equip Notes", context=context)
+        member_1 = self._create_inscripcio(self.comp, "Equip Notes 1", ordre=20, grup=1)
+        member_2 = self._create_inscripcio(self.comp, "Equip Notes 2", ordre=21, grup=1)
+        self._assign_equip(self.comp, member_1, equip, context=context)
+        self._assign_equip(self.comp, member_2, equip, context=context)
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_team_app,
+            context=context,
+        )
+        subjects, issues = build_team_subjects_for_comp_aparell(self.comp, comp_team_app)
+        self.assertFalse(issues)
+        subject = next(item for item in subjects if int(item["equip_id"]) == int(equip.id))
+        return comp_team_app, subject
 
     def test_unpublished_phase_unit_is_not_in_manifest_or_notes_table(self):
         phase = self._create_phase(estat=CompeticioAparellFase.Estat.CONFIRMED)
@@ -114,6 +151,48 @@ class NotesPhaseEligibilityTests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(table_payload["ok"])
         self.assertEqual(table_payload["context"]["fase_id"], phase.id)
         self.assertEqual([row["subject_id"] for row in table_payload["subjects"]], [self.ins_1.id, self.ins_2.id])
+
+    def test_published_team_phase_unit_loads_team_unit_subjects(self):
+        comp_team_app, subject = self._create_team_app_subject()
+        phase = CompeticioAparellFase.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_team_app,
+            nom="Final equips",
+            codi="FINAL-EQ",
+            ordre=2,
+            estat=CompeticioAparellFase.Estat.PUBLISHED,
+        )
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Final equips",
+            subjects=[SlotSubject("team_unit", int(subject["subject_id"]))],
+            status=ProgramUnit.Status.PUBLISHED,
+        )
+        unit_key = f"phase:{phase.id}:unit:{unit.id}"
+
+        manifest = self.client.get(reverse("scoring_notes_manifest", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(manifest.status_code, 200)
+        manifest_payload = manifest.json()
+        manifest_unit = next(row for row in manifest_payload["units"] if row["key"] == unit_key)
+        self.assertEqual(manifest_unit["subject_kind"], "team_unit")
+        self.assertEqual(manifest_unit["count"], 1)
+
+        table = self.client.get(
+            reverse("scoring_notes_table", kwargs={"pk": self.comp.id}),
+            {
+                "comp_aparell_id": comp_team_app.id,
+                "fase_id": phase.id,
+                "exercici": 1,
+                "unit_key": unit_key,
+            },
+        )
+
+        self.assertEqual(table.status_code, 200)
+        table_payload = table.json()
+        self.assertTrue(table_payload["ok"])
+        self.assertEqual(table_payload["subjects"][0]["subject_kind"], "team_unit")
+        self.assertEqual(table_payload["subjects"][0]["subject_id"], int(subject["subject_id"]))
 
     def test_phase_exercise_override_is_used_by_notes_and_save(self):
         self.comp_app.nombre_exercicis = 1

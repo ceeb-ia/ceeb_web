@@ -335,26 +335,36 @@
 
   function describeGroupsResolutionLabel(layersUsed) {
     const layers = Array.isArray(layersUsed) ? layersUsed : [];
-    if (layers.length > 1) return 'Tota la competicio + resolucio combinada';
-    if (layers.includes('workspace')) return 'Tota la competicio + criteris afegits';
-    if (layers.includes('tabs')) return 'Tota la competicio + agrupacions';
-    if (layers.includes('sort')) return 'Tota la competicio + ordenacions';
-    return 'Sense criteris resolubles';
+    if (layers.includes('workspace')) return 'Buckets manuals';
+    return 'Sense criteris de bucket';
+  }
+
+  function describeGroupsSourceScope(context) {
+    const scope = String(context?.source_scope || '').trim().toLowerCase();
+    const targetScope = String(context?.target_scope || '').trim().toLowerCase();
+    if (scope === 'competition_all') return 'Tota la competicio';
+    if (targetScope === 'selected' || scope === 'selected') return 'Seleccio activa';
+    if (targetScope === 'filtered' || scope === 'filtered') return 'Univers filtrat';
+    return 'Univers actiu';
+  }
+
+  function describeGroupsSourceScopeInSentence(context) {
+    const label = describeGroupsSourceScope(context);
+    if (label === 'Tota la competicio') return 'tota la competicio';
+    if (label === 'Seleccio activa') return 'la seleccio activa';
+    if (label === 'Univers filtrat') return "l'univers filtrat";
+    return "l'univers actiu";
   }
 
   function describeGroupsResolutionStatus(context) {
     const sourceTotal = Number(context?.source_total || 0);
     const bucketsTotal = Number(context?.buckets_total || 0);
     const layersUsed = Array.isArray(context?.layers_used) ? context.layers_used : [];
-    if (!sourceTotal) return 'No hi ha inscripcions disponibles a la competicio.';
-    if (!bucketsTotal) return "No s'han detectat divisions ni ordenacions segmentadores sobre tota la competicio.";
-    if (layersUsed.length > 1) {
-      return 'Blocs proposats sobre tota la competicio combinant divisions, ordenacions i criteris afegits.';
-    }
-    if (layersUsed.includes('tabs')) return 'Blocs proposats sobre tota la competicio a partir de les divisions.';
-    if (layersUsed.includes('sort')) return 'Blocs proposats sobre tota la competicio a partir de les ordenacions.';
-    if (layersUsed.includes('workspace')) return 'Blocs proposats sobre tota la competicio a partir dels criteris afegits del workspace.';
-    return 'Blocs proposats sobre tota la competicio.';
+    const sourceLabel = describeGroupsSourceScopeInSentence(context);
+    if (!sourceTotal) return `No hi ha inscripcions disponibles a ${sourceLabel}.`;
+    if (!bucketsTotal) return `Selecciona criteris de bucket per dividir ${sourceLabel} en blocs.`;
+    if (layersUsed.includes('workspace')) return `Blocs proposats sobre ${sourceLabel} a partir dels criteris de bucket seleccionats.`;
+    return `Blocs proposats sobre ${sourceLabel}.`;
   }
 
   function createBucketMetricBadge(text, variant = 'light') {
@@ -437,7 +447,7 @@
     text.textContent = String(bucket?.label || key);
     label.appendChild(text);
 
-    label.appendChild(createBucketMetricBadge(`Global: ${Number(bucket?.global_count || bucket?.count || 0)}`));
+    label.appendChild(createBucketMetricBadge(`Origen: ${Number(bucket?.global_count || bucket?.count || 0)}`));
     return label;
   }
 
@@ -457,11 +467,14 @@
       'btn-groups-preview-range-balanced',
       'btn-groups-create-count-range',
       'btn-groups-preview-count-range',
-      'btn-groups-create-per-bucket',
-      'btn-groups-preview-per-bucket',
     ].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.disabled = !hasSelection;
+    });
+
+    ['btn-groups-create-per-bucket', 'btn-groups-preview-per-bucket'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !hasSelection || bucketsTotal === 0 || markedBuckets === 0;
     });
 
     ['btn-groups-buckets-all', 'btn-groups-buckets-none'].forEach((id) => {
@@ -488,20 +501,16 @@
     updateGroupBucketSelectionForContext(buckets);
     const visibleBuckets = getVisibleGroupBuckets();
 
-    if (els.source) {
-      els.source.textContent = String(data.source_scope || 'competition_all') === 'competition_all'
-        ? 'Tota la competicio'
-        : String(data.source_scope || 'competition_all');
-    }
+    if (els.source) els.source.textContent = describeGroupsSourceScope(data);
     renderDetectedGroupFields(data.detected_group_fields);
     renderDetectedSortFields(data.detected_sort_fields);
     renderDetectedWorkspaceFields(data.detected_workspace_fields);
 
     if (els.resolutionLabel) els.resolutionLabel.textContent = describeGroupsResolutionLabel(data.layers_used);
     if (els.resolutionStatus) els.resolutionStatus.textContent = describeGroupsResolutionStatus(data);
-    if (els.bucketsCount) els.bucketsCount.textContent = `Blocs proposats sobre tota la competicio: ${visibleBuckets.length} visibles de ${Number(data.buckets_total || 0)}`;
+    if (els.bucketsCount) els.bucketsCount.textContent = `Blocs proposats sobre ${describeGroupsSourceScopeInSentence(data)}: ${visibleBuckets.length} visibles de ${Number(data.buckets_total || 0)}`;
     if (els.bucketsSelectionSummary) {
-      els.bucketsSelectionSummary.textContent = `Seleccionades globalment: ${Number(data.selection_count || 0)}`;
+      els.bucketsSelectionSummary.textContent = `Seleccio activa: ${Number(data.selection_count || 0)}`;
     }
     if (els.bucketsGrid) {
       els.bucketsGrid.innerHTML = '';
@@ -513,7 +522,7 @@
     setGroupsAutoContextMessage(
       buckets.length
         ? (visibleBuckets.length ? '' : 'Cap bloc proposat coincideix amb els filtres de buckets.')
-        : "No s'han detectat blocs proposables sobre tota la competicio."
+        : 'Selecciona criteris de bucket per crear blocs manuals.'
     );
     applyGroupBucketSelectionToDom();
   }
@@ -580,7 +589,7 @@
         workspace_filters: workspaceState?.filters || {},
         selected_ids: Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [],
         workspace_bucket_fields: getWorkspaceBucketFields(),
-        source_scope: 'competition_all',
+        source_scope: 'selected',
       });
       renderGroupsAutoContext(data);
       return data;
@@ -593,8 +602,8 @@
       renderDetectedSortFields([]);
       renderDetectedWorkspaceFields([]);
       const els = getGroupsAutoContextElements();
-      if (els.bucketsCount) els.bucketsCount.textContent = 'Blocs proposats sobre tota la competicio: 0';
-      if (els.bucketsSelectionSummary) els.bucketsSelectionSummary.textContent = 'Seleccionades globalment: 0';
+      if (els.bucketsCount) els.bucketsCount.textContent = "Blocs proposats sobre l'univers actiu: 0";
+      if (els.bucketsSelectionSummary) els.bucketsSelectionSummary.textContent = 'Seleccio activa: 0';
       if (els.bucketsGrid) {
         els.bucketsGrid.innerHTML = '';
         els.bucketsGrid.classList.add('d-none');
@@ -627,7 +636,7 @@
         workspace_filters: workspaceState?.filters || {},
         group_by: getCurrentGroupByCodes(),
         workspace_bucket_fields: getWorkspaceBucketFields(),
-        source_scope: 'competition_all',
+        source_scope: 'selected',
       });
       if (typeof window.__groupsWorkspaceApi.setSelection === 'function') {
         window.__groupsWorkspaceApi.setSelection(Array.isArray(data?.selected_ids) ? data.selected_ids : [], {
@@ -949,15 +958,6 @@
         els.summary.appendChild(createPreviewBadge(`${Number(previewData.effective_bucket_count || 0)} blocs resolts`));
       }
 
-      const layersUsed = Array.isArray(previewData.layers_used) ? previewData.layers_used : [];
-      if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
-        els.summary.appendChild(createPreviewBadge('Resolucio combinada'));
-      } else if (layersUsed.includes('tabs')) {
-        els.summary.appendChild(createPreviewBadge('Agrupacions'));
-      } else if (layersUsed.includes('sort')) {
-        els.summary.appendChild(createPreviewBadge('Ordenacions'));
-      }
-
       if (existingGroups.some((group) => String(group?.impact_kind || '').trim().toLowerCase() === 'reduced')) {
         els.summary.appendChild(createPreviewBadge('Groc: es redueix', 'reduced'));
       }
@@ -1051,7 +1051,19 @@
       if (window.__groupsWorkspaceApi && typeof window.__groupsWorkspaceApi.refresh === 'function') {
         await window.__groupsWorkspaceApi.refresh();
       }
-      clearGroupPreview("Grups creats. El workspace s'ha actualitzat.");
+      if (String(payload.strategy || 'per_bucket') === 'per_bucket') {
+        const createdCount = Number(data.groups_created || 0);
+        const appliedBuckets = Number(data.buckets_applied || 0);
+        const successMessage = createdCount === 1
+          ? 'S\'ha creat 1 grup per bloc.'
+          : `S'han creat ${createdCount} grups per bloc.`;
+        clearGroupPreview(`${successMessage} El workspace s'ha actualitzat.`);
+        showAlert(appliedBuckets > 0
+          ? `${successMessage}\nBlocs aplicats: ${appliedBuckets}.`
+          : successMessage);
+      } else {
+        clearGroupPreview("Grups creats. El workspace s'ha actualitzat.");
+      }
       return true;
     } catch (err) {
       showAlert(`No s'han pogut crear grups.\n${err.message || err}`);

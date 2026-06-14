@@ -70,6 +70,15 @@
     window.location.assign(url.toString());
   }
 
+  function exportBaixes() {
+    const url = API.app.urls.exportBaixes;
+    if (!url) {
+      API.showAlert("No s'ha trobat l'export de baixes.");
+      return;
+    }
+    window.location.assign(url);
+  }
+
   function initColumnsSortable() {
     const root = document.getElementById('cols-sortable');
     if (!root || typeof window.Sortable === 'undefined') return;
@@ -120,6 +129,11 @@
       if (event.target.closest('#btn-export-excel')) {
         event.preventDefault();
         exportExcel();
+        return;
+      }
+      if (event.target.closest('#btn-export-baixes')) {
+        event.preventDefault();
+        exportBaixes();
       }
     });
   }

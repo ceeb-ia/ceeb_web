@@ -156,27 +156,51 @@
                   {% endif %}
                   <details class="phase-slot-manual-workspace">
                     <summary>Assignacio manual</summary>
-                    <form method="post" class="phase-slot-manual-form">
-                      {% csrf_token %}
-                      <input type="hidden" name="action" value="assign_inscripcio_to_slot">
-                      <input type="hidden" name="fase_id" value="{{ phase.id }}">
-                      <input type="hidden" name="slot_id" value="{{ slot.id }}">
-                      <label for="manual-inscripcio-{{ slot.id }}">Cerca i tria inscripcio</label>
-                      <input
-                        class="form-control form-control-sm"
-                        type="search"
-                        data-slot-manual-filter="{{ slot.id }}"
-                        placeholder="Filtra per nom, entitat o categoria">
-                      <select class="form-select form-select-sm" id="manual-inscripcio-{{ slot.id }}" name="inscripcio_id" required>
-                        <option value="">Selecciona una inscripcio</option>
-                        {% for option in phase.ui_manual_inscripcio_options %}
-                          <option value="{{ option.inscripcio_id }}" {% if option.assigned %}disabled{% endif %}>
-                            {{ option.label }}{% if option.meta %} - {{ option.meta }}{% endif %}{% if option.assigned %} - ja assignada{% endif %}{% if option.excluded_from_app %} - exclosa de l'aparell{% endif %}
-                          </option>
-                        {% endfor %}
-                      </select>
-                      <button class="btn btn-sm btn-outline-primary" type="submit">Assignar inscripcio</button>
-                    </form>
+                    {% if phase.comp_aparell.is_team_competition_unit %}
+                      <form method="post" class="phase-slot-manual-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="assign_team_unit_to_slot">
+                        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                        <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                        <label for="manual-team-unit-{{ slot.id }}">Cerca i tria equip</label>
+                        <input
+                          class="form-control form-control-sm"
+                          type="search"
+                          data-slot-manual-filter="{{ slot.id }}"
+                          placeholder="Filtra per equip, context o membres">
+                        <select class="form-select form-select-sm" id="manual-team-unit-{{ slot.id }}" name="team_subject_id" required>
+                          <option value="">Selecciona un equip</option>
+                          {% for option in phase.ui_manual_team_unit_options %}
+                            <option value="{{ option.team_subject_id }}" {% if option.assigned or option.unavailable %}disabled{% endif %}>
+                              {{ option.label }}{% if option.meta %} - {{ option.meta }}{% endif %}{% if option.assigned %} - ja assignat{% endif %}{% if option.unavailable %} - no elegible{% if option.unavailable_reason %}: {{ option.unavailable_reason }}{% endif %}{% endif %}
+                            </option>
+                          {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Assignar equip</button>
+                      </form>
+                    {% else %}
+                      <form method="post" class="phase-slot-manual-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="assign_inscripcio_to_slot">
+                        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                        <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                        <label for="manual-inscripcio-{{ slot.id }}">Cerca i tria inscripcio</label>
+                        <input
+                          class="form-control form-control-sm"
+                          type="search"
+                          data-slot-manual-filter="{{ slot.id }}"
+                          placeholder="Filtra per nom, entitat o categoria">
+                        <select class="form-select form-select-sm" id="manual-inscripcio-{{ slot.id }}" name="inscripcio_id" required>
+                          <option value="">Selecciona una inscripcio</option>
+                          {% for option in phase.ui_manual_inscripcio_options %}
+                            <option value="{{ option.inscripcio_id }}" {% if option.assigned %}disabled{% endif %}>
+                              {{ option.label }}{% if option.meta %} - {{ option.meta }}{% endif %}{% if option.assigned %} - ja assignada{% endif %}{% if option.excluded_from_app %} - exclosa de l'aparell{% endif %}
+                            </option>
+                          {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Assignar inscripcio</button>
+                      </form>
+                    {% endif %}
                     <div class="phase-slot-actions-note">Aquesta assignacio queda marcada com a manual.</div>
                   </details>
                 </div>

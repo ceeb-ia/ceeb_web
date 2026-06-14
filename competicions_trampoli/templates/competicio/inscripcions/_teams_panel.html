@@ -425,18 +425,38 @@
                               <span class="small text-muted" id="team-auto-scope-note">La particio treballa sobre la seleccio activa i respecta els mateixos camps que grups.</span>
                             </div>
                           </div>
-                          <div class="chips team-field-chips">
+                          <select id="team-auto-fields" class="d-none" multiple size="4" aria-hidden="true" tabindex="-1">
                             {% for f in team_partition_fields %}
-                              <label class="group-chip" title="{{ f.code }}">
-                                <input
-                                  type="checkbox"
-                                  class="js-team-field"
-                                  value="{{ f.code }}"
-                                  {% if f.code in team_partition_default_fields %}checked{% endif %}
-                                >
-                                <span>{{ f.ui_label|default:f.label }}</span>
-                              </label>
+                              <option value="{{ f.code }}">{{ f.ui_label|default:f.label }}</option>
                             {% endfor %}
+                          </select>
+                          <div class="groups-filter-popover groups-auto-context-popover" data-team-auto-context-criteria>
+                            <details class="groups-filter-menu">
+                              <summary class="groups-filter-trigger">
+                                <span class="groups-filter-trigger-label">Criteris de bucket</span>
+                                <span class="groups-filter-trigger-summary" id="team-auto-fields-summary">Qualsevol</span>
+                              </summary>
+                              <div class="groups-filter-panel groups-filter-panel-wide">
+                                <div class="groups-filter-panel-head">
+                                  <span>Criteris de bucket</span>
+                                  <button type="button" class="groups-filter-clear" id="btn-team-auto-fields-clear">Netejar</button>
+                                </div>
+                                <div class="groups-filter-options">
+                                  {% for f in team_partition_fields %}
+                                    <label class="groups-filter-option" title="{{ f.code }}">
+                                      <input type="checkbox" class="js-team-field" value="{{ f.code }}">
+                                      <span>{{ f.ui_label|default:f.label }}</span>
+                                    </label>
+                                  {% endfor %}
+                                </div>
+                              </div>
+                            </details>
+                          </div>
+                          <div class="groups-auto-context-active-criteria">
+                            <span class="groups-auto-context-meta-label">Criteris</span>
+                            <span id="team-auto-selected-fields" class="groups-auto-context-chipline">
+                              <span class="text-muted">cap</span>
+                            </span>
                           </div>
                           <label class="m-0 small team-auto-replace-option">
                             <input type="checkbox" id="team-auto-replace" checked>

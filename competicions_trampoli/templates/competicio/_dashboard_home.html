@@ -42,6 +42,10 @@
     gap: 10px;
   }
 
+  .competition-home-logout-form {
+    margin: 0;
+  }
+
   .competition-home-action-group {
     display: inline-flex;
     align-items: center;
@@ -84,6 +88,13 @@
     --action-color: #ffffff;
     --action-bg: #0b5bd3;
     --action-border: #0b5bd3;
+  }
+
+  .competition-home-action--logout {
+    --action-color: #334155;
+    --action-bg: rgba(255, 255, 255, 0.86);
+    --action-border: #cbd5e1;
+    cursor: pointer;
   }
 
   .competition-home-action img,
@@ -584,6 +595,29 @@
     text-decoration: none;
   }
 
+  .competition-card-admin-actions {
+    align-self: flex-end;
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .competition-card-admin-actions .competition-delete-link {
+    align-self: auto;
+    margin-top: 0;
+  }
+
+  .competition-edit-link {
+    color: #2563eb;
+  }
+
+  .competition-edit-link:hover,
+  .competition-edit-link:focus {
+    color: #1d4ed8;
+  }
+
   .competition-delete-link .competition-inline-icon {
     width: 16px;
     height: 16px;
@@ -708,6 +742,17 @@
         <img class="competition-home-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
       </div>
 
+      {% if IS_PROD and user.is_authenticated %}
+      {% url 'logout' as logout_url %}
+      {% if logout_url %}
+      <div class="competition-home-actions">
+        <form method="post" action="{{ logout_url }}" class="competition-home-logout-form">
+          {% csrf_token %}
+          <button type="submit" class="competition-home-action competition-home-action--logout">Sortir</button>
+        </form>
+      </div>
+      {% endif %}
+      {% endif %}
     </div>
 
     <div class="competition-home-heading">
@@ -784,7 +829,7 @@
 
     <div class="competition-card-grid" id="competitionCardGrid">
       <button class="competition-context-help competition-context-help--cards" type="button" data-avatar-topic="competition_cards" aria-label="Ajuda sobre les competicions" title="Ajuda sobre les competicions">?</button>
-      {% if can_manage_global_competicions %}
+      {% if can_manage_global_competicions and not IS_PROD %}
       <div class="competition-new-card-shell" data-static-card="true">
         <button class="competition-context-help competition-context-help--new-card" type="button" data-avatar-topic="create_competition" aria-label="Ajuda per crear competició" title="Ajuda per crear competició">?</button>
         <a class="competition-new-card" href="{% url 'create' %}" data-avatar-action="create_competition">
@@ -825,7 +870,15 @@
                 <path d="M16 2v4"></path>
                 <path d="M3 10h18"></path>
               </svg>
-              {% if c.data %}{{ c.data|date:"d/m/Y" }}{% else %}Sense data{% endif %}
+              {% if c.data and c.data_fi %}
+                {{ c.data|date:"d/m/Y" }} - {{ c.data_fi|date:"d/m/Y" }}
+              {% elif c.data %}
+                {{ c.data|date:"d/m/Y" }}
+              {% elif c.data_fi %}
+                Fins {{ c.data_fi|date:"d/m/Y" }}
+              {% else %}
+                Sense data
+              {% endif %}
             </span>
           </div>
           <span class="competition-status competition-status--{{ c.home_status_key }}">{{ c.home_status_label }}</span>
@@ -912,8 +965,19 @@
           {% endif %}
         </div>
 
-        {% if a and a.can_delete_competicio %}
-        <a class="competition-delete-link" href="{% url 'delete' c.id %}">
+        {% if a and a.can_edit_competicio or a and a.can_delete_competicio %}
+        <div class="competition-card-admin-actions">
+          {% if a and a.can_edit_competicio %}
+          <a class="competition-delete-link competition-edit-link" href="{% url 'competicio_update' c.id %}">
+            <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+            </svg>
+            <span>Editar</span>
+          </a>
+          {% endif %}
+          {% if a and a.can_delete_competicio %}
+          <a class="competition-delete-link" href="{% url 'delete' c.id %}">
           <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 6h18"></path>
             <path d="M8 6V4h8v2"></path>
@@ -922,7 +986,9 @@
             <path d="M14 11v6"></path>
           </svg>
           <span>Eliminar</span>
-        </a>
+          </a>
+          {% endif %}
+        </div>
         {% endif %}
       </article>
       {% endwith %}

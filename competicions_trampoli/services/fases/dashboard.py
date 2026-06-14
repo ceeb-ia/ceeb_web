@@ -12,6 +12,7 @@ from ...models.competicio import (
     ProgramUnit,
     ProgramUnitSlot,
 )
+from ...models.scoring import TeamCompetitiveSubject
 from ...models.rotacions import RotacioAssignacioProgramUnit
 from ..inscripcions.aparell_participation import participation_preview
 from .group_plan import structural_cut_signature
@@ -22,6 +23,7 @@ from .slot_overrides import (
     available_recoverable_options_for_slot,
     available_reserve_options_for_slot,
     manual_inscripcio_options_for_phase,
+    manual_team_unit_options_for_phase,
     recoverable_snapshot_options_for_phase,
     reserve_options_for_phase,
 )
@@ -135,7 +137,12 @@ def _source_row_text(source_row: dict, *keys: str) -> str:
     return ""
 
 
-def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: dict[int, Inscripcio]) -> None:
+def _decorate_slot_subjects(
+    slots: list[ProgramUnitSlot],
+    inscripcions_by_id: dict[int, Inscripcio],
+    team_subjects_by_id: dict[int, TeamCompetitiveSubject] | None = None,
+) -> None:
+    team_subjects_by_id = team_subjects_by_id or {}
     for slot in slots:
         source_row = slot.source_row if isinstance(slot.source_row, dict) else {}
         subject_kind = str(slot.subject_kind or "").strip().lower()
@@ -147,6 +154,14 @@ def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: di
             if inscripcio is not None:
                 label = str(getattr(inscripcio, "nom_i_cognoms", "") or "").strip()
                 meta = str(getattr(inscripcio, "entitat", "") or "").strip()
+        if not label and subject_kind == "team_unit" and subject_id:
+            team_subject = team_subjects_by_id.get(subject_id)
+            if team_subject is not None:
+                label = (
+                    str(getattr(team_subject, "label", "") or "").strip()
+                    or str(getattr(getattr(team_subject, "equip", None), "nom", "") or "").strip()
+                )
+                meta = str(getattr(getattr(team_subject, "context", None), "nom", "") or "").strip()
         slot.ui_subject_label = "" if slot.status == ProgramUnitSlot.Status.EMPTY else label
         slot.ui_subject_meta = "" if slot.status == ProgramUnitSlot.Status.EMPTY else meta
         slot.ui_subject_fallback = f"{slot.subject_kind}:{slot.subject_id}" if slot.subject_kind and slot.subject_id else ""
@@ -164,6 +179,8 @@ def _decorate_slot_subjects(slots: list[ProgramUnitSlot], inscripcions_by_id: di
                 else "Sense origen"
             )
         elif override_type == "manual_inscripcio":
+            origin_label = "Manual"
+        elif override_type == "manual_team_unit":
             origin_label = "Manual"
         elif override_type == "reserve_promotion" or slot.status == ProgramUnitSlot.Status.RESERVE:
             origin_label = f"Reserva {source_position_label}".strip()
@@ -227,11 +244,24 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             for slot in phase_slots
             if str(slot.subject_kind or "").strip().lower() == "inscripcio" and slot.subject_id
         }
+        team_subject_ids = {
+            int(slot.subject_id)
+            for slot in phase_slots
+            if str(slot.subject_kind or "").strip().lower() == "team_unit" and slot.subject_id
+        }
         inscripcions_by_id = {
             int(inscripcio.id): inscripcio
             for inscripcio in Inscripcio.objects.filter(id__in=inscripcio_ids).only("id", "nom_i_cognoms", "entitat")
         }
-        _decorate_slot_subjects(phase_slots, inscripcions_by_id)
+        team_subjects_by_id = {
+            int(team_subject.id): team_subject
+            for team_subject in (
+                TeamCompetitiveSubject.objects
+                .filter(id__in=team_subject_ids)
+                .select_related("equip", "context")
+            )
+        }
+        _decorate_slot_subjects(phase_slots, inscripcions_by_id, team_subjects_by_id)
         phase_config = phase.config if isinstance(phase.config, dict) else {}
         source_config = phase_config.get("source") if isinstance(phase_config.get("source"), dict) else {}
         cut_config = phase_config.get("cut") if isinstance(phase_config.get("cut"), dict) else {}
@@ -320,6 +350,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_reserve_options = phase_reserve_options
         phase.ui_recoverable_snapshot_options = phase_recoverable_options
         phase.ui_manual_inscripcio_options = []
+        phase.ui_manual_team_unit_options = []
         phase.ui_available_reserve_count = sum(
             1 for option in phase_reserve_options if option.subject_ref not in phase_active_subject_refs
         )
@@ -560,6 +591,7 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
     selected_phase_id = int(selected_phase.id) if selected_phase is not None else None
     if selected_phase is not None:
         selected_phase.ui_manual_inscripcio_options = manual_inscripcio_options_for_phase(selected_phase)
+        selected_phase.ui_manual_team_unit_options = manual_team_unit_options_for_phase(selected_phase)
     root_phases = _attach_phase_tree(selected_phases, selected_phase_id)
     selected_units = [unit for phase in selected_phases for unit in getattr(phase, "ui_units", [])]
     base_participation_preview = None

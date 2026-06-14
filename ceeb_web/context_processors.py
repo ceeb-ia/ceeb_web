@@ -200,7 +200,7 @@ def _build_competition_dock(request, is_competicions_app):
         {
             "label": "Competicions",
             "section": "home",
-            "url": _safe_reverse("created"),
+            "url": _safe_reverse("competicions_home"),
         }
     ]
 
@@ -322,6 +322,7 @@ def app_env(request):
         if app_env == "intern"
         else []
     )
+    is_prod_competition_shell = app_env == "prod"
     is_competicions_app = _is_competicions_app(request)
     resolver_match = getattr(request, "resolver_match", None)
     url_name = getattr(resolver_match, "url_name", "") or ""
@@ -334,7 +335,7 @@ def app_env(request):
         if competition_dock_items and _active_competicio_id(request) is not None
         else ""
     )
-    competicions_font_config = _build_competicions_font_config(is_competicions_app)
+    competicions_font_config = _build_competicions_font_config(is_competicions_app or is_prod_competition_shell)
     return {
         "APP_ENV": app_env,
         "IS_DEV": app_env == "dev",
@@ -343,6 +344,7 @@ def app_env(request):
         "internal_nav_apps": internal_nav_apps,
         "has_active_internal_nav_app": any(app["active"] for app in internal_nav_apps),
         "has_any_internal_app_access": bool(internal_nav_apps),
+        "is_prod_competition_shell": is_prod_competition_shell,
         "is_competicions_app": is_competicions_app,
         "competition_active_section": competition_active_section,
         "competition_dock_items": competition_dock_items,

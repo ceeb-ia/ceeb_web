@@ -2,9 +2,9 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_http_methods
 
-from ...models.competicio import InscripcioAparellExclusio
 from ...models.judging import JudgeDeviceToken
 from ...models.scoring import ScoreEntry, TeamScoreEntry
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...services.shared.incremental_feeds import (
     apply_single_model_cursor,
     build_single_model_feed_meta,
@@ -91,11 +91,8 @@ def judge_updates(request, token):
             .order_by("updated_at", "id")
         )
     else:
-        excluded_ins_ids = (
-            InscripcioAparellExclusio.objects
-            .filter(comp_aparell=comp_aparell)
-            .values_list("inscripcio_id", flat=True)
-        )
+        excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, [comp_aparell.id])
+        excluded_ins_ids = [ins_id for ins_id, app_ids in excluded_by_ins.items() if int(comp_aparell.id) in app_ids]
 
         qs = (
             ScoreEntry.objects

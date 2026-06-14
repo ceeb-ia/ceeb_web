@@ -525,6 +525,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 selected_ids=[ins_free_a.id, ins_free_b.id],
                 filters={"q": "", "categoria": "", "subcategoria": "", "entitat": "Club Inexistent"},
                 sort_context_filters={"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                workspace_bucket_fields=["categoria"],
             ),
         )
         self.assertEqual(resp.status_code, 200)
@@ -628,7 +629,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket"),
+            self._groups_payload(strategy="per_bucket", workspace_bucket_fields=["entitat"]),
         )
         self.assertEqual(resp.status_code, 200)
 
@@ -654,7 +655,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"], workspace_bucket_fields=["categoria"]),
         )
         self.assertEqual(resp.status_code, 200)
 
@@ -703,19 +704,19 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"], workspace_bucket_fields=["categoria", "entitat"]),
         )
         self.assertEqual(resp.status_code, 200)
 
         data = resp.json()
         self.assertEqual(data.get("resolution_mode"), "auto")
-        self.assertEqual(data.get("layers_used"), ["tabs", "sort"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
         self.assertEqual(data.get("effective_bucket_count"), 3)
 
         preview = data.get("preview") or {}
         groups = preview.get("groups") or []
         self.assertEqual(len(groups), 3)
-        self.assertEqual(preview.get("layers_used"), ["tabs", "sort"])
+        self.assertEqual(preview.get("layers_used"), ["workspace"])
         self.assertEqual(preview.get("effective_bucket_count"), 3)
         self.assertEqual(
             [group.get("suggested_name") for group in groups],
@@ -747,12 +748,12 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"], workspace_bucket_fields=["categoria"]),
         )
         self.assertEqual(resp.status_code, 200)
 
         data = resp.json()
-        self.assertEqual(data.get("layers_used"), ["tabs"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
         self.assertEqual(data.get("effective_bucket_count"), 2)
         groups = (data.get("preview") or {}).get("groups") or []
         self.assertEqual([group.get("suggested_name") for group in groups], ["Alevi", "Infantil"])
@@ -795,12 +796,12 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket"),
+            self._groups_payload(strategy="per_bucket", workspace_bucket_fields=["entitat"]),
         )
         self.assertEqual(resp.status_code, 200)
 
         data = resp.json()
-        self.assertEqual(data.get("layers_used"), ["sort"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
         self.assertEqual(data.get("effective_bucket_count"), 2)
         groups = (data.get("preview") or {}).get("groups") or []
         self.assertEqual([group.get("suggested_name") for group in groups], ["Club A", "Club B"])
@@ -836,12 +837,12 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"], workspace_bucket_fields=["categoria"]),
         )
         self.assertEqual(resp.status_code, 200)
 
         data = resp.json()
-        self.assertEqual(data.get("layers_used"), ["tabs"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
         self.assertEqual(data.get("effective_bucket_count"), 2)
 
     def test_groups_preview_selected_keys_accept_combined_bucket_key(self):
@@ -884,8 +885,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
         resolution = _resolve_group_creation_buckets(
             self.comp,
             records,
-            group_codes=["categoria"],
-            partition_codes=["entitat"],
+            workspace_codes=["categoria", "entitat"],
         )
         combined_key = ((resolution.get("buckets") or [])[0] or {}).get("key")
 
@@ -894,6 +894,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
             self._groups_payload(
                 strategy="per_bucket",
                 group_by=["categoria"],
+                workspace_bucket_fields=["categoria", "entitat"],
                 selected_keys=[combined_key],
             ),
         )
@@ -942,13 +943,12 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
         resolution = _resolve_group_creation_buckets(
             self.comp,
             records,
-            group_codes=["categoria"],
-            workspace_codes=["entitat"],
+            workspace_codes=["categoria", "entitat"],
         )
         combined_key = next(
             bucket.get("key")
             for bucket in (resolution.get("buckets") or [])
-            if bucket.get("label") == "Alevi / Club B"
+            if bucket.get("label") == "Alevi · Club B"
         )
 
         resp = self._post_json(
@@ -963,8 +963,8 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
         self.assertEqual(resp.status_code, 200)
 
         data = resp.json()
-        self.assertEqual(data.get("layers_used"), ["tabs", "workspace"])
-        self.assertEqual(data.get("workspace_bucket_fields"), ["entitat"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
+        self.assertEqual(data.get("workspace_bucket_fields"), ["categoria", "entitat"])
         self.assertEqual(data.get("buckets_applied"), 1)
         preview = data.get("preview") or {}
         self.assertEqual(preview.get("members_total"), 1)
@@ -1025,17 +1025,17 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"], workspace_bucket_fields=["entitat"]),
         )
         self.assertEqual(resp.status_code, 200)
 
         data = resp.json()
-        self.assertEqual(data.get("layers_used"), ["tabs", "sort"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
         self.assertEqual(data.get("effective_bucket_count"), 2)
         groups = (data.get("preview") or {}).get("groups") or []
         self.assertEqual(
             [group.get("suggested_name") for group in groups],
-            ["Alevi + Infantil · Club A", "Alevi + Infantil · Club B"],
+            ["Club A", "Club B"],
         )
 
     def test_groups_preview_existing_groups_use_combined_sources(self):
@@ -1078,8 +1078,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
         resolution = _resolve_group_creation_buckets(
             self.comp,
             records,
-            group_codes=["categoria"],
-            partition_codes=["entitat"],
+            workspace_codes=["categoria", "entitat"],
         )
         combined_key = ((resolution.get("buckets") or [])[0] or {}).get("key")
 
@@ -1088,6 +1087,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
             self._groups_payload(
                 strategy="per_bucket",
                 group_by=["categoria"],
+                workspace_bucket_fields=["categoria", "entitat"],
                 selected_keys=[combined_key],
             ),
         )
@@ -1134,6 +1134,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 strategy="count",
                 group_count=1,
                 group_by=["entitat"],
+                workspace_bucket_fields=["entitat"],
             ),
         )
         self.assertEqual(resp.status_code, 200)
@@ -1172,6 +1173,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "sort_context_filters": {"q": "", "categoria": "Alevi", "subcategoria": "", "entitat": ""},
                 "group_by": ["entitat"],
+                "workspace_bucket_fields": ["entitat"],
             },
         )
         self.assertEqual(resp.status_code, 200)
@@ -1202,6 +1204,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "sort_context_filters": {"q": "", "categoria": "Alevi", "subcategoria": "", "entitat": ""},
                 "group_by": ["categoria", "entitat"],
+                "workspace_bucket_fields": ["categoria", "entitat"],
             },
         )
         self.assertEqual(resp.status_code, 200)
@@ -1232,6 +1235,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 "filters": {"q": "", "categoria": "Infantil", "subcategoria": "", "entitat": ""},
                 "sort_context_filters": {"q": "", "categoria": "Alevi", "subcategoria": "", "entitat": ""},
                 "group_by": ["entitat"],
+                "workspace_bucket_fields": ["entitat"],
             },
         )
         self.assertEqual(resp.status_code, 200)
@@ -1291,6 +1295,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 strategy="count",
                 group_count=2,
                 group_by=["entitat"],
+                workspace_bucket_fields=["entitat"],
             ),
         )
         self.assertEqual(resp.status_code, 200)
@@ -1359,6 +1364,7 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
                 strategy="per_bucket",
                 preview_only=False,
                 group_by=["entitat"],
+                workspace_bucket_fields=["entitat"],
                 filters={"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"},
             ),
         )

@@ -16,7 +16,8 @@ from ...models.scoring import (
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
-from ...models.competicio import CompeticioAparell, CompeticioAparellFase, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase
+from ...services.inscripcions.admission import inscripcio_exclosa_en_aparell
 from .team_scoring import eligible_team_ids_for_comp_aparell, is_team_context_app
 
 
@@ -40,13 +41,6 @@ def score_store_key(subject_kind: str, subject_id, exercici, comp_aparell_id, fa
     if fase_id in (None, "", 0, "0"):
         return base
     return f"{base}|{int(fase_id)}"
-
-
-def inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
-    return InscripcioAparellExclusio.objects.filter(
-        inscripcio_id=inscripcio_id,
-        comp_aparell_id=comp_aparell_id,
-    ).exists()
 
 
 def resolve_scoring_subject(
