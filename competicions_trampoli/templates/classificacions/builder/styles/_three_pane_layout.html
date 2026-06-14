@@ -157,6 +157,12 @@
     padding: 14px;
   }
 
+  .classif-builder-pane--configs {
+    max-height: calc(100vh - 154px);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    overflow: hidden;
+  }
+
   .classif-pane-head {
     display: flex;
     align-items: flex-start;
@@ -186,6 +192,10 @@
   .builder-config-list {
     display: grid;
     gap: 8px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 2px;
+    scrollbar-width: thin;
   }
 
   #classif-builder-v2 .builder-config-list .list-group-item {
@@ -564,6 +574,15 @@
     .classif-builder-pane,
     .builder-nav-card {
       position: static;
+    }
+
+    .classif-builder-pane--configs {
+      max-height: none;
+      overflow: visible;
+    }
+
+    .builder-config-list {
+      max-height: min(420px, 58vh);
     }
 
     .classif-builder-detail-pane {

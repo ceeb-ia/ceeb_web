@@ -1,7 +1,7 @@
 <div class="phase-unit-row">
   <div>
     <div class="phase-unit-title-row">
-      <div class="phase-unit-name">{{ unit.nom }}</div>
+      <div class="phase-unit-name" title="{{ unit.nom }}">{{ unit.ui_display_name|default:unit.nom }}</div>
       {% if unit.ui_is_programmed %}
         <span class="badge badge-success phase-unit-status-badge">Programat</span>
       {% else %}
@@ -20,7 +20,7 @@
       <span>{{ unit.get_tipus_display }}</span>
       <span>{{ unit.ui_slot_count|default:unit.slots_count }} places</span>
       <span>{{ unit.ui_competitive_slots_count }} assignades</span>
-      {% if unit.partition_key %}<span>Criteri: {{ unit.partition_key }}</span>{% endif %}
+      {% if unit.partition_key %}<span title="{{ unit.partition_key }}">Criteri: {{ unit.ui_partition_label }}</span>{% endif %}
     </div>
     {% if unit.ui_programmed_labels %}
       <div class="text-muted small mt-1">
@@ -294,11 +294,11 @@
     <header class="phase-unit-preview-head">
       <div>
         <p class="phase-unit-preview-kicker">Unitats i places</p>
-        <h5 id="unit-preview-title-{{ unit.id }}">{{ unit.nom }}</h5>
+        <h5 id="unit-preview-title-{{ unit.id }}" title="{{ unit.nom }}">{{ unit.ui_display_name|default:unit.nom }}</h5>
         <div class="phase-unit-preview-meta">
           <span>{{ unit.ui_slot_count }} places</span>
           <span>{{ unit.ui_competitive_slots_count }} omplertes</span>
-          {% if unit.partition_key %}<span>{{ unit.partition_key }}</span>{% endif %}
+          {% if unit.partition_key %}<span title="{{ unit.partition_key }}">{{ unit.ui_partition_label }}</span>{% endif %}
           {% if unit.ui_qualification_preview %}
             <span>Preview activa</span>
           {% else %}

@@ -17,7 +17,12 @@ from ...models.rotacions import RotacioAssignacioProgramUnit
 from ..inscripcions.aparell_participation import participation_preview
 from .group_plan import structural_cut_signature
 from .logos import available_app_logos_for_competicio, selected_logo_path_for_app
-from .qualification import QualificationError, qualification_is_stale, qualification_source_changed
+from .qualification import (
+    QualificationError,
+    _format_partition_label,
+    qualification_is_stale,
+    qualification_source_changed,
+)
 from .slot_overrides import (
     active_subject_refs_for_phase,
     available_recoverable_options_for_slot,
@@ -36,6 +41,15 @@ def _time_label(value) -> str:
         return value.strftime("%H:%M")
     except Exception:
         return str(value)
+
+
+def _unit_display_name(unit: ProgramUnit) -> str:
+    name = str(getattr(unit, "nom", "") or "").strip()
+    partition_key = str(getattr(unit, "partition_key", "") or "").strip()
+    partition_label = _format_partition_label(partition_key)
+    if name and partition_key and partition_key != "global" and partition_key in name:
+        return name.replace(partition_key, partition_label)
+    return name
 
 
 def _rotacio_label(link: RotacioAssignacioProgramUnit) -> str:
@@ -195,7 +209,7 @@ def _decorate_slot_subjects(
         origin_parts = []
         partition = str(slot.source_particio_key or "").strip()
         if partition:
-            origin_parts.append(f"Partició: {partition}")
+            origin_parts.append(f"Partició: {_format_partition_label(partition)}")
         if slot.status != ProgramUnitSlot.Status.EMPTY:
             if seed_position and source_position and seed_position != source_position:
                 origin_parts.append(f"Posició classificació: #{source_position}")
@@ -400,8 +414,10 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             )
             unit.ui_empty_slots_count = sum(1 for slot in slots if slot.status == ProgramUnitSlot.Status.EMPTY)
             unit.ui_slot_count = len(slots)
+            unit.ui_display_name = _unit_display_name(unit)
             unit.ui_has_locked_slots = any(slot.locked for slot in slots)
             unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
+            unit.ui_partition_label = _format_partition_label(unit.partition_key)
             unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
             unit.ui_formation_strategy_label = {
                 "classification_order": "Ordre de classificació",

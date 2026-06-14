@@ -480,6 +480,7 @@
   }
 
   .phase-unit-name {
+    flex: 1 1 auto;
     min-width: 0;
     color: var(--phase-text);
     font-weight: 750;
@@ -499,6 +500,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px 10px;
+    min-width: 0;
+  }
+
+  .phase-unit-meta span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .phase-unit-list-embedded {
@@ -1701,11 +1711,21 @@
     justify-content: space-between;
     gap: 10px;
     align-items: flex-start;
+    min-width: 0;
+  }
+
+  .phase-program-unit-card-main {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .phase-program-unit-card-title {
+    min-width: 0;
     color: var(--phase-text);
     font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .phase-program-unit-card-stats {

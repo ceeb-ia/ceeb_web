@@ -1,10 +1,10 @@
 <article class="phase-program-unit-card">
   <div class="phase-program-unit-card-head">
-    <div>
-      <div class="phase-program-unit-card-title">{{ unit.nom }}</div>
+    <div class="phase-program-unit-card-main">
+      <div class="phase-program-unit-card-title" title="{{ unit.nom }}">{{ unit.ui_display_name|default:unit.nom }}</div>
       <div class="phase-unit-meta text-muted small">
         <span>{{ unit.get_tipus_display }}</span>
-        {% if unit.partition_key %}<span>Partició: {{ unit.partition_key }}</span>{% endif %}
+        {% if unit.partition_key %}<span title="{{ unit.partition_key }}">Partició: {{ unit.ui_partition_label }}</span>{% endif %}
         <span>{{ unit.ui_formation_strategy_label }}</span>
       </div>
     </div>
