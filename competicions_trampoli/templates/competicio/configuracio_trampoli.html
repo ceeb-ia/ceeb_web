@@ -1,463 +1,399 @@
 {% extends "base.html" %}
+{% load static %}
 
-{% block title %}Configuracio - {{ competicio.nom }}{% endblock %}
+{% block title %}Configuració - {{ competicio.nom }}{% endblock %}
 
 {% block content %}
-<style>
-  .prep-shell {
-    display: grid;
-    gap: 1.25rem;
-  }
-  .prep-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-  .prep-title h2 {
-    margin-bottom: .25rem;
-  }
-  .prep-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: .5rem;
-  }
-  .prep-stats {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(120px, 1fr));
-    gap: .75rem;
-  }
-  .prep-stat {
-    border: 1px solid #d8dee9;
-    border-radius: 8px;
-    padding: .8rem .9rem;
-    background: #ffffff;
-    min-height: 76px;
-  }
-  .prep-stat-value {
-    display: block;
-    font-size: 1.35rem;
-    font-weight: 700;
-    line-height: 1.1;
-  }
-  .prep-stat-label {
-    display: block;
-    margin-top: .25rem;
-    color: #5f6b7a;
-    font-size: .82rem;
-  }
-  .prep-section {
-    border-top: 1px solid #e2e8f0;
-    padding-top: 1rem;
-  }
-  .prep-section-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: .75rem;
-  }
-  .prep-section-title {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    flex-wrap: wrap;
-  }
-  .prep-section-title h4 {
-    margin: 0;
-  }
-  .prep-section-copy {
-    color: #64748b;
-    font-size: .88rem;
-    margin-top: .2rem;
-  }
-  .prep-workflow {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: .75rem;
-  }
-  .prep-step {
-    border: 1px solid #d8dee9;
-    border-left: 4px solid #64748b;
-    border-radius: 8px;
-    padding: .85rem;
-    background: #fbfcfe;
-    color: inherit;
-    text-decoration: none;
-  }
-  .prep-step:hover {
-    border-color: #94a3b8;
-    color: inherit;
-    text-decoration: none;
-  }
-  .prep-step.is-ready {
-    border-left-color: #198754;
-  }
-  .prep-step.is-attention {
-    border-left-color: #d97706;
-  }
-  .prep-step-title {
-    font-weight: 700;
-    margin-bottom: .25rem;
-  }
-  .prep-step-detail {
-    color: #64748b;
-    font-size: .84rem;
-  }
-  .prep-table-actions {
-    min-width: 250px;
-  }
-  .prep-muted-row {
-    color: #64748b;
-    padding: 1rem;
-    border: 1px dashed #cbd5e1;
-    border-radius: 8px;
-    background: #f8fafc;
-  }
-  @media (max-width: 1200px) {
-    .prep-stats {
-      grid-template-columns: repeat(3, minmax(120px, 1fr));
-    }
-    .prep-workflow {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-  @media (max-width: 720px) {
-    .prep-stats,
-    .prep-workflow {
-      grid-template-columns: 1fr;
-    }
-    .prep-actions,
-    .prep-section-head {
-      justify-content: flex-start;
-    }
-  }
-</style>
 
-<div class="container-fluid mt-4">
-  <div class="card-surface prep-shell">
-    <header class="prep-header">
-      <div class="prep-title">
-        <h2>Preparació de competició</h2>
-        <div class="text-muted small">{{ competicio.nom }}</div>
-        <div class="text-muted small">
-          Organitza els blocs principals abans de puntuar, classificar o programar rotacions.
-        </div>
-      </div>
-      <div class="prep-actions">
-        <a class="btn btn-sm section-btn section-btn--inscripcions" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
-        <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_home' competicio.id %}">Classificacions</a>
-        <a class="btn btn-sm section-btn section-btn--rotacions" href="{% url 'rotacions_planner' competicio.id %}">Rotacions</a>
-        <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
-        <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_live' competicio.id %}">Live</a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'created' %}">Tornar a Competicions</a>
-      </div>
-    </header>
+{% include "competicio/configuracio/styles/general.html" %}
 
-    <section class="prep-stats" aria-label="Resum de configuracio">
-      <div class="prep-stat">
-        <span class="prep-stat-value">{{ inscripcions_count }}</span>
-        <span class="prep-stat-label">Inscripcions</span>
-      </div>
-      <div class="prep-stat">
-        <span class="prep-stat-value">{{ aparells_count }}</span>
-        <span class="prep-stat-label">Aparells actius o preparats</span>
-      </div>
-      <div class="prep-stat">
-        <span class="prep-stat-value">{{ total_phase_count }}</span>
-        <span class="prep-stat-label">Fases avancades</span>
-      </div>
-      <div class="prep-stat">
-        <span class="prep-stat-value">{{ total_unit_count }}</span>
-        <span class="prep-stat-label">Unitats de programa</span>
-      </div>
-      <div class="prep-stat">
-        <span class="prep-stat-value">{{ classificacions_published_count }}/{{ classificacions_active_count }}</span>
-        <span class="prep-stat-label">Classificacions públiques/actives</span>
-      </div>
-      <div class="prep-stat">
-        <span class="prep-stat-value">{{ rotacio_franja_count }}</span>
-        <span class="prep-stat-label">Franges de rotacio</span>
-      </div>
-    </section>
-
-    <section class="prep-section">
-      <div class="prep-section-head">
+<section class="config-shell">
+  <header class="config-header">
+    <div class="config-title">
+      <div class="config-title-row">
+        <span class="config-title-icon" aria-hidden="true">
+          <img src="{% static 'dock/configuracio.png' %}" alt="">
+        </span>
         <div>
-          <div class="prep-section-title">
-            <h4>Flux recomanat</h4>
+          <h1>Configuració</h1>
+          <div class="config-subtitle">
+            {{ competicio.nom }} - centre de control dels blocs principals de la competició.
           </div>
-          <div class="prep-section-copy">Entrades principals en l'ordre natural de preparacio.</div>
         </div>
       </div>
-      <div class="prep-workflow">
-        <a class="prep-step {% if inscripcions_count %}is-ready{% else %}is-attention{% endif %}" href="{% url 'inscripcions_list' competicio.id %}">
-          <div class="prep-step-title">1. Inscripcions</div>
-          <div class="prep-step-detail">{{ inscripcions_count }} participants carregats.</div>
-        </a>
-        <a class="prep-step {% if aparells_count %}is-ready{% else %}is-attention{% endif %}" href="{% url 'trampoli_aparells_list' competicio.id %}">
-          <div class="prep-step-title">2. Aparells</div>
-          <div class="prep-step-detail">{{ aparells_count }} aparells dins la competicio.</div>
-        </a>
-        <a class="prep-step {% if classificacions_active_count %}is-ready{% else %}is-attention{% endif %}" href="{% url 'classificacions_home' competicio.id %}">
-          <div class="prep-step-title">3. Classificacions</div>
-          <div class="prep-step-detail">{{ classificacions_active_count }} actives, {{ classificacions_published_count }} públiques.</div>
-        </a>
-        <a class="prep-step {% if rotacio_franja_count %}is-ready{% else %}is-attention{% endif %}" href="{% url 'rotacions_planner' competicio.id %}">
-          <div class="prep-step-title">4. Rotacions</div>
-          <div class="prep-step-detail">{{ rotacio_franja_count }} franges i {{ rotacio_assignacio_count }} assignacions.</div>
-        </a>
-      </div>
-    </section>
+    </div>
+    {% if user.is_authenticated %}
+      {% url 'logout' as logout_url %}
+      {% if logout_url %}
+        <div class="config-actions">
+          <form method="post" action="{{ logout_url }}" class="config-logout-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm config-tool-btn config-tool-btn--neutral">Sortir</button>
+          </form>
+        </div>
+      {% endif %}
+    {% endif %}
+  </header>
 
-    <section class="prep-section" id="aparells">
-      <div class="prep-section-head">
-        <div>
-          <div class="prep-section-title">
-            <h4>Aparells de la competicio</h4>
-            {% if not aparells_count %}
-              <span class="badge badge-warning">Pendent</span>
-            {% else %}
-              <span class="badge badge-success">Configurat</span>
-            {% endif %}
-          </div>
-          <div class="prep-section-copy">
-            Treballa amb els aparells locals de la competicio. El cataleg global queda separat.
-          </div>
-        </div>
-        <div class="prep-actions">
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">Cataleg global</a>
-          <a class="btn btn-sm btn-primary" href="{% url 'trampoli_aparell_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">Afegir aparell</a>
-        </div>
+  <section class="config-summary" aria-label="Resum de configuració">
+    <div class="config-metric config-metric--inscripcions">
+      <div class="config-metric-head">
+        <span class="config-metric-icon"><img src="{% static 'dock/inscripcions.png' %}" alt=""></span>
+        <span class="config-metric-value">{{ inscripcions_count }}</span>
       </div>
+      <span class="config-metric-label">inscripcions <span class="config-dot"></span></span>
+    </div>
+    <div class="config-metric config-metric--fases">
+      <div class="config-metric-head">
+        <span class="config-metric-icon"><img src="{% static 'dock/fases.png' %}" alt=""></span>
+        <span class="config-metric-value">{{ aparells_count }}</span>
+      </div>
+      <span class="config-metric-label">aparells<span class="config-dot"></span></span>
+    </div>
 
-      {% if aparells_cfg %}
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th style="width:120px;">Codi</th>
-                <th>Aparell</th>
-                <th style="width:120px;">Unitat</th>
-                <th style="width:110px;">Exercicis</th>
-                <th style="width:90px;">Actiu</th>
-                <th class="text-end prep-table-actions">Accions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for comp_aparell in aparells_cfg %}
-                <tr>
-                  <td class="fw-semibold">
+    <div class="config-metric config-metric--rotacions">
+      <div class="config-metric-head">
+        <span class="config-metric-icon"><img src="{% static 'dock/rotacions.png' %}" alt=""></span>
+        <span class="config-metric-value">{{ rotacio_franja_count }}</span>
+      </div>
+      <span class="config-metric-label">franges de rotació <span class="config-dot"></span></span>
+    </div>
+    <div class="config-metric config-metric--classificacions">
+      <div class="config-metric-head">
+        <span class="config-metric-icon"><img src="{% static 'dock/classificacions.png' %}" alt=""></span>
+        <span class="config-metric-value">{{ classificacions_active_count }}</span>
+      </div>
+      <span class="config-metric-label">classificacions actives <span class="config-dot"></span></span>
+    </div>    <div class="config-metric config-metric--notes">
+      <div class="config-metric-head">
+        <span class="config-metric-icon"><img src="{% static 'dock/notes.png' %}" alt=""></span>
+        <span class="config-metric-value">{{ classificacions_published_count }}</span>
+      </div>
+      <span class="config-metric-label">classificacions públiques <span class="config-dot"></span></span>
+    </div>
+  </section>
+
+  <div class="config-layout">
+    <aside class="config-sidebar" aria-label="Navegació de configuració">
+      <section class="config-side-panel">
+        <h2 class="config-side-title">Seccions</h2>
+        <nav class="config-nav">
+          <a class="config-nav-link is-active" href="#aparells" data-config-target="aparells" aria-current="page"><img src="{% static 'dock/fases.png' %}" alt=""> Aparells i fases</a>
+          <a class="config-nav-link" href="#classificacions" data-config-target="classificacions"><img src="{% static 'dock/classificacions.png' %}" alt=""> Classificacions</a>
+          <a class="config-nav-link" href="#operativa" data-config-target="operativa"><img src="{% static 'dock/rotacions.png' %}" alt=""> Rotacions i notes</a>
+        </nav>
+      </section>
+
+      <section class="config-side-panel">
+        <h2 class="config-side-title">Estat</h2>
+        <div class="config-status-list">
+          <div class="config-status-row is-ready">
+            <span class="config-status-mark">✓</span>
+            <span>Dades bàsiques</span>
+            <span class="config-pill config-pill--ready">OK</span>
+          </div>
+          <div class="config-status-row {% if inscripcions_count %}is-ready{% else %}is-attention{% endif %}">
+            <span class="config-status-mark">{% if inscripcions_count %}✓{% else %}!{% endif %}</span>
+            <span>Inscripcions</span>
+            <span class="config-pill {% if inscripcions_count %}config-pill--ready{% else %}config-pill--attention{% endif %}">
+              {% if inscripcions_count %}OK{% else %}Pendent{% endif %}
+            </span>
+          </div>
+          <div class="config-status-row config-status-row--combined {% if not aparells_count or total_pending_unit_count %}is-attention{% else %}is-ready{% endif %}">
+            <span class="config-status-mark">{% if aparells_count %}✓{% else %}!{% endif %}</span>
+            <span class="config-status-mark">{% if not aparells_count or total_pending_unit_count %}!{% else %}OK{% endif %}</span>
+            <span>Aparells i fases</span>
+            <span class="config-pill {% if not aparells_count or total_pending_unit_count %}config-pill--attention{% else %}config-pill--ready{% endif %}">
+              {% if not aparells_count %}Pendent{% elif total_pending_unit_count %}Revisar{% else %}OK{% endif %}
+            </span>
+          </div>
+          {% comment %}
+          <div class="config-status-row {% if total_pending_unit_count %}is-attention{% elif total_unit_count %}is-ready{% endif %}">
+            <span class="config-status-mark">{% if total_pending_unit_count %}!{% elif total_unit_count %}✓{% else %}-{% endif %}</span>
+            <span>Fases</span>
+            <span class="config-pill {% if total_pending_unit_count %}config-pill--attention{% elif total_unit_count %}config-pill--ready{% else %}config-pill--muted{% endif %}">
+              {% if total_pending_unit_count %}Revisar{% elif total_unit_count %}OK{% else %}Opcional{% endif %}
+            </span>
+          </div>
+          {% endcomment %}
+          <div class="config-status-row {% if classificacions_active_count %}is-ready{% else %}is-attention{% endif %}">
+            <span class="config-status-mark">{% if classificacions_active_count %}✓{% else %}!{% endif %}</span>
+            <span>Classificacions</span>
+            <span class="config-pill {% if classificacions_active_count %}config-pill--ready{% else %}config-pill--attention{% endif %}">
+              {% if classificacions_active_count %}OK{% else %}Pendent{% endif %}
+            </span>
+          </div>
+          <div class="config-status-row {% if rotacio_franja_count %}is-ready{% endif %}">
+            <span class="config-status-mark">{% if rotacio_franja_count %}✓{% else %}-{% endif %}</span>
+            <span>Rotacions</span>
+            <span class="config-pill {% if rotacio_franja_count %}config-pill--ready{% else %}config-pill--muted{% endif %}">
+              {% if rotacio_franja_count %}OK{% else %}Opcional{% endif %}
+            </span>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <main class="config-main">
+      <section class="config-section" id="general">
+        <div class="config-section-head">
+          <div>
+            <div class="config-section-kicker">Configuració general</div>
+            <h2 class="config-section-title">Dades bàsiques de la competició</h2>
+            <div class="config-section-copy">Informació principal que identifica la competició i condiciona el context de treball.</div>
+          </div>
+          <div class="config-section-actions">
+            <a class="btn btn-sm config-tool-btn config-tool-btn--phase-work" href="{% url 'competicio_update' competicio.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+          </div>
+        </div>
+        <div class="config-grid config-grid--four">
+          <div class="config-info-tile">
+            <div class="config-info-label">Nom</div>
+            <div class="config-info-value">{{ competicio.nom }}</div>
+          </div>
+          <div class="config-info-tile">
+            <div class="config-info-label">Tipus</div>
+            <div class="config-info-value">{{ competicio.get_tipus_display }}</div>
+          </div>
+          <div class="config-info-tile">
+            <div class="config-info-label">Data d'inici</div>
+            <div class="config-info-value">{% if competicio.data %}{{ competicio.data|date:"d/m/Y" }}{% else %}Sense data{% endif %}</div>
+          </div>
+          <div class="config-info-tile">
+            <div class="config-info-label">Data final</div>
+            <div class="config-info-value">{% if competicio.data_fi %}{{ competicio.data_fi|date:"d/m/Y" }}{% else %}Sense data final{% endif %}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="config-section" id="preparacio">
+        <div class="config-section-head">
+          <div>
+            <div class="config-section-kicker">Flux recomanat</div>
+            <h2 class="config-section-title">Ordre natural de preparació</h2>
+            <div class="config-section-copy">Cada bloc porta al mòdul que realment gestiona aquella configuració.</div>
+          </div>
+        </div>
+        <div class="config-flow">
+          <a class="config-flow-step config-flow-step--inscripcions" href="{% url 'inscripcions_list' competicio.id %}">
+            <img src="{% static 'dock/inscripcions.png' %}" alt="">
+            <div class="config-flow-title">1. Inscripcions</div>
+            <div class="config-flow-detail">{{ inscripcions_count }} participants carregats.</div>
+          </a>
+          <a class="config-flow-step config-flow-step--fases" href="#aparells" data-config-target="aparells">
+            <img src="{% static 'dock/fases.png' %}" alt="">
+            <div class="config-flow-title">2. Aparells i fases</div>
+            <div class="config-flow-detail">{{ aparells_count }} aparells, {{ total_phase_count }} fases i {{ total_unit_count }} unitats avançades.</div>
+          </a>
+
+          <a class="config-flow-step config-flow-step--rotacions" href="#operativa" data-config-target="operativa">
+            <img src="{% static 'dock/rotacions.png' %}" alt="">
+            <div class="config-flow-title">3. Rotacions</div>
+            <div class="config-flow-detail">{{ rotacio_franja_count }} franges i {{ rotacio_assignacio_count }} assignacions.</div>
+          </a>
+          <a class="config-flow-step config-flow-step--classificacions" href="#classificacions" data-config-target="classificacions">
+            <img src="{% static 'dock/classificacions.png' %}" alt="">
+            <div class="config-flow-title">4. Classificacions</div>
+            <div class="config-flow-detail">{{ classificacions_active_count }} actives, {{ classificacions_published_count }} públiques.</div>
+          </a>
+          <a class="config-flow-step config-flow-step--qrs" href="{% url 'qr_admin_home' competicio.id %}">
+            <img src="{% static 'notes/QRs/administrador.png' %}" alt="">
+            <div class="config-flow-title">5. QRs</div>
+            <div class="config-flow-detail">{{ qr_total_count }} accessos actius: {{ qr_judge_count }} de jutge i {{ qr_public_count }} públics.</div>
+          </a>
+        </div>
+      </section>
+
+      <section class="config-section" id="aparells" data-config-panel="aparells">
+        <div class="config-section-head">
+          <div>
+            <div class="config-section-kicker">Aparells i fases</div>
+            <h2 class="config-section-title">Aparells, puntuació i estructura competitiva</h2>
+            <div class="config-section-copy">Cada aparell concentra la seva configuració local, el model de puntuació, la participació i les fases associades.</div>
+          </div>
+          <div class="config-section-actions">
+            <a class="btn btn-sm config-tool-btn config-tool-btn--neutral" href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">Catàleg global</a>
+            <a class="btn btn-sm section-btn section-btn--fases" href="{% url 'trampoli_fases' competicio.id %}">Obrir fases</a>
+            <a class="btn btn-sm config-tool-btn config-tool-btn--phase-primary" href="{% url 'trampoli_aparell_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">Afegir aparell</a>
+          </div>
+        </div>
+        {% if aparell_phase_summaries %}
+          <div class="config-list">
+            {% for summary in aparell_phase_summaries %}
+              {% with comp_aparell=summary.app %}
+              <article class="config-list-item">
+                <div>
+                  <div class="config-item-title">{{ comp_aparell.display_nom }}</div>
+                  <div class="config-item-subtitle">
                     {{ comp_aparell.display_codi }}
-                    {% if comp_aparell.display_codi != comp_aparell.aparell.codi %}
-                      <div class="text-muted small">Base: {{ comp_aparell.aparell.codi }}</div>
+                    {% if comp_aparell.display_nom != comp_aparell.aparell.nom or comp_aparell.display_codi != comp_aparell.aparell.codi %}
+                      · base {{ comp_aparell.aparell.nom }} / {{ comp_aparell.aparell.codi }}
                     {% endif %}
-                  </td>
-                  <td>
-                    <div class="fw-semibold">{{ comp_aparell.display_nom }}</div>
-                    {% if comp_aparell.display_nom != comp_aparell.aparell.nom %}
-                      <div class="text-muted small">Base: {{ comp_aparell.aparell.nom }}</div>
-                    {% endif %}
-                  </td>
-                  <td>
+                  </div>
+                  <div class="config-item-meta">
                     {% if comp_aparell.is_team_competition_unit %}
-                      <span class="badge badge-info">Equip</span>
+                      <span class="config-pill">Equip</span>
                     {% else %}
-                      <span class="badge badge-light border">Individual</span>
+                      <span class="config-pill">Individual</span>
                     {% endif %}
-                  </td>
-                  <td>{{ comp_aparell.nombre_exercicis }}</td>
-                  <td>
+                    <span class="config-pill">{{ comp_aparell.nombre_exercicis }} exercici{% if comp_aparell.nombre_exercicis != 1 %}s{% endif %}</span>
                     {% if comp_aparell.actiu %}
-                      <span class="badge badge-success">Si</span>
+                      <span class="config-pill config-pill--ready">Actiu</span>
                     {% else %}
-                      <span class="badge badge-secondary">No</span>
+                      <span class="config-pill config-pill--muted">Inactiu</span>
                     {% endif %}
-                  </td>
-                  <td class="text-end">
-                    <div class="d-inline-flex flex-wrap justify-content-end gap-2">
-                      <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
-                      <a class="btn btn-sm btn-outline-warning" href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
-                      <a class="btn btn-sm btn-outline-primary" href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Participacio</a>
-                      <a class="btn btn-sm section-btn section-btn--fases" href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ comp_aparell.id }}">Fases</a>
-                      <form method="post" action="{% url 'competicio_aparell_delete' competicio.id comp_aparell.id %}" class="d-inline">
-                        {% csrf_token %}
-                        <button
-                          type="submit"
-                          class="btn btn-sm btn-outline-danger js-confirm-submit"
-                          data-confirm-message="Segur que vols eliminar aquest aparell de la competicio?"
-                        >Eliminar</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="prep-muted-row">
-          Encara no hi ha aparells configurats. Afegeix els aparells abans de preparar puntuacio, fases o classificacions.
-        </div>
-      {% endif %}
-    </section>
-
-    <section class="prep-section" id="fases">
-      <div class="prep-section-head">
-        <div>
-          <div class="prep-section-title">
-            <h4>Fases i rondes</h4>
-            {% if total_pending_unit_count %}
-              <span class="badge badge-warning">{{ total_pending_unit_count }} unitats pendents</span>
-            {% elif total_unit_count %}
-              <span class="badge badge-success">Programat</span>
-            {% else %}
-              <span class="badge badge-light border">Opcional</span>
-            {% endif %}
-          </div>
-          <div class="prep-section-copy">
-            Les fases son una configuracio general de la competicio. L'aparell nomes actua com a filtre de treball.
-          </div>
-        </div>
-        <a class="btn btn-sm section-btn section-btn--fases" href="{% url 'trampoli_fases' competicio.id %}">Obrir fases</a>
-      </div>
-
-      {% if app_summaries %}
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Aparell</th>
-                <th style="width:110px;">Fases</th>
-                <th style="width:110px;">Unitats</th>
-                <th style="width:160px;">Estat</th>
-                <th class="text-end" style="width:180px;">Accio</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for summary in app_summaries %}
-                <tr>
-                  <td>
-                    <div class="fw-semibold">{{ summary.app.display_nom }}</div>
-                    <div class="text-muted small">{{ summary.app.display_codi }}</div>
-                  </td>
-                  <td>{{ summary.phase_count }}</td>
-                  <td>{{ summary.unit_count }}</td>
-                  <td>
+                    <span class="config-pill">{{ summary.phase_count }} fase{% if summary.phase_count != 1 %}s{% endif %}</span>
+                    <span class="config-pill">{{ summary.unit_count }} unitat{% if summary.unit_count != 1 %}s{% endif %}</span>
                     {% if summary.pending_unit_count %}
-                      <span class="badge badge-warning">{{ summary.state_label }}</span>
-                    {% elif summary.unit_count %}
-                      <span class="badge badge-success">{{ summary.state_label }}</span>
+                      <span class="config-pill config-pill--attention">{{ summary.state_label }}</span>
+                    {% elif summary.phase_count or summary.unit_count %}
+                      <span class="config-pill config-pill--ready">{{ summary.state_label }}</span>
                     {% else %}
-                      <span class="badge badge-light border">{{ summary.state_label }}</span>
+                      <span class="config-pill config-pill--muted">{{ summary.state_label }}</span>
                     {% endif %}
-                  </td>
-                  <td class="text-end">
-                    <a class="btn btn-sm section-btn section-btn--fases" href="{% url 'trampoli_fases' pk=competicio.id %}?app={{ summary.app.id }}">Configurar</a>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="prep-muted-row">Afegeix aparells per poder preparar fases avancades.</div>
-      {% endif %}
-    </section>
-
-    <section class="prep-section" id="classificacions">
-      <div class="prep-section-head">
-        <div>
-          <div class="prep-section-title">
-            <h4>Classificacions</h4>
-            {% if classificacions_active_count %}
-              <span class="badge badge-success">{{ classificacions_active_count }} actives</span>
-              {% if classificacions_internal_count %}
-                <span class="badge badge-secondary">{{ classificacions_internal_count }} internes</span>
-              {% endif %}
-            {% else %}
-              <span class="badge badge-warning">Pendent</span>
-            {% endif %}
+                  </div>
+                </div>
+                <div class="config-item-actions">
+                  <a class="btn btn-sm config-tool-btn config-tool-btn--phase-work" href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                  <a class="btn btn-sm config-tool-btn config-tool-btn--phase-warning" href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Puntuació</a>
+                  <a class="btn btn-sm config-tool-btn config-tool-btn--phase-work" href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Participació</a>
+                  <form method="post" action="{% url 'competicio_aparell_delete' competicio.id comp_aparell.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm config-tool-btn config-tool-btn--danger js-confirm-submit" data-confirm-message="Segur que vols eliminar aquest aparell de la competició?">Eliminar</button>
+                  </form>
+                </div>
+              </article>
+              {% endwith %}
+            {% endfor %}
           </div>
-          <div class="prep-section-copy">Configura rankings, desempats, filtres i publicacio en viu.</div>
-        </div>
-        <div class="prep-actions">
-          <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_live' competicio.id %}">Veure live</a>
-          <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
-        </div>
-      </div>
+        {% else %}
+          <div class="config-empty">Encara no hi ha aparells configurats. Afegeix-los abans de preparar puntuació, fases o classificacions.</div>
+        {% endif %}
+      </section>
 
-      {% if classificacions_cfg %}
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Nom</th>
-                <th style="width:130px;">Tipus</th>
-                <th style="width:100px;">Activa</th>
-                <th style="width:110px;">Pública</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for classificacio in classificacions_cfg %}
-                <tr>
-                  <td class="fw-semibold">{{ classificacio.nom }}</td>
-                  <td>{{ classificacio.get_tipus_display }}</td>
-                  <td>
+      <section class="config-section" id="classificacions" data-config-panel="classificacions" hidden>
+        <div class="config-section-head">
+          <div>
+            <div class="config-section-kicker">Classificacions i live</div>
+            <h2 class="config-section-title">Rànquings, filtres i publicació</h2>
+            <div class="config-section-copy">Controla quines classificacions estan actives i quines surten a la vista en directe.</div>
+          </div>
+          <div class="config-section-actions">
+            <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_live' competicio.id %}">Veure live</a>
+            <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
+          </div>
+        </div>
+        {% if classificacions_cfg %}
+          <div class="config-list">
+            {% for classificacio in classificacions_cfg %}
+              <article class="config-list-item">
+                <div>
+                  <div class="config-item-title">{{ classificacio.nom }}</div>
+                  <div class="config-item-subtitle">{{ classificacio.get_tipus_display }}</div>
+                  <div class="config-item-meta">
                     {% if classificacio.activa %}
-                      <span class="badge badge-success">Si</span>
+                      <span class="config-pill config-pill--ready">Activa</span>
                     {% else %}
-                      <span class="badge badge-secondary">No</span>
+                      <span class="config-pill config-pill--muted">Inactiva</span>
                     {% endif %}
-                  </td>
-                  <td>
                     {% if classificacio.activa and classificacio.publicada %}
-                      <span class="badge badge-success">Si</span>
+                      <span class="config-pill config-pill--ready">Pública</span>
                     {% elif classificacio.activa %}
-                      <span class="badge badge-secondary">Interna</span>
+                      <span class="config-pill config-pill--muted">Interna</span>
                     {% else %}
-                      <span class="badge badge-light border">No</span>
+                      <span class="config-pill config-pill--muted">No publicada</span>
                     {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="prep-muted-row">Encara no hi ha classificacions configurades.</div>
-      {% endif %}
-    </section>
+                  </div>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="config-empty">Encara no hi ha classificacions configurades.</div>
+        {% endif %}
+      </section>
 
-    <section class="prep-section" id="rotacions">
-      <div class="prep-section-head">
-        <div>
-          <div class="prep-section-title">
-            <h4>Rotacions i notes</h4>
-            {% if rotacio_franja_count %}
-              <span class="badge badge-success">{{ rotacio_franja_count }} franges</span>
-            {% else %}
-              <span class="badge badge-light border">Sense programa</span>
-            {% endif %}
+      <section class="config-section" id="operativa" data-config-panel="operativa" hidden>
+        <div class="config-section-head">
+          <div>
+            <div class="config-section-kicker">Operativa</div>
+            <h2 class="config-section-title">Rotacions, notes i QRs</h2>
+            <div class="config-section-copy">Quan l'estructura està preparada, passa al programa, l'entrada de notes i els accessos de jutges.</div>
           </div>
-          <div class="prep-section-copy">
-            Quan els aparells, fases i classificacions estan preparats, passa al programa i a la puntuacio.
+          <div class="config-section-actions">
+            <a class="btn btn-sm section-btn section-btn--rotacions" href="{% url 'rotacions_planner' competicio.id %}">Obrir rotacions</a>
+            <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'scoring_notes_home' competicio.id %}">Obrir notes</a>
+            <a class="btn btn-sm config-tool-btn config-tool-btn--qrs" href="{% url 'qr_admin_home' competicio.id %}">
+              <img class="config-button-icon" src="{% static 'notes/QRs/administrador.png' %}" alt="">
+              Administrador QRs
+            </a>
           </div>
         </div>
-        <div class="prep-actions">
-          <a class="btn btn-sm section-btn section-btn--rotacions" href="{% url 'rotacions_planner' competicio.id %}">Obrir rotacions</a>
-          <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'scoring_notes_home' competicio.id %}">Obrir notes</a>
+        <div class="config-grid config-grid--three">
+          <div class="config-info-tile config-info-tile--qrs">
+            <div class="config-info-label">Rotacions</div>
+            <div class="config-info-value">{{ rotacio_franja_count }} franges</div>
+            <div class="config-item-subtitle">{{ rotacio_assignacio_count }} assignacions programades.</div>
+          </div>
+          <div class="config-info-tile">
+            <div class="config-info-label">Notes i publicació</div>
+            <div class="config-info-value">{{ classificacions_published_count }} públiques</div>
+            <div class="config-item-subtitle">Les notes alimenten classificacions, live i QRs públics quan estan configurats.</div>
+          </div>
+          <div class="config-info-tile">
+            <div class="config-info-label">QRs i accessos</div>
+            <div class="config-info-value">{{ qr_total_count }} actius</div>
+            <div class="config-item-subtitle">{{ qr_judge_count }} de jutge i {{ qr_public_count }} públics.</div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </main>
   </div>
-</div>
+</section>
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
+    function showConfigPanel(target, options) {
+      var panelName = String(target || "aparells").replace(/^#/, "");
+      if (panelName === "fases") panelName = "aparells";
+      var panels = Array.from(document.querySelectorAll("[data-config-panel]"));
+      var panel = panels.find(function (item) {
+        return item.getAttribute("data-config-panel") === panelName;
+      });
+      if (!panel) panel = panels[0];
+      if (!panel) return;
+
+      var activeName = panel.getAttribute("data-config-panel");
+      panels.forEach(function (item) {
+        item.hidden = item !== panel;
+      });
+      document.querySelectorAll("[data-config-target]").forEach(function (link) {
+        var isActive = link.getAttribute("data-config-target") === activeName;
+        link.classList.toggle("is-active", isActive);
+        if (isActive) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      if (!options || options.updateHash !== false) {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, "", "#" + activeName);
+        } else {
+          window.location.hash = activeName;
+        }
+      }
+    }
+
+    document.addEventListener("click", function (event) {
+      var trigger = event.target.closest("[data-config-target]");
+      if (!trigger) return;
+      var target = trigger.getAttribute("data-config-target");
+      if (!document.querySelector('[data-config-panel="' + target + '"]')) return;
+      event.preventDefault();
+      showConfigPanel(target);
+    });
+
+    var initialPanel = String(window.location.hash || "").replace(/^#/, "");
+    showConfigPanel(initialPanel || "aparells", { updateHash: !!initialPanel });
+
     document.querySelectorAll(".js-confirm-submit").forEach(function (btn) {
       var form = btn.closest("form");
       if (!form) return;

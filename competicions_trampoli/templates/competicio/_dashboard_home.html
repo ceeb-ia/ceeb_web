@@ -422,7 +422,15 @@
     min-width: 0;
   }
 
+  .competition-card-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+  }
+
   .competition-card-title h2 {
+    flex: 0 1 auto;
     margin: 4px 0 6px;
     overflow-wrap: anywhere;
     color: #0f172a;
@@ -430,6 +438,42 @@
     font-weight: 850;
     letter-spacing: 0;
     line-height: 1.2;
+  }
+
+  .competition-config-link {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    margin-top: 1px;
+    border: 1px solid #dbe4f0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #64748b;
+    text-decoration: none;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+  }
+
+  .competition-config-link:hover,
+  .competition-config-link:focus {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+    text-decoration: none;
+    box-shadow: 0 9px 20px rgba(15, 23, 42, 0.1);
+  }
+
+  .competition-config-link img {
+    width: 17px;
+    height: 17px;
+    object-fit: contain;
+    opacity: 0.78;
+  }
+
+  .competition-config-link:hover img,
+  .competition-config-link:focus img {
+    opacity: 1;
   }
 
   .competition-card-date {
@@ -771,7 +815,7 @@
       </div>
       <div class="competition-summary-item">
         <span class="competition-summary-value">{{ competition_status_counts.preparation|default:0 }}</span>
-        <span class="competition-summary-label">En preparacio</span>
+        <span class="competition-summary-label">En preparació</span>
       </div>
       <div class="competition-summary-item">
         <span class="competition-summary-value">{{ competition_status_counts.active|default:0 }}</span>
@@ -786,12 +830,12 @@
     <div class="competition-home-filters" aria-label="Filtres de competicions">
       <button class="competition-context-help competition-context-help--filters" type="button" data-avatar-topic="filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button>
       <label class="competition-filter-control">
-        <span class="sr-only">Buscar competicio</span>
+        <span class="sr-only">Buscar competició</span>
         <svg class="competition-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="7"></circle>
           <path d="m20 20-3.8-3.8"></path>
         </svg>
-        <input id="competitionSearch" type="search" autocomplete="off" placeholder="Buscar competicio...">
+        <input id="competitionSearch" type="search" autocomplete="off" placeholder="Buscar competició...">
       </label>
 
       <label class="competition-filter-control">
@@ -803,7 +847,7 @@
         </svg>
         <select id="competitionStatusFilter">
           <option value="all">Totes</option>
-          <option value="preparation">En preparacio</option>
+          <option value="preparation">En preparació</option>
           <option value="active">Actives</option>
           <option value="finished">Finalitzades</option>
         </select>
@@ -820,7 +864,7 @@
         </svg>
         <select id="competitionSort">
           <option value="date">Ordenar per data</option>
-          <option value="created">Ordenar per creacio</option>
+          <option value="created">Ordenar per creació</option>
           <option value="name">Ordenar per nom</option>
         </select>
         <span class="competition-filter-chevron" aria-hidden="true"></span>
@@ -837,8 +881,8 @@
             <span class="competition-new-plus" aria-hidden="true">
               <img src="{% static 'general/new.png' %}" alt="">
             </span>
-            <strong>Nova competicio</strong>
-            <span class="competition-new-description">Crea una nova competicio i configura'n les fases i moduls.</span>
+            <strong>Nova competició</strong>
+            <span class="competition-new-description">Crea una nova competició i configura'n les fases i mòduls.</span>
           </span>
         </a>
       </div>
@@ -862,7 +906,12 @@
             {% endif %}
           </span>
           <div class="competition-card-title">
-            <h2>{{ c.nom }}</h2>
+            <div class="competition-card-title-row">
+              <h2>{{ c.nom }}</h2>
+              <a class="competition-config-link" href="{% url 'trampoli_config' c.id %}" aria-label="Configuració de {{ c.nom }}" title="Configuració">
+                <img src="{% static 'dock/configuracio.png' %}" alt="">
+              </a>
+            </div>
             <span class="competition-card-date">
               <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="4" width="18" height="17" rx="2"></rect>
