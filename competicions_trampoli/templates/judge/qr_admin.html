@@ -1,0 +1,1457 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Administrador QRs - {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
+  <style>
+    .qr-admin-surface {
+      --notes-base: #a16207;
+      --notes-base-hover: #854d0e;
+      --notes-bg: #fffbeb;
+      --notes-border: #fde68a;
+      --notes-text: #78350f;
+      --notes-soft-border: #f8e2a5;
+      --notes-muted: #7c5b24;
+      --notes-neutral-border: #e2e8f0;
+      --notes-neutral-text: #0f172a;
+      --notes-neutral-muted: #64748b;
+    }
+    .qr-admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding: 18px 12px 16px;
+      border-bottom: 1px solid var(--notes-neutral-border);
+    }
+    .qr-admin-title-block {
+      min-width: 0;
+      flex: 1 1 460px;
+    }
+    .qr-admin-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      color: var(--notes-text);
+      font-size: clamp(1.9rem, 3vw, 2.45rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    .qr-admin-title-icon,
+    .qr-admin-section-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      border: 1px solid rgba(161, 98, 7, .18);
+      background: #fff;
+      box-shadow: 0 8px 18px rgba(161, 98, 7, .08);
+    }
+    .qr-admin-title-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+    }
+    .qr-admin-title-icon img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+    .qr-admin-context-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px 10px;
+      margin-top: 10px;
+      color: var(--notes-neutral-muted);
+      font-size: .9rem;
+      line-height: 1.35;
+    }
+    .qr-admin-context-line > span:not(:first-child)::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      margin-right: 10px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      vertical-align: middle;
+    }
+    .qr-admin-context-main {
+      color: var(--notes-neutral-text);
+      font-weight: 650;
+    }
+    .qr-admin-header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .qr-admin-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: start;
+    }
+    .qr-admin-stack {
+      display: grid;
+      gap: 1rem;
+    }
+    .qr-admin-panel,
+    .qr-admin-row {
+      border: 1px solid var(--notes-neutral-border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .qr-admin-panel {
+      position: relative;
+      overflow: hidden;
+      padding: 1rem;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, .06);
+    }
+    .qr-admin-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: var(--notes-base);
+    }
+    .qr-admin-panel--create {
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+    }
+    .qr-admin-panel--list {
+      background: #fff;
+    }
+    .qr-admin-panel--detail {
+      min-height: 520px;
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+    }
+    .qr-admin-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .9rem;
+    }
+    .qr-admin-section-kicker {
+      display: flex;
+      width: fit-content;
+      margin: 0 0 .16rem;
+      color: var(--notes-base);
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .qr-admin-section-title {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      margin: 0;
+      color: var(--notes-neutral-text);
+      font-size: 1.02rem;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+    .qr-admin-section-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+    }
+    .qr-admin-section-icon img {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+    }
+    .qr-admin-section-copy {
+      margin: .22rem 0 0;
+      color: var(--notes-neutral-muted);
+      font-size: .82rem;
+      line-height: 1.35;
+    }
+    .qr-admin-row {
+      position: relative;
+      display: block;
+      padding: .78rem .78rem .78rem .9rem;
+      color: inherit;
+      text-decoration: none;
+      transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .qr-admin-row::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 0 999px 999px 0;
+      background: transparent;
+    }
+    .qr-admin-row:hover {
+      background: #fffdf7;
+      border-color: var(--notes-soft-border);
+      color: inherit;
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+    .qr-admin-row.is-selected {
+      border-color: var(--notes-base);
+      background: var(--notes-bg);
+      box-shadow: 0 0 0 1px rgba(161, 98, 7, .16) inset, 0 10px 22px rgba(161, 98, 7, .1);
+    }
+    .qr-admin-row.is-selected::before {
+      background: var(--notes-base);
+    }
+    .qr-admin-row.is-selected .qr-admin-row-title {
+      color: var(--notes-text);
+    }
+    .qr-token-id {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    .qr-assignment-card {
+      border: 1px solid var(--notes-soft-border);
+      border-radius: 10px;
+      background: #fff;
+      padding: .65rem .7rem;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, .04);
+    }
+    .qr-assignment-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+      gap: .65rem;
+      align-items: start;
+    }
+    .qr-assignment-card__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .55rem;
+      padding-bottom: .45rem;
+      border-bottom: 1px solid rgba(248, 226, 165, .72);
+    }
+    .qr-assignment-card__title {
+      margin: 0;
+      color: var(--notes-text);
+      font-size: .92rem;
+      font-weight: 800;
+      line-height: 1.18;
+    }
+    .qr-assignment-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .3rem;
+      margin-top: .38rem;
+    }
+    .qr-assignment-meta-pill {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      border: 1px solid var(--notes-border);
+      border-radius: 999px;
+      background: #fffdf7;
+      color: var(--notes-muted);
+      font-size: .72rem;
+      font-weight: 700;
+      line-height: 1.2;
+      padding: .17rem .45rem;
+    }
+    .qr-assignment-card__permissions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .28rem;
+      margin-top: .55rem;
+    }
+    .qr-permission-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      border: 1px solid #ead9b9;
+      border-radius: 7px;
+      background: #fffaf2;
+      color: var(--notes-text);
+      font-size: .72rem;
+      font-weight: 700;
+      line-height: 1.2;
+      padding: .18rem .42rem;
+    }
+    .qr-assignment-card__actions {
+      margin-top: .55rem;
+    }
+    .qr-admin-detail-identity {
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: #fff;
+      padding: .85rem;
+      box-shadow: 0 8px 20px rgba(161, 98, 7, .07);
+    }
+    .qr-admin-token-title {
+      color: var(--notes-neutral-text);
+      font-weight: 750;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .qr-admin-title-edit-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      flex: 0 0 auto;
+    }
+    .qr-admin-title-edit-toggle svg {
+      display: block;
+      width: 15px;
+      height: 15px;
+    }
+    .qr-admin-title-edit-form {
+      max-width: 520px;
+    }
+    .qr-admin-empty-state {
+      border: 1px dashed var(--notes-border);
+      border-radius: 10px;
+      background: var(--notes-bg);
+      color: var(--notes-muted);
+      padding: 1rem;
+    }
+    .qr-admin-help {
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: var(--notes-bg);
+      color: var(--notes-muted);
+      padding: .65rem .75rem;
+      font-size: .82rem;
+      line-height: 1.4;
+    }
+    .qr-admin-option-box {
+      border: 1px solid var(--notes-border) !important;
+      border-radius: 10px !important;
+      background: #fffdf7;
+      padding: .65rem .75rem !important;
+    }
+    .qr-admin-choice-icon,
+    .qr-admin-button-icon {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+      vertical-align: -3px;
+      margin-right: .32rem;
+    }
+    .qr-admin-button-icon {
+      width: 15px;
+      height: 15px;
+      vertical-align: -2px;
+    }
+    .permission-member-slot {
+      min-width: 48px;
+      border-color: var(--notes-soft-border);
+      color: var(--notes-text);
+    }
+    .permission-member-slot.is-active {
+      background: var(--notes-base) !important;
+      color: #fff !important;
+      border-color: var(--notes-base) !important;
+    }
+    .qr-admin-surface .btn.btn-primary,
+    .qr-admin-surface .btn.btn-primary:not(:disabled):not(.disabled),
+    .qr-admin-surface label.btn.btn-primary {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-base) !important;
+      color: #fff !important;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(161, 98, 7, .16);
+    }
+    .qr-admin-surface .btn.btn-primary:hover,
+    .qr-admin-surface .btn.btn-primary:focus,
+    .qr-admin-surface label.btn.btn-primary:hover,
+    .qr-admin-surface label.btn.btn-primary:focus {
+      border-color: var(--notes-base-hover) !important;
+      background: var(--notes-base-hover) !important;
+      color: #fff !important;
+    }
+    .qr-admin-surface .btn.btn-outline-primary,
+    .qr-admin-surface label.btn.btn-outline-primary {
+      border-color: var(--notes-base) !important;
+      color: var(--notes-base) !important;
+      font-weight: 650;
+    }
+    .qr-admin-surface .btn.btn-outline-primary:hover,
+    .qr-admin-surface .btn.btn-outline-primary:focus,
+    .qr-admin-surface .btn.btn-outline-primary.active,
+    .qr-admin-surface label.btn.btn-outline-primary:hover,
+    .qr-admin-surface label.btn.btn-outline-primary:focus,
+    .qr-admin-surface label.btn.btn-outline-primary.active,
+    .qr-admin-surface .btn-check:checked + .btn-outline-primary {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-bg) !important;
+      color: var(--notes-text) !important;
+      box-shadow: none;
+    }
+    .qr-admin-surface .btn.btn-outline-secondary,
+    .qr-admin-surface .btn.btn-outline-warning {
+      border-color: var(--notes-soft-border) !important;
+      background: #fff !important;
+      color: var(--notes-text) !important;
+      font-weight: 650;
+    }
+    .qr-admin-surface .btn.btn-outline-secondary:hover,
+    .qr-admin-surface .btn.btn-outline-secondary:focus,
+    .qr-admin-surface .btn.btn-outline-warning:hover,
+    .qr-admin-surface .btn.btn-outline-warning:focus {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-bg) !important;
+      color: var(--notes-text) !important;
+      box-shadow: 0 0 0 .12rem rgba(161, 98, 7, .1);
+    }
+    .qr-admin-type-toggle {
+      padding: 4px;
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: #fffdf7;
+      gap: 4px;
+    }
+    .qr-admin-type-toggle .btn {
+      border-radius: 8px !important;
+      border-color: transparent;
+      font-weight: 750;
+    }
+    .qr-admin-type-toggle .btn.active {
+      background: var(--notes-base) !important;
+      border-color: var(--notes-base) !important;
+      color: #fff !important;
+      box-shadow: 0 6px 14px rgba(161, 98, 7, .16);
+    }
+    .qr-admin-surface .form-label,
+    .qr-admin-surface label.small.text-muted {
+      color: var(--notes-text) !important;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+    .qr-admin-surface .form-control,
+    .qr-admin-surface .form-select,
+    .qr-admin-surface select {
+      width: 100%;
+      min-height: 36px;
+      border-color: color-mix(in srgb, var(--notes-base) 34%, #cbd5e1) !important;
+      border-radius: 9px;
+      background-color: #fff;
+      color: var(--notes-neutral-text);
+      font-size: .88rem;
+      box-shadow: none;
+    }
+    .qr-admin-surface .form-control:focus,
+    .qr-admin-surface .form-select:focus,
+    .qr-admin-surface select:focus {
+      border-color: var(--notes-base) !important;
+      box-shadow: 0 0 0 .14rem rgba(161, 98, 7, .13) !important;
+    }
+    .qr-admin-surface select option:checked {
+      background: var(--notes-base);
+      color: #fff;
+    }
+    .qr-admin-surface .table-responsive {
+      border: 1px solid var(--notes-neutral-border);
+      border-radius: 10px;
+      background: #fff;
+      overflow: auto;
+    }
+    .qr-admin-surface .table {
+      margin-bottom: 0;
+    }
+    .qr-admin-surface thead th {
+      border-top: 0;
+      border-bottom: 1px solid var(--notes-border);
+      background: var(--notes-bg);
+      color: var(--notes-text);
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .qr-admin-surface tbody td {
+      border-top-color: #edf1f5;
+      vertical-align: top;
+    }
+    .qr-admin-surface .badge.bg-light,
+    .qr-admin-surface .badge.badge-light {
+      background: #fffdf7 !important;
+      border-color: var(--notes-border) !important;
+      color: var(--notes-text) !important;
+    }
+    .qr-admin-assignment-form {
+      border-top: 1px solid var(--notes-border) !important;
+    }
+    #itemLabelsModal {
+      z-index: 200030 !important;
+    }
+    #itemLabelsModal.show {
+      display: block;
+    }
+    #itemLabelsModal .modal-dialog {
+      z-index: 200031;
+      margin: 1.75rem auto;
+      max-width: 640px;
+    }
+    #itemLabelsModal .modal-content {
+      max-height: calc(100vh - 3.5rem);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--notes-border);
+      border-radius: 12px;
+      box-shadow: 0 24px 54px rgba(15, 23, 42, .28);
+    }
+    #itemLabelsModal .modal-header {
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+      border-bottom: 1px solid var(--notes-border);
+    }
+    #itemLabelsModal .modal-title {
+      color: var(--notes-text);
+      font-weight: 800;
+    }
+    #itemLabelsModal .modal-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      max-height: calc(100vh - 220px);
+    }
+    .modal-backdrop.show {
+      z-index: 200020 !important;
+    }
+    @media (max-width: 991.98px) {
+      .qr-admin-layout {
+        grid-template-columns: 1fr;
+      }
+      .qr-admin-header,
+      .qr-admin-header-actions,
+      .qr-admin-header-actions .btn {
+        align-items: stretch;
+        width: 100%;
+      }
+      .qr-admin-header-actions .btn {
+        flex: 1 1 auto;
+      }
+    }
+  </style>
+
+  <div class="card-surface qr-admin-surface">
+    <div class="qr-admin-header" data-avatar-anchor="qr-admin-header">
+      <div class="qr-admin-title-block">
+        <h1 class="qr-admin-title">
+          <span class="qr-admin-title-icon" aria-hidden="true">
+            <img src="{% static 'notes/QRs/administrador.png' %}" alt="">
+          </span>
+          <span>Administrador QRs</span>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_detail" aria-label="Ajuda sobre l'administrador de QRs" title="Ajuda sobre l'administrador de QRs">?</button>
+        </h1>
+        <div class="qr-admin-context-line">
+          <span class="qr-admin-context-main">{{ competicio.nom }}</span>
+          <span>Extensio del panell de Notes</span>
+          <span>Crea QRs, selecciona'n un i configura accessos</span>
+        </div>
+      </div>
+      <div class="qr-admin-header-actions">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}" data-avatar-action="qr-admin-back-notes">Tornar a notes</a>
+        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}" data-avatar-action="qr-admin-open-support">Suport jutges</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_print' competicio.id %}" target="_blank" data-avatar-anchor="qr-admin-print-qrs" data-avatar-action="qr-admin-print-qrs">
+          <img class="qr-admin-button-icon" src="{% static 'notes/QRs/imprimir.png' %}" alt="">
+          Imprimir QRs
+        </a>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_print_qrs" aria-label="Ajuda per imprimir QRs" title="Ajuda per imprimir QRs">?</button>
+      </div>
+    </div>
+
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} py-2 small">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    <div class="qr-admin-layout">
+      <div class="qr-admin-stack">
+        <section class="qr-admin-panel qr-admin-panel--create" data-avatar-anchor="qr-admin-create-panel">
+          <div class="qr-admin-section-head">
+            <div>
+              <div class="qr-admin-section-kicker">Creacio</div>
+              <h2 class="qr-admin-section-title">
+                <span class="qr-admin-section-icon" aria-hidden="true">
+                  <img src="{% static 'notes/QRs/new.png' %}" alt="">
+                </span>
+                <span>Crear QR</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_create_panel" aria-label="Ajuda per crear QRs" title="Ajuda per crear QRs">?</button>
+              </h2>
+              <p class="qr-admin-section-copy">Tria el tipus i genera un nou acces.</p>
+            </div>
+          </div>
+          {% if create_form.non_field_errors %}
+            <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
+          {% endif %}
+          <form method="post" id="qrCreateForm" data-avatar-anchor="qr-admin-create-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" id="qrCreateAction" value="create_judge_qr">
+
+            <div class="mb-2" data-avatar-anchor="qr-admin-create-type">
+              <label class="form-label small text-muted mb-1">Tipus</label>
+              <div class="btn-group btn-group-sm d-flex qr-admin-type-toggle" role="group" aria-label="Tipus de QR">
+                <input class="btn-check d-none" type="radio" name="qr_access_type" id="qrTypeJudge" value="judge" checked>
+                <label class="btn btn-outline-primary flex-fill" for="qrTypeJudge">
+                  Jutge
+                </label>
+                {% if can_manage_public_live %}
+                  <input class="btn-check d-none" type="radio" name="qr_access_type" id="qrTypePublic" value="public">
+                  <label class="btn btn-outline-primary flex-fill" for="qrTypePublic">
+                    Públic
+                  </label>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="mb-2" data-avatar-anchor="qr-admin-create-name">
+              <label class="form-label small text-muted mb-1">Etiqueta</label>
+              {{ create_form.label }}
+              {% if create_form.label.errors %}
+                <div class="text-danger small mt-1">{{ create_form.label.errors }}</div>
+              {% endif %}
+            </div>
+
+            <div class="form-group mb-2" data-create-option="judge">
+              <div class="qr-admin-option-box">
+                <div class="custom-control custom-checkbox mb-0">
+                  <input type="checkbox"
+                         class="custom-control-input"
+                         id="{{ create_form.can_record_video.id_for_label }}"
+                         name="{{ create_form.can_record_video.html_name }}"
+                         value="1"
+                         {% if create_form.can_record_video.value %}checked{% endif %}>
+                  <label class="custom-control-label small" for="{{ create_form.can_record_video.id_for_label }}">
+                    Permetre boto "Gravar"
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {% if can_manage_public_live %}
+              <div class="form-group mb-2 d-none" data-create-option="public">
+                <div class="qr-admin-option-box">
+                  <div class="custom-control custom-checkbox mb-0">
+                    <input class="custom-control-input" type="checkbox" id="create_can_view_media" name="can_view_media" value="1">
+                    <label class="custom-control-label small" for="create_can_view_media">Permetre media publica</label>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+
+            <div class="qr-admin-help mb-3" data-create-help="judge">
+              El QR de jutge es crea sense accessos. Selecciona'l despres per afegir aparell, fase i permisos.
+            </div>
+            {% if can_manage_public_live %}
+              <div class="qr-admin-help mb-3 d-none" data-create-help="public">
+                El QR public obre directament les classificacions publicades.
+              </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-sm btn-primary">
+                Crear QR
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="qr-admin-panel qr-admin-panel--list" data-avatar-anchor="qr-admin-list">
+          <div class="qr-admin-section-head">
+            <div>
+              <div class="qr-admin-section-kicker">Llistat</div>
+              <h2 class="qr-admin-section-title">
+                <span class="qr-admin-section-icon" aria-hidden="true">
+                  <img src="{% static 'notes/QRs/llistat.png' %}" alt="">
+                </span>
+                <span>Llistat de QRs</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_existing_list" aria-label="Ajuda sobre els QRs existents" title="Ajuda sobre els QRs existents">?</button>
+              </h2>
+              <p class="qr-admin-section-copy">L'element seleccionat queda marcat i alimenta el detall.</p>
+            </div>
+            <span class="badge bg-light text-dark border">{{ token_rows|length }} totals</span>
+          </div>
+          <div class="qr-admin-stack">
+            {% for row in token_rows %}
+              <a class="qr-admin-row {% if row.is_selected %}is-selected{% endif %}"
+                 href="{{ row.url }}"
+                 data-avatar-anchor="qr-admin-list-item"
+                 data-avatar-action="qr-admin-select-token">
+                <div class="d-flex justify-content-between gap-2">
+                  <div>
+                    <div class="fw-semibold qr-admin-row-title">{{ row.label }}</div>
+                    <div class="text-muted small qr-token-id">{{ row.id }}</div>
+                  </div>
+                  <div class="d-flex flex-column align-items-end gap-1">
+                    <span class="badge bg-light text-dark border">
+                      {% if row.kind == "judge" %}
+                        <img class="qr-admin-button-icon" src="{% static 'notes/QRs/jutge.png' %}" alt="">
+                        Jutge
+                      {% else %}
+                        <img class="qr-admin-button-icon" src="{% static 'notes/QRs/public.png' %}" alt="">
+                        Public
+                      {% endif %}
+                    </span>
+                  </div>
+                </div>
+                <div class="mt-2 d-flex flex-wrap gap-1" data-avatar-anchor="qr-admin-list-status">
+                  {% if row.is_active %}
+                    <span class="badge bg-success">Actiu</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactiu</span>
+                  {% endif %}
+                  {% if row.kind == "judge" %}
+                    <span class="badge bg-light text-dark border">{{ row.assignment_count }} accessos</span>
+                  {% endif %}
+                </div>
+              </a>
+            {% empty %}
+              <div class="text-muted small">Encara no hi ha cap QR creat.</div>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+
+      <section class="qr-admin-panel qr-admin-panel--detail" data-avatar-anchor="qr-admin-detail">
+        <div class="qr-admin-section-head">
+          <div>
+            <div class="qr-admin-section-kicker">Detall</div>
+            <h2 class="qr-admin-section-title">
+              <span class="qr-admin-section-icon" aria-hidden="true">
+                <img src="{% static 'notes/QRs/detall.png' %}" alt="">
+              </span>
+              <span>Detall del QR</span>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_detail" aria-label="Ajuda sobre el detall del QR" title="Ajuda sobre el detall del QR">?</button>
+            </h2>
+            <p class="qr-admin-section-copy">Consulta l'estat i afegeix accessos o permisos.</p>
+          </div>
+        </div>
+
+        {% if selected_token %}
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 qr-admin-detail-identity">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                <div class="qr-admin-token-title">{{ selected_token.label|default:"(sense etiqueta)" }}</div>
+                <button class="btn btn-sm btn-outline-secondary qr-admin-title-edit-toggle"
+                        type="button"
+                        data-qr-label-edit-toggle
+                        data-target="#judgeQrLabelForm"
+                        aria-controls="judgeQrLabelForm"
+                        aria-expanded="false"
+                        aria-label="Editar titol"
+                        title="Editar titol">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 20h9"></path>
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                  </svg>
+                </button>
+              </div>
+              <form method="post" id="judgeQrLabelForm" class="qr-admin-title-edit-form d-none mb-2" data-qr-label-edit-form>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_judge_qr_label">
+                <input type="hidden" name="token_id" value="{{ selected_token.id }}">
+                <div class="d-flex flex-wrap align-items-end gap-2">
+                  <div class="flex-grow-1" style="min-width:220px;">
+                    <label class="form-label small text-muted mb-1">Titol del QR</label>
+                    <input class="form-control form-control-sm" name="label" maxlength="120" value="{{ selected_token.label }}" placeholder="Sense etiqueta">
+                  </div>
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">Desar titol</button>
+                </div>
+              </form>
+              <div class="text-muted small qr-token-id">{{ selected_token.id }}</div>
+              <div class="mt-2 d-flex flex-wrap gap-1">
+                <span class="badge bg-light text-dark border">
+                  <img class="qr-admin-button-icon" src="{% static 'notes/QRs/jutge.png' %}" alt="">
+                  Jutge
+                </span>
+                {% if selected_token.revoked_at %}
+                  <span class="badge bg-danger">Revocat</span>
+                {% elif not selected_token.is_active %}
+                  <span class="badge bg-secondary">Inactiu</span>
+                {% else %}
+                  <span class="badge bg-success">Actiu</span>
+                {% endif %}
+                {% if selected_token.can_record_video %}
+                  <span class="badge bg-info text-dark">Video</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-1" data-avatar-anchor="qr-admin-detail-actions">
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' selected_token.id %}" target="_blank" data-avatar-anchor="qr-admin-open-portal" data-avatar-action="qr-admin-open-portal">Obrir</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' selected_token.id %}" target="_blank" data-avatar-anchor="qr-admin-open-qr" data-avatar-action="qr-admin-open-qr">QR</a>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_judge_actions" aria-label="Ajuda sobre les accions del jutge" title="Ajuda sobre les accions del jutge">?</button>
+              {% if not selected_token.revoked_at and selected_token.is_active %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke_judge_qr">
+                  <input type="hidden" name="token_id" value="{{ selected_token.id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit" data-avatar-anchor="qr-admin-revoke-access">Revocar QR</button>
+                </form>
+              {% else %}
+                <form method="post" onsubmit="return confirm('Eliminar definitivament aquest QR de jutge revocat?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="delete_judge_qr">
+                  <input type="hidden" name="token_id" value="{{ selected_token.id }}">
+                  <button class="btn btn-sm btn-danger" type="submit">Eliminar QR</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="mb-4" data-avatar-anchor="qr-admin-judge-accesses">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-semibold d-inline-flex align-items-center">
+                <img class="qr-admin-button-icon" src="{% static 'notes/QRs/configuracio.png' %}" alt="">
+                Accessos configurats
+              </div>
+              <span class="text-muted small">{{ selected_assignments|length }} totals</span>
+            </div>
+            <div class="qr-assignment-grid">
+              {% for row in selected_assignments %}
+                <div class="qr-assignment-card">
+                  <div class="qr-assignment-card__head">
+                    <div>
+                      <h4 class="qr-assignment-card__title">{{ row.assignment.label|default:"Acces" }}</h4>
+                      <div class="qr-assignment-card__meta">
+                        <span class="qr-assignment-meta-pill">Aparell: {{ row.app_label }}</span>
+                        <span class="qr-assignment-meta-pill">Fase: {{ row.phase_label }}</span>
+                      </div>
+                    </div>
+                    {% if row.assignment.is_active %}
+                      <span class="badge bg-success">Actiu</span>
+                    {% else %}
+                      <span class="badge bg-secondary">Inactiu</span>
+                    {% endif %}
+                  </div>
+                  <div class="qr-assignment-card__permissions" aria-label="Permisos configurats">
+                    {% for p in row.permission_summaries %}
+                      <span class="qr-permission-chip">{{ p.label }} / J{{ p.judge_index }}</span>
+                    {% empty %}
+                      <span class="text-muted small">Sense permisos.</span>
+                    {% endfor %}
+                  </div>
+                  {% if row.assignment.is_active %}
+                    <form method="post" class="qr-assignment-card__actions">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="deactivate_assignment">
+                      <input type="hidden" name="assignment_id" value="{{ row.assignment.id }}">
+                      <button class="btn btn-sm btn-outline-secondary" type="submit">Desactivar acces</button>
+                    </form>
+                  {% else %}
+                    <form method="post" class="qr-assignment-card__actions" onsubmit="return confirm('Eliminar definitivament aquest acces desactivat?');">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="delete_assignment">
+                      <input type="hidden" name="assignment_id" value="{{ row.assignment.id }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar acces</button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% empty %}
+                <div class="text-muted small">Aquest QR encara no te cap acces. Afegeix-ne un amb el formulari inferior.</div>
+              {% endfor %}
+            </div>
+          </div>
+
+          {% if selected_token.is_active and not selected_token.revoked_at %}
+            <div class="qr-admin-assignment-form pt-3" data-avatar-anchor="qr-admin-add-judge-access">
+              <div class="qr-admin-section-head">
+                <div>
+                  <div class="qr-admin-section-kicker">Assignacio</div>
+                  <h3 class="qr-admin-section-title">
+                    <span class="qr-admin-section-icon" aria-hidden="true">
+                      <img src="{% static 'notes/QRs/afegir.png' %}" alt="">
+                    </span>
+                    <span>Afegir acces de jutge</span>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="qr_admin_judge_access" aria-label="Ajuda per afegir acces de jutge" title="Ajuda per afegir acces de jutge">?</button>
+                  </h3>
+                  <p class="qr-admin-section-copy">Defineix aparell, fase i els camps que podra puntuar aquest QR.</p>
+                </div>
+              </div>
+              {% if assignment_formset.non_form_errors %}
+                <div class="alert alert-danger py-2">{{ assignment_formset.non_form_errors }}</div>
+              {% endif %}
+              {% if comp_aparells %}
+                <form method="post" id="judgeAssignmentForm">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="add_assignment">
+                  <input type="hidden" name="token_id" value="{{ selected_token.id }}">
+
+                  <div class="row g-2 mb-2" data-avatar-anchor="qr-admin-access-apparatus-phase">
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small text-muted mb-1">Aparell</label>
+                      <select class="form-select form-select-sm" name="assignment_comp_aparell_id" id="assignmentAppSelect" required>
+                        {% for ca in comp_aparells %}
+                          <option value="{{ ca.id }}" {% if assignment_comp_aparell and ca.id == assignment_comp_aparell.id %}selected{% endif %}>
+                            {{ ca.display_nom }}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small text-muted mb-1">Fase</label>
+                      <select class="form-select form-select-sm" name="fase_id" id="assignmentPhaseSelect">
+                        <option value="">Preliminar / sense fase</option>
+                        {% for phase in phase_choices %}
+                          <option value="{{ phase.id }}">{{ phase.nom }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-8">
+                      <label class="form-label small text-muted mb-1">Etiqueta d'acces</label>
+                      <input class="form-control form-control-sm" name="assignment_label" placeholder="Ex: Final E1">
+                    </div>
+
+                  </div>
+
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="text-muted small">Permisos</div>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                      <span class="text-muted small"><span id="permCounter">0/{{ max_permissions }}</span></span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="permAddBtn">
+                        <img class="qr-admin-button-icon" src="{% static 'notes/QRs/afegir.png' %}" alt="">
+                        Afegir camp
+                      </button>
+                    </div>
+                  </div>
+
+                  {{ assignment_formset.management_form }}
+                  <div class="table-responsive" data-avatar-anchor="qr-admin-access-fields">
+                    <table class="table table-sm align-middle">
+                      <thead>
+                        <tr class="text-muted small">
+                          <th style="min-width:220px;">Camp</th>
+                          <th data-team-column="1">Abast</th>
+                          <th style="min-width:220px;" data-team-column="1">Membres</th>
+                          <th data-avatar-anchor="qr-admin-access-judge-number">Jutge</th>
+                          <th data-avatar-anchor="qr-admin-access-items-limit">Start</th>
+                          <th>Count</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="permTbody" data-max-permissions="{{ max_permissions }}">
+                        {% for f in assignment_formset.forms %}
+                          <tr class="perm-row">
+                            <td>
+                              {{ f.field_code }}
+                              <div class="mt-1 d-none" data-item-labels-controls="1">
+                                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-item-labels-trigger="1">Noms d'items</button>
+                                <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
+                              </div>
+                              {% if f.field_code.errors %}<div class="text-danger small mt-1">{{ f.field_code.errors }}</div>{% endif %}
+                            </td>
+                            <td data-team-column="1">
+                              {{ f.scope }}
+                              {% if f.scope.errors %}<div class="text-danger small mt-1">{{ f.scope.errors }}</div>{% endif %}
+                            </td>
+                            <td data-team-column="1">
+                              <div data-member-target="1">
+                                <div class="mb-1">{{ f.member_mode }}</div>
+                                {{ f.member_slots }}
+                                <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                                {% if f.member_mode.errors %}<div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>{% endif %}
+                                {% if f.member_slots.errors %}<div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>{% endif %}
+                              </div>
+                            </td>
+                            <td>
+                              {{ f.judge_index }}
+                              {% if f.judge_index.errors %}<div class="text-danger small mt-1">{{ f.judge_index.errors }}</div>{% endif %}
+                            </td>
+                            <td>
+                              {{ f.item_start }}
+                              {% if f.item_start.errors %}<div class="text-danger small mt-1">{{ f.item_start.errors }}</div>{% endif %}
+                            </td>
+                            <td>
+                              {{ f.item_count }}
+                              {% if f.item_count.errors %}<div class="text-danger small mt-1">{{ f.item_count.errors }}</div>{% endif %}
+                            </td>
+                            <td class="text-end">
+                              <div class="form-check">
+                                {{ f.DELETE }}
+                                <label class="form-check-label small text-muted">Eliminar</label>
+                              </div>
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <template id="permRowTemplate">
+                    <tr class="perm-row">
+                      <td>
+                        {{ assignment_formset.empty_form.field_code }}
+                        <div class="mt-1 d-none" data-item-labels-controls="1">
+                          <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-item-labels-trigger="1">Noms d'items</button>
+                          <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
+                        </div>
+                      </td>
+                      <td data-team-column="1">{{ assignment_formset.empty_form.scope }}</td>
+                      <td data-team-column="1">
+                        <div data-member-target="1">
+                          <div class="mb-1">{{ assignment_formset.empty_form.member_mode }}</div>
+                          {{ assignment_formset.empty_form.member_slots }}
+                          <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                        </div>
+                      </td>
+                      <td>{{ assignment_formset.empty_form.judge_index }}</td>
+                      <td>{{ assignment_formset.empty_form.item_start }}</td>
+                      <td>{{ assignment_formset.empty_form.item_count }}</td>
+                      <td class="text-end">
+                        <div class="form-check">
+                        {{ assignment_formset.empty_form.DELETE }}
+                          <label class="form-check-label small text-muted">Eliminar</label>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+
+                  <div class="text-muted small mb-3">
+                    Start/Count limita items en camps matrix. Els camps i fases canvien segons l'aparell seleccionat.
+                  </div>
+                  <div class="d-flex justify-content-end">
+                    <button class="btn btn-sm btn-primary" type="submit">
+                      Afegir accés
+                    </button>
+                  </div>
+                </form>
+              {% else %}
+                <div class="text-muted small">Cal tenir almenys un aparell actiu per afegir accessos.</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% elif selected_public_token %}
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 qr-admin-detail-identity" data-avatar-anchor="qr-admin-public-detail">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                <div class="qr-admin-token-title">{{ selected_public_token.label|default:"(sense etiqueta)" }}</div>
+                <button class="btn btn-sm btn-outline-secondary qr-admin-title-edit-toggle"
+                        type="button"
+                        data-qr-label-edit-toggle
+                        data-target="#publicQrLabelForm"
+                        aria-controls="publicQrLabelForm"
+                        aria-expanded="false"
+                        aria-label="Editar titol"
+                        title="Editar titol">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 20h9"></path>
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                  </svg>
+                </button>
+              </div>
+              <form method="post" id="publicQrLabelForm" class="qr-admin-title-edit-form d-none mb-2" data-qr-label-edit-form>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_public_qr_label">
+                <input type="hidden" name="token_id" value="{{ selected_public_token.id }}">
+                <div class="d-flex flex-wrap align-items-end gap-2">
+                  <div class="flex-grow-1" style="min-width:220px;">
+                    <label class="form-label small text-muted mb-1">Titol del QR</label>
+                    <input class="form-control form-control-sm" name="label" maxlength="120" value="{{ selected_public_token.label }}" placeholder="Sense etiqueta">
+                  </div>
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">Desar titol</button>
+                </div>
+              </form>
+              <div class="text-muted small qr-token-id">{{ selected_public_token.id }}</div>
+              <div class="mt-2 d-flex flex-wrap gap-1">
+                <span class="badge bg-light text-dark border">
+                  <img class="qr-admin-button-icon" src="{% static 'notes/QRs/public.png' %}" alt="">
+                  Public
+                </span>
+                {% if selected_public_token.revoked_at %}
+                  <span class="badge bg-danger">Revocat</span>
+                {% elif not selected_public_token.is_active %}
+                  <span class="badge bg-secondary">Inactiu</span>
+                {% else %}
+                  <span class="badge bg-success">Actiu</span>
+                {% endif %}
+                {% if selected_public_token.can_view_media %}
+                  <span class="badge bg-success">Media publica</span>
+                {% else %}
+                  <span class="badge bg-secondary">Sense media</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-1" data-avatar-anchor="qr-admin-detail-actions">
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_portal' selected_public_token.id %}" target="_blank" data-avatar-action="qr-admin-open-public-live">Obrir</a>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_loop' selected_public_token.id %}" target="_blank" data-avatar-action="qr-admin-open-public-loop">Loop</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'public_live_qr_png' selected_public_token.id %}" target="_blank" data-avatar-action="qr-admin-open-public-qr">QR</a>
+              {% if not selected_public_token.revoked_at and selected_public_token.is_active %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke_public_qr">
+                  <input type="hidden" name="token_id" value="{{ selected_public_token.id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Revocar QR</button>
+                </form>
+              {% else %}
+                <form method="post" onsubmit="return confirm('Eliminar definitivament aquest QR public revocat?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="delete_public_qr">
+                  <input type="hidden" name="token_id" value="{{ selected_public_token.id }}">
+                  <button class="btn btn-sm btn-danger" type="submit">Eliminar QR</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+          <div class="qr-admin-help">
+            Aquest QR public no te pantalla intermedia: obre directament les classificacions live publicades.
+          </div>
+        {% else %}
+          <div class="qr-admin-empty-state">Selecciona un QR del llistat o crea'n un de nou.</div>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="itemLabelsModal" tabindex="-1" aria-labelledby="itemLabelsModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" id="itemLabelsForm">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_item_labels">
+        <input type="hidden" name="item_labels_comp_aparell_id" id="itemLabelsCompAparellId">
+        <input type="hidden" name="field_code" id="itemLabelsFieldCode">
+        <input type="hidden" name="item_labels_json" id="itemLabelsJson">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-1" id="itemLabelsModalTitle">Noms d'items</h5>
+            <div class="text-muted small" id="itemLabelsModalMeta"></div>
+          </div>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Tancar">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-light border small">Aquesta configuracio es global per aparell i camp.</div>
+          <div id="itemLabelsRows"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-sm btn-primary">Desar noms</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ app_catalog|json_script:"judge-app-catalog" }}
+{{ schema_field_catalog|json_script:"judge-schema-field-catalog" }}
+<script>
+  (function () {
+    const createForm = document.getElementById("qrCreateForm");
+    if (createForm) {
+      const actionInput = document.getElementById("qrCreateAction");
+      const typeInputs = Array.from(createForm.querySelectorAll('input[name="qr_access_type"]'));
+      function refreshCreateType() {
+        const selected = (typeInputs.find((input) => input.checked) || {}).value || "judge";
+        if (actionInput) actionInput.value = selected === "public" ? "create_public_qr" : "create_judge_qr";
+        typeInputs.forEach((input) => {
+          const label = createForm.querySelector(`label[for="${input.id}"]`);
+          if (label) label.classList.toggle("active", input.checked);
+        });
+        Array.from(createForm.querySelectorAll("[data-create-option], [data-create-help]")).forEach((el) => {
+          const key = el.getAttribute("data-create-option") || el.getAttribute("data-create-help");
+          el.classList.toggle("d-none", key !== selected);
+        });
+      }
+      typeInputs.forEach((input) => input.addEventListener("change", refreshCreateType));
+      refreshCreateType();
+    }
+
+    document.querySelectorAll("[data-qr-label-edit-toggle]").forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        const selector = toggle.getAttribute("data-target") || "";
+        const form = selector ? document.querySelector(selector) : null;
+        if (!form) return;
+        const willOpen = form.classList.contains("d-none");
+        form.classList.toggle("d-none", !willOpen);
+        toggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        if (willOpen) {
+          const input = form.querySelector('input[name="label"]');
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        }
+      });
+    });
+
+    const assignmentForm = document.getElementById("judgeAssignmentForm");
+    const appSelect = document.getElementById("assignmentAppSelect");
+    const phaseSelect = document.getElementById("assignmentPhaseSelect");
+    const tbody = document.getElementById("permTbody");
+    const addBtn = document.getElementById("permAddBtn");
+    const counter = document.getElementById("permCounter");
+    const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
+    const rowTemplate = document.getElementById("permRowTemplate");
+    const catalogEl = document.getElementById("judge-app-catalog");
+    if (!assignmentForm || !appSelect || !phaseSelect || !tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate || !catalogEl) return;
+
+    let appCatalog = {};
+    try {
+      appCatalog = JSON.parse(catalogEl.textContent || "{}");
+    } catch (_err) {
+      appCatalog = {};
+    }
+    const maxPermissions = Number(tbody.dataset.maxPermissions || "15");
+    const itemLabelsModalEl = document.getElementById("itemLabelsModal");
+    const itemLabelsForm = document.getElementById("itemLabelsForm");
+    const itemLabelsCompAparellIdInput = document.getElementById("itemLabelsCompAparellId");
+    const itemLabelsFieldCodeInput = document.getElementById("itemLabelsFieldCode");
+    const itemLabelsJsonInput = document.getElementById("itemLabelsJson");
+    const itemLabelsTitleEl = document.getElementById("itemLabelsModalTitle");
+    const itemLabelsMetaEl = document.getElementById("itemLabelsModalMeta");
+    const itemLabelsRowsEl = document.getElementById("itemLabelsRows");
+    if (itemLabelsModalEl && itemLabelsModalEl.parentElement !== document.body) {
+      document.body.appendChild(itemLabelsModalEl);
+    }
+    const itemLabelsModal = (window.jQuery && itemLabelsModalEl) ? window.jQuery(itemLabelsModalEl) : null;
+
+    function currentApp() {
+      return appCatalog[String(appSelect.value || "")] || { fields: [], phases: [], member_slots: [], team_context: false };
+    }
+
+    function fieldMeta(fieldCode) {
+      const code = String(fieldCode || "").trim();
+      return (currentApp().fields || []).find((item) => String(item.code) === code) || null;
+    }
+
+    function normalizeItemLabels(rawValue, itemsCount) {
+      const rawItems = Array.isArray(rawValue) ? rawValue : [];
+      const out = [];
+      for (let idx = 0; idx < itemsCount; idx += 1) {
+        const value = idx < rawItems.length ? rawItems[idx] : "";
+        out.push(String(value == null ? "" : value).trim());
+      }
+      return out;
+    }
+
+    function itemLabelsSummary(meta) {
+      const itemsCount = Math.max(1, Number((meta && meta.items_count) || 1));
+      const configured = normalizeItemLabels(meta && meta.item_labels, itemsCount).filter((item) => item).length;
+      return configured ? `${configured}/${itemsCount} noms configurats` : `Sense noms personalitzats (${itemsCount} items)`;
+    }
+
+    function parseSlotsValue(rawValue) {
+      if (!rawValue) return [];
+      return String(rawValue)
+        .split(/[\s,;]+/)
+        .map((item) => String(item || "").trim().toUpperCase().replace(/^M/, ""))
+        .map((item) => Number(item))
+        .filter((item, idx, arr) => Number.isFinite(item) && item > 0 && arr.indexOf(item) === idx);
+    }
+
+    function setSelectOptions(select, options, placeholder, keepValue) {
+      const previous = keepValue == null ? select.value : String(keepValue);
+      select.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = placeholder;
+      select.appendChild(empty);
+      options.forEach((option) => {
+        const el = document.createElement("option");
+        el.value = String(option.value);
+        el.textContent = option.label;
+        select.appendChild(el);
+      });
+      if (previous && Array.from(select.options).some((option) => option.value === previous)) {
+        select.value = previous;
+      }
+    }
+
+    function refreshPhases() {
+      const phases = (currentApp().phases || []).map((phase) => ({ value: phase.id, label: phase.label }));
+      setSelectOptions(phaseSelect, phases, "Preliminar / sense fase");
+    }
+
+    function refreshFieldChoices(row) {
+      const select = row.querySelector('select[name$="-field_code"]');
+      if (!select) return;
+      const fields = (currentApp().fields || []).map((field) => ({
+        value: field.code,
+        label: `${field.code} - ${field.label || field.code}`,
+      }));
+      setSelectOptions(select, fields, "-");
+    }
+
+    function renderMemberSlots(row) {
+      const picker = row.querySelector('[data-member-slot-picker="1"]');
+      if (!picker) return [];
+      picker.innerHTML = "";
+      const slots = currentApp().member_slots || [];
+      slots.forEach((slot) => {
+        const label = document.createElement("label");
+        label.className = "btn btn-sm btn-outline-secondary permission-member-slot";
+        label.setAttribute("data-member-slot-label", "1");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "d-none";
+        input.value = String(slot);
+        input.setAttribute("data-member-slot-check", "1");
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(`M${slot}`));
+        picker.appendChild(label);
+      });
+      return Array.from(row.querySelectorAll('[data-member-slot-check="1"]'));
+    }
+
+    function openItemLabelsModal(fieldCode) {
+      const meta = fieldMeta(fieldCode);
+      const cleanCode = String(fieldCode || "").trim();
+      if (!cleanCode || !meta || String(meta.type || "") !== "matrix" || !itemLabelsRowsEl) return;
+      const itemsCount = Math.max(1, Number(meta.items_count || 1));
+      const itemLabels = normalizeItemLabels(meta.item_labels, itemsCount);
+      if (itemLabelsCompAparellIdInput) itemLabelsCompAparellIdInput.value = String(appSelect.value || "");
+      if (itemLabelsFieldCodeInput) itemLabelsFieldCodeInput.value = cleanCode;
+      if (itemLabelsTitleEl) itemLabelsTitleEl.textContent = `Noms d'items - ${meta.label || cleanCode}`;
+      if (itemLabelsMetaEl) itemLabelsMetaEl.textContent = `${currentApp().label || ""} - ${cleanCode} - ${itemsCount} items`;
+      itemLabelsRowsEl.innerHTML = "";
+      for (let idx = 0; idx < itemsCount; idx += 1) {
+        const group = document.createElement("div");
+        group.className = "form-group";
+        const label = document.createElement("label");
+        label.className = "form-label small text-muted mb-1";
+        label.textContent = `Item ${idx + 1}`;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.value = itemLabels[idx] || "";
+        input.placeholder = `Item ${idx + 1}`;
+        input.setAttribute("data-item-label-input", "1");
+        group.appendChild(label);
+        group.appendChild(input);
+        itemLabelsRowsEl.appendChild(group);
+      }
+      if (itemLabelsModal) itemLabelsModal.modal("show");
+    }
+
+    function syncItemLabelsJson() {
+      if (!itemLabelsJsonInput || !itemLabelsRowsEl) return;
+      itemLabelsJsonInput.value = JSON.stringify(
+        Array.from(itemLabelsRowsEl.querySelectorAll('[data-item-label-input="1"]'))
+          .map((input) => String(input.value || "").trim())
+      );
+    }
+
+    function bindPermissionRow(row) {
+      if (!row) return;
+      refreshFieldChoices(row);
+      const fieldSelect = row.querySelector('select[name$="-field_code"]');
+      const scopeSelect = row.querySelector('select[name$="-scope"]');
+      const modeSelect = row.querySelector('select[name$="-member_mode"]');
+      const slotsInput = row.querySelector('input[name$="-member_slots"]');
+      const targetWrap = row.querySelector('[data-member-target="1"]');
+      const itemLabelsControls = row.querySelector('[data-item-labels-controls="1"]');
+      const itemLabelsTrigger = row.querySelector('[data-item-labels-trigger="1"]');
+      const itemLabelsSummaryEl = row.querySelector('[data-item-labels-summary="1"]');
+      if (!fieldSelect || !scopeSelect || !modeSelect || !slotsInput) return;
+
+      function syncLabels() {
+        Array.from(row.querySelectorAll('[data-member-slot-label="1"]')).forEach((label) => {
+          const check = label.querySelector('[data-member-slot-check="1"]');
+          const checked = !!(check && check.checked);
+          label.classList.toggle("is-active", checked);
+          label.classList.toggle("btn-outline-secondary", !checked);
+          label.classList.toggle("btn-primary", checked);
+        });
+      }
+
+      function syncFromInput() {
+        const selected = parseSlotsValue(slotsInput.value);
+        Array.from(row.querySelectorAll('[data-member-slot-check="1"]')).forEach((check) => {
+          check.checked = selected.includes(Number(check.value || "0"));
+        });
+        syncLabels();
+      }
+
+      function syncToInput() {
+        let selected = Array.from(row.querySelectorAll('[data-member-slot-check="1"]'))
+          .filter((check) => check.checked)
+          .map((check) => Number(check.value || "0"))
+          .filter((slot) => Number.isFinite(slot) && slot > 0);
+        if (modeSelect.value === "all") {
+          selected = [];
+        } else if (modeSelect.value === "single" && selected.length > 1) {
+          selected = [selected[selected.length - 1]];
+        }
+        Array.from(row.querySelectorAll('[data-member-slot-check="1"]')).forEach((check) => {
+          check.checked = selected.includes(Number(check.value || "0"));
+        });
+        slotsInput.value = selected.join(",");
+        syncLabels();
+      }
+
+      function refreshVisibility() {
+        const app = currentApp();
+        const meta = fieldMeta(fieldSelect.value);
+        const scope = String((meta && meta.scope) || (app.team_context ? "member" : "shared")).toLowerCase();
+        const isMember = !!app.team_context && scope === "member";
+        scopeSelect.value = isMember ? "member" : "shared";
+        Array.from(scopeSelect.options).forEach((option) => {
+          option.disabled = option.value !== scopeSelect.value;
+        });
+        if (targetWrap) targetWrap.classList.toggle("d-none", !isMember);
+        if (!isMember) {
+          modeSelect.value = "all";
+          slotsInput.value = "";
+        }
+        const checks = renderMemberSlots(row);
+        checks.forEach((check) => check.addEventListener("change", syncToInput));
+        syncFromInput();
+        const canConfigureItems = !!(meta && String(meta.type || "") === "matrix");
+        if (itemLabelsControls) itemLabelsControls.classList.toggle("d-none", !canConfigureItems);
+        if (itemLabelsSummaryEl) itemLabelsSummaryEl.textContent = canConfigureItems ? itemLabelsSummary(meta) : "";
+      }
+
+      fieldSelect.addEventListener("change", refreshVisibility);
+      modeSelect.addEventListener("change", syncToInput);
+      if (itemLabelsTrigger) itemLabelsTrigger.addEventListener("click", () => openItemLabelsModal(fieldSelect.value));
+      refreshVisibility();
+    }
+
+    function refreshTeamColumns() {
+      const hasTeam = !!currentApp().team_context;
+      Array.from(document.querySelectorAll('[data-team-column="1"]')).forEach((el) => {
+        el.classList.toggle("d-none", !hasTeam);
+      });
+    }
+
+    function refreshCounter() {
+      const total = Number(totalFormsInput.value || "0");
+      counter.textContent = `${total}/${maxPermissions}`;
+      addBtn.disabled = total >= maxPermissions;
+    }
+
+    addBtn.addEventListener("click", function () {
+      const total = Number(totalFormsInput.value || "0");
+      if (total >= maxPermissions) return;
+      tbody.insertAdjacentHTML("beforeend", rowTemplate.innerHTML.replace(/__prefix__/g, String(total)));
+      totalFormsInput.value = String(total + 1);
+      bindPermissionRow(tbody.lastElementChild);
+      refreshCounter();
+    });
+
+    appSelect.addEventListener("change", function () {
+      refreshPhases();
+      refreshTeamColumns();
+      Array.from(tbody.querySelectorAll(".perm-row")).forEach(bindPermissionRow);
+    });
+    if (itemLabelsForm) itemLabelsForm.addEventListener("submit", syncItemLabelsJson);
+
+    refreshPhases();
+    refreshTeamColumns();
+    Array.from(tbody.querySelectorAll(".perm-row")).forEach(bindPermissionRow);
+    refreshCounter();
+  })();
+</script>
+{% endblock %}

@@ -81,9 +81,12 @@
         top_n: Number(els.iTopN.value || 0),
         mostrar_empats: !!els.cEmpats.checked,
         columnes: readColumnsUI(true),
+        particions: readPartitionPresentationUI(),
+        files: readRankStyleUI(),
         detall: {
           enabled: !!els.detailEnabled?.checked,
           default_open: !!els.detailDefaultOpen?.checked,
+          sections_layout: String(els.detailSectionsLayout?.value || "tabs") === "stacked" ? "stacked" : "tabs",
           sections: detailSections,
         },
       },
@@ -141,6 +144,9 @@
     advancedDirty.desempat = false;
     advancedDirty.filtres = false;
     state.detailUiTouched = false;
+    state.detailActiveSectionIdx = 0;
+    state.tieActiveId = "";
+    state.tieActiveAppByTieId = {};
     els.tDesempat.value = JSON.stringify(schemaForEditor.desempat || [], null, 2);
     els.tFiltres.value = JSON.stringify(schemaForEditor.filtres || {}, null, 2);
     els.advancedJson.value = JSON.stringify(schemaForEditor, null, 2);
@@ -248,6 +254,8 @@
 
       els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
       els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
+      renderPartitionPresentationUI((schema.presentacio || {}).particions || {});
+      renderRankStyleUI((schema.presentacio || {}).files || {});
       runSafeHydrationRender("columnes", () => {
         renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
       });
@@ -259,6 +267,7 @@
         ...detailCfg,
         enabled: !!rawDetailCfg.enabled,
         default_open: !!rawDetailCfg.default_open,
+        sections_layout: String(rawDetailCfg.sections_layout || detailCfg.sections_layout || "tabs") === "stacked" ? "stacked" : "tabs",
         sections: JSON.parse(JSON.stringify(detailSections)),
       };
       const detailLegacyColumns = serializeLegacyDetailColumns(detailSections, rawDetailCfg);
@@ -269,6 +278,9 @@
       els.advancedJson.value = JSON.stringify(schemaForEditor, null, 2);
       if (els.detailEnabled) els.detailEnabled.checked = !!rawDetailCfg.enabled;
       if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!rawDetailCfg.default_open;
+      if (els.detailSectionsLayout) {
+        els.detailSectionsLayout.value = String(rawDetailCfg.sections_layout || detailCfg.sections_layout || "tabs") === "stacked" ? "stacked" : "tabs";
+      }
       runSafeHydrationRender("detall", () => {
         renderDetailSectionsUI(state.hydrationDetailSections);
       });
@@ -654,6 +666,8 @@
       renderTieUI(readTieBuilderState(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
+    } else if (e.target && e.target.matches("select[data-phase-scope-app]")) {
+      syncAdvancedFromUI();
     }
   });
 
@@ -800,6 +814,7 @@
       }
       const cur = readDetailSectionsUI(true);
       cur.push(defaultDetailSection(sectionType));
+      state.detailActiveSectionIdx = cur.length - 1;
       renderDetailSectionsUI(cur);
       syncAdvancedFromUI();
     });
@@ -866,12 +881,24 @@
     const cfg = currentCfg(); if (!cfg) return;
     ensureLegacyTipusOption(els.fTipus.value);
     cfg.tipus = els.fTipus.value;
+    syncTipusChoiceButtons(cfg.tipus);
     refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
     renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
     renderTieUI(readTieBuilderState(true));
     renderVictoryTieUI(readVictoryTieUI(true));
     syncAdvancedFromUI();
     renderList();
+  });
+  document.querySelectorAll("[data-classif-type-choice]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const value = String(btn.getAttribute("data-classif-type-choice") || "individual").trim() || "individual";
+      if (!els.fTipus || els.fTipus.value === value) {
+        syncTipusChoiceButtons(value);
+        return;
+      }
+      setTipusValue(value);
+      els.fTipus.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   });
   if (els.detailEnabled) {
     els.detailEnabled.addEventListener("change", () => {
@@ -893,8 +920,65 @@
   if (els.detailDefaultOpen) {
     els.detailDefaultOpen.addEventListener("change", syncAdvancedFromUI);
   }
+  if (els.detailSectionsLayout) {
+    els.detailSectionsLayout.addEventListener("change", syncAdvancedFromUI);
+  }
   if (els.detailSectionType) {
     els.detailSectionType.addEventListener("change", refreshDetailConfigUI);
+  }
+  if (els.btnPartitionPresentationAdd) {
+    els.btnPartitionPresentationAdd.addEventListener("click", () => {
+      const cur = partitionPresentationRowsFromSchema(readPartitionPresentationUI());
+      cur.push({ key: `particio_${cur.length + 1}`, color: "auto", label: "" });
+      renderPartitionPresentationUI({
+        ordre: cur.map(item => item.key).filter(Boolean),
+        estils: Object.fromEntries(cur.filter(item => item.key).map(item => [item.key, { color: item.color, label: item.label }])),
+      });
+      const last = els.partitionPresentationBox?.querySelector("[data-partition-presentation-row]:last-child [data-k='key']");
+      if (last) last.focus();
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.btnPartitionPresentationSuggest) {
+    els.btnPartitionPresentationSuggest.addEventListener("click", () => {
+      const cur = partitionPresentationRowsFromSchema(readPartitionPresentationUI());
+      const seen = new Set(cur.map(item => String(item.key || "").trim()).filter(Boolean));
+      partitionPresentationSuggestions().forEach(item => {
+        if (!item.key || seen.has(item.key)) return;
+        seen.add(item.key);
+        cur.push({ key: item.key, color: "auto", label: item.label === item.key ? "" : item.label });
+      });
+      renderPartitionPresentationUI({
+        ordre: cur.map(item => item.key).filter(Boolean),
+        estils: Object.fromEntries(cur.filter(item => item.key).map(item => [item.key, { color: item.color, label: item.label }])),
+      });
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.btnRankStyleAdd) {
+    els.btnRankStyleAdd.addEventListener("click", () => {
+      const cur = rankStyleRowsFromSchema(readRankStyleUI());
+      const used = new Set(cur.map(item => String(item.pos)));
+      let next = 1;
+      while (used.has(String(next))) next += 1;
+      cur.push({ pos: next, color: next === 1 ? "gold" : next === 2 ? "silver" : next === 3 ? "bronze" : "blue" });
+      renderRankStyleUI(rankStyleConfigFromRows(cur));
+      const last = els.rankStyleBox?.querySelector("[data-rank-style-row]:last-child [data-k='pos']");
+      if (last) last.focus();
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.btnRankStyleDefaults) {
+    els.btnRankStyleDefaults.addEventListener("click", () => {
+      renderRankStyleUI({
+        posicions: {
+          "1": { color: "gold" },
+          "2": { color: "silver" },
+          "3": { color: "bronze" },
+        },
+      });
+      syncAdvancedFromUI();
+    });
   }
   if (els.detailConfigBox) {
     const markDetailUiTouched = (ev) => {
@@ -906,6 +990,7 @@
         target.closest("[data-act]") ||
         target === els.detailEnabled ||
         target === els.detailDefaultOpen ||
+        target === els.detailSectionsLayout ||
         target === els.detailSectionType ||
         target === els.btnDetailSectionAdd
       ) {

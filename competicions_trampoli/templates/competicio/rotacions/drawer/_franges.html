@@ -1,0 +1,73 @@
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" data-avatar-anchor="rotations-panel-franges" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+                <span>Franges</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_time_slots" aria-label="Ajuda franges">?</button>
+              </div>
+              <div class="drawer-section-subtitle">Crear franges competitives o especials que estructuren el programa.</div>
+            </div>
+          </div>
+          <div class="rotation-form-grid rotation-form-grid--franja" data-avatar-anchor="rotations-manual-slot">
+            <select class="form-control form-control-sm rotation-select" id="ftype">
+              {% for opt in franja_type_options %}
+                <option value="{{ opt.value }}">{{ opt.label }}</option>
+              {% endfor %}
+            </select>
+            <input type="time" class="form-control form-control-sm rotation-time-control" id="hi">
+            <input type="time" class="form-control form-control-sm rotation-time-control" id="hf">
+            <input type="text" class="form-control form-control-sm rotation-title-control" id="ft" placeholder="Titol">
+            <input type="color" class="form-control form-control-sm p-1 rotation-color-control" id="fcolor" value="#DBEAFE" title="Color de fons">
+            <button class="btn btn-sm btn-outline-secondary rotation-btn" id="btnResetFranjaColor" type="button" title="Restablir color">Color</button>
+            <button class="btn btn-sm btn-outline-dark rotation-btn-icon" id="btnAddFranja">+</button>
+          </div>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" data-avatar-anchor="rotations-slot-selection" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title">Seleccio</div>
+              <div class="drawer-section-subtitle" id="franjaSelectionSummary">0 franges seleccionades</div>
+            </div>
+          </div>
+          <div class="franja-bulk-panel" id="franjaBulkPanel">
+            <div class="franja-bulk-empty">Marca franges a la graella per activar accions massives.</div>
+            <div class="franja-bulk-actions" aria-label="Accions sobre franges seleccionades">
+              <button class="btn btn-sm btn-outline-secondary rotation-btn js-franja-bulk-clear-selection" type="button">Netejar seleccio</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="clear" type="button">Buidar</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="duplicate" type="button">Duplicar</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="shift" type="button">Desplaçar</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="duration" type="button">Durada</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="color" type="button">Color</button>
+              <button class="btn btn-sm btn-outline-primary rotation-btn js-franja-bulk-action" data-bulk-action="type" type="button">Tipus</button>
+              <button class="btn btn-sm btn-outline-danger rotation-btn-danger js-franja-bulk-action" data-bulk-action="delete" type="button">Eliminar</button>
+            </div>
+            <div class="mini franja-bulk-status" id="franjaBulkStatus"></div>
+          </div>
+        </section>
+
+<section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" data-avatar-anchor="rotations-auto-slots" hidden>
+          <div class="drawer-section-head">
+            <div>
+              <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+                <span>Generar franges automaticament</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_auto_slots" aria-label="Ajuda franges automatiques">?</button>
+              </div>
+              <div class="drawer-section-subtitle">Crear seqüencies de franges competitives a partir d'un interval de temps.</div>
+            </div>
+          </div>
+          <div class="rotation-form-stack">
+            <div class="rotation-form-grid rotation-form-grid--auto">
+              <input type="time" class="form-control form-control-sm rotation-time-control" id="auto_hi" placeholder="Inici">
+              <input type="time" class="form-control form-control-sm rotation-time-control" id="auto_hf" placeholder="Fi">
+              <input type="number" class="form-control form-control-sm rotation-number-control" id="auto_int" min="1" value="20" placeholder="Min">
+            </div>
+            <input type="text" class="form-control form-control-sm" id="auto_tb" value="Franja" placeholder="Titol base (ex: Rotacio)">
+            <label class="mini rotation-checkbox-row">
+              <input type="checkbox" id="auto_clear">
+              Esborrar franges existents abans de generar
+            </label>
+            <button class="btn btn-sm btn-outline-primary rotation-btn-primary" id="btnAutoFranges">Generar franges</button>
+            <div class="mini" id="autoStatus"></div>
+          </div>
+        </section>

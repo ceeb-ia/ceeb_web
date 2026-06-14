@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.db import IntegrityError
 from django.db.models import Count, Exists, OuterRef, Subquery
 from django.db.models.deletion import ProtectedError
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.generic import CreateView, ListView, UpdateView, View
 
@@ -10,6 +10,24 @@ from ...forms import AparellForm, CompeticioAparellForm
 from ...models import Competicio
 from ...models.competicio import Aparell, CompeticioAparell
 from ...models.scoring import ScoringSchema
+from ...services.inscripcions.aparell_participation import (
+    apply_participation_config,
+    available_participation_fields,
+    config_has_required_filters,
+    field_value_options,
+    normalize_participation_config,
+    parse_participation_config_from_post,
+    participation_mode_choices,
+    participation_operator_choices,
+    participation_preview,
+)
+from ...services.inscripcions.history import (
+    capture_inscripcions_history_snapshot,
+    record_inscripcions_history_entry,
+)
+from ...services.avatar.aparells.globals import AVATAR_MESSAGES as GLOBAL_APPARATUS_AVATAR_MESSAGES
+from ...services.avatar.competition.overview import AVATAR_MESSAGES as COMPETITION_AVATAR_MESSAGES
+from ...services.scoring.team_scoring import is_team_context_app
 
 
 class TrampoliAparellList(ListView):
@@ -65,6 +83,9 @@ class CompeticioAparellCreate(CreateView):
         return redirect(self.get_success_url())
 
     def get_success_url(self):
+        next_url = self.request.GET.get("next")
+        if next_url:
+            return next_url
         return reverse("trampoli_aparells_list", kwargs={"pk": self.kwargs["pk"]})
 
     def get_context_data(self, **kwargs):
@@ -97,12 +118,105 @@ class CompeticioAparellUpdate(UpdateView):
         return kwargs
 
     def get_success_url(self):
+        next_url = self.request.GET.get("next")
+        if next_url:
+            return next_url
         return reverse("trampoli_aparells_list", kwargs={"pk": self.kwargs["pk"]})
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["competicio"] = self.competicio
         return ctx
+
+
+class CompeticioAparellParticipationView(View):
+    template_name = "legacy/trampoli_aparell_participation.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        qs = CompeticioAparell.objects.filter(competicio=self.competicio).select_related("aparell")
+        if not (request.user.is_superuser or request.user.groups.filter(name="platform_admin").exists()):
+            qs = qs.filter(aparell__created_by=request.user)
+        self.comp_aparell = get_object_or_404(qs, pk=kwargs["app_id"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def _active_config(self):
+        fields = available_participation_fields(self.competicio)
+        return normalize_participation_config(
+            self.comp_aparell.participation_config,
+            allowed_field_codes=[field["code"] for field in fields],
+        )
+
+    def _filter_rows(self, config):
+        rows = [dict(item) for item in (config.get("filters") or [])]
+        rows.append({"field": "", "operator": "is_any", "values": []})
+        while len(rows) < 4:
+            rows.append({"field": "", "operator": "is_any", "values": []})
+        return rows[:8]
+
+    def _context(self, *, config=None, preview=None):
+        fields = available_participation_fields(self.competicio)
+        config = config or self._active_config()
+        current_preview = participation_preview(self.competicio, self.comp_aparell, self._active_config())
+        return {
+            "competicio": self.competicio,
+            "comp_aparell": self.comp_aparell,
+            "is_team_app": is_team_context_app(self.comp_aparell),
+            "participation_fields": fields,
+            "participation_field_values": field_value_options(self.competicio, fields),
+            "participation_operator_choices": participation_operator_choices(),
+            "participation_mode_choices": participation_mode_choices(),
+            "participation_config": config,
+            "participation_filter_rows": self._filter_rows(config),
+            "participation_preview": preview,
+            "current_participation_preview": current_preview,
+        }
+
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name, self._context())
+
+    def post(self, request, *args, **kwargs):
+        fields = available_participation_fields(self.competicio)
+        config = parse_participation_config_from_post(
+            request.POST,
+            allowed_field_codes=[field["code"] for field in fields],
+        )
+        intent = str(request.POST.get("intent") or "preview").strip()
+        if is_team_context_app(self.comp_aparell):
+            messages.error(request, "La participacio massiva per filtres nomes aplica a aparells individuals.")
+            return render(request, self.template_name, self._context(config=config))
+        if not config_has_required_filters(config):
+            messages.error(request, "Afegeix com a minim un filtre o selecciona que totes les inscripcions competeixen.")
+            return render(request, self.template_name, self._context(config=config))
+
+        preview = participation_preview(self.competicio, self.comp_aparell, config)
+        if intent != "apply":
+            return render(request, self.template_name, self._context(config=config, preview=preview))
+
+        if request.POST.get("confirm_participation_apply") != "1":
+            messages.error(request, "Confirma la substitucio massiva abans d'aplicar la participacio.")
+            return render(request, self.template_name, self._context(config=config, preview=preview))
+
+        before_snapshot = capture_inscripcions_history_snapshot(request, self.competicio)
+        applied = apply_participation_config(self.competicio, self.comp_aparell, config)
+        record_inscripcions_history_entry(
+            request,
+            self.competicio,
+            action_type="apply_aparell_participation",
+            action_label=f"Aplicar participacio de {self.comp_aparell.display_nom}",
+            before_snapshot=before_snapshot,
+            after_snapshot=capture_inscripcions_history_snapshot(request, self.competicio),
+        )
+        messages.success(
+            request,
+            f"Participacio aplicada: {applied['included_count']} competeixen i {applied['excluded_count']} queden excloses.",
+        )
+        return redirect(
+            reverse(
+                "trampoli_aparell_participation",
+                kwargs={"pk": self.competicio.id, "app_id": self.comp_aparell.id},
+            )
+        )
 
 
 class AparellList(ListView):
@@ -125,10 +239,20 @@ class AparellList(ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        aparells = list(ctx.get("aparells") or [])
+        ctx["aparells"] = aparells
         ctx["show_owner"] = (
             self.request.user.is_superuser
             or self.request.user.groups.filter(name="platform_admin").exists()
         )
+        ctx["aparell_catalog_stats"] = {
+            "total": len(aparells),
+            "active": sum(1 for aparell in aparells if aparell.actiu),
+            "used": sum(1 for aparell in aparells if getattr(aparell, "competicio_usage_count", 0)),
+            "with_schema": sum(1 for aparell in aparells if getattr(aparell, "has_scoring_schema", False)),
+        }
+        ctx["avatar_messages"] = {**COMPETITION_AVATAR_MESSAGES, **GLOBAL_APPARATUS_AVATAR_MESSAGES}
+        ctx["avatar_initial_topic"] = "welcome"
         return ctx
 
 
@@ -223,6 +347,7 @@ __all__ = [
     "AparellUpdate",
     "CompeticioAparellCreate",
     "CompeticioAparellDeleteView",
+    "CompeticioAparellParticipationView",
     "CompeticioAparellUpdate",
     "TrampoliAparellList",
 ]

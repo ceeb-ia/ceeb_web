@@ -3,7 +3,7 @@ import time
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_POST, require_http_methods
 
@@ -19,9 +19,15 @@ from ...services.scoring.scoring_subjects import (
 )
 from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
 from ...services.scoring.team_subject_contract import build_team_subject_registry
+from ._assignment_scope import (
+    assignment_id_from_request,
+    clamp_exercici_for_scope,
+    ensure_subject_scoreable_for_scope,
+    entry_phase_filter,
+    resolve_assignment_scope_for_request,
+)
 from ._shared import (
     VideoValidationError,
-    _clamp_exercici_for_aparell,
     _create_video_audit_event,
     _judge_video_capture_enabled_for_token,
     _log_video_event,
@@ -83,9 +89,13 @@ def judge_video_status(request, token):
         )
         return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
 
-    exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))
-    competicio = tok.competicio
-    comp_aparell = tok.comp_aparell
+    scope, scope_error = resolve_assignment_scope_for_request(tok, assignment_id_from_request(request))
+    if scope_error is not None:
+        return scope_error
+
+    exercici = clamp_exercici_for_scope(scope, request.GET.get("exercici") or request.GET.get("ex"))
+    competicio = scope.competicio
+    comp_aparell = scope.comp_aparell
 
     team_ids = None
     if is_team_context_app(comp_aparell):
@@ -109,12 +119,15 @@ def judge_video_status(request, token):
             **req_meta,
         )
         return error_response
+    scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
+    if scope_subject_error is not None:
+        return scope_subject_error
 
     entry_filters = {
         "competicio": competicio,
         "exercici": exercici,
         "comp_aparell": comp_aparell,
-        "fase__isnull": True,
+        **entry_phase_filter(scope),
     }
     if subject["subject_kind"] == "team_unit":
         entry_filters["team_subject"] = subject["team_subject"]
@@ -182,6 +195,7 @@ def judge_video_status(request, token):
                 token_obj=tok,
                 subject=subject,
                 exercici=exercici,
+                assignment_id=scope.assignment_id,
             ),
         }
     )
@@ -248,9 +262,13 @@ def judge_video_upload(request, token):
         )
         return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
 
-    exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.POST.get("exercici") or request.POST.get("ex"))
-    competicio = tok.competicio
-    comp_aparell = tok.comp_aparell
+    scope, scope_error = resolve_assignment_scope_for_request(tok, assignment_id_from_request(request))
+    if scope_error is not None:
+        return scope_error
+
+    exercici = clamp_exercici_for_scope(scope, request.POST.get("exercici") or request.POST.get("ex"))
+    competicio = scope.competicio
+    comp_aparell = scope.comp_aparell
 
     team_ids = None
     if is_team_context_app(comp_aparell):
@@ -312,6 +330,9 @@ def judge_video_upload(request, token):
                 payload={"reason": "subject_not_allowed"},
             )
         return error_response
+    scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
+    if scope_subject_error is not None:
+        return scope_subject_error
 
     def _reject(message, status_code, reason, score_entry=None, payload=None):
         _log_video_event(
@@ -374,6 +395,7 @@ def judge_video_upload(request, token):
         comp_aparell=comp_aparell,
         exercici=exercici,
         subject=subject,
+        fase=scope.phase,
         defaults={"inputs": {}, "outputs": {}, "total": 0},
     )
 
@@ -486,6 +508,7 @@ def judge_video_upload(request, token):
                 token_obj=tok,
                 subject=subject,
                 exercici=exercici,
+                assignment_id=scope.assignment_id,
             ),
         }
     )
@@ -540,9 +563,13 @@ def judge_video_delete(request, token):
         )
         return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
 
-    exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.POST.get("exercici") or request.POST.get("ex"))
-    competicio = tok.competicio
-    comp_aparell = tok.comp_aparell
+    scope, scope_error = resolve_assignment_scope_for_request(tok, assignment_id_from_request(request))
+    if scope_error is not None:
+        return scope_error
+
+    exercici = clamp_exercici_for_scope(scope, request.POST.get("exercici") or request.POST.get("ex"))
+    competicio = scope.competicio
+    comp_aparell = scope.comp_aparell
 
     team_ids = None
     if is_team_context_app(comp_aparell):
@@ -572,6 +599,9 @@ def judge_video_delete(request, token):
             **req_meta,
         )
         return error_response
+    scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
+    if scope_subject_error is not None:
+        return scope_subject_error
 
     entry = (
         subject_entry_model(comp_aparell).objects
@@ -579,7 +609,7 @@ def judge_video_delete(request, token):
             competicio=competicio,
             exercici=exercici,
             comp_aparell=comp_aparell,
-            fase__isnull=True,
+            **entry_phase_filter(scope),
             **({"team_subject": subject["team_subject"]} if subject["subject_kind"] == "team_unit" else {"inscripcio": subject["inscripcio"]}),
         )
         .first()
@@ -703,8 +733,12 @@ def judge_video_file(request, token, subject_kind, subject_id, exercici):
     if not _judge_video_capture_enabled_for_token(tok):
         raise Http404("Video disabled")
 
-    comp_aparell = tok.comp_aparell
-    competicio = tok.competicio
+    scope, scope_error = resolve_assignment_scope_for_request(tok, assignment_id_from_request(request))
+    if scope_error is not None:
+        raise Http404("Assignacio invalid")
+
+    comp_aparell = scope.comp_aparell
+    competicio = scope.competicio
     eligible_team_ids = None
     if is_team_context_app(comp_aparell):
         eligible_team_ids = list(build_team_subject_registry(competicio, comp_aparell)["eligible_by_id"].keys())
@@ -717,12 +751,15 @@ def judge_video_file(request, token, subject_kind, subject_id, exercici):
     )
     if error_response is not None:
         raise Http404("Subject invalid")
+    scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
+    if scope_subject_error is not None:
+        raise Http404("Subject invalid")
 
     entry_filters = {
         "competicio": competicio,
-        "exercici": _clamp_exercici_for_aparell(comp_aparell, exercici),
+        "exercici": clamp_exercici_for_scope(scope, exercici),
         "comp_aparell": comp_aparell,
-        "fase__isnull": True,
+        **entry_phase_filter(scope),
     }
     if subject["subject_kind"] == "team_unit":
         entry_filters["team_subject"] = subject["team_subject"]

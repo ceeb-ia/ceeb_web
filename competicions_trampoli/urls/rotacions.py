@@ -86,6 +86,46 @@ urlpatterns = [
         name="rotacions_franja_order_mode_set",
     ),
     path(
+        "competicio/<int:pk>/rotacions/franges/bulk/clear/",
+        competition_view(views_rotacions.rotacions_franges_bulk_clear, "rotacions.edit"),
+        name="rotacions_franges_bulk_clear",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franges/bulk/delete/",
+        competition_view(views_rotacions.rotacions_franges_bulk_delete, "rotacions.edit"),
+        name="rotacions_franges_bulk_delete",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franges/bulk/update/",
+        competition_view(views_rotacions.rotacions_franges_bulk_update, "rotacions.edit"),
+        name="rotacions_franges_bulk_update",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franges/bulk/shift/",
+        competition_view(views_rotacions.rotacions_franges_bulk_shift, "rotacions.edit"),
+        name="rotacions_franges_bulk_shift",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franges/bulk/duration/",
+        competition_view(views_rotacions.rotacions_franges_bulk_duration, "rotacions.edit"),
+        name="rotacions_franges_bulk_duration",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franges/bulk/duplicate/",
+        competition_view(views_rotacions.rotacions_franges_bulk_duplicate, "rotacions.edit"),
+        name="rotacions_franges_bulk_duplicate",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franja/note/",
+        competition_view(views_rotacions.rotacions_franja_note_save, "rotacions.edit"),
+        name="rotacions_franja_note_save",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/validate/",
+        competition_view(views_rotacions.rotacions_validate_program, "rotacions.edit"),
+        name="rotacions_validate_program",
+    ),
+    path(
         "competicio/<int:pk>/rotacions/export-meta/save/",
         competition_view(views_rotacions.rotacions_export_meta_save, "rotacions.edit"),
         name="rotacions_export_meta_save",

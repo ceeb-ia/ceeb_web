@@ -11,10 +11,10 @@ from .inscripcions import GrupCompeticio
 
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DEFAULT_FRANJA_BACKGROUND_COLORS = {
-    "competition": "#EFF6FF",
-    "break": "#FFF7ED",
+    "competition": "#DBEAFE",
+    "break": "#DCFCE7",
     "awards": "#FEF3C7",
-    "separator": "#F1F5F9",
+    "separator": "#E5E7EB",
 }
 
 
@@ -105,8 +105,7 @@ class RotacioEstacio(models.Model):
             return self.nom_override.strip()
         if self.tipus == "descans":
             return "Descans"
-        # comp_aparell -> aparell -> nom
-        return getattr(getattr(self.comp_aparell, "aparell", None), "nom", "Aparell")
+        return getattr(self.comp_aparell, "display_nom", None) or getattr(getattr(self.comp_aparell, "aparell", None), "nom", "Aparell")
 
     def __str__(self):
         return f"{self.competicio} | {self.nom}"
@@ -139,6 +138,7 @@ class RotacioFranja(models.Model):
     titol = models.CharField(max_length=120, blank=True, default="")
     tipus = models.CharField(max_length=20, choices=TIPUS_CHOICES, default=TIPUS_COMPETITION, db_index=True)
     color_fons = models.CharField(max_length=7, blank=True, default="")
+    nota_interna = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ["ordre", "id"]

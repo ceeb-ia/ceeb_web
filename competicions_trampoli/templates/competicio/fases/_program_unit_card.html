@@ -1,0 +1,78 @@
+<article class="phase-program-unit-card">
+  <div class="phase-program-unit-card-head">
+    <div>
+      <div class="phase-program-unit-card-title">{{ unit.nom }}</div>
+      <div class="phase-unit-meta text-muted small">
+        <span>{{ unit.get_tipus_display }}</span>
+        {% if unit.partition_key %}<span>Particio: {{ unit.partition_key }}</span>{% endif %}
+        <span>{{ unit.ui_formation_strategy_label }}</span>
+      </div>
+    </div>
+    <div class="phase-unit-statuses">
+      <span class="badge badge-light border">{{ unit.ui_slot_count }} places</span>
+      {% if unit.ui_is_programmed %}
+        <span class="badge badge-success">Programada</span>
+      {% else %}
+        <span class="badge badge-warning">Pendent</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="phase-program-unit-card-stats">
+    <span>{{ unit.ui_competitive_slots_count }} assignades</span>
+    <span>{{ unit.ui_empty_slots_count }} buides</span>
+    {% if unit.ui_programmed_labels %}
+      <span>{{ unit.ui_programmed_labels|length }} franja/es</span>
+    {% endif %}
+    <form method="post" class="phase-unit-add-slot-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_extra_program_slot">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Afegir plaça</button>
+    </form>
+  </div>
+
+  <details class="phase-program-unit-edit">
+    <summary>Editar unitat</summary>
+    <form method="post" class="phase-program-unit-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update_program_unit">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <label>
+        <span>Nom</span>
+        <input class="form-control form-control-sm" type="text" name="nom" value="{{ unit.nom }}" maxlength="180" required>
+      </label>
+      <label>
+        <span>Places</span>
+        <input class="form-control form-control-sm" type="number" name="capacity" value="{{ unit.ui_slot_count }}" min="1" max="200" required>
+      </label>
+      <label>
+        <span>Criteri</span>
+        <select class="form-select form-select-sm" name="formation_strategy">
+          <option value="classification_order" {% if unit.ui_formation_strategy == "classification_order" %}selected{% endif %}>Ordre de classificacio</option>
+          <option value="serpentine" {% if unit.ui_formation_strategy == "serpentine" %}selected{% endif %}>Ordre invers</option>
+          <option value="first_last" {% if unit.ui_formation_strategy == "first_last" %}selected{% endif %}>Primer amb ultim</option>
+          <option value="random" {% if unit.ui_formation_strategy == "random" %}selected{% endif %}>Aleatori</option>
+        </select>
+      </label>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Desar unitat</button>
+    </form>
+    {% if not unit.ui_is_programmed %}
+      <form
+        method="post"
+        class="phase-program-unit-delete-form"
+        data-phase-confirm-title="Eliminar unitat"
+        data-phase-confirm-message="Eliminar aquesta unitat programable?"
+        data-phase-confirm-label="Eliminar unitat"
+        data-phase-confirm-tone="danger">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_program_unit">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar unitat</button>
+      </form>
+    {% endif %}
+  </details>
+</article>

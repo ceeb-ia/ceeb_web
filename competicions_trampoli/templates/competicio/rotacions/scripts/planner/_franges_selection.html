@@ -1,0 +1,206 @@
+<script>
+(function(){
+  const selectedFranjaIds = new Set();
+  let areaSelection = null;
+  let suppressNextClick = false;
+
+  function rowForCheckbox(input){
+    return input ? input.closest(".franja-row-competitive, .franja-row-global") : null;
+  }
+
+  function selectedIds(){
+    return Array.from(selectedFranjaIds);
+  }
+
+  function visibleFranjaInputs(){
+    return Array.from(document.querySelectorAll(".js-franja-select"));
+  }
+
+  function allVisibleSelected(){
+    const inputs = visibleFranjaInputs();
+    return inputs.length > 0 && inputs.every((input) => selectedFranjaIds.has(String(input.dataset.franjaId || "")));
+  }
+
+  function syncFranjaSelectionUI(){
+    document.querySelectorAll(".js-franja-select").forEach((input) => {
+      const id = String(input.dataset.franjaId || "");
+      const selected = selectedFranjaIds.has(id);
+      input.checked = selected;
+      const row = rowForCheckbox(input);
+      if (row) row.classList.toggle("is-selected-franja", selected);
+    });
+    const count = selectedFranjaIds.size;
+    const summary = document.getElementById("franjaSelectionSummary");
+    const panel = document.getElementById("franjaBulkPanel");
+    if (summary) summary.textContent = `${count} franja${count === 1 ? "" : "s"} seleccionada${count === 1 ? "" : "es"}`;
+    if (panel) panel.classList.toggle("has-franja-selection", count > 0);
+    document.querySelectorAll(".js-franja-select-all").forEach((btn) => {
+      const allSelected = allVisibleSelected();
+      btn.classList.toggle("is-active", allSelected);
+      btn.setAttribute("aria-pressed", allSelected ? "true" : "false");
+      btn.textContent = allSelected ? "Cap" : "Totes";
+      btn.title = allSelected ? "Deseleccionar totes les franges visibles" : "Seleccionar totes les franges visibles";
+    });
+  }
+
+  function toggleFranjaSelection(id, checked){
+    const cleanId = String(id || "");
+    if (!cleanId) return;
+    if (checked) selectedFranjaIds.add(cleanId);
+    else selectedFranjaIds.delete(cleanId);
+    syncFranjaSelectionUI();
+  }
+
+  function clearFranjaSelection(){
+    selectedFranjaIds.clear();
+    syncFranjaSelectionUI();
+  }
+
+  function setAllVisibleFranjaSelection(checked){
+    visibleFranjaInputs().forEach((input) => {
+      const id = String(input.dataset.franjaId || "");
+      if (!id) return;
+      if (checked) selectedFranjaIds.add(id);
+      else selectedFranjaIds.delete(id);
+    });
+    syncFranjaSelectionUI();
+  }
+
+  function toggleAllVisibleFranjaSelection(){
+    setAllVisibleFranjaSelection(!allVisibleSelected());
+  }
+
+  function setOnlyFranjaSelection(id){
+    selectedFranjaIds.clear();
+    const cleanId = String(id || "");
+    if (cleanId) selectedFranjaIds.add(cleanId);
+    syncFranjaSelectionUI();
+  }
+
+  function rectsIntersect(a, b){
+    return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
+  }
+
+  function selectionRect(startX, startY, currentX, currentY){
+    const left = Math.min(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+    return {left, top, width, height, right: left + width, bottom: top + height};
+  }
+
+  function franjaIdForRow(row){
+    const input = row?.querySelector(".js-franja-select");
+    return String(input?.dataset?.franjaId || "");
+  }
+
+  function updateAreaSelection(ev){
+    if (!areaSelection) return;
+    const rect = selectionRect(areaSelection.startX, areaSelection.startY, ev.clientX, ev.clientY);
+    areaSelection.box.style.left = `${rect.left}px`;
+    areaSelection.box.style.top = `${rect.top}px`;
+    areaSelection.box.style.width = `${Math.max(1, rect.width)}px`;
+    areaSelection.box.style.height = `${Math.max(1, rect.height)}px`;
+
+    areaSelection.candidateIds.clear();
+    document.querySelectorAll(".franja-row-competitive, .franja-row-global").forEach((row) => {
+      const isCandidate = rectsIntersect(rect, row.getBoundingClientRect());
+      row.classList.toggle("is-selection-candidate", isCandidate);
+      if (isCandidate) {
+        const id = franjaIdForRow(row);
+        if (id) areaSelection.candidateIds.add(id);
+      }
+    });
+  }
+
+  function finishAreaSelection(ev){
+    if (!areaSelection) return;
+    updateAreaSelection(ev);
+    areaSelection.candidateIds.forEach((id) => selectedFranjaIds.add(String(id)));
+    areaSelection.box.remove();
+    areaSelection = null;
+    document.body.classList.remove("is-franja-area-selecting");
+    document.querySelectorAll(".is-selection-candidate").forEach((row) => row.classList.remove("is-selection-candidate"));
+    document.removeEventListener("mousemove", updateAreaSelection, true);
+    document.removeEventListener("mouseup", finishAreaSelection, true);
+    suppressNextClick = true;
+    window.setTimeout(() => { suppressNextClick = false; }, 0);
+    syncFranjaSelectionUI();
+  }
+
+  function cancelAreaSelection(){
+    if (!areaSelection) return;
+    areaSelection.box.remove();
+    areaSelection = null;
+    document.body.classList.remove("is-franja-area-selecting");
+    document.querySelectorAll(".is-selection-candidate").forEach((row) => row.classList.remove("is-selection-candidate"));
+    document.removeEventListener("mousemove", updateAreaSelection, true);
+    document.removeEventListener("mouseup", finishAreaSelection, true);
+  }
+
+  function startAreaSelection(ev){
+    if (ev.button !== 0 || !ev.shiftKey || areaSelection) return;
+    if (ev.target.closest("button, a, input, select, textarea, summary, details, .chip, .pill-rm, .franja-actions")) return;
+    const wrap = ev.target.closest(".grid-wrap");
+    if (!wrap) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    const box = document.createElement("div");
+    box.className = "franja-selection-area";
+    document.body.appendChild(box);
+    areaSelection = {
+      startX: ev.clientX,
+      startY: ev.clientY,
+      box,
+      candidateIds: new Set(),
+    };
+    document.body.classList.add("is-franja-area-selecting");
+    updateAreaSelection(ev);
+    document.addEventListener("mousemove", updateAreaSelection, true);
+    document.addEventListener("mouseup", finishAreaSelection, true);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".js-franja-select").forEach((input) => {
+      input.addEventListener("click", (ev) => ev.stopPropagation());
+      input.addEventListener("dragstart", (ev) => ev.preventDefault());
+      input.addEventListener("change", () => toggleFranjaSelection(input.dataset.franjaId, input.checked));
+    });
+    document.querySelectorAll(".js-franja-bulk-clear-selection").forEach((btn) => {
+      btn.addEventListener("click", clearFranjaSelection);
+    });
+    document.querySelectorAll(".js-franja-select-all").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleAllVisibleFranjaSelection();
+      });
+    });
+    const gridWrap = document.querySelector(".grid-wrap");
+    if (gridWrap) {
+      gridWrap.addEventListener("mousedown", startAreaSelection, true);
+    }
+    document.addEventListener("click", (ev) => {
+      if (!suppressNextClick) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+    }, true);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") cancelAreaSelection();
+    });
+    syncFranjaSelectionUI();
+  });
+
+  window.RotacionsFranjaSelection = {
+    selectedFranjaIds,
+    selectedIds,
+    toggleFranjaSelection,
+    clearFranjaSelection,
+    setOnlyFranjaSelection,
+    setAllVisibleFranjaSelection,
+    toggleAllVisibleFranjaSelection,
+    syncFranjaSelectionUI,
+  };
+})();
+</script>

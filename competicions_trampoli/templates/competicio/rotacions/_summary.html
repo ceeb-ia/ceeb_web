@@ -1,0 +1,16 @@
+    <div class="planner-summary {% if not out_of_program_groups_count %}is-quiet{% endif %}" id="out-of-program-summary">
+      <div>
+        <div class="fw-semibold">Fora de programa</div>
+        <div class="mini" id="out-of-program-summary-text">
+          {% if out_of_program_groups_count %}
+            Hi ha grups i inscripcions que existeixen pero no formen part de l'horari actual.
+          {% else %}
+            Tots els grups actuals estan situats dins el programa de rotacions.
+          {% endif %}
+        </div>
+      </div>
+      <div class="planner-summary-badges">
+        <span class="planner-summary-badge" id="out-of-program-groups-badge">{{ out_of_program_groups_count }} elements</span>
+        <span class="planner-summary-badge" id="out-of-program-members-badge">{{ out_of_program_members_total }} subjectes</span>
+      </div>
+    </div>

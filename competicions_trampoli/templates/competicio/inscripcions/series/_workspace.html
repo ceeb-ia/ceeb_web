@@ -1,0 +1,149 @@
+{% load static %}
+
+<div class="team-workspace-shell groups-workspace-shell" id="series-workspace-shell" data-avatar-anchor="series-workspace-shell">
+  <div class="alert alert-warning border mb-0 d-none" id="series-issues-banner"></div>
+
+  <div class="groups-workspace-layout">
+    <section class="groups-workspace-row groups-workspace-row-prep">
+      <div class="groups-prep-main">
+        <section class="team-workspace-pane groups-pane groups-pane-universe">
+          <div class="team-pane-card groups-pane-card groups-pane-card-universe" data-avatar-anchor="series-universe">
+            <div class="team-pane-head">
+              <div class="groups-title-with-logo">
+                <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
+                <div>
+                  <div class="fw-semibold">1. Univers de candidates</div>
+                  <div class="small text-muted">Filtra unitats competitives d'equip i prepara la seleccio activa.</div>
+                </div>
+              </div>
+              <div class="inscripcions-help-title">
+                <span class="badge badge-light border" id="series-candidates-count-badge">0 candidates</span>
+                <button class="inscripcions-context-help" type="button" data-avatar-topic="team_series_universe" aria-label="Ajuda sobre l'univers de series" title="Ajuda sobre l'univers de series">?</button>
+              </div>
+            </div>
+
+            <div class="team-context-strip series-aparell-strip" data-avatar-anchor="series-aparell">
+              <div class="team-context-strip-main">
+                <label class="small text-muted mb-0" for="series-workspace-comp-aparell-select">Aparell d'equip</label>
+                <select id="series-workspace-comp-aparell-select" class="form-control form-control-sm">
+                  {% if series_team_aparells %}
+                    {% for comp_aparell in series_team_aparells %}
+                      <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.display_nom }}</option>
+                    {% endfor %}
+                  {% else %}
+                    <option value="">Sense aparell actiu</option>
+                  {% endif %}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-workspace-refresh">Refrescar</button>
+                <button type="button" class="btn btn-sm btn-outline-dark" id="btn-series-workspace-export-start-list">Start list</button>
+                <button class="inscripcions-context-help" type="button" data-avatar-topic="team_series_aparell" aria-label="Ajuda sobre l'aparell d'equip" title="Ajuda sobre l'aparell d'equip">?</button>
+              </div>
+            </div>
+
+            <div class="groups-universe-filterbar series-universe-filterbar">
+              <div class="groups-filter-search">
+                <label class="small text-muted mb-1 d-block" for="series-filter-q">Cerca</label>
+                <input type="text" class="form-control form-control-sm" id="series-filter-q" placeholder="Equip, context o membres...">
+              </div>
+
+              <div class="groups-filter-buttons" aria-label="Filtres de candidates de series">
+                <div class="groups-filter-popover" data-series-filter-popover data-select-id="series-filter-context" data-filter-label="Context">
+                  <select id="series-filter-context" class="form-control form-control-sm groups-filter-native">
+                    <option value="">Tots</option>
+                  </select>
+                  <details class="groups-filter-menu">
+                    <summary class="groups-filter-trigger">
+                      <span class="groups-filter-trigger-label">Context</span>
+                      <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                    </summary>
+                    <div class="groups-filter-panel groups-filter-panel-wide">
+                      <div class="groups-filter-panel-head">
+                        <span>Context</span>
+                        <button type="button" class="groups-filter-clear" data-series-filter-clear="series-filter-context">Netejar</button>
+                      </div>
+                      <div class="groups-filter-options" data-filter-options-for="series-filter-context"></div>
+                    </div>
+                  </details>
+                </div>
+
+                <div class="groups-filter-popover" data-series-filter-popover data-select-id="series-filter-state" data-filter-label="Estat">
+                  <select id="series-filter-state" class="form-control form-control-sm groups-filter-native">
+                    <option value="all">Totes</option>
+                    <option value="assigned">Amb serie</option>
+                    <option value="unassigned">Sense serie</option>
+                    <option value="invalid">Invalides</option>
+                  </select>
+                  <details class="groups-filter-menu">
+                    <summary class="groups-filter-trigger">
+                      <span class="groups-filter-trigger-label">Estat</span>
+                      <span class="groups-filter-trigger-summary" data-filter-summary>Totes</span>
+                    </summary>
+                    <div class="groups-filter-panel">
+                      <div class="groups-filter-panel-head">
+                        <span>Estat</span>
+                        <button type="button" class="groups-filter-clear" data-series-filter-clear="series-filter-state">Netejar</button>
+                      </div>
+                      <div class="groups-filter-options" data-filter-options-for="series-filter-state"></div>
+                    </div>
+                  </details>
+                </div>
+
+                <div class="groups-filter-popover" data-series-filter-popover data-select-id="series-filter-serie" data-filter-label="Serie">
+                  <select id="series-filter-serie" class="form-control form-control-sm groups-filter-native">
+                    <option value="">Qualsevol</option>
+                  </select>
+                  <details class="groups-filter-menu">
+                    <summary class="groups-filter-trigger">
+                      <span class="groups-filter-trigger-label">Serie</span>
+                      <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                    </summary>
+                    <div class="groups-filter-panel groups-filter-panel-wide">
+                      <div class="groups-filter-panel-head">
+                        <span>Serie actual</span>
+                        <button type="button" class="groups-filter-clear" data-series-filter-clear="series-filter-serie">Netejar</button>
+                      </div>
+                      <div class="groups-filter-options" data-filter-options-for="series-filter-serie"></div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+            <div class="groups-filter-active-chips" id="series-filter-active-chips" aria-live="polite"></div>
+
+            <div class="groups-universe-body" data-avatar-anchor="series-filters-selection">
+              <div class="groups-candidates-toolbar">
+                <div class="groups-selection-inline-metrics">
+                  <span class="badge badge-light border"><strong id="series-selection-count">0</strong></span>
+                  <span class="badge badge-light border" id="series-selection-detail">0 filtrades</span>
+                </div>
+                <div class="groups-candidates-toolbar-actions">
+                  <button class="inscripcions-context-help" type="button" data-avatar-topic="team_series_filters_selection" aria-label="Ajuda sobre filtres i seleccio de series" title="Ajuda sobre filtres i seleccio de series">?</button>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-series-select-visible">Afegir</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="btn-series-clear-selection">Netejar</button>
+                </div>
+              </div>
+
+              <div class="team-candidates-status small text-muted" id="series-candidates-status">Carregant candidates...</div>
+              <div class="team-candidates-list" id="series-candidates-list"></div>
+              <div class="team-candidates-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-prev">Anterior</button>
+                <span class="small text-muted" id="series-page-label">Pagina 1</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-next">Seguent</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="groups-prep-side">
+        {% include "competicio/inscripcions/series/_actions.html" %}
+      </div>
+    </section>
+
+    <section class="groups-workspace-row groups-workspace-row-impact">
+      {% include "competicio/inscripcions/series/_board.html" %}
+
+      {% include "competicio/inscripcions/series/_inspector.html" %}
+    </section>
+  </div>
+</div>

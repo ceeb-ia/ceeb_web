@@ -6,7 +6,7 @@
 {% if lazy_group_tabs_enabled %}
   {{ lazy_group_order_payload|json_script:"inscripcions-lazy-group-order-data" }}
 {% endif %}
-<div class="inscripcions-table-stage">
+<div class="inscripcions-table-stage" data-avatar-anchor="inscriptions-table">
   {% if selected_group_fields and records_grouped %}
     <ul class="nav nav-tabs mt-3" role="tablist" id="tabs-root">
       {% for group_label, group_records, group_key in records_grouped %}
@@ -44,18 +44,18 @@
           {% if group_key == active_group_key %}
             <div class="table-responsive">
               <table class="table table-striped table-bordered table-sm align-middle">
-                <thead class="table-light">
+                <thead class="table-light" data-avatar-anchor="inscriptions-table-header">
                   <tr>
                     <th class="control-col">
                       <input type="checkbox" id="select-all-visible">
                     </th>
                     {% for col in selected_table_columns %}
-                      <th>
+                      <th class="{% if col.code == 'grup' %}insc-col-grup{% elif col.code == 'equip' %}insc-col-equip{% elif col.code == '__aparells__' %}insc-col-aparells{% elif col.code == '__actions__' %}insc-col-actions{% endif %}">
                         <div class="th-col-head">
                           <div class="th-col-label-wrap">
-                            <span>{{ col.ui_label|default:col.label }}</span>
+                            <span>{% if col.code == "equip" %}Equip actiu{% else %}{{ col.ui_label|default:col.label }}{% endif %}</span>
                             {% if custom_sort_enabled_by_code|get_item:col.code %}
-                              <span class="custom-sort-badge">Custom</span>
+                              <span class="custom-sort-badge">Personalitzat</span>
                             {% endif %}
                             {% with col_filter=column_filter_indicator_by_code|get_item:col.code %}
                               {% if col_filter %}
@@ -90,7 +90,7 @@
                                 &#8942;
                               </button>
                               <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
-                                <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
+                                <div class="small fw-semibold mb-2 js-col-sort-title">{% if col.code == "equip" %}Equip actiu{% else %}{{ col.ui_label|default:col.label }}{% endif %}</div>
                                 {% if col.code in sortable_table_column_codes %}
                                   <div class="js-col-sort-block">
                                     <label class="small text-muted mb-1 d-block">Mode</label>
@@ -99,7 +99,7 @@
                                       <option value="desc">Desc</option>
                                       <option value="arrow_asc">Fletxa (asc)</option>
                                       <option value="arrow_desc">Fletxa (desc)</option>
-                                      <option value="custom">Custom</option>
+                                      <option value="custom">Personalitzat</option>
                                     </select>
 
                                     <label class="small text-muted mb-1 d-block">Ambit</label>
@@ -118,9 +118,9 @@
                                       <select class="form-control form-control-sm js-col-sort-group"></select>
                                     </div>
 
-                                    <div class="mt-2">
-                                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
-                                      <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                                    <div class="col-sort-custom-actions mt-2">
+                                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre personalitzat</button>
+                                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom-clear">Netejar personalitzat</button>
                                       <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
                                     </div>
 
@@ -171,18 +171,18 @@
   {% else %}
     <div class="table-responsive">
       <table class="table table-striped table-bordered table-sm align-middle">
-        <thead class="table-light">
+        <thead class="table-light" data-avatar-anchor="inscriptions-table-header">
           <tr>
             <th class="control-col">
               <input type="checkbox" id="select-all-visible">
             </th>
             {% for col in selected_table_columns %}
-              <th>
+              <th class="{% if col.code == 'grup' %}insc-col-grup{% elif col.code == 'equip' %}insc-col-equip{% elif col.code == '__aparells__' %}insc-col-aparells{% elif col.code == '__actions__' %}insc-col-actions{% endif %}">
                 <div class="th-col-head">
                   <div class="th-col-label-wrap">
-                    <span>{{ col.ui_label|default:col.label }}</span>
+                    <span>{% if col.code == "equip" %}Equip actiu{% else %}{{ col.ui_label|default:col.label }}{% endif %}</span>
                     {% if custom_sort_enabled_by_code|get_item:col.code %}
-                      <span class="custom-sort-badge">Custom</span>
+                      <span class="custom-sort-badge">Personalitzat</span>
                     {% endif %}
                     {% with col_filter=column_filter_indicator_by_code|get_item:col.code %}
                       {% if col_filter %}
@@ -217,7 +217,7 @@
                         &#8942;
                       </button>
                       <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
-                        <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
+                        <div class="small fw-semibold mb-2 js-col-sort-title">{% if col.code == "equip" %}Equip actiu{% else %}{{ col.ui_label|default:col.label }}{% endif %}</div>
                         {% if col.code in sortable_table_column_codes %}
                           <div class="js-col-sort-block">
                             <label class="small text-muted mb-1 d-block">Mode</label>
@@ -226,7 +226,7 @@
                               <option value="desc">Desc</option>
                               <option value="arrow_asc">Fletxa (asc)</option>
                               <option value="arrow_desc">Fletxa (desc)</option>
-                              <option value="custom">Custom</option>
+                              <option value="custom">Personalitzat</option>
                             </select>
 
                             <label class="small text-muted mb-1 d-block">Ambit</label>
@@ -245,9 +245,9 @@
                               <select class="form-control form-control-sm js-col-sort-group"></select>
                             </div>
 
-                            <div class="mt-2">
-                              <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
-                              <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                            <div class="col-sort-custom-actions mt-2">
+                              <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre personalitzat</button>
+                              <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom-clear">Netejar personalitzat</button>
                               <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
                             </div>
 

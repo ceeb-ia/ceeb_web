@@ -92,7 +92,10 @@
           playbackBtn.dataset.insId,
           playbackBtn.dataset.exercici,
           playbackBtn.dataset.compAparellId,
-          {openDrawer: true}
+          {
+            openDrawer: true,
+            faseId: playbackBtn.dataset.faseId || playbackBtn.closest("table[data-scoring-table='1']")?.dataset.faseId || currentScorePhaseId()
+          }
         );
         return;
       }

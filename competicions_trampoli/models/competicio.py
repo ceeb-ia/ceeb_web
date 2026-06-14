@@ -59,6 +59,7 @@ class CompeticioAparell(models.Model):
     codi_local = models.CharField(max_length=40, blank=True, default="", db_index=True)
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis")
     judge_ui_config = models.JSONField(default=dict, blank=True)
+    participation_config = models.JSONField(default=dict, blank=True)
 
     # CREC QUE REDUNDANT A PARTIR D'AQUI; INUTIL JA
     ordre = models.PositiveSmallIntegerField(default=1)
@@ -387,6 +388,118 @@ class ProgramUnitSlot(models.Model):
         return f"{self.unit} / slot {self.slot_index} / {subject}"
 
 
+class QualificationRun(models.Model):
+    class Status(models.TextChoices):
+        PREVIEWED = "previewed", "Previsualitzada"
+        APPLIED = "applied", "Aplicada"
+        STALE = "stale", "Obsoleta"
+
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.CASCADE,
+        related_name="qualification_runs",
+    )
+    source_classificacio = models.ForeignKey(
+        "competicions_trampoli.ClassificacioConfig",
+        on_delete=models.PROTECT,
+        related_name="qualification_runs",
+    )
+    source_phase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="qualification_source_runs",
+    )
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.PREVIEWED)
+    snapshot_hash = models.CharField(max_length=64, db_index=True)
+    summary = models.JSONField(default=dict, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["fase", "status"], name="qualification_fase_status_idx"),
+            models.Index(fields=["source_classificacio", "status"], name="qualification_src_status_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.fase_id and self.source_classificacio_id:
+            if self.source_classificacio.competicio_id != self.fase.competicio_id:
+                errors["source_classificacio"] = "La classificacio font no pertany a la mateixa competicio."
+        if self.source_phase_id:
+            if self.source_phase.competicio_id != self.fase.competicio_id:
+                errors["source_phase"] = "La fase origen no pertany a la mateixa competicio."
+        if not isinstance(self.summary, dict):
+            errors["summary"] = "El resum ha de ser un objecte JSON."
+        if not isinstance(self.warnings, list):
+            errors["warnings"] = "Els avisos han de ser una llista JSON."
+        if not isinstance(self.payload, dict):
+            errors["payload"] = "El payload ha de ser un objecte JSON."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.fase} / {self.status} / {self.snapshot_hash[:8]}"
+
+
+class FasePartitionState(models.Model):
+    class Status(models.TextChoices):
+        GENERATED = "generated", "Generada"
+        CONFIRMED = "confirmed", "Confirmada"
+        STALE = "stale", "Obsoleta"
+
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.CASCADE,
+        related_name="partition_states",
+    )
+    partition_key = models.CharField(max_length=255)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.GENERATED)
+    qualification_run = models.ForeignKey(
+        QualificationRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="partition_states",
+    )
+    source_snapshot_hash = models.CharField(max_length=64, blank=True, default="")
+    warnings = models.JSONField(default=list, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fase_id", "partition_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["fase", "partition_key"], name="uniq_fase_partition_state"),
+        ]
+        indexes = [
+            models.Index(fields=["fase", "status"], name="fasepart_fase_status_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.partition_key = str(self.partition_key or "").strip() or "global"
+        self.source_snapshot_hash = str(self.source_snapshot_hash or "").strip()
+        if not isinstance(self.warnings, list):
+            raise ValidationError({"warnings": "Els avisos han de ser una llista JSON."})
+
+    def save(self, *args, **kwargs):
+        self.partition_key = str(self.partition_key or "").strip() or "global"
+        self.source_snapshot_hash = str(self.source_snapshot_hash or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.fase} / {self.partition_key} / {self.status}"
+
+
 class CompeticioAparellEquipContextSource(models.Model):
     competicio = models.ForeignKey(
         Competicio,
@@ -477,6 +590,94 @@ class InscripcioAparellExclusio(models.Model):
 
     def __str__(self):
         return f"Exclusio inscripcio={self.inscripcio_id} comp_aparell={self.comp_aparell_id}"
+
+
+class InscripcioBaixa(models.Model):
+    """
+    Baixa administrativa d'una inscripcio.
+    Si comp_aparell es buit, la baixa afecta tota la competicio.
+    """
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="inscripcions_baixes",
+    )
+    inscripcio = models.ForeignKey(
+        Inscripcio,
+        on_delete=models.CASCADE,
+        related_name="baixes",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="baixes",
+    )
+    motiu = models.CharField(max_length=250, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    marcada_per = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inscripcions_baixes_marcades",
+    )
+    anul_lada_at = models.DateTimeField(null=True, blank=True)
+    anul_lada_per = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inscripcions_baixes_anullades",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "inscripcio"],
+                condition=models.Q(comp_aparell__isnull=True) & models.Q(anul_lada_at__isnull=True),
+                name="uniq_baixa_global_activa_inscripcio",
+            ),
+            models.UniqueConstraint(
+                fields=["competicio", "inscripcio", "comp_aparell"],
+                condition=models.Q(comp_aparell__isnull=False) & models.Q(anul_lada_at__isnull=True),
+                name="uniq_baixa_aparell_activa_inscripcio",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "inscripcio"], name="baixacomp_inscripcio_idx"),
+            models.Index(fields=["competicio", "comp_aparell"], name="baixacomp_aparell_idx"),
+            models.Index(fields=["competicio", "anul_lada_at"], name="baixacomp_activa_idx"),
+        ]
+
+    @property
+    def activa(self):
+        return self.anul_lada_at is None
+
+    @property
+    def es_global(self):
+        return self.comp_aparell_id is None
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        ins_comp_id = getattr(self.inscripcio, "competicio_id", None)
+        app_comp_id = getattr(self.comp_aparell, "competicio_id", None)
+        if ins_comp_id and self.competicio_id and ins_comp_id != self.competicio_id:
+            errors["inscripcio"] = "La inscripcio no pertany a aquesta competicio."
+        if app_comp_id and self.competicio_id and app_comp_id != self.competicio_id:
+            errors["comp_aparell"] = "L'aparell no pertany a aquesta competicio."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        scope = "global" if self.comp_aparell_id is None else f"aparell={self.comp_aparell_id}"
+        return f"Baixa ins={self.inscripcio_id} {scope}"
 
 
 # OBSOLETA

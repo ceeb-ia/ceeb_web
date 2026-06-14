@@ -1,0 +1,260 @@
+  function getPreviewElements() {
+    return {
+      root: document.getElementById('series-preview'),
+      status: document.getElementById('series-preview-status'),
+      intentLabel: document.getElementById('series-preview-intent-label'),
+      selection: document.getElementById('series-preview-selection-summary'),
+      summary: document.getElementById('series-preview-summary'),
+      existingWrap: document.getElementById('series-preview-existing-wrap'),
+      existingMeta: document.getElementById('series-preview-existing-meta'),
+      existingList: document.getElementById('series-preview-existing-list'),
+      plannedWrap: document.getElementById('series-preview-planned-wrap'),
+      plannedMeta: document.getElementById('series-preview-planned-meta'),
+      plannedList: document.getElementById('series-preview-list'),
+      confirm: document.getElementById('btn-series-preview-confirm'),
+      clear: document.getElementById('btn-series-preview-clear'),
+    };
+  }
+
+  function setPreviewStatus(message, variant = 'muted') {
+    const el = getPreviewElements().status;
+    if (!el) return;
+    el.textContent = String(message || '');
+    el.style.color = variant === 'warning'
+      ? '#b45309'
+      : (variant === 'info' ? '#1d4ed8' : '#64748b');
+  }
+
+  function updatePreviewConfirmUi() {
+    const els = getPreviewElements();
+    const intent = lastConfirmablePreview;
+    const dirty = !!(els.root && els.root.dataset.dirty === '1');
+    const hasPreview = !!(els.root && els.root.dataset.hasPreview === '1');
+    const loading = !!(els.root && els.root.dataset.loading === '1');
+
+    if (els.intentLabel) {
+      const label = String(intent?.label || '').trim();
+      els.intentLabel.textContent = dirty && label ? `${label} - desactualitzada` : label;
+      els.intentLabel.classList.toggle('d-none', !label);
+    }
+
+    if (els.confirm) {
+      const canShow = hasPreview && !!intent && !!intent.canConfirm;
+      els.confirm.textContent = String(intent?.buttonLabel || 'Confirmar aquesta accio').trim() || 'Confirmar aquesta accio';
+      els.confirm.disabled = !canShow || dirty || loading || previewConfirmBusy;
+      els.confirm.classList.toggle('d-none', !canShow);
+    }
+  }
+
+  function clearPreviewConfirmIntent() {
+    lastConfirmablePreview = null;
+    previewConfirmBusy = false;
+    updatePreviewConfirmUi();
+  }
+
+  function setPreviewConfirmIntent(intent) {
+    if (!intent || typeof intent.execute !== 'function' || !intent.canConfirm) {
+      clearPreviewConfirmIntent();
+      return;
+    }
+    lastConfirmablePreview = {
+      label: String(intent.label || '').trim(),
+      buttonLabel: String(intent.buttonLabel || 'Confirmar aquesta accio').trim() || 'Confirmar aquesta accio',
+      canConfirm: true,
+      execute: intent.execute,
+    };
+    updatePreviewConfirmUi();
+  }
+
+  function clearPreview(statusText) {
+    const els = getPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.hasPreview = '0';
+    els.root.dataset.dirty = '0';
+    els.root.dataset.loading = '0';
+    if (els.selection) {
+      els.selection.innerHTML = '';
+      els.selection.classList.add('d-none');
+    }
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.classList.add('d-none');
+    }
+    if (els.existingList) els.existingList.innerHTML = '';
+    if (els.existingWrap) els.existingWrap.classList.add('d-none');
+    if (els.existingMeta) els.existingMeta.textContent = '';
+    if (els.plannedList) els.plannedList.innerHTML = '';
+    if (els.plannedWrap) els.plannedWrap.classList.add('d-none');
+    if (els.plannedMeta) els.plannedMeta.textContent = '';
+    if (els.clear) els.clear.classList.add('d-none');
+    setPreviewStatus(statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.", 'muted');
+    clearPreviewConfirmIntent();
+  }
+
+  function markPreviewDirty() {
+    const els = getPreviewElements();
+    if (!els.root || els.root.dataset.hasPreview !== '1') return;
+    els.root.dataset.dirty = '1';
+    setPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+    clearPreviewConfirmIntent();
+  }
+
+  function setPreviewLoading(loading) {
+    const els = getPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.loading = loading ? '1' : '0';
+    if (loading) setPreviewStatus('Calculant la previsualitzacio de les series...', 'info');
+    updatePreviewConfirmUi();
+  }
+
+  function createPreviewCard(row, kind = 'planned') {
+    const card = document.createElement('div');
+    card.className = 'group-preview-card';
+    const impactKind = String(row?.impact_kind || '').trim().toLowerCase();
+    if (kind === 'planned' && (row?.will_create || impactKind === 'created')) card.classList.add('is-created');
+    else if (impactKind === 'removed' || row?.will_delete) card.classList.add('is-removed');
+    else if (impactKind === 'reduced') card.classList.add('is-reduced');
+    else if (impactKind === 'incoming') card.classList.add('is-incoming');
+    else card.classList.add('is-existing');
+
+    const head = document.createElement('div');
+    head.className = 'group-preview-card-head';
+
+    const copy = document.createElement('div');
+    copy.className = 'group-preview-card-copy';
+
+    const title = document.createElement('p');
+    title.className = 'group-preview-card-title';
+    title.textContent = String(row?.label || `Serie ${row?.display_num || ''}` || 'Serie');
+    copy.appendChild(title);
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'group-preview-card-subtitle';
+    subtitle.textContent = [
+      row?.display_num ? `Serie ${row.display_num}` : '',
+      `${Number(row?.subjects_count || 0)} unitat${Number(row?.subjects_count || 0) === 1 ? '' : 's'}`,
+      row?.is_programmed ? 'Programada' : 'No programada',
+    ].filter(Boolean).join(' | ') || 'Sense resum';
+    copy.appendChild(subtitle);
+
+    const impact = document.createElement('p');
+    impact.className = 'group-preview-card-impact';
+    if (row?.will_delete) {
+      impact.classList.add('is-removed');
+      impact.textContent = 'La serie es desactivara si la configuracio es mante.';
+    } else if (row?.will_create) {
+      impact.classList.add('is-created');
+      impact.textContent = `Es creara amb ${Number(row?.subjects_count || 0)} unitat${Number(row?.subjects_count || 0) === 1 ? '' : 's'}.`;
+    } else if (impactKind === 'removed') {
+      impact.classList.add('is-removed');
+      impact.textContent = 'Pot quedar buida amb aquesta accio.';
+    } else if (impactKind === 'reduced') {
+      impact.classList.add('is-reduced');
+      impact.textContent = `Perdra ${Number(row?.outgoing_count || 0)} unitat${Number(row?.outgoing_count || 0) === 1 ? '' : 's'}.`;
+    } else if (impactKind === 'incoming') {
+      impact.classList.add('is-created');
+      impact.textContent = `Rebra ${Number(row?.incoming_count || 0)} unitat${Number(row?.incoming_count || 0) === 1 ? '' : 's'}.`;
+    } else {
+      impact.textContent = String(row?.status_label || '').trim() || 'Sense afectacio destacada.';
+    }
+    copy.appendChild(impact);
+    head.appendChild(copy);
+
+    const badges = document.createElement('div');
+    badges.className = 'group-preview-card-badges';
+    badges.appendChild(compactBadge(`${Number(row?.subjects_count || 0)} unitats`));
+    if (row?.is_programmed) badges.appendChild(compactBadge('Programada', 'incoming'));
+    if (row?.is_empty) badges.appendChild(compactBadge('Buida', impactKind === 'removed' ? 'removed' : 'neutral'));
+    if (row?.will_create) badges.appendChild(compactBadge('Serie nova', 'created'));
+    if (row?.will_delete) badges.appendChild(compactBadge('Es desactivara', 'removed'));
+    if (Number(row?.incoming_count || 0) > 0) badges.appendChild(compactBadge(`+${Number(row?.incoming_count || 0)} entren`, 'incoming'));
+    if (Number(row?.outgoing_count || 0) > 0) badges.appendChild(compactBadge(`-${Number(row?.outgoing_count || 0)} surten`, impactKind === 'removed' ? 'removed' : 'reduced'));
+    head.appendChild(badges);
+    card.appendChild(head);
+
+    const sampleNames = Array.isArray(row?.preview_subject_names) ? row.preview_subject_names.filter(Boolean) : [];
+    const sampleRemaining = Number(row?.preview_subject_names_remaining || 0);
+    if (sampleNames.length) {
+      const members = document.createElement('div');
+      members.className = 'group-preview-members';
+      const suffix = sampleRemaining > 0 ? ` +${sampleRemaining} mes` : '';
+      const strong = document.createElement('strong');
+      strong.textContent = 'Mostra:';
+      members.appendChild(strong);
+      members.appendChild(document.createTextNode(` ${sampleNames.join(', ')}${suffix}`));
+      card.appendChild(members);
+    }
+
+    return card;
+  }
+
+  function renderPreviewSection(wrap, meta, list, rows, kind) {
+    if (!wrap || !list) return;
+    const items = Array.isArray(rows) ? rows : [];
+    list.innerHTML = '';
+    items.forEach((item) => list.appendChild(createPreviewCard(item, kind)));
+    wrap.classList.toggle('d-none', items.length === 0);
+    if (meta) {
+      const subjectsCount = items.reduce((acc, row) => acc + Number(row?.subjects_count || 0), 0);
+      meta.textContent = items.length ? `${items.length} series | ${subjectsCount} unitats destacades` : '';
+    }
+  }
+
+  function renderPreview(preview) {
+    const els = getPreviewElements();
+    if (!els.root) return;
+    if (!preview || typeof preview !== 'object') {
+      clearPreview("No s'ha pogut calcular la previsualitzacio.");
+      return;
+    }
+
+    const existingSeries = Array.isArray(preview?.existing_series) ? preview.existing_series : [];
+    const plannedSeries = Array.isArray(preview?.planned_series) ? preview.planned_series : [];
+    const blockedReasons = Array.isArray(preview?.blocked_reasons) ? preview.blocked_reasons.filter(Boolean) : [];
+    const summary = preview?.summary && typeof preview.summary === 'object' ? preview.summary : {};
+    const selection = preview?.selection && typeof preview.selection === 'object' ? preview.selection : {};
+
+    els.root.dataset.hasPreview = '1';
+    els.root.dataset.dirty = '0';
+
+    if (els.selection) {
+      els.selection.innerHTML = '';
+      els.selection.appendChild(compactBadge(selection.label || `${Number(selection?.valid_count || 0)} seleccionades`));
+      if (Number(selection?.invalid_selection_count || 0) > 0) {
+        els.selection.appendChild(compactBadge(`${Number(selection.invalid_selection_count || 0)} fora de contracte`, 'removed'));
+      }
+      if (Number(selection?.invalid_subject_count || 0) > 0) {
+        els.selection.appendChild(compactBadge(`${Number(selection.invalid_subject_count || 0)} invalides`, 'removed'));
+      }
+      if (Number(selection?.assigned_count || 0) > 0) {
+        els.selection.appendChild(compactBadge(`${Number(selection.assigned_count || 0)} ja tenien serie`));
+      }
+      els.selection.classList.remove('d-none');
+    }
+
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.appendChild(compactBadge(`${Number(summary?.series_total || 0)} series actuals`));
+      els.summary.appendChild(compactBadge(`${Number(summary?.affected_subjects_count || 0)} unitats afectades`));
+      els.summary.appendChild(compactBadge(`${Number(summary?.existing_series_total || existingSeries.length || 0)} series revisades`));
+      els.summary.appendChild(compactBadge(`${Number(summary?.planned_series_total || plannedSeries.length || 0)} resultats previstos`));
+      if (Number(summary?.programmed_series || 0) > 0) {
+        els.summary.appendChild(compactBadge(`${Number(summary.programmed_series || 0)} programades`, 'incoming'));
+      }
+      if (blockedReasons.length) {
+        els.summary.appendChild(compactBadge('Accio bloquejada', 'removed'));
+      }
+      els.summary.classList.remove('d-none');
+    }
+
+    renderPreviewSection(els.existingWrap, els.existingMeta, els.existingList, existingSeries, 'existing');
+    renderPreviewSection(els.plannedWrap, els.plannedMeta, els.plannedList, plannedSeries, 'planned');
+    if (els.clear) els.clear.classList.remove('d-none');
+
+    if (blockedReasons.length) {
+      setPreviewStatus(blockedReasons.join(' '), 'warning');
+    } else {
+      setPreviewStatus(String(preview?.message || 'Previsualitzacio calculada.'), preview?.can_run ? 'info' : 'warning');
+    }
+    updatePreviewConfirmUi();
+  }

@@ -1,31 +1,6 @@
-{% extends 'base.html' %}
-{% load static %}
+{% extends "base.html" %}
 {% block title %}Competicions{% endblock %}
 
 {% block content %}
-<section class="about_section layout_padding">
-  <div class="container">
-    <div class="card-container">
-
-      <div class="card">
-        <img src="{% static 'images/nova_competicio.jpg' %}" class="card-img-top" alt="Crear competició">
-        <div class="card-body">
-          <h3 class="card-title">Nova competició</h3>
-          <p class="card-text">Crea una competició per importar inscripcions i preparar l’ordre de competició.</p>
-          <a href="{% url 'create' %}" class="btn btn-primary">Accedeix</a>
-        </div>
-      </div>
-
-      <div class="card">
-        <img src="{% static 'images/gestionar.jpg' %}" class="card-img-top" alt="Gestionar competicions">
-        <div class="card-body">
-          <h3 class="card-title">Gestionar competicions</h3>
-          <p class="card-text">Consulta competicions creades i entra a les seves inscripcions.</p>
-          <a href="{% url 'created' %}" class="btn btn-primary">Accedeix</a>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</section>
+  {% include "competicio/_dashboard_home.html" %}
 {% endblock %}

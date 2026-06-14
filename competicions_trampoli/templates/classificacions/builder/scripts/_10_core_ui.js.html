@@ -14,16 +14,24 @@
     btnPreview: document.getElementById("btnPreview"),
     editorEmpty: document.getElementById("editorEmpty"),
     editorBody: document.getElementById("editorBody"),
+    detailPane: document.getElementById("builderDetailPane"),
     previewBox: document.getElementById("previewBox"),
     columnsBox: document.getElementById("columnsBox"),
     columnsRawContextualCopy: document.getElementById("columnsRawContextualCopy"),
     btnColAddBuiltin: document.getElementById("btnColAddBuiltin"),
     btnColAddRaw: document.getElementById("btnColAddRaw"),
+    partitionPresentationBox: document.getElementById("partitionPresentationBox"),
+    btnPartitionPresentationAdd: document.getElementById("btnPartitionPresentationAdd"),
+    btnPartitionPresentationSuggest: document.getElementById("btnPartitionPresentationSuggest"),
+    rankStyleBox: document.getElementById("rankStyleBox"),
+    btnRankStyleAdd: document.getElementById("btnRankStyleAdd"),
+    btnRankStyleDefaults: document.getElementById("btnRankStyleDefaults"),
     detailConfigBox: document.getElementById("detailConfigBox"),
     detailScopeHint: document.getElementById("detailScopeHint"),
     detailConfigAlert: document.getElementById("detailConfigAlert"),
     detailEnabled: document.getElementById("detailEnabled"),
     detailDefaultOpen: document.getElementById("detailDefaultOpen"),
+    detailSectionsLayout: document.getElementById("detailSectionsLayout"),
     detailSectionType: document.getElementById("detailSectionType"),
     detailSectionsBox: document.getElementById("detailSectionsBox"),
     btnDetailSectionAdd: document.getElementById("btnDetailSectionAdd"),
@@ -33,6 +41,7 @@
     fActiva: document.getElementById("fActiva"),
     fPublicada: document.getElementById("fPublicada"),
     fTipus: document.getElementById("fTipus"),
+    classifMetaSummaryBadge: document.getElementById("classifMetaSummaryBadge"),
     fPhaseScope: document.getElementById("fPhaseScope"),
     phaseScopeRows: document.getElementById("phaseScopeRows"),
     phaseScopeHint: document.getElementById("phaseScopeHint"),
@@ -86,8 +95,14 @@
     sModeSeleccioExercicis: document.getElementById("sModeSeleccioExercicis"),
     candidateScopeHint: document.getElementById("candidateScopeHint"),
     exerciseCriteriaCard: document.getElementById("exerciseCriteriaCard"),
+    globalParticipantsCard: document.getElementById("globalParticipantsCard"),
     exerciseModeLabel: document.getElementById("exerciseModeLabel"),
     globalExerciseCriteriaWrap: document.getElementById("globalExerciseCriteriaWrap"),
+    sParticipantsGlobalMode: document.getElementById("sParticipantsGlobalMode"),
+    participantsGlobalNBox: document.getElementById("participantsGlobalNBox"),
+    iParticipantsGlobalN: document.getElementById("iParticipantsGlobalN"),
+    sAggParticipantsGlobal: document.getElementById("sAggParticipantsGlobal"),
+    participantsGlobalHint: document.getElementById("participantsGlobalHint"),
     exerciseRestrictionsCard: document.getElementById("exerciseRestrictionsCard"),
     sExercicisMode: document.getElementById("sExercicisMode"),
     exBestNBox: document.getElementById("exBestNBox"),
@@ -120,6 +135,7 @@
     victoryTieBox: document.getElementById("victoryTieBox"),
     victoryTieBody: document.getElementById("victoryTieBody"),
     btnVictoryTieAdd: document.getElementById("btnVictoryTieAdd"),
+    tieTabs: document.getElementById("tieTabs"),
     tieBody: document.getElementById("tieBody"),
     tieParticipantsHead: document.getElementById("tieParticipantsHead"),
     btnTieAdd: document.getElementById("btnTieAdd"),
@@ -148,21 +164,40 @@
     hydrationDetailSections: null,
     persistedDetailSections: null,
     detailUiTouched: false,
+    detailActiveSectionIdx: 0,
+    tieActiveId: "",
+    tieActiveAppByTieId: {},
   };
   let advancedDirty = {
     desempat: false,
     filtres: false,
   };
   let builderNavBound = false;
+  let activeBuilderSectionId = "";
+
+  function isPanelizedBuilder() {
+    return !!(els.editorBody && els.editorBody.classList.contains("is-panelized"));
+  }
 
   function setActiveBuilderNav(sectionId) {
+    const cleanSectionId = String(sectionId || "").trim();
+    activeBuilderSectionId = cleanSectionId;
     document.querySelectorAll("[data-builder-nav-link]").forEach((link) => {
       const target = String(link.getAttribute("href") || "").replace(/^#/, "");
-      link.classList.toggle("is-active", !!sectionId && target === sectionId);
+      link.classList.toggle("is-active", !!cleanSectionId && target === cleanSectionId);
+    });
+    document.querySelectorAll("[data-builder-section]").forEach((section) => {
+      section.classList.toggle("is-active-detail", !!cleanSectionId && section.id === cleanSectionId);
     });
   }
 
   function updateBuilderNavFromScroll() {
+    if (isPanelizedBuilder()) {
+      if (!activeBuilderSectionId) setActiveBuilderNav("section-meta");
+      syncBuilderBackToTopButton();
+      return;
+    }
+
     const sections = Array.from(document.querySelectorAll("[data-builder-section]"));
     if (!sections.length) {
       syncBuilderBackToTopButton();
@@ -180,7 +215,8 @@
 
   function syncBuilderBackToTopButton() {
     if (!els.backToTop) return;
-    const isVisible = (window.scrollY || window.pageYOffset || 0) > 280;
+    const detailScroll = els.detailPane ? (els.detailPane.scrollTop || 0) : 0;
+    const isVisible = (window.scrollY || window.pageYOffset || 0) > 280 || detailScroll > 140;
     els.backToTop.classList.toggle("is-visible", isVisible);
     syncBuilderBackToTopButtonPosition();
   }
@@ -217,17 +253,31 @@
     if (builderNavBound) return;
     builderNavBound = true;
 
+    if (els.editorBody) {
+      els.editorBody.classList.add("is-panelized");
+    }
+
     document.querySelectorAll("[data-builder-nav-link]").forEach((link) => {
-      link.addEventListener("click", () => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
         const targetId = String(link.getAttribute("href") || "").replace(/^#/, "");
         setActiveBuilderNav(targetId);
+        if (els.detailPane) {
+          els.detailPane.scrollTo({ top: 0, behavior: "smooth" });
+        }
       });
     });
 
     window.addEventListener("scroll", updateBuilderNavFromScroll, { passive: true });
     window.addEventListener("resize", updateBuilderNavFromScroll);
+    if (els.detailPane) {
+      els.detailPane.addEventListener("scroll", syncBuilderBackToTopButton, { passive: true });
+    }
     if (els.backToTop) {
       els.backToTop.addEventListener("click", () => {
+        if (els.detailPane) {
+          els.detailPane.scrollTo({ top: 0, behavior: "smooth" });
+        }
         window.scrollTo({ top: 0, behavior: "smooth" });
       });
       const chatbotOpenBtn = document.getElementById("chatbot-open");
@@ -267,6 +317,7 @@
     const map = [
       [els.detailEnabled, "presentacio.detall.enabled"],
       [els.detailDefaultOpen, "presentacio.detall.default_open"],
+      [els.detailSectionsLayout, "presentacio.detall.sections_layout"],
       [els.iTopN, "presentacio.top_n"],
       [els.cEmpats, "presentacio.mostrar_empats"],
       [els.advancedJson, "schema"],

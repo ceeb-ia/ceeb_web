@@ -638,6 +638,7 @@ def clone_competicio_for_work(source_competicio, *, benchmark_user, scenario: st
             te_hd=comp_aparell.te_hd,
             te_penalitzacio=comp_aparell.te_penalitzacio,
             mode_execucio=comp_aparell.mode_execucio,
+            participation_config=json.loads(json.dumps(comp_aparell.participation_config or {})),
             actiu=comp_aparell.actiu,
         )
 

@@ -1,10 +1,11 @@
-<div class="panel is-active" data-panel-key="agrupacio">
+<div class="panel is-active" data-panel-key="agrupacio" data-avatar-anchor="panel-divisions">
   <div class="panel-head collapsed" data-target="#panel-agrupacio" aria-expanded="false">
     <div>
       <p class="panel-title mb-0">Divisions</p>
       <div class="subtle">Divideix les inscripcions en conjunts mes petits per a una millor visualitzacio.</div>
     </div>
     <div class="d-flex align-items-center gap-2">
+      <button class="inscripcions-context-help" type="button" data-avatar-topic="inscriptions_divisions" aria-label="Ajuda sobre divisions" title="Ajuda sobre divisions">?</button>
       <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
       <span class="chev">&#9662;</span>
     </div>
@@ -20,7 +21,7 @@
         {% endif %}
       </div>
 
-      <div class="chips">
+      <div class="chips" data-avatar-anchor="division-fields">
         <span class="text-muted small fw-semibold">Divideix per:</span>
         {% for f in allowed_group_fields %}
           <label class="group-chip" title="{{ f.code }}">
@@ -30,7 +31,7 @@
         {% endfor %}
       </div>
 
-      <div class="team-box mt-3 d-none" id="birth-year-range-config-box">
+      <div class="team-box mt-3 d-none" id="birth-year-range-config-box" data-avatar-anchor="birth-ranges">
         <div class="d-flex flex-wrap align-items-start justify-content-between" style="gap:12px;">
           <div>
             <div class="fw-semibold">Configuracio de forquilles de data de naixement</div>

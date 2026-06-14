@@ -1,0 +1,88 @@
+    .rotation-page-shell {
+      position: relative;
+    }
+
+    .rotation-workspace {
+      position: relative;
+      min-width: 0;
+    }
+
+    .board {
+      display: block;
+    }
+
+    .rotation-dashboard-main,
+    .cardx-main {
+      min-width: 0;
+      transition: padding-left .22s ease, padding-right .22s ease, margin-left .22s ease, margin-right .22s ease;
+    }
+
+    .rotation-dashboard-main .cardx-main {
+      border-color: #CBD5E1;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+
+    body.planner-left-open .rotation-dashboard-main {
+      padding-left: calc(var(--rotation-drawer-left-width) + var(--rotation-drawer-gap));
+    }
+
+    body.planner-export-open .rotation-dashboard-main {
+      padding-right: calc(var(--rotation-drawer-export-width) + var(--rotation-drawer-gap));
+    }
+
+    .grid-wrap {
+      border: 0;
+      border-radius: 8px;
+      background: var(--rotation-soft);
+    }
+
+    table.rot {
+      background: transparent;
+    }
+
+    table.rot th,
+    table.rot td {
+      border-color: var(--rotation-neutral-border);
+    }
+
+    table.rot thead th,
+    table.rot tbody th {
+      background: #F8FAFC;
+      color: var(--rotation-text-main);
+    }
+
+    table.rot thead .js-col-h {
+      border-bottom-color: var(--rotation-border);
+      color: var(--rotation-text);
+      font-weight: 750;
+    }
+
+    .cell {
+      border: 1px solid rgba(255, 255, 255, .58);
+      background: rgba(255, 255, 255, .70);
+      transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+
+    .cell:hover {
+      border-color: var(--rotation-border);
+      background: rgba(255, 255, 255, .88);
+    }
+
+    .cell.is-over {
+      outline-color: var(--rotation-base);
+      background: var(--rotation-soft);
+    }
+
+    .pill {
+      border: 1px solid var(--program-pill-border, rgba(124, 45, 18, .18));
+      background: var(--program-pill-bg, #FFFFFF);
+      color: var(--program-pill-fg, var(--rotation-text-main));
+      box-shadow: 0 4px 10px rgba(15, 23, 42, .08);
+    }
+
+    .pill.empty {
+      border-color: var(--rotation-neutral-border);
+      background: #F1F5F9;
+      color: var(--rotation-text-main);
+      box-shadow: none;
+    }

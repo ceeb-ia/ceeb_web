@@ -1,0 +1,68 @@
+{% load static %}
+
+<div class="phase-base-drawer-stack">
+  <section class="phase-panel phase-base-drawer-panel">
+    <div class="phase-panel-title">
+      <h5>Preliminar implicita</h5>
+      <span class="badge badge-light border">DEFAULT</span>
+    </div>
+    <div class="phase-base-drawer-intro">
+      <img src="{% static 'fases/preliminar.png' %}" alt="">
+      <div>
+        <div class="phase-base-drawer-title">Base de l'aparell</div>
+        <div class="phase-panel-note">
+          Aquesta arrel no te origen, tall ni estat propi. Treballa amb la participació de l'aparell i amb els grups creats a Inscripcions.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Participació</h5>
+      <span class="badge badge-light border">{{ comp_aparell.nombre_exercicis }} exercici(s)</span>
+    </div>
+    <div class="phase-base-metrics">
+      <div class="phase-base-metric">
+        <span class="phase-base-metric-value">{{ base_participation_preview.included_count|default:0 }}</span>
+        <span class="phase-base-metric-label">competeixen</span>
+      </div>
+      <div class="phase-base-metric">
+        <span class="phase-base-metric-value">{{ base_participation_preview.excluded_count|default:0 }}</span>
+        <span class="phase-base-metric-label">excloses</span>
+      </div>
+      <div class="phase-base-metric">
+        <span class="phase-base-metric-value">{{ base_participation_preview.total|default:0 }}</span>
+        <span class="phase-base-metric-label">inscripcions</span>
+      </div>
+    </div>
+    <div class="phase-action-row phase-base-drawer-actions">
+      <a class="btn btn-sm btn-outline-primary"
+         href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+        Ajustar Participació
+      </a>
+    </div>
+  </section>
+
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Grups</h5>
+      <span class="badge badge-light border">Inscripcions</span>
+    </div>
+    <div class="phase-base-drawer-note">
+      Els grups de la preliminar son els grups generals de la competicio. Es preparen a Inscripcions i es programen despres a Rotacions; aqui nomes es creen grups interns quan obres una fase filla.
+    </div>
+  </section>
+
+  <section class="phase-panel phase-base-next-panel">
+    <div class="phase-panel-title">
+      <h5>Seguent pas</h5>
+    </div>
+    <div class="phase-base-drawer-note">
+      Crea una fase filla quan necessitis semifinal, final o una altra ronda amb classificacio origen, tall i unitats propies.
+    </div>
+    <div class="phase-base-drawer-create">
+      {% include "competicio/fases/_create_child_phase_form.html" with parent_id="" %}
+    </div>
+  </section>
+</div>

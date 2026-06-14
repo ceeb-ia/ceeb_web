@@ -38,13 +38,20 @@
 
   function buildSavePayload(insId, exercici, patch){
     const subject = subjectForId(insId);
-    return {
+    const payload = {
       inscripcio_id: subject.subject_kind === "inscripcio" ? Number(subject.subject_id || insId) : undefined,
       subject_kind: subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio"),
       subject_id: Number(subject.subject_id || insId),
       exercici: Number(exercici),
       inputs_patch: patch,
     };
+    if(JUDGE_ASSIGNMENT_ID){
+      payload.assignment_id = Number(JUDGE_ASSIGNMENT_ID);
+    }
+    if(JUDGE_FASE_ID){
+      payload.fase_id = Number(JUDGE_FASE_ID);
+    }
+    return payload;
   }
 
   function scoreConfirmEls(){
@@ -516,6 +523,8 @@
     const url = new URL(UPDATES_URL, window.location.origin);
     if(lastSince) url.searchParams.set("since", lastSince);
     if(lastAfterId) url.searchParams.set("after_id", lastAfterId);
+    if(JUDGE_ASSIGNMENT_ID) url.searchParams.set("assignment_id", String(JUDGE_ASSIGNMENT_ID));
+    if(JUDGE_FASE_ID) url.searchParams.set("fase_id", String(JUDGE_FASE_ID));
     allExerciseKeys().forEach((exercici) => url.searchParams.append("exercici", String(exercici)));
     let nextPollDelay = opts.drain ? null : 1200;
 

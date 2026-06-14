@@ -10,6 +10,8 @@ window.initSeriesWorkspace = async function () {
   const workspaceUrl = "{% url 'inscripcions_series_equips_workspace' competicio.id %}";
   const detailUrl = "{% url 'inscripcions_series_equips_detail' competicio.id %}";
   const previewUrl = "{% url 'inscripcions_series_equips_preview' competicio.id %}";
+  const creationPreviewUrl = "{% url 'inscripcions_series_equips_creation_preview' competicio.id %}";
+  const createManyUrl = "{% url 'inscripcions_series_equips_create_many' competicio.id %}";
   const createUrl = "{% url 'inscripcions_series_equips_create' competicio.id %}";
   const assignUrl = "{% url 'inscripcions_series_equips_assign' competicio.id %}";
   const unassignUrl = "{% url 'inscripcions_series_equips_unassign' competicio.id %}";
@@ -37,10 +39,14 @@ window.initSeriesWorkspace = async function () {
       members_state: 'all',
       program_state: 'all',
     },
-    boardFiltersExpanded: false,
     createName: '',
     selectedSerieId: '',
     selectedRightPaneTab: 'detail',
+    detailFilters: {
+      q: '',
+      contexts: [],
+    },
+    editingSerieIds: new Set(),
     workspace: null,
     detailCache: {},
     loadingSerieIds: new Set(),
@@ -77,11 +83,6 @@ window.initSeriesWorkspace = async function () {
   async function confirmMessage(message) {
     if (typeof showConfirm === 'function') return !!(await showConfirm(message));
     return window.confirm(message);
-  }
-
-  async function promptText(message, initialValue) {
-    if (typeof showPrompt === 'function') return showPrompt(message, initialValue);
-    return Promise.resolve(window.prompt(message, initialValue));
   }
 
   function compactBadge(text, variant) {
@@ -140,10 +141,10 @@ window.initSeriesWorkspace = async function () {
         pageSize: state.pageSize,
         filters: { ...state.filters },
         boardFilters: { ...state.boardFilters },
-        boardFiltersExpanded: !!state.boardFiltersExpanded,
         createName: state.createName,
         selectedSerieId: state.selectedSerieId,
         selectedRightPaneTab: state.selectedRightPaneTab,
+        detailFilters: { ...state.detailFilters },
         ...extra,
       },
     });
@@ -161,13 +162,13 @@ window.initSeriesWorkspace = async function () {
     if (saved.boardFilters && typeof saved.boardFilters === 'object') {
       state.boardFilters = normalizeBoardFilters(saved.boardFilters);
     }
-    if (Object.prototype.hasOwnProperty.call(saved, 'boardFiltersExpanded')) {
-      state.boardFiltersExpanded = !!saved.boardFiltersExpanded;
-    }
     if (saved.createName) state.createName = String(saved.createName || '');
     if (saved.selectedSerieId) state.selectedSerieId = String(saved.selectedSerieId || '').trim();
     if (saved.selectedRightPaneTab === 'preview' || saved.selectedRightPaneTab === 'detail') {
       state.selectedRightPaneTab = saved.selectedRightPaneTab;
+    }
+    if (saved.detailFilters && typeof saved.detailFilters === 'object') {
+      state.detailFilters = normalizeDetailSubjectFilters(saved.detailFilters);
     }
   }
 
@@ -236,13 +237,21 @@ window.initSeriesWorkspace = async function () {
   }
 
   function readCompAparellIdFromDom() {
-    const value = String(
-      document.getElementById('series-comp-aparell-select')?.value ||
-      document.getElementById('series-workspace-comp-aparell-select')?.value ||
-      state.compAparellId ||
-      ''
-    ).trim();
-    if (value && compAparellSelectsContain(value)) return value;
+    const current = String(state.compAparellId || '').trim();
+    if (current && compAparellSelectsContain(current)) return current;
+
+    const active = document.activeElement;
+    if (active && ['series-comp-aparell-select', 'series-workspace-comp-aparell-select'].includes(active.id)) {
+      const activeValue = String(active.value || '').trim();
+      if (activeValue && compAparellSelectsContain(activeValue)) return activeValue;
+    }
+
+    const workspaceValue = String(document.getElementById('series-workspace-comp-aparell-select')?.value || '').trim();
+    if (workspaceValue && compAparellSelectsContain(workspaceValue)) return workspaceValue;
+
+    const compactValue = String(document.getElementById('series-comp-aparell-select')?.value || '').trim();
+    if (compactValue && compAparellSelectsContain(compactValue)) return compactValue;
+
     const fallback = firstAvailableCompAparellId();
     if (fallback) state.compAparellId = fallback;
     return fallback;
@@ -301,6 +310,135 @@ window.initSeriesWorkspace = async function () {
     );
   }
 
+  function seriesFilterDefaultValue(selectId) {
+    return selectId === 'series-filter-state' ? 'all' : '';
+  }
+
+  function seriesFilterSummaryLabel(selectEl) {
+    if (!selectEl) return 'Qualsevol';
+    const selected = Array.from(selectEl.selectedOptions || []);
+    const active = selected.find((option) => String(option.value || '').trim());
+    if (!active) return selectEl.id === 'series-filter-context' ? 'Tots' : 'Qualsevol';
+    if (selectEl.id === 'series-filter-state' && String(active.value || '') === 'all') return 'Totes';
+    return active.textContent?.trim() || active.value || 'Qualsevol';
+  }
+
+  function renderSeriesFilterActiveChips() {
+    const wrap = document.getElementById('series-filter-active-chips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    let activeCount = 0;
+    const q = String(document.getElementById('series-filter-q')?.value || '').trim();
+    if (q) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-series-filter-search-clear', '1');
+      chip.textContent = `Cerca: ${q} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    }
+    [
+      { id: 'series-filter-context', label: 'Context' },
+      { id: 'series-filter-state', label: 'Estat' },
+      { id: 'series-filter-serie', label: 'Serie' },
+    ].forEach((filter) => {
+      const selectEl = document.getElementById(filter.id);
+      if (!selectEl) return;
+      Array.from(selectEl.selectedOptions || []).forEach((option) => {
+        const value = String(option.value || '').trim();
+        if (!value || value === seriesFilterDefaultValue(filter.id)) return;
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'groups-filter-chip';
+        chip.setAttribute('data-series-filter-chip-select', filter.id);
+        chip.setAttribute('data-series-filter-chip-value', value);
+        chip.textContent = `${filter.label}: ${option.textContent?.trim() || value} x`;
+        frag.appendChild(chip);
+        activeCount += 1;
+      });
+    });
+    if (activeCount) {
+      const clearAll = document.createElement('button');
+      clearAll.type = 'button';
+      clearAll.className = 'groups-filter-chip groups-filter-chip-clear-all';
+      clearAll.setAttribute('data-series-filter-clear-all', '1');
+      clearAll.textContent = 'Netejar filtres';
+      frag.appendChild(clearAll);
+    }
+    wrap.classList.toggle('is-empty', activeCount === 0);
+    wrap.appendChild(frag);
+  }
+
+  function renderSeriesFilterPopovers() {
+    document.querySelectorAll('[data-series-filter-popover]').forEach((popover) => {
+      const selectId = String(popover.getAttribute('data-select-id') || '').trim();
+      const selectEl = document.getElementById(selectId);
+      if (!selectEl) return;
+      const summary = popover.querySelector('[data-filter-summary]');
+      if (summary) summary.textContent = seriesFilterSummaryLabel(selectEl);
+      const currentValue = String(selectEl.value || '').trim();
+      const defaultValue = seriesFilterDefaultValue(selectId);
+      popover.classList.toggle('is-active', !!currentValue && currentValue !== defaultValue);
+      const optionsWrap = popover.querySelector(`[data-filter-options-for="${selectId}"]`);
+      if (!optionsWrap) return;
+      optionsWrap.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      Array.from(selectEl.options || []).forEach((option) => {
+        const optionValue = String(option.value || '').trim();
+        if (!optionValue) return;
+        const label = document.createElement('label');
+        label.className = 'groups-filter-option';
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.className = 'js-series-filter-choice';
+        input.name = `series-filter-choice-${selectId}`;
+        input.value = optionValue;
+        input.checked = !!option.selected;
+        input.setAttribute('data-select-id', selectId);
+        const textSpan = document.createElement('span');
+        textSpan.textContent = option.textContent || optionValue;
+        label.appendChild(input);
+        label.appendChild(textSpan);
+        frag.appendChild(label);
+      });
+      if (!frag.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'groups-filter-empty';
+        empty.textContent = 'Sense opcions disponibles';
+        frag.appendChild(empty);
+      }
+      optionsWrap.appendChild(frag);
+    });
+    renderSeriesFilterActiveChips();
+  }
+
+  function setSeriesFilterValue(selectId, value, options = {}) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    const cleanValue = String(value ?? seriesFilterDefaultValue(selectId)).trim();
+    selectEl.value = cleanValue;
+    if (selectEl.value !== cleanValue) selectEl.value = seriesFilterDefaultValue(selectId);
+    if (options.dispatch !== false) {
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    renderSeriesFilterPopovers();
+  }
+
+  function clearAllSeriesFilters() {
+    const search = document.getElementById('series-filter-q');
+    if (search) {
+      search.value = '';
+    }
+    ['series-filter-context', 'series-filter-state', 'series-filter-serie'].forEach((id) => {
+      setSeriesFilterValue(id, seriesFilterDefaultValue(id), { dispatch: false });
+    });
+    renderSeriesFilterPopovers();
+    markPreviewDirty();
+    refreshWorkspace({ preservePage: false });
+  }
+
   function syncFiltersFromDom() {
     state.filters.q = String(document.getElementById('series-filter-q')?.value || '').trim();
     state.filters.context_name = String(document.getElementById('series-filter-context')?.value || '').trim();
@@ -323,6 +461,7 @@ window.initSeriesWorkspace = async function () {
     const stateSelect = document.getElementById('series-filter-state');
     if (q) q.value = String(state.filters.q || '');
     if (stateSelect) stateSelect.value = String(state.filters.series_state || 'all');
+    renderSeriesFilterPopovers();
 
     fillSelect(
       document.getElementById('series-workspace-existing-select'),
@@ -333,109 +472,7 @@ window.initSeriesWorkspace = async function () {
     );
   }
 
-  function readBoardFilters() {
-    return normalizeBoardFilters({
-      q: document.getElementById('series-board-filter-q')?.value || '',
-      contexts: selectedOptionValues(document.getElementById('series-board-filter-context')),
-      members_state: document.getElementById('series-board-filter-members-state')?.value || 'all',
-      program_state: document.getElementById('series-board-filter-program-state')?.value || 'all',
-    });
-  }
-
-  function buildBoardFilterOptions(series) {
-    const contexts = new Set();
-    (Array.isArray(series) ? series : []).forEach((serie) => {
-      const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
-      subjects.forEach((subject) => {
-        const clean = String(subject?.context_name || '').trim();
-        if (clean) contexts.add(clean);
-      });
-    });
-    return { contexts: Array.from(contexts).sort((a, b) => a.localeCompare(b, 'ca')) };
-  }
-
-  function setBoardFiltersToDom(filters, options) {
-    const data = normalizeBoardFilters(filters);
-    const q = document.getElementById('series-board-filter-q');
-    if (q) q.value = String(data.q || '');
-    fillSelect(document.getElementById('series-board-filter-context'), options?.contexts || [], data.contexts || [], 'Tots');
-    const membersState = document.getElementById('series-board-filter-members-state');
-    const programState = document.getElementById('series-board-filter-program-state');
-    if (membersState) membersState.value = String(data.members_state || 'all');
-    if (programState) programState.value = String(data.program_state || 'all');
-  }
-
-  function boardFiltersAreActive(filters = state.boardFilters) {
-    const current = normalizeBoardFilters(filters);
-    return !!(
-      current.q
-      || current.contexts.length
-      || current.members_state !== 'all'
-      || current.program_state !== 'all'
-    );
-  }
-
-  function boardFilterSummaryText(filters = state.boardFilters) {
-    const current = normalizeBoardFilters(filters);
-    const parts = [];
-    if (current.q) parts.push(`text: ${current.q}`);
-    if (current.contexts.length) parts.push(`${current.contexts.length} contexts`);
-    if (current.members_state === 'with_subjects') parts.push('amb unitats');
-    if (current.members_state === 'empty') parts.push('nomes buides');
-    if (current.program_state === 'programmed') parts.push('programades');
-    if (current.program_state === 'out_of_program') parts.push('fora de programa');
-    if (!parts.length) return 'Nom de la serie, equips, contexts i estat del programa del board actual.';
-    return `Filtres actius: ${parts.join(' | ')}.`;
-  }
-
-  function setBoardFiltersExpanded(expanded, options = {}) {
-    state.boardFiltersExpanded = !!expanded;
-    const panel = document.getElementById('series-board-filters-panel');
-    const toggle = document.getElementById('btn-series-board-filters-toggle');
-    const summary = document.getElementById('series-board-filters-summary');
-    if (panel) panel.classList.toggle('d-none', !state.boardFiltersExpanded);
-    if (toggle) {
-      toggle.setAttribute('aria-expanded', state.boardFiltersExpanded ? 'true' : 'false');
-      toggle.textContent = state.boardFiltersExpanded ? 'Amagar filtres del board' : 'Veure filtres del board';
-    }
-    if (summary) summary.textContent = boardFilterSummaryText();
-    if (!options.skipSave) saveWorkspaceState();
-  }
-
-  function seriesSearchText(serie) {
-    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
-    return normalizeSearchText([
-      serie?.search_text,
-      serie?.label,
-      serie?.name,
-      serie?.summary_label,
-      ...subjects.map((subject) => `${subject?.label || ''} ${subject?.context_name || ''} ${subject?.members_text || ''}`),
-    ].filter(Boolean).join(' '));
-  }
-
-  function serieMatchesBoardFilters(serie, filters = state.boardFilters) {
-    const current = normalizeBoardFilters(filters);
-    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
-    if (current.members_state === 'with_subjects' && Number(serie?.subjects_count || 0) <= 0) return false;
-    if (current.members_state === 'empty' && Number(serie?.subjects_count || 0) > 0) return false;
-    if (current.program_state === 'programmed' && !serie?.is_programmed) return false;
-    if (current.program_state === 'out_of_program' && !serie?.is_out_of_program) return false;
-    if (current.contexts.length) {
-      const subjectContexts = new Set(
-        subjects.map((subject) => String(subject?.context_name || '').trim()).filter(Boolean)
-      );
-      if (!current.contexts.some((value) => subjectContexts.has(value))) return false;
-    }
-    if (current.q && !seriesSearchText(serie).includes(normalizeSearchText(current.q))) return false;
-    return true;
-  }
-
-  function renderBoardFilterControls(series) {
-    const options = buildBoardFilterOptions(series);
-    setBoardFiltersToDom(state.boardFilters, options);
-    state.boardFilters = readBoardFilters();
-    setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
-  }
+{% include "competicio/inscripcions/scripts/series/_board.html" %}
 
   function getPreviewElements() {
     return {
@@ -580,7 +617,7 @@ window.initSeriesWorkspace = async function () {
     impact.className = 'group-preview-card-impact';
     if (row?.will_delete) {
       impact.classList.add('is-removed');
-      impact.textContent = "La serie es desactivara si la configuracio es manté.";
+      impact.textContent = 'La serie es desactivara si la configuracio es mante.';
     } else if (row?.will_create) {
       impact.classList.add('is-created');
       impact.textContent = `Es creara amb ${Number(row?.subjects_count || 0)} unitat${Number(row?.subjects_count || 0) === 1 ? '' : 's'}.`;
@@ -697,6 +734,8 @@ window.initSeriesWorkspace = async function () {
     }
     updatePreviewConfirmUi();
   }
+
+{% include "competicio/inscripcions/scripts/series/_preview.html" %}
 
   function buildRequestPayload(extra = {}) {
     return Object.assign({
@@ -841,7 +880,7 @@ window.initSeriesWorkspace = async function () {
     remove.disabled = !editable();
     remove.addEventListener('click', async (event) => {
       event.preventDefault();
-      await previewUnassignSelection([id]);
+      await unassignSingleSerieSubject(subject, serie);
     });
     tools.appendChild(remove);
 
@@ -917,14 +956,8 @@ window.initSeriesWorkspace = async function () {
     rename.className = 'btn btn-sm btn-outline-secondary';
     rename.textContent = 'Renombrar';
     rename.disabled = !editable();
-    rename.addEventListener('click', async () => {
-      const next = await promptText('Nou nom de la serie', String(serie?.name || ''));
-      if (next === null) return;
-      await runAction(renameUrl, {
-        comp_aparell_id: state.compAparellId,
-        serie_id: serie.id,
-        name: String(next || '').trim(),
-      }, 'Serie renombrada.');
+    rename.addEventListener('click', () => {
+      setSeriesRenameEditor(serieId, true);
     });
     actions.appendChild(rename);
 
@@ -968,7 +1001,7 @@ window.initSeriesWorkspace = async function () {
     if (!subjects.length) {
       const placeholder = document.createElement('div');
       placeholder.className = 'team-context-drop-placeholder';
-      placeholder.textContent = 'Serie buida. Pots crear-la ara i omplir-la mes tard des del mateix workspace.';
+      placeholder.textContent = "Serie buida. Selecciona equips i assigna'ls a aquesta serie.";
       membersList.appendChild(placeholder);
       return;
     }
@@ -1031,6 +1064,8 @@ window.initSeriesWorkspace = async function () {
     }
     return state.detailCache[cleanId] || getCurrentSelectedSerieSummary();
   }
+
+{% include "competicio/inscripcions/scripts/series/_detail.html" %}
   function seriesMetaText(serie) {
     return [
       `${Number(serie?.subjects_count || 0)} unitat${Number(serie?.subjects_count || 0) === 1 ? '' : 's'}`,
@@ -1048,7 +1083,7 @@ window.initSeriesWorkspace = async function () {
     if (compactNote) {
       compactNote.textContent = count
         ? `Les accions rapides treballaran sobre ${count} unitat${count === 1 ? '' : 's'} competitiva${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'}.`
-        : "Aquestes accions treballaran sobre la seleccio preparada al modal.";
+        : "Aquestes accions treballaran sobre la seleccio preparada al workspace.";
     }
     const helper = document.getElementById('series-selection-helper-note');
     if (helper) {
@@ -1062,6 +1097,34 @@ window.initSeriesWorkspace = async function () {
         ? `Aquestes accions treballaran sobre ${count} unitat${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'} al workspace.`
         : 'Aquestes accions treballaran sobre la seleccio activa del workspace.';
     }
+  }
+
+  function candidateEmptyMessage(workspace) {
+    const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
+    const issueText = issues
+      .flatMap((issue) => [
+        String(issue?.team_label || ''),
+        ...(Array.isArray(issue?.reasons) ? issue.reasons : []),
+      ])
+      .join(' ')
+      .toLowerCase();
+    const filtersActive = !!(
+      String(state.filters.q || '').trim()
+      || String(state.filters.context_name || '').trim()
+      || String(state.filters.serie_id || '').trim()
+      || String(state.filters.series_state || 'all') !== 'all'
+    );
+
+    if (issueText.includes('sense fonts configurades') || issueText.includes('cap context configurat') || issueText.includes('no te cap context')) {
+      return "Aquest aparell d'equip no te contextos font configurats. Obre el workspace d'equips i selecciona quins contextos alimenten les series.";
+    }
+    if (issueText.includes('no te cap equip amb membres')) {
+      return "Els contextos configurats no tenen equips amb membres per aquest aparell.";
+    }
+    if (filtersActive) {
+      return "Cap equip candidat compleix els filtres actuals.";
+    }
+    return "No hi ha cap equip candidat carregable per aquest aparell.";
   }
 
   function toggleSelection(id, checked) {
@@ -1092,10 +1155,35 @@ window.initSeriesWorkspace = async function () {
     const main = document.createElement('div');
     main.className = 'team-candidate-main';
 
+    const head = document.createElement('div');
+    head.className = 'team-candidate-head';
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'team-candidate-title-wrap';
+
     const title = document.createElement('div');
     title.className = 'team-candidate-title';
-    title.textContent = String(item?.label || `Unitat ${id}`);
-    main.appendChild(title);
+    title.textContent = String(item?.team_name || item?.name || item?.label || `Equip ${id}`);
+    titleWrap.appendChild(title);
+
+    const teamDetails = document.createElement('details');
+    teamDetails.className = 'team-candidate-group-details has-team';
+    const teamSummary = document.createElement('summary');
+    const dot = document.createElement('span');
+    dot.className = 'team-candidate-group-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    const summaryText = document.createElement('span');
+    summaryText.textContent = 'Equip';
+    teamSummary.appendChild(dot);
+    teamSummary.appendChild(summaryText);
+    const fullLabel = document.createElement('span');
+    fullLabel.className = 'team-candidate-group-full';
+    fullLabel.textContent = String(item?.team_label || item?.label || item?.team_name || `Equip ${id}`);
+    teamDetails.appendChild(teamSummary);
+    teamDetails.appendChild(fullLabel);
+    teamDetails.addEventListener('click', (event) => event.stopPropagation());
+    titleWrap.appendChild(teamDetails);
+    head.appendChild(titleWrap);
+    main.appendChild(head);
 
     const meta = document.createElement('div');
     meta.className = 'team-candidate-meta';
@@ -1134,7 +1222,7 @@ window.initSeriesWorkspace = async function () {
     const page = Number(workspace?.candidates?.page || 1);
     const pages = Number(workspace?.paging?.pages || 1);
     setText('series-candidates-count-badge', `${total} candidates`);
-    setText('series-candidates-status', total ? `${total} unitats competitives segons els filtres actuals.` : "Cap unitat competitiva amb aquests filtres.");
+    setText('series-candidates-status', total ? `${total} unitats competitives segons els filtres actuals.` : candidateEmptyMessage(workspace));
     setText('series-page-label', `Pagina ${page} de ${pages}`);
     const prev = document.getElementById('btn-series-prev');
     const next = document.getElementById('btn-series-next');
@@ -1143,74 +1231,18 @@ window.initSeriesWorkspace = async function () {
 
     list.innerHTML = '';
     items.forEach((item) => list.appendChild(candidateRow(item)));
-  }
-
-  function renderCompactSummary(summary) {
-    const metrics = document.getElementById('series-compact-summary-metrics');
-    if (!metrics) return;
-    metrics.innerHTML = '';
-    metrics.appendChild(compactBadge(`${Number(summary?.series_total || 0)} series`));
-    metrics.appendChild(compactBadge(`${Number(summary?.assigned_count || 0)} assignades`));
-    metrics.appendChild(compactBadge(`${Number(summary?.unassigned_count || 0)} sense serie`));
-    metrics.appendChild(compactBadge(`${Number(summary?.programmed_series || 0)} programades`, 'incoming'));
-    if (Number(summary?.invalid_count || 0) > 0) {
-      metrics.appendChild(compactBadge(`${Number(summary.invalid_count || 0)} invalides`, 'removed'));
-    }
-  }
-
-  function renderCompactSeriesList(workspace) {
-    const wrap = document.getElementById('series-compact-list');
-    const note = document.getElementById('series-compact-list-note');
-    if (!wrap) return;
-    const series = Array.isArray(workspace?.series) ? workspace.series : [];
-    wrap.innerHTML = '';
-    if (note) {
-      note.textContent = series.length
-        ? `Mostrant ${series.length} serie${series.length === 1 ? '' : 's'} activa${series.length === 1 ? '' : 's'} de l'aparell seleccionat.`
-        : "No hi ha series actives per aquest aparell.";
-    }
-    if (!series.length) {
+    if (!items.length) {
       const empty = document.createElement('div');
-      empty.className = 'small text-muted';
-      empty.textContent = 'Cap serie activa carregada.';
-      wrap.appendChild(empty);
-      return;
+      empty.className = 'team-context-drop-placeholder';
+      empty.textContent = candidateEmptyMessage(workspace);
+      list.appendChild(empty);
     }
-    series.forEach((serie) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'group-preview-source-row text-left';
-      btn.style.minWidth = '240px';
-      btn.style.cursor = 'pointer';
-      btn.innerHTML = `
-        <span class="group-preview-source-label">
-          <strong>${String(serie?.label || `Serie ${serie?.display_num || ''}`)}</strong>
-          <span class="d-block small text-muted">${String(seriesMetaText(serie) || 'No programada')}</span>
-        </span>
-        <span class="group-preview-source-count">${Number(serie?.subjects_count || 0)}</span>
-      `;
-      btn.addEventListener('click', async () => {
-        openWorkspaceCard();
-        await selectSerie(serie?.id, { forceReload: true });
-      });
-      wrap.appendChild(btn);
-    });
   }
 
   function renderSummary(workspace) {
     const summary = workspace?.summary || {};
     const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
-    renderCompactSummary(summary);
     setText('series-nav-badge', Number(summary?.series_total || 0));
-
-    const headerWrap = document.getElementById('series-summary-metrics');
-    if (headerWrap) {
-      headerWrap.innerHTML = '';
-      headerWrap.appendChild(compactBadge(`${Number(summary.series_total || 0)} series`));
-      headerWrap.appendChild(compactBadge(`${Number(summary.assigned_count || 0)} assignades`));
-      headerWrap.appendChild(compactBadge(`${Number(summary.unassigned_count || 0)} sense serie`));
-      headerWrap.appendChild(compactBadge(`${Number(summary.programmed_series || 0)} programades`, 'incoming'));
-    }
 
     const issuesBanner = document.getElementById('series-issues-banner');
     if (issuesBanner) {
@@ -1227,217 +1259,9 @@ window.initSeriesWorkspace = async function () {
       }
     }
 
-    const appName = String(workspace?.comp_aparell?.nom || 'Sense aparell');
-    setText('series-selected-app-badge', appName);
-    setText('series-workspace-badge', appName);
-    setText('series-workspace-title', appName === 'Sense aparell' ? 'Workspace de series' : `Series d'equip - ${appName}`);
     setText('series-summary-badge', `${Number(summary.series_total || 0)} series`);
-    setText(
-      'series-workspace-description',
-      issues.length
-        ? "Hi ha incidencies detectades en alguns equips d'aquest aparell. Revisa-les abans de programar."
-        : "Selecciona candidates, prepara una accio i revisa les series en un board estable."
-    );
   }
 
-  function seriesEmptyStateMessage(workspace) {
-    const series = Array.isArray(workspace?.series) ? workspace.series : [];
-    const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
-    const candidateCount = Number(workspace?.candidates?.total || 0);
-
-    if (series.length > 0) return { visible: false, message: '' };
-
-    const issueText = issues
-      .flatMap((issue) => [
-        String(issue?.team_label || ''),
-        ...(Array.isArray(issue?.reasons) ? issue.reasons : []),
-      ])
-      .join(' ')
-      .toLowerCase();
-
-    if (issueText.includes('sense fonts configurades') || issueText.includes('cap context configurat') || issueText.includes('no te cap context')) {
-      return {
-        visible: true,
-        message: "Aquest aparell d'equip no te contextos font configurats encara. Ves al gestor d'equips per seleccionar els contextos que alimenten les series.",
-      };
-    }
-
-    if (candidateCount > 0) {
-      return {
-        visible: true,
-        message: "Encara no hi ha cap serie creada per aquest aparell. Pots crear-ne una de buida o preparar una creacio des de la seleccio actual.",
-      };
-    }
-
-    return {
-      visible: true,
-      message: "No hi ha cap serie carregable per aquest aparell amb la configuracio actual.",
-    };
-  }
-
-  function serieCard(serie) {
-    const serieId = String(serie?.id || '').trim();
-    const card = document.createElement('div');
-    card.className = 'team-context-team-card';
-    if (String(state.selectedSerieId || '') === serieId) card.classList.add('is-current');
-    if (Number(serie?.subjects_count || 0) <= 0) card.classList.add('is-empty');
-    if (serie?.is_programmed) card.classList.add('is-programmed');
-    if (serie?.is_out_of_program) card.classList.add('is-out-of-program');
-    card.dataset.seriesCardId = serieId;
-
-    const head = document.createElement('div');
-    head.className = 'team-context-team-head';
-
-    const titleWrap = document.createElement('div');
-    titleWrap.className = 'team-context-team-title-wrap';
-    const title = document.createElement('div');
-    title.className = 'team-context-team-name';
-    title.textContent = String(serie?.label || `Serie ${serie?.display_num || ''}`);
-    titleWrap.appendChild(title);
-
-    const preview = document.createElement('div');
-    preview.className = 'small text-muted mt-1 team-context-team-preview';
-    preview.textContent = String(serie?.summary_label || '').trim() || seriesMetaText(serie);
-    titleWrap.appendChild(preview);
-    head.appendChild(titleWrap);
-
-    const actions = document.createElement('div');
-    actions.className = 'team-context-team-actions';
-
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.className = 'btn btn-sm btn-outline-secondary';
-    openBtn.textContent = String(state.selectedSerieId || '') === serieId ? 'Detall obert' : 'Veure detall';
-    openBtn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await selectSerie(serieId, { forceReload: false });
-    });
-    actions.appendChild(openBtn);
-
-    const assignBtn = document.createElement('button');
-    assignBtn.type = 'button';
-    assignBtn.className = 'btn btn-sm btn-outline-primary';
-    assignBtn.textContent = 'Assignar seleccio';
-    assignBtn.disabled = !editable();
-    assignBtn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await previewAssignSelection(serieId);
-    });
-    actions.appendChild(assignBtn);
-
-    const renameBtn = document.createElement('button');
-    renameBtn.type = 'button';
-    renameBtn.className = 'btn btn-sm btn-outline-secondary';
-    renameBtn.textContent = 'Renombrar';
-    renameBtn.disabled = !editable();
-    renameBtn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const next = await promptText('Nou nom de la serie', String(serie?.name || ''));
-      if (next === null) return;
-      await runAction(renameUrl, {
-        comp_aparell_id: state.compAparellId,
-        serie_id: serie.id,
-        name: String(next || '').trim(),
-      }, 'Serie renombrada.');
-    });
-    actions.appendChild(renameBtn);
-
-    const exportBtn = document.createElement('button');
-    exportBtn.type = 'button';
-    exportBtn.className = 'btn btn-sm btn-outline-secondary';
-    exportBtn.textContent = 'Full de treball';
-    exportBtn.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      window.location.href = exportUrl(workSheetExportUrl, {
-        comp_aparell_id: state.compAparellId,
-        serie_id: serie.id,
-      });
-    });
-    actions.appendChild(exportBtn);
-
-    if (serie?.is_empty) {
-      const deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.className = 'btn btn-sm btn-outline-danger';
-      deleteBtn.textContent = 'Previsualitzar baixa';
-      deleteBtn.disabled = !editable();
-      deleteBtn.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await previewDeleteSerie(serie.id);
-      });
-      actions.appendChild(deleteBtn);
-    }
-
-    head.appendChild(actions);
-    card.appendChild(head);
-
-    const meta = document.createElement('div');
-    meta.className = 'team-context-team-meta';
-    meta.textContent = seriesMetaText(serie) || 'Sense resum';
-    card.appendChild(meta);
-
-    const sampleNames = (Array.isArray(serie?.subjects) ? serie.subjects : [])
-      .map((subject) => String(subject?.name || subject?.label || '').trim())
-      .filter(Boolean)
-      .slice(0, 4);
-    if (sampleNames.length) {
-      const sample = document.createElement('div');
-      sample.className = 'small text-muted mt-1 team-context-team-preview';
-      sample.textContent = sampleNames.join(', ');
-      card.appendChild(sample);
-    }
-
-    card.addEventListener('click', async () => {
-      await selectSerie(serieId, { forceReload: false });
-    });
-    return card;
-  }
-
-  function renderCards(workspace) {
-    const activeList = document.getElementById('series-active-list');
-    const emptyList = document.getElementById('series-empty-list');
-    const emptyWrap = document.getElementById('series-empty-wrap');
-    if (!activeList || !emptyList || !emptyWrap) return;
-
-    const series = Array.isArray(workspace?.series) ? workspace.series : [];
-    const visibleSeries = series.filter((serie) => serieMatchesBoardFilters(serie));
-    const activeSeries = visibleSeries.filter((serie) => Number(serie?.subjects_count || 0) > 0);
-    const emptySeries = visibleSeries.filter((serie) => Number(serie?.subjects_count || 0) <= 0);
-
-    activeList.innerHTML = '';
-    emptyList.innerHTML = '';
-    activeSeries.forEach((serie) => activeList.appendChild(serieCard(serie)));
-    emptySeries.forEach((serie) => emptyList.appendChild(serieCard(serie)));
-    emptyWrap.classList.toggle('d-none', emptySeries.length === 0);
-
-    if (!activeList.children.length) {
-      const placeholder = document.createElement('div');
-      placeholder.className = 'groups-board-placeholder';
-      placeholder.textContent = boardFiltersAreActive()
-        ? 'Cap serie amb unitats coincideix amb els filtres del board.'
-        : 'Encara no hi ha cap serie amb unitats per aquest aparell.';
-      activeList.appendChild(placeholder);
-    }
-
-    const emptyState = seriesEmptyStateMessage(workspace);
-    const emptyStateEl = document.getElementById('series-board-empty-state');
-    const boardStatus = document.getElementById('series-board-status');
-    if (emptyStateEl) {
-      emptyStateEl.textContent = emptyState.message;
-      emptyStateEl.classList.toggle('d-none', !emptyState.visible);
-    }
-    if (boardStatus) {
-      boardStatus.textContent = series.length
-        ? "Gestiona el contingut de les series i obre'n el detall al lateral quan calgui."
-        : (emptyState.message || 'Encara no hi ha cap serie creada per aquest aparell.');
-    }
-    setText('series-board-filter-count', `${visibleSeries.length} de ${series.length} series`);
-  }
   async function runAction(url, payload, successMessage, options = {}) {
     try {
       const data = await postJson(url, payload);
@@ -1460,15 +1284,6 @@ window.initSeriesWorkspace = async function () {
       showAlertMessage(error?.message || String(error));
       throw error;
     }
-  }
-
-  async function runCreateEmpty() {
-    await runAction(createUrl, {
-      comp_aparell_id: state.compAparellId,
-      name: currentCreateName(),
-      selected_ids: [],
-    }, 'Serie creada.', { selectCreatedSerieId: true });
-    setCreateName('');
   }
 
   function syncPreviewConfirmIntent(action, payload, preview) {
@@ -1540,6 +1355,10 @@ window.initSeriesWorkspace = async function () {
   }
 
   async function previewCreateSelection() {
+    if (!selectedIds().length) {
+      showAlertMessage('Selecciona almenys una unitat competitiva.');
+      return null;
+    }
     await requestActionPreview('create', {
       name: currentCreateName(),
       selected_ids: selectedIds(),
@@ -1604,7 +1423,6 @@ window.initSeriesWorkspace = async function () {
         return null;
       }
       setText('series-candidates-status', 'Selecciona un aparell d\'equip per carregar el workspace.');
-      setText('series-compact-list-note', 'Selecciona un aparell d\'equip per carregar les series.');
       setText('series-nav-badge', '0');
       updateSelectionSummary();
       saveWorkspaceState();
@@ -1621,7 +1439,6 @@ window.initSeriesWorkspace = async function () {
       syncCreateNameInputs();
       applyFiltersToDom(state.workspace);
       renderSummary(state.workspace);
-      renderCompactSeriesList(state.workspace);
       renderCandidates(state.workspace);
       renderBoardFilterControls(Array.isArray(state.workspace?.series) ? state.workspace.series : []);
       renderCards(state.workspace);
@@ -1646,12 +1463,14 @@ window.initSeriesWorkspace = async function () {
     if (!el) return;
     el.addEventListener('input', () => {
       window.clearTimeout(state.filterTimer);
+      renderSeriesFilterPopovers();
       state.filterTimer = window.setTimeout(() => {
         markPreviewDirty();
         refreshWorkspace({ preservePage: false });
       }, 180);
     });
     el.addEventListener('change', () => {
+      renderSeriesFilterPopovers();
       markPreviewDirty();
       refreshWorkspace({ preservePage: false });
     });
@@ -1661,28 +1480,146 @@ window.initSeriesWorkspace = async function () {
     window.clearTimeout(state.boardFilterTimer);
     state.boardFilterTimer = window.setTimeout(() => {
       state.boardFilters = readBoardFilters();
-      if (boardFiltersAreActive()) state.boardFiltersExpanded = true;
-      setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+      renderBoardFilterPopovers();
       renderCards(state.workspace);
       saveWorkspaceState();
     }, 120);
   }
 
+  function bindSeriesDetailUi() {
+    document.getElementById('series-detail-subject-q')?.addEventListener('input', () => {
+      state.detailFilters = readDetailFilters();
+      saveWorkspaceState();
+      renderDetailPane();
+    });
+    document.getElementById('series-detail-filter-context')?.addEventListener('change', () => {
+      state.detailFilters = readDetailFilters();
+      saveWorkspaceState();
+      renderDetailPane();
+    });
+    document.getElementById('btn-series-detail-filters-clear')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      clearAllSeriesDetailFilters();
+    });
+
+    shell.addEventListener('change', (event) => {
+      const choice = event.target.closest('.js-series-detail-filter-choice');
+      if (!choice) return;
+      const selectId = String(choice.getAttribute('data-select-id') || '').trim();
+      setSeriesDetailFilterValue(selectId, choice.value, choice.checked);
+      state.detailFilters = readDetailFilters();
+      saveWorkspaceState();
+      renderDetailPane();
+    });
+
+    shell.addEventListener('click', async (event) => {
+      const clearBtn = event.target.closest('[data-series-detail-filter-clear]');
+      if (clearBtn) {
+        event.preventDefault();
+        clearSeriesDetailFilter(String(clearBtn.getAttribute('data-series-detail-filter-clear') || '').trim());
+        state.detailFilters = readDetailFilters();
+        saveWorkspaceState();
+        renderDetailPane();
+        return;
+      }
+
+      const chip = event.target.closest('[data-series-detail-filter-chip-select]');
+      if (chip) {
+        event.preventDefault();
+        clearSeriesDetailFilter(
+          String(chip.getAttribute('data-series-detail-filter-chip-select') || '').trim(),
+          String(chip.getAttribute('data-series-detail-filter-chip-value') || '').trim()
+        );
+        state.detailFilters = readDetailFilters();
+        saveWorkspaceState();
+        renderDetailPane();
+        return;
+      }
+
+      if (event.target.closest('[data-series-detail-filter-search-clear]')) {
+        event.preventDefault();
+        const q = document.getElementById('series-detail-subject-q');
+        if (q) q.value = '';
+        state.detailFilters = readDetailFilters();
+        saveWorkspaceState();
+        renderDetailPane();
+        return;
+      }
+
+      const cancelRenameBtn = event.target.closest('[data-series-cancel-name]');
+      if (cancelRenameBtn) {
+        event.preventDefault();
+        setSeriesRenameEditor(String(cancelRenameBtn.getAttribute('data-series-cancel-name') || '').trim(), false);
+        return;
+      }
+
+      const saveRenameBtn = event.target.closest('[data-series-save-name]');
+      if (saveRenameBtn) {
+        event.preventDefault();
+        const serieId = String(saveRenameBtn.getAttribute('data-series-save-name') || '').trim();
+        const input = document.querySelector(`[data-series-name-input="${CSS.escape(serieId)}"]`);
+        await renameSerie(serieId, input?.value || '');
+      }
+    });
+  }
+
+{% include "competicio/inscripcions/scripts/series/_creation_strategies.html" %}
+
   restoreWorkspaceState();
   syncAparellSelects();
   syncCreateNameInputs();
   updateRightPaneTabUi();
-  setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
   clearPreview();
 
   bindFilter('series-filter-q');
   bindFilter('series-filter-context');
   bindFilter('series-filter-state');
   bindFilter('series-filter-serie');
+  bindSeriesBoardUi();
+  bindSeriesDetailUi();
 
-  document.getElementById('series-board-filter-q')?.addEventListener('input', applyBoardFilterChange);
-  ['series-board-filter-context', 'series-board-filter-members-state', 'series-board-filter-program-state'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('change', applyBoardFilterChange);
+  shell.addEventListener('change', (event) => {
+    const choice = event.target.closest('.js-series-filter-choice');
+    if (!choice) return;
+    const selectId = String(choice.getAttribute('data-select-id') || '').trim();
+    setSeriesFilterValue(selectId, choice.value);
+    choice.closest('details')?.removeAttribute('open');
+  });
+
+  shell.addEventListener('click', (event) => {
+    const clearBtn = event.target.closest('[data-series-filter-clear]');
+    if (clearBtn) {
+      event.preventDefault();
+      const selectId = String(clearBtn.getAttribute('data-series-filter-clear') || '').trim();
+      setSeriesFilterValue(selectId, seriesFilterDefaultValue(selectId));
+      return;
+    }
+
+    const chip = event.target.closest('[data-series-filter-chip-select]');
+    if (chip) {
+      event.preventDefault();
+      const selectId = String(chip.getAttribute('data-series-filter-chip-select') || '').trim();
+      setSeriesFilterValue(selectId, seriesFilterDefaultValue(selectId));
+      return;
+    }
+
+    const searchClear = event.target.closest('[data-series-filter-search-clear]');
+    if (searchClear) {
+      event.preventDefault();
+      const search = document.getElementById('series-filter-q');
+      if (search) {
+        search.value = '';
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      renderSeriesFilterPopovers();
+      return;
+    }
+
+    const clearAll = event.target.closest('[data-series-filter-clear-all]');
+    if (clearAll) {
+      event.preventDefault();
+      clearAllSeriesFilters();
+    }
   });
 
   ['series-compact-create-name', 'series-workspace-create-name'].forEach((id) => {
@@ -1705,25 +1642,13 @@ window.initSeriesWorkspace = async function () {
     renderDetailPane();
   });
 
-  document.getElementById('btn-series-board-filters-clear')?.addEventListener('click', () => {
-    state.boardFilters = normalizeBoardFilters();
-    setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions(Array.isArray(state.workspace?.series) ? state.workspace.series : []));
-    setBoardFiltersExpanded(false, { skipSave: true });
-    renderCards(state.workspace);
-    saveWorkspaceState();
-  });
-
-  document.getElementById('btn-series-board-filters-toggle')?.addEventListener('click', () => {
-    setBoardFiltersExpanded(!state.boardFiltersExpanded);
-  });
-
   ['btn-series-refresh', 'btn-series-workspace-refresh'].forEach((id) => {
     document.getElementById(id)?.addEventListener('click', async () => {
       await refreshWorkspace({ preservePage: true });
     });
   });
 
-  ['btn-series-export-start-list', 'btn-series-workspace-export-start-list'].forEach((id) => {
+  ['btn-series-export-start-list', 'btn-series-workspace-export-start-list', 'btn-series-board-export-start-list'].forEach((id) => {
     document.getElementById(id)?.addEventListener('click', () => {
       window.location.href = exportUrl(startListExportUrl, { comp_aparell_id: state.compAparellId });
     });
@@ -1744,12 +1669,6 @@ window.initSeriesWorkspace = async function () {
     markPreviewDirty();
   });
 
-  document.getElementById('btn-series-compact-create-empty')?.addEventListener('click', async () => {
-    await runCreateEmpty();
-  });
-  document.getElementById('btn-series-workspace-create-empty')?.addEventListener('click', async () => {
-    await runCreateEmpty();
-  });
   document.getElementById('btn-series-compact-preview-create')?.addEventListener('click', async () => {
     await previewCreateSelection();
   });
@@ -1771,8 +1690,8 @@ window.initSeriesWorkspace = async function () {
   document.getElementById('btn-series-compact-open-workspace')?.addEventListener('click', () => {
     openWorkspaceCard();
   });
-
-  document.getElementById('btn-series-workspace-delete-empty')?.addEventListener('click', async () => {
+  document.getElementById('btn-series-workspace-delete-empty')?.addEventListener('click', async (event) => {
+    event.currentTarget.closest('details')?.removeAttribute('open');
     if (!state.compAparellId) return;
     const ok = await confirmMessage("Desactivar totes les series buides de l'aparell actual?");
     if (!ok) return;

@@ -1,0 +1,80 @@
+{% load static %}
+
+<!-- Exportacio -->
+<div class="cardx cardx-right drawer-panel rotation-drawer rotation-drawer--export" id="planner-export-drawer" aria-label="Export de rotacions" data-avatar-anchor="rotations-export-drawer">
+  <div class="rotation-drawer-shell">
+    <div class="cardx-h rotation-drawer-head">
+      <div class="rotation-drawer-title-group">
+        <img class="rotation-drawer-mark" src="{% static 'dock/rotacions.png' %}" alt="">
+        <div>
+          <p class="rotation-drawer-kicker">Rotacions</p>
+          <div class="rotation-drawer-title d-flex align-items-center" style="gap:6px;">
+            <span>Export</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_export" aria-label="Ajuda exportacio">?</button>
+          </div>
+          <div class="mini">Configuracio i descarrega d'horari</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cardx-b rotation-drawer-body">
+      <section class="drawer-section">
+        <div class="drawer-section-head">
+          <div>
+            <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+              <span>Exportacio Excel</span>
+              <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_export" aria-label="Ajuda exportacio">?</button>
+            </div>
+            <div class="drawer-section-subtitle">Opcions de sortida, logo i camps visibles per a l'Excel de rotacions.</div>
+          </div>
+        </div>
+        <div class="dropdown d-inline-block">
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary dropdown-toggle js-export-dd-toggle"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  id="exportExcelDropdown">
+            Excel
+          </button>
+          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end" aria-labelledby="exportExcelDropdown">
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=participants">
+              Exportar participants
+            </a>
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=groups">
+              Exportar grups
+            </a>
+          </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="d-flex flex-column" style="gap:8px;">
+          <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
+          <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
+          <input type="date" class="form-control form-control-sm" id="exportDate">
+
+          <div class="mini fw-semibold d-flex align-items-center" style="gap:6px;">
+            <span>Camps de participants (arrossega per ordenar)</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_export_fields" aria-label="Ajuda camps de participants">?</button>
+          </div>
+          <div id="exportFieldsList" class="export-fields-list"></div>
+          <div class="mini text-muted">Aquests camps es mostraran dins cada cel.la en mode "Exportar participants".</div>
+
+          <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="file" class="form-control form-control-sm" id="exportLogoFile" accept="image/*" style="flex:1; min-width:170px;">
+            <button class="btn btn-sm btn-outline-primary" id="btnExportLogoUpload">Pujar logo</button>
+            <button class="btn btn-sm btn-outline-danger" id="btnExportLogoClear">Treure</button>
+          </div>
+
+          <div id="exportLogoPreviewWrap" class="mini text-muted" style="display:none;">
+            <div class="mb-1">Logo actual:</div>
+            <img id="exportLogoPreview" alt="Logo export" style="max-width:180px; max-height:72px; border:1px solid #e5e7eb; border-radius:6px; padding:2px; background:#fff;">
+          </div>
+
+          <button class="btn btn-sm btn-outline-primary" id="btnExportMetaSave">Desar dades export</button>
+          <div class="mini" id="exportMetaStatus"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>

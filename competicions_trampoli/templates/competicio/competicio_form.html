@@ -1,77 +1,587 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Nova competició{% endblock %}
+{% block title %}{% if object %}Editar competició{% else %}Nova competició{% endif %}{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
+<style>
+  .competition-create {
+    min-height: calc(100vh - 190px);
+    padding: 32px clamp(16px, 4vw, 56px) 44px;
+    color: #0f172a;
+  }
 
-  <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <h2 class="mb-0">Nova competició</h2>
-        <div class="text-muted small">Crea una competició per importar inscripcions i preparar l'ordre de competició.</div>
-      </div>
+  .competition-create-shell {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
 
-      <div class="d-flex gap-2">
-        <a href="javascript:history.back()" class="btn btn-sm btn-outline-secondary">Torna</a>
-      </div>
+  .competition-create-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .competition-create-logo {
+    display: block;
+    width: 142px;
+    height: 62px;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  .competition-create-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.84);
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 750;
+    text-decoration: none;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .competition-create-back:hover,
+  .competition-create-back:focus {
+    color: #0f172a;
+    text-decoration: none;
+    background: #ffffff;
+  }
+
+  .competition-create-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+    gap: 24px;
+    align-items: stretch;
+    border: 1px solid rgba(219, 226, 239, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+    backdrop-filter: blur(12px);
+  }
+
+  .competition-create-form,
+  .competition-create-preview {
+    min-width: 0;
+    padding: clamp(22px, 3vw, 34px);
+  }
+
+  .competition-create-form {
+    border-right: 1px solid #e2e8f0;
+  }
+
+  .competition-create-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    color: #0b5bd3;
+    font-size: 0.85rem;
+    font-weight: 850;
+  }
+
+  .competition-create-kicker img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+  }
+
+  .competition-create-title {
+    margin: 0;
+    color: #071633;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
+
+  .competition-create-subtitle {
+    max-width: 580px;
+    margin: 10px 0 28px;
+    color: #64748b;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .competition-create-field {
+    margin-bottom: 20px;
+  }
+
+  .competition-create-field label,
+  .competition-sport-label {
+    display: block;
+    margin-bottom: 8px;
+    color: #334155;
+    font-size: 0.88rem;
+    font-weight: 850;
+  }
+
+  .competition-create-field input,
+  .competition-create-field select {
+    width: 100%;
+    min-height: 50px;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.98rem;
+    font-weight: 650;
+    box-shadow: none;
+  }
+
+  .competition-create-field input:focus,
+  .competition-create-field select:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  }
+
+  .competition-create-field input {
+    padding: 0 15px;
+  }
+
+  .competition-create-field select {
+    padding: 0 12px;
+  }
+
+  .competition-sport-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .competition-sport-option {
+    position: relative;
+    min-width: 0;
+  }
+
+  .competition-sport-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .competition-sport-card {
+    display: flex;
+    min-height: 112px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 8px;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 0.8rem;
+    font-weight: 850;
+    line-height: 1.15;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease, background-color .14s ease;
+  }
+
+  .competition-sport-card img {
+    width: 50px;
+    height: 50px;
+    object-fit: contain;
+  }
+
+  .competition-sport-option input:checked + .competition-sport-card {
+    border-color: #60a5fa;
+    background: #eff6ff;
+    color: #1d4ed8;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  }
+
+  .competition-sport-option input:focus + .competition-sport-card,
+  .competition-sport-card:hover {
+    border-color: #93c5fd;
+    transform: translateY(-1px);
+  }
+
+  .competition-create-error {
+    margin-top: 7px;
+    color: #dc2626;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .competition-create-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 28px;
+  }
+
+  .competition-create-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-weight: 800;
+    line-height: 1.15;
+    text-decoration: none;
+  }
+
+  .competition-create-btn:hover,
+  .competition-create-btn:focus {
+    color: #0f172a;
+    text-decoration: none;
+    background: #f8fafc;
+  }
+
+  .competition-create-btn--primary {
+    border-color: #0b5bd3;
+    background: #0b5bd3;
+    color: #ffffff;
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
+  }
+
+  .competition-create-btn--primary:hover,
+  .competition-create-btn--primary:focus {
+    color: #ffffff;
+    background: #084bb4;
+  }
+
+  .competition-create-preview {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0.78), rgba(255, 255, 255, 0.9));
+  }
+
+  .competition-preview-card {
+    border: 1px solid rgba(219, 226, 239, 0.92);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.09);
+    padding: 22px;
+  }
+
+  .competition-preview-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .competition-preview-icon {
+    display: grid;
+    place-items: center;
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    background: #eff6ff;
+    overflow: hidden;
+  }
+
+  .competition-preview-icon img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+  }
+
+  .competition-preview-title {
+    min-width: 0;
+  }
+
+  .competition-preview-title strong {
+    display: block;
+    overflow-wrap: anywhere;
+    color: #071633;
+    font-size: 1.18rem;
+    font-weight: 850;
+    line-height: 1.2;
+  }
+
+  .competition-preview-title span {
+    display: block;
+    margin-top: 7px;
+    color: #64748b;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .competition-preview-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .competition-preview-chip {
+    min-height: 54px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+
+  .competition-preview-chip span {
+    display: block;
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 850;
+  }
+
+  .competition-preview-chip strong {
+    display: block;
+    margin-top: 5px;
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 850;
+  }
+
+  @media (max-width: 980px) {
+    .competition-create-panel {
+      grid-template-columns: 1fr;
+    }
+
+    .competition-create-form {
+      border-right: 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .competition-sport-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 560px) {
+    .competition-create-brand {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .competition-create-back,
+    .competition-create-actions .competition-create-btn {
+      width: 100%;
+    }
+
+    .competition-sport-grid,
+    .competition-preview-meta {
+      grid-template-columns: 1fr;
+    }
+
+    .competition-create-actions {
+      flex-direction: column-reverse;
+    }
+  }
+</style>
+
+<section class="competition-create">
+  <div class="competition-create-shell">
+    <div class="competition-create-brand">
+      <img class="competition-create-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
+      <a href="javascript:history.back()" class="competition-create-back">Torna</a>
     </div>
 
-    <form method="post" class="mt-3">
-      {% csrf_token %}
+    <div class="competition-create-panel">
+      <form method="post" class="competition-create-form">
+        {% csrf_token %}
 
-      {% if form.non_field_errors %}
-        <div class="alert alert-danger">
-          {{ form.non_field_errors }}
+        <div class="competition-create-kicker">
+          <img src="{% static 'general/new.png' %}" alt="">
+          <span>{% if object %}Editar competició{% else %}Nou espai de competició{% endif %}</span>
         </div>
-      {% endif %}
+        <h1 class="competition-create-title">{% if object %}Editar competició{% else %}Nova competició{% endif %}</h1>
+        <p class="competition-create-subtitle">
+          {% if object %}
+            Ajusta la identitat bàsica i les dates generals de la competició.
+          {% else %}
+            Defineix la identitat bàsica i crea el panell des d'on prepararàs inscripcions, fases, rotacions, classificacions i notes.
+          {% endif %}
+        </p>
 
-      <div class="row g-3">
-        <div class="col-12 col-md-6">
-          <label class="form-label fw-semibold" for="{{ form.nom.id_for_label }}">Nom de la competició</label>
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="competition-create-field">
+          <label for="{{ form.nom.id_for_label }}">Nom de la competició</label>
           {{ form.nom }}
           {% if form.nom.errors %}
-            <div class="text-danger small mt-1">{{ form.nom.errors|striptags }}</div>
+            <div class="competition-create-error">{{ form.nom.errors|striptags }}</div>
           {% endif %}
         </div>
 
-        <div class="col-12 col-md-3">
-          <label class="form-label fw-semibold" for="{{ form.data.id_for_label }}">Data (opcional)</label>
+        <div class="competition-create-field">
+          <label for="{{ form.data.id_for_label }}">Data d'inici</label>
           {{ form.data }}
           {% if form.data.errors %}
-            <div class="text-danger small mt-1">{{ form.data.errors|striptags }}</div>
+            <div class="competition-create-error">{{ form.data.errors|striptags }}</div>
           {% endif %}
         </div>
 
-        <div class="col-12 col-md-3">
-          <label class="form-label fw-semibold" for="{{ form.tipus.id_for_label }}">Tipus de competició</label>
-          {{ form.tipus }}
-          {% if form.tipus.errors %}
-            <div class="text-danger small mt-1">{{ form.tipus.errors|striptags }}</div>
+        <div class="competition-create-field">
+          <label for="{{ form.data_fi.id_for_label }}">Data de fi</label>
+          {{ form.data_fi }}
+          {% if form.data_fi.errors %}
+            <div class="competition-create-error">{{ form.data_fi.errors|striptags }}</div>
           {% endif %}
-      </div>
+        </div>
 
-      <div class="d-flex justify-content-end gap-2 mt-4">
-        <a href="javascript:history.back()" class="btn btn-sm btn-outline-secondary">Cancel·la</a>
-        <button type="submit" class="btn btn-sm btn-primary">Crear competició</button>
-      </div>
-    </form>
+        <div class="competition-create-field">
+          <span class="competition-sport-label">Esport</span>
+          <div class="competition-sport-grid" role="radiogroup" aria-label="Tipus de competició">
+            <label class="competition-sport-option">
+              <input type="radio" name="{{ form.tipus.html_name }}" value="trampoli" {% if form.tipus.value == "trampoli" %}checked{% endif %}>
+              <span class="competition-sport-card" data-sport-card="trampoli" data-sport-label="Trampolí" data-sport-image="{% static 'general/sports/trampoli.png' %}">
+                <img src="{% static 'general/sports/trampoli.png' %}" alt="">
+                <span>Trampolí</span>
+              </span>
+            </label>
+            <label class="competition-sport-option">
+              <input type="radio" name="{{ form.tipus.html_name }}" value="artistica" {% if form.tipus.value == "artistica" %}checked{% endif %}>
+              <span class="competition-sport-card" data-sport-card="artistica" data-sport-label="Artística" data-sport-image="{% static 'general/sports/artistica.png' %}">
+                <img src="{% static 'general/sports/artistica.png' %}" alt="">
+                <span>Artística</span>
+              </span>
+            </label>
+            <label class="competition-sport-option">
+              <input type="radio" name="{{ form.tipus.html_name }}" value="ritmica" {% if form.tipus.value == "ritmica" %}checked{% endif %}>
+              <span class="competition-sport-card" data-sport-card="ritmica" data-sport-label="Rítmica" data-sport-image="{% static 'general/sports/ritmica.png' %}">
+                <img src="{% static 'general/sports/ritmica.png' %}" alt="">
+                <span>Rítmica</span>
+              </span>
+            </label>
+            <label class="competition-sport-option">
+              <input type="radio" name="{{ form.tipus.html_name }}" value="patinatge" {% if form.tipus.value == "patinatge" %}checked{% endif %}>
+              <span class="competition-sport-card" data-sport-card="patinatge" data-sport-label="Patinatge" data-sport-image="{% static 'general/sports/patinatge.png' %}">
+                <img src="{% static 'general/sports/patinatge.png' %}" alt="">
+                <span>Patinatge</span>
+              </span>
+            </label>
+            <label class="competition-sport-option">
+              <input type="radio" name="{{ form.tipus.html_name }}" value="natacio" {% if form.tipus.value == "natacio" %}checked{% endif %}>
+              <span class="competition-sport-card" data-sport-card="natacio" data-sport-label="Natació" data-sport-image="{% static 'general/sports/natacio.png' %}">
+                <img src="{% static 'general/sports/natacio.png' %}" alt="">
+                <span>Natació</span>
+              </span>
+            </label>
+          </div>
+          {% if form.tipus.errors %}
+            <div class="competition-create-error">{{ form.tipus.errors|striptags }}</div>
+          {% endif %}
+        </div>
 
+        <div class="competition-create-actions">
+          <a href="javascript:history.back()" class="competition-create-btn">Cancel·la</a>
+          <button type="submit" class="competition-create-btn competition-create-btn--primary">
+            {% if object %}Guardar canvis{% else %}Crear competició{% endif %}
+          </button>
+        </div>
+      </form>
+
+      <aside class="competition-create-preview" aria-label="Previsualització de la competició">
+        <div class="competition-preview-card">
+          <div class="competition-preview-header">
+            <span class="competition-preview-icon">
+              <img id="competitionPreviewImage" src="{% static 'general/sports/trampoli.png' %}" alt="">
+            </span>
+            <div class="competition-preview-title">
+              <strong id="competitionPreviewName">Nom de la competició</strong>
+              <span id="competitionPreviewDate">Sense data</span>
+            </div>
+          </div>
+
+          <div class="competition-preview-meta">
+            <div class="competition-preview-chip">
+              <span>Estat inicial</span>
+              <strong>Preparació</strong>
+            </div>
+            <div class="competition-preview-chip">
+              <span>Esport</span>
+              <strong id="competitionPreviewSport">Trampolí</strong>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
   </div>
-
-</div>
+</section>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-  // Ajust “look” si el teu form no porta classes Bootstrap per defecte
-  (function(){
-    const inputs = document.querySelectorAll('input, select, textarea');
-    inputs.forEach(el=>{
-      if(el.classList.contains('form-control') || el.classList.contains('form-select')) return;
-      if(el.tagName === 'SELECT') el.classList.add('form-select','form-select-sm');
-      else el.classList.add('form-control','form-control-sm');
+  (function () {
+    var nameInput = document.getElementById("{{ form.nom.id_for_label }}");
+    var dateInput = document.getElementById("{{ form.data.id_for_label }}");
+    var endDateInput = document.getElementById("{{ form.data_fi.id_for_label }}");
+    var sportInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='{{ form.tipus.html_name }}']"));
+    var previewName = document.getElementById("competitionPreviewName");
+    var previewDate = document.getElementById("competitionPreviewDate");
+    var previewSport = document.getElementById("competitionPreviewSport");
+    var previewImage = document.getElementById("competitionPreviewImage");
+
+    function formatDate(value) {
+      if (!value) {
+        return "Sense data";
+      }
+      var parts = value.split("-");
+      if (parts.length !== 3) {
+        return value;
+      }
+      return parts[2] + "/" + parts[1] + "/" + parts[0];
+    }
+
+    function selectedSportCard() {
+      var selected = sportInputs.find(function (input) { return input.checked; }) || sportInputs[0];
+      if (!selected) {
+        return null;
+      }
+      return selected.parentElement.querySelector("[data-sport-card]");
+    }
+
+    function updatePreview() {
+      var card = selectedSportCard();
+      previewName.textContent = (nameInput.value || "").trim() || "Nom de la competició";
+      var startLabel = formatDate(dateInput.value || "");
+      var endLabel = formatDate(endDateInput ? endDateInput.value || "" : "");
+      previewDate.textContent = endDateInput && endDateInput.value
+        ? startLabel + " - " + endLabel
+        : startLabel;
+      if (card) {
+        previewSport.textContent = card.dataset.sportLabel || "Esport";
+        previewImage.src = card.dataset.sportImage || previewImage.src;
+      }
+    }
+
+    if (!sportInputs.some(function (input) { return input.checked; }) && sportInputs[0]) {
+      sportInputs[0].checked = true;
+    }
+
+    if (nameInput) {
+      nameInput.addEventListener("input", updatePreview);
+    }
+    if (dateInput) {
+      dateInput.addEventListener("input", updatePreview);
+      dateInput.addEventListener("change", updatePreview);
+    }
+    if (endDateInput) {
+      endDateInput.addEventListener("input", updatePreview);
+      endDateInput.addEventListener("change", updatePreview);
+    }
+    sportInputs.forEach(function (input) {
+      input.addEventListener("change", updatePreview);
     });
+    updatePreview();
   })();
 </script>
 {% endblock %}

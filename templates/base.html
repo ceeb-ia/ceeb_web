@@ -23,10 +23,25 @@
             .navbar-nav .dropdown-menu { left: 0; top: 100%; margin: 0; padding-top: 0.25rem; padding-bottom: 0.25rem; }
             .navbar-nav .dropdown-menu .dropdown-item { padding-left: 1rem; padding-right: 1rem; }
         </style>
+        {% if is_competicions_app or is_prod_competition_shell %}
+        {% if competicio_font_faces %}
+        <style id="competicio-font-faces">
+            {% for font_face in competicio_font_faces %}
+            @font-face {
+                font-family: "{{ font_face.family }}";
+                src: url("{% static font_face.path %}") format("{{ font_face.format }}");
+                font-weight: {{ font_face.weight }};
+                font-style: normal;
+                font-display: swap;
+            }
+            {% endfor %}
+        </style>
+        {% endif %}
+        {% endif %}
 </head>
-<body data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% page_background_url %}');">
+<body class="{% if is_competicions_app or is_prod_competition_shell %}competicions-app competition-section-{{ competition_active_section|default:'general' }}{% endif %}{% if has_competition_dock and not hide_base_chrome %} has-competition-dock{% endif %}" data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% page_background_url %}');{% if is_competicions_app or is_prod_competition_shell %} --competicio-font-family: {{ competicio_font_family_css }};{% endif %}">
     <div class="background-container"></div>
-    {% if not hide_base_chrome %}
+    {% if not hide_base_chrome and not is_prod_competition_shell %}
     <div class="hero_area">
         <!-- Header -->
         <header class="header_section">
@@ -197,12 +212,18 @@
         {% endblock %}
         </main>
 
-    {% if not hide_base_chrome %}
+    {% if not hide_base_chrome and not is_prod_competition_shell %}
     <!-- Footer -->
     <footer class="footer_section">
         <p>&copy; 2026 <a href="https://ceeb.cat/">Web CEEB</a></p>
     </footer>
     <!-- End Footer -->
+    {% endif %}
+    {% if has_competition_dock and not hide_base_chrome %}
+    {% include "competicio/_competition_dock.html" %}
+    {% if competition_dock_avatar_messages and not avatar_messages %}
+    {% include "components/avatar_helper.html" with avatar_messages=competition_dock_avatar_messages avatar_initial_topic=competition_dock_avatar_initial_topic position="left" state="closed" %}
+    {% endif %}
     {% endif %}
 
     <!-- Scripts -->
@@ -210,7 +231,7 @@
     <script type="text/javascript" src="{% staticv 'js/bootstrap.js' %}"></script>
     <script type="text/javascript" src="{% staticv 'js/app_dialog.js' %}"></script>
     {% block extra_scripts %}{% endblock %}
-    {% if not hide_base_chrome and IS_DEV %}
+    {% if not hide_base_chrome and not is_prod_competition_shell and IS_DEV %}
     <script src="{% staticv 'js/chatbot.js' %}" defer></script>
     {% endif %}
 </body>

@@ -1,0 +1,29 @@
+{% load static %}
+              <tr>
+                <th class="rot-franja-col">
+                  <div class="rot-franja-head-cell">
+                    <span class="rot-th-label">Franja</span>
+                    <button type="button"
+                            class="franja-select-all-btn js-franja-select-all"
+                            aria-pressed="false"
+                            title="Seleccionar totes les franges visibles">
+                      Totes
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_grid_header" aria-label="Ajuda franges i estacions">?</button>
+                  </div>
+                </th>
+                {% for a in estacions %}
+                  <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}" data-avatar-anchor="rotations-station-headers">
+                    <div class="rot-station-head">
+                      <span class="rot-station-name">
+                        <span class="rot-station-handle" aria-hidden="true">⠿</span>
+                        {% if a.ui_logo_path %}
+                          <img class="rot-station-logo" src="{% static a.ui_logo_path %}" alt="">
+                        {% endif %}
+                        <span class="rot-station-label">{{ a.nom }}</span>
+                      </span>
+                      <button class="btn btn-sm btn-outline-danger py-0 px-2 js-del-es rot-station-delete" data-es="{{ a.id }}" title="Eliminar estació">×</button>
+                    </div>
+                  </th>
+                {% endfor %}
+              </tr>

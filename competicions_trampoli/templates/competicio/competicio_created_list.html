@@ -1,65 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Competicions{% endblock %}
-{% load static competicio_extras %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-  <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <h2 class="mb-0">Competicions</h2>
-        <div class="text-muted small">Selecciona una competició per gestionar inscripcions o entrar al directe.</div>
-      </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}">Aparells globals</a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacio_template_global_list' %}">Plantilles classificacio</a>
-        <a class="btn btn-sm btn-primary" href="{% url 'create' %}">+ Nova competició</a>
-      </div>
-    </div>
-
-    <div class="table-responsive">
-      <table class="table table-striped table-bordered table-sm align-middle">
-        <thead class="table-light">
-          <tr>
-            <th>Nom</th>
-            <th>Data</th>
-            <th class="text-end">Accions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for c in competicions %}
-          {% with a=comp_actions|get_item:c.id %}
-          <tr>
-            <td class="fw-semibold">{{ c.nom }}</td>
-            <td>{% if c.data %}{{ c.data|date:"d/m/Y" }}{% else %}-{% endif %}</td>
-            <td class="text-end">
-              <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
-                {% if a and a.can_view_inscripcions %}
-                <a class="btn btn-sm btn-outline-success" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
-                {% endif %}
-                {% if a and a.can_view_rotacions %}
-                <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' c.id %}">Rotacions</a>
-                {% endif %}
-                {% if c.te_notes and a and a.can_view_notes %}
-                  <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
-                  {% if a.can_view_trampoli_config %}
-                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' c.id %}">Configuració</a>
-                  {% endif %}
-                {% endif %}
-                {# quan el tinguis: <a ... href="{% url 'live' c.id %}">Directe</a> #}
-                {% if a and a.can_delete_competicio %}
-                <a class="btn btn-sm btn-outline-danger" href="{% url 'delete' c.id %}">Eliminar</a>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-          {% endwith %}
-          {% empty %}
-          <tr><td colspan="3" class="text-center text-muted">Encara no hi ha competicions</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+  {% include "competicio/_dashboard_home.html" %}
 {% endblock %}

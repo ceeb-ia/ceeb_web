@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from .models import EquipContext, InscripcioEquipAssignacio, InscripcioMedia
 from .live_cache import mark_live_dirty
 from .models.classificacions import ClassificacioConfig
+from .models.competicio import CompeticioAparell
 from .models.scoring import (
     ScoreEntry,
     ScoreEntryVideo,
@@ -13,6 +14,7 @@ from .models.scoring import (
     TeamScoreEntry,
     TeamScoreEntryVideo,
 )
+from .services.scoring.schema_resolution import copy_global_scoring_schema_to_comp_aparell_if_missing
 
 
 def _mark_live_dirty_on_commit(competicio_id):
@@ -29,6 +31,12 @@ def _delete_file_on_commit(file_field):
     if storage is None or not name:
         return
     transaction.on_commit(lambda s=storage, n=name: s.delete(n))
+
+
+@receiver(post_save, sender=CompeticioAparell)
+def _competicio_aparell_saved_copy_global_schema(sender, instance, created, **kwargs):
+    if created:
+        copy_global_scoring_schema_to_comp_aparell_if_missing(instance)
 
 
 @receiver(post_save, sender=ScoreEntry)

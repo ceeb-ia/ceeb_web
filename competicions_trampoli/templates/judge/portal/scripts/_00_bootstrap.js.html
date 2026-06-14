@@ -31,6 +31,8 @@
   const VIDEO_STATUS_URL = "{{ video_status_url }}";
   const VIDEO_UPLOAD_URL = "{{ video_upload_url }}";
   const VIDEO_DELETE_URL = "{{ video_delete_url }}";
+  const JUDGE_ASSIGNMENT_ID = "{{ judge_assignment_id|default:'' }}";
+  const JUDGE_FASE_ID = "{{ fase_id|default:'' }}";
   const JUDGE_REQUEST_SUPPORT_URL = "{% url 'judge_request_support' token_obj.id %}";
   const JUDGE_SEND_MESSAGE_URL = "{% url 'judge_send_message' token_obj.id %}";
   const JUDGE_MESSAGES_UPDATES_URL = "{% url 'judge_messages_updates' token_obj.id %}";

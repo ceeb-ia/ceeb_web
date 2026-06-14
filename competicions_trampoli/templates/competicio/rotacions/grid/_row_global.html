@@ -1,0 +1,68 @@
+                  <tr class="franja-row-global franja-row--{{ f.tipus }} js-franja-visual-target"
+                      data-franja-visual-row="{{ f.id }}"
+                      data-color-raw="{{ f.color_fons|default_if_none:'' }}"
+                      draggable="true"
+                      style="--franja-bg: {{ f.resolved_background_color }}; --franja-fg: {{ f.resolved_text_color }}; --franja-border: {{ f.resolved_border_color }};">
+                    <th colspan="{{ estacions|length|add:1 }}" class="franja-special-cell">
+                      <div class="franja-head">
+                        <div class="franja-info">
+                          <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                            <input type="checkbox"
+                                   class="franja-selection-check js-franja-select"
+                                   data-franja-id="{{ f.id }}"
+                                   data-franja-tipus="{{ f.tipus }}"
+                                   data-franja-competitive="0"
+                                   aria-label="Seleccionar {{ f.display_label|default:'Franja' }}">
+                            <span class="franja-special-badge">{{ f.tipus_label }}</span>
+                            <span class="franja-special-label"><span class="franja-visual-drag-handle" title="Arrossega per moure visualment">&#8942;&#8942;</span>{{ f.display_label }}</span>
+                            {% if f.nota_interna %}
+                              <span class="franja-note-badge" title="Te nota interna">Nota</span>
+                            {% endif %}
+                          </div>
+                          <div class="mini mt-1">{{ f.hora_inici }} - {{ f.hora_fi }}</div>
+                        </div>
+                        <div class="dropdown franja-actions franja-actions--always">
+                          <button class="btn btn-sm btn-light franja-menu-toggle"
+                                  type="button"
+                                  aria-haspopup="true"
+                                  aria-expanded="false"
+                                  title="Accions de franja">
+                            <span aria-hidden="true">...</span>
+                          </button>
+                          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end franja-actions-menu">
+                            <button class="dropdown-item js-edit-fr"
+                                    data-url="{% url 'rotacions_franja_update_inline' competicio.id f.id %}"
+                                    data-titol="{{ f.titol|default_if_none:''|escape }}"
+                                    data-hi="{{ f.hora_inici|time:'H:i' }}"
+                                    data-hf="{{ f.hora_fi|time:'H:i' }}"
+                                    data-tipus="{{ f.tipus }}"
+                                    data-color="{{ f.color_fons|default_if_none:'' }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#9998;</span>
+                              <span>Editar</span>
+                            </button>
+                            <button class="dropdown-item js-insert-after"
+                                    data-fr="{{ f.id }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">+</span>
+                              <span>Inserir despres</span>
+                            </button>
+                            <button class="dropdown-item js-franja-note"
+                                    data-fr="{{ f.id }}"
+                                    data-label="{{ f.display_label|default:'Franja'|escape }}"
+                                    data-note="{{ f.nota_interna|default_if_none:''|escape }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">N</span>
+                              <span>Nota interna</span>
+                            </button>
+                            <button class="dropdown-item text-danger js-del-fr"
+                                    data-fr="{{ f.id }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#10005;</span>
+                              <span>Eliminar</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                  </tr>

@@ -253,30 +253,46 @@
     }
   });
 
-  els.btnDelete.addEventListener("click", async () => {
-    const cfg = currentCfg();
+  async function deleteCfgById(cfgId) {
+    const cfg = state.cfgs.find(item => String(item.id) === String(cfgId));
     if (!cfg) return;
     if (!await showConfirm("Eliminar aquesta configuració?")) return;
 
     try {
+      const wasSelected = String(state.selectedId) === String(cfg.id);
       if (String(cfg.id).startsWith("tmp_")) {
         state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
-        state.selectedId = null;
+        if (wasSelected) {
+          state.selectedId = null;
+        }
         renderList();
-        els.editorBody.style.display = "none";
-        els.editorEmpty.style.display = "";
+        if (wasSelected) {
+          els.editorBody.style.display = "none";
+          els.editorEmpty.style.display = "";
+        }
         return;
       }
       await postJson(DELETE_URL_PATTERN.replace("/0/", "/" + cfg.id + "/"), {});
       state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
-      state.selectedId = null;
+      if (wasSelected) {
+        state.selectedId = null;
+      }
       renderList();
-      els.editorBody.style.display = "none";
-      els.editorEmpty.style.display = "";
+      if (wasSelected) {
+        els.editorBody.style.display = "none";
+        els.editorEmpty.style.display = "";
+      }
     } catch (e) {
       showAlert("Error eliminant: " + e.message);
     }
-  });
+  }
+
+  if (els.btnDelete) {
+    els.btnDelete.addEventListener("click", async () => {
+      const cfg = currentCfg();
+      if (cfg) await deleteCfgById(cfg.id);
+    });
+  }
 
   if (els.btnPreview && CAN_PREVIEW) {
   els.btnPreview.addEventListener("click", async () => {

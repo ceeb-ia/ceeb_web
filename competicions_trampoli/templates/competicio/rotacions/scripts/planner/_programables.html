@@ -1,0 +1,387 @@
+<script>
+const programFilterOptions = (() => {
+  try {
+    return JSON.parse(document.getElementById("program-filter-options-data")?.textContent || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
+const PROGRAM_VIEW_STORAGE_KEY = "rotacions.programables.view";
+const VALID_PROGRAM_VIEWS = new Set(["list", "compact", "detail"]);
+let programViewMode = "compact";
+
+Object.assign(programFilters, {
+  kinds: [],
+  categories: [],
+  subcategories: [],
+  entitats: [],
+});
+
+function normalizeFilterText(value){
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function programKindLabel(kind){
+  if (kind === "series") return "Equip";
+  if (kind === "program_unit") return "Fase";
+  return "Grup";
+}
+
+function resolveProgramView(value){
+  return VALID_PROGRAM_VIEWS.has(String(value || "")) ? String(value) : "compact";
+}
+
+function applyProgramView(value){
+  programViewMode = resolveProgramView(value);
+  const panel = document.getElementById("programables-panel");
+  if (panel) {
+    panel.classList.remove("program-view-list", "program-view-compact", "program-view-detail");
+    panel.classList.add(`program-view-${programViewMode}`);
+  }
+  document.querySelectorAll("[data-program-view]").forEach((btn) => {
+    const active = String(btn.dataset.programView || "") === programViewMode;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function selectedProgramCheckboxValues(selector){
+  return Array.from(document.querySelectorAll(selector))
+    .filter((input) => input.checked)
+    .map((input) => String(input.value || "").trim())
+    .filter(Boolean);
+}
+
+function programItemFacetValues(item, field){
+  return Array.isArray(item?.[field])
+    ? item[field].map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+}
+
+function programItemMatchesAny(item, field, selectedValues){
+  const selected = Array.isArray(selectedValues) ? selectedValues.filter(Boolean) : [];
+  if (!selected.length) return true;
+  const values = new Set(programItemFacetValues(item, field));
+  return selected.some((value) => values.has(value));
+}
+
+function programFiltersAreActive(){
+  return !!(
+    String(programFilters.query || "").trim() ||
+    String(programFilters.placement || "all") !== "all" ||
+    (Array.isArray(programFilters.kinds) && programFilters.kinds.length) ||
+    (Array.isArray(programFilters.categories) && programFilters.categories.length) ||
+    (Array.isArray(programFilters.subcategories) && programFilters.subcategories.length) ||
+    (Array.isArray(programFilters.entitats) && programFilters.entitats.length) ||
+    programFilters.nonEmptyOnly
+  );
+}
+
+function readProgramFiltersFromDom(){
+  const placement = document.querySelector("[data-program-placement-filter]:checked");
+  programFilters.query = String(document.getElementById("programSearch")?.value || "").trim();
+  programFilters.kinds = selectedProgramCheckboxValues("[data-program-kind-filter]");
+  programFilters.placement = String(placement?.value || "all");
+  programFilters.nonEmptyOnly = !!document.getElementById("programNonEmptyFilter")?.checked;
+  programFilters.categories = selectedProgramCheckboxValues("[data-program-category-filter]");
+  programFilters.subcategories = selectedProgramCheckboxValues("[data-program-subcategory-filter]");
+  programFilters.entitats = selectedProgramCheckboxValues("[data-program-entity-filter]");
+}
+
+function renderProgramFacetOptions(containerId, options, inputAttr, selectedValues){
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const selected = new Set(Array.isArray(selectedValues) ? selectedValues : []);
+  const rows = Array.isArray(options) ? options : [];
+  container.innerHTML = rows.length
+    ? rows.map((option) => {
+      const value = String(option.value || "").trim();
+      const label = escapeHtml(option.label || value);
+      const checked = selected.has(value) ? "checked" : "";
+      return `<label class="program-filter-option" title="${label}"><input type="checkbox" ${inputAttr} value="${escapeHtml(value)}" ${checked}> <span>${label}</span></label>`;
+    }).join("")
+    : '<div class="program-filter-empty">Sense opcions</div>';
+}
+
+function renderProgramFilterOptions(){
+  renderProgramFacetOptions("programCategoryFilters", programFilterOptions.categories || [], "data-program-category-filter", programFilters.categories);
+  renderProgramFacetOptions("programSubcategoryFilters", programFilterOptions.subcategories || [], "data-program-subcategory-filter", programFilters.subcategories);
+  renderProgramFacetOptions("programEntityFilters", programFilterOptions.entitats || [], "data-program-entity-filter", programFilters.entitats);
+}
+
+function setProgramFiltersToDom(){
+  const kinds = new Set(Array.isArray(programFilters.kinds) ? programFilters.kinds : []);
+  document.querySelectorAll("[data-program-kind-filter]").forEach((input) => {
+    input.checked = kinds.has(String(input.value || ""));
+  });
+  document.querySelectorAll("[data-program-placement-filter]").forEach((input) => {
+    input.checked = String(input.value || "all") === String(programFilters.placement || "all");
+  });
+  const nonEmpty = document.getElementById("programNonEmptyFilter");
+  if (nonEmpty) nonEmpty.checked = !!programFilters.nonEmptyOnly;
+  const search = document.getElementById("programSearch");
+  if (search && search.value !== String(programFilters.query || "")) search.value = String(programFilters.query || "");
+  renderProgramFilterOptions();
+}
+
+function addProgramFilterChip(frag, label, clearType, clearValue){
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "program-filter-chip";
+  chip.setAttribute("data-program-filter-clear", clearType);
+  if (clearValue != null) chip.setAttribute("data-program-filter-value", String(clearValue));
+  chip.textContent = `${label} x`;
+  frag.appendChild(chip);
+}
+
+function renderProgramFilterState(){
+  const count = document.getElementById("programFilterCount");
+  const menu = document.getElementById("programFilterMenu");
+  const chips = document.getElementById("programFilterActiveChips");
+  const frag = document.createDocumentFragment();
+  let activeCount = 0;
+
+  if (programFilters.query) {
+    addProgramFilterChip(frag, `Cerca: ${programFilters.query}`, "query");
+    activeCount += 1;
+  }
+  (programFilters.kinds || []).forEach((kind) => {
+    addProgramFilterChip(frag, `Tipus: ${programKindLabel(kind)}`, "kind", kind);
+    activeCount += 1;
+  });
+  if (programFilters.placement !== "all") {
+    addProgramFilterChip(frag, programFilters.placement === "programmed" ? "Programa: programats" : "Programa: pendents", "placement");
+    activeCount += 1;
+  }
+  if (programFilters.nonEmptyOnly) {
+    addProgramFilterChip(frag, "No buits", "non_empty");
+    activeCount += 1;
+  }
+  (programFilters.categories || []).forEach((value) => {
+    addProgramFilterChip(frag, `Categoria: ${value}`, "category", value);
+    activeCount += 1;
+  });
+  (programFilters.subcategories || []).forEach((value) => {
+    addProgramFilterChip(frag, `Subcategoria: ${value}`, "subcategory", value);
+    activeCount += 1;
+  });
+  (programFilters.entitats || []).forEach((value) => {
+    addProgramFilterChip(frag, `Entitat: ${value}`, "entity", value);
+    activeCount += 1;
+  });
+
+  if (count) count.textContent = String(activeCount);
+  if (menu) menu.classList.toggle("is-active", activeCount > 0);
+  if (chips) {
+    chips.innerHTML = "";
+    chips.classList.toggle("is-empty", activeCount === 0);
+    chips.appendChild(frag);
+  }
+}
+
+function clearProgramFilter(type, value){
+  if (type === "query") {
+    programFilters.query = "";
+  } else if (type === "kind") {
+    programFilters.kinds = (programFilters.kinds || []).filter((item) => item !== value);
+  } else if (type === "placement") {
+    programFilters.placement = "all";
+  } else if (type === "non_empty") {
+    programFilters.nonEmptyOnly = false;
+  } else if (type === "category") {
+    programFilters.categories = (programFilters.categories || []).filter((item) => item !== value);
+  } else if (type === "subcategory") {
+    programFilters.subcategories = (programFilters.subcategories || []).filter((item) => item !== value);
+  } else if (type === "entity") {
+    programFilters.entitats = (programFilters.entitats || []).filter((item) => item !== value);
+  }
+  setProgramFiltersToDom();
+  renderProgramables();
+  syncActiveStationHighlights();
+}
+
+function clearAllProgramFilters(){
+  Object.assign(programFilters, {
+    query: "",
+    placement: "all",
+    kind: "all",
+    kinds: [],
+    nonEmptyOnly: false,
+    categories: [],
+    subcategories: [],
+    entitats: [],
+  });
+  setProgramFiltersToDom();
+  renderProgramables();
+  syncActiveStationHighlights();
+}
+
+function itemMatchesPlannerFilters(item){
+  if (!item) return false;
+  const query = normalizeFilterText(programFilters.query || "");
+  const mode = getActiveStationMode();
+  const kindFilters = Array.isArray(programFilters.kinds) ? programFilters.kinds : [];
+  const placement = String(programFilters.placement || "all");
+
+  if (kindFilters.length && !kindFilters.includes(String(item.kind || ""))) return false;
+  if (placement === "programmed" && !item.is_programmed) return false;
+  if (placement === "out" && item.is_programmed) return false;
+  if (programFilters.nonEmptyOnly && Number(item.members_count || 0) <= 0) return false;
+  if (!programItemMatchesAny(item, "categories", programFilters.categories)) return false;
+  if (!programItemMatchesAny(item, "subcategories", programFilters.subcategories)) return false;
+  if (!programItemMatchesAny(item, "entitats", programFilters.entitats)) return false;
+
+  if (mode){
+    if (item.kind === "program_unit"){
+      if (!mode.comp_aparell_id || Number(item.app_id || 0) !== Number(mode.comp_aparell_id || 0)) return false;
+    } else {
+      if (mode.mode === "group" && item.kind !== "group") return false;
+      if (mode.mode === "series" && item.kind !== "series") return false;
+    }
+  }
+  if (query){
+    const haystack = normalizeFilterText([
+      item.label,
+      item.key,
+      item.kind,
+      item.id,
+      item.app_id,
+      item.phase_label,
+      item.search_text,
+      ...(item.categories || []),
+      ...(item.subcategories || []),
+      ...(item.entitats || []),
+      item.is_programmed ? "programat" : "pendent fora programa",
+    ].join(" "));
+    if (!haystack.includes(query)) return false;
+  }
+  return true;
+}
+
+function groupChipHtml(item){
+  const label = escapeHtml(item?.label || `${programKindLabel(item?.kind)} ${item?.id || "?"}`);
+  const members = Number(item?.members_count || 0);
+  const kind = String(item?.kind || "group");
+  const statusLabel = item?.is_programmed ? "Programat" : "Pendent";
+  const metaParts = [
+    programKindLabel(kind),
+    members ? `${members} subjectes` : "Buit",
+    item?.phase_label || "",
+  ].filter(Boolean);
+  const detailTags = [
+    ...(item?.entitats || []).slice(0, 2),
+    ...(item?.categories || []).slice(0, 2),
+    ...(item?.subcategories || []).slice(0, 2),
+  ].slice(0, 5);
+  const detailHtml = detailTags.length
+    ? detailTags.map((tag) => `<span class="program-card-tag">${escapeHtml(tag)}</span>`).join("")
+    : '<span class="program-card-tag">Sense filtres d\'inscripcio</span>';
+  return `
+    <div class="chip group-chip program-card program-card--${escapeHtml(kind)} ${item?.is_programmed ? "is-programmed" : ""}"
+         draggable="true"
+         data-key="${escapeHtml(item?.key || "")}"
+         title="${label}">
+      <div class="program-card-body">
+        <div class="program-card-title">${label}</div>
+        <div class="program-card-meta">
+          <span>${escapeHtml(metaParts.join(" · "))}</span>
+          <span class="program-card-badge">${statusLabel}</span>
+        </div>
+        <div class="program-card-detail">${detailHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderProgramList(container, items, emptyText){
+  if (!container) return;
+  container.innerHTML = items.length
+    ? items.map(groupChipHtml).join("")
+    : `<div class="group-bucket-empty">${escapeHtml(emptyText)}</div>`;
+}
+
+function renderProgramables(){
+  const programmedWrap = document.getElementById("programmed-list");
+  const outWrap = document.getElementById("out-of-program-list");
+  const programmedBucket = document.getElementById("programmed-bucket");
+  const outBucket = document.getElementById("out-of-program-bucket");
+  const programmedCountEl = document.getElementById("programmed-groups-count");
+  const outCountEl = document.getElementById("out-of-program-groups-count");
+  const state = getProgramBuckets();
+  const placementFilter = String(programFilters.placement || "all");
+  const programmedVisible = state.programmed.filter(itemMatchesPlannerFilters);
+  const outVisible = state.outOfProgram.filter(itemMatchesPlannerFilters);
+  const filtersActive = programFiltersAreActive();
+
+  if (programmedBucket) {
+    programmedBucket.hidden = placementFilter === "out";
+    if (filtersActive) programmedBucket.open = true;
+  }
+  if (outBucket) {
+    outBucket.hidden = placementFilter === "programmed";
+    if (filtersActive) outBucket.open = true;
+  }
+
+  renderProgramList(outWrap, outVisible, "No hi ha programables pendents amb aquests filtres.");
+  renderProgramList(programmedWrap, programmedVisible, "No hi ha programables ja col.locats amb aquests filtres.");
+
+  if (programmedCountEl) programmedCountEl.textContent = String(programmedVisible.length);
+  if (outCountEl) outCountEl.textContent = String(outVisible.length);
+
+  const searchInput = document.getElementById("programSearch");
+  if (searchInput && searchInput.value !== programFilters.query) {
+    searchInput.value = programFilters.query;
+  }
+
+  renderProgramFilterState();
+  initChipDnD();
+}
+
+function initProgramablesFilterControls(){
+  applyProgramView(localStorage.getItem(PROGRAM_VIEW_STORAGE_KEY));
+  setProgramFiltersToDom();
+  renderProgramFilterState();
+
+  const applyFilters = () => {
+    readProgramFiltersFromDom();
+    renderProgramables();
+    syncActiveStationHighlights();
+  };
+
+  document.getElementById("programSearch")?.addEventListener("input", applyFilters);
+  document.getElementById("programFilterMenu")?.addEventListener("change", applyFilters);
+  document.getElementById("programFiltersClear")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    clearAllProgramFilters();
+  });
+  document.getElementById("programFilterActiveChips")?.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("[data-program-filter-clear]");
+    if (!chip) return;
+    clearProgramFilter(
+      String(chip.getAttribute("data-program-filter-clear") || ""),
+      String(chip.getAttribute("data-program-filter-value") || "")
+    );
+  });
+  document.querySelectorAll("[data-program-view]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const view = resolveProgramView(btn.dataset.programView);
+      localStorage.setItem(PROGRAM_VIEW_STORAGE_KEY, view);
+      applyProgramView(view);
+    });
+  });
+  document.addEventListener("click", (ev) => {
+    const menu = document.getElementById("programFilterMenu");
+    if (!menu || !menu.open) return;
+    if (ev.target.closest("#programFilterMenu")) return;
+    menu.open = false;
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initProgramablesFilterControls();
+});
+</script>

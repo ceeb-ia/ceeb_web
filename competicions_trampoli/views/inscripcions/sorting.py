@@ -877,7 +877,7 @@ def inscripcions_sort_custom_save(request, pk):
         save_inscripcions_sort_context_state(request, context_key, stack=stack, order_sig=order_sig, base_ids=base_ids, context_ids=current_ids, competition_order_tail=competition_order_tail_active)
         reapplied = True
 
-    record_inscripcions_history_entry(request, competicio, action_type="sort_custom_save", action_label="Desar ordre custom", before_snapshot=before_snapshot, after_snapshot=capture_inscripcions_history_snapshot(request, competicio))
+    record_inscripcions_history_entry(request, competicio, action_type="sort_custom_save", action_label="Desar ordre personalitzat", before_snapshot=before_snapshot, after_snapshot=capture_inscripcions_history_snapshot(request, competicio))
     return JsonResponse(with_inscripcions_history_payload({"ok": True, "sort_key": sort_key, "custom_order": saved_values, "custom_active": bool(saved_values), "stale_removed": stale_removed if not clear else 0, "dropped_outside_competicio": dropped_outside_competicio if not clear else 0, "preserved_outside_context": preserved_outside_context if not clear else 0, "reapplied": reapplied, "reapplied_updated": reapplied_updated, "stack_count": len(stack), "competition_order_tail": competition_order_tail_active}, request, competicio.id))
 
 

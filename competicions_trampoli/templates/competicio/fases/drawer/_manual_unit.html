@@ -1,0 +1,24 @@
+<section class="phase-panel">
+  <div class="phase-panel-title">
+    <h5>Unitat manual</h5>
+    <span class="badge badge-light border">Avancat</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Opcio secundaria per crear una unitat concreta a ma. El flux recomanat es generar les unitats buides des del pla de grups.
+  </div>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_manual_unit">
+    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+    <div class="mb-2">{{ manual_unit_form.nom.label_tag }}{{ manual_unit_form.nom }}{{ manual_unit_form.nom.errors }}</div>
+    <div class="row">
+      <div class="col-5 mb-2">{{ manual_unit_form.capacity.label_tag }}{{ manual_unit_form.capacity }}{{ manual_unit_form.capacity.errors }}</div>
+      <div class="col-7 mb-2">{{ manual_unit_form.tipus.label_tag }}{{ manual_unit_form.tipus }}{{ manual_unit_form.tipus.errors }}</div>
+    </div>
+    <div class="mb-2">
+      {{ manual_unit_form.partition_key.label_tag }}{{ manual_unit_form.partition_key }}{{ manual_unit_form.partition_key.errors }}
+      {% if manual_unit_form.partition_key.help_text %}<div class="text-muted small">{{ manual_unit_form.partition_key.help_text }}</div>{% endif %}
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" type="submit">Crear unitat manual</button>
+  </form>
+</section>

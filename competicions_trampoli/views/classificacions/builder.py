@@ -36,6 +36,7 @@ from ...services.classificacions.validation import (
     DETAIL_DISPLAY_KIND_NONE,
     build_metric_meta_for_comp_aparell,
 )
+from ...services.avatar.classificacions.messages import AVATAR_MESSAGES as CLASSIFICACIONS_AVATAR_MESSAGES
 from ...services.shared.competition_groups import get_group_maps, group_label
 
 
@@ -319,6 +320,8 @@ class ClassificacionsHome(TemplateView):
                 "builder_auto_add_new": False,
                 "is_global_builder": False,
                 "global_templates_url": reverse("classificacio_template_global_list"),
+                "avatar_messages": CLASSIFICACIONS_AVATAR_MESSAGES,
+                "avatar_initial_topic": "competition_classifications",
             }
         )
         return ctx

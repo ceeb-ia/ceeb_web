@@ -3,7 +3,8 @@
 {% block title %}Puntuació – {{ aparell.nom }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
+<section class="schema-workspace">
+<div class="schema-workspace-shell">
   <link rel="stylesheet" href="{% staticv 'css/scoring_schema_builder_help.css' %}">
   <style>
     .pill-help{ font-size:.85rem; color:#6c757d; }
@@ -67,9 +68,626 @@
 }
   .card-surface .form-check-input { width: auto; }
 
+    .schema-workspace {
+      min-height: calc(100vh - 190px);
+      padding: 28px clamp(16px, 3vw, 42px) 36px;
+      color: #0f172a;
+    }
+
+    .schema-workspace-shell {
+      max-width: 1680px;
+      margin: 0 auto;
+    }
+
+    .schema-workspace-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+      margin-bottom: 24px;
+    }
+
+    .schema-workspace-logo {
+      display: block;
+      width: 150px;
+      height: 64px;
+      object-fit: contain;
+      object-position: left center;
+    }
+
+    .schema-workspace-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .schema-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 9px 15px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #334155;
+      font-weight: 800;
+      line-height: 1.15;
+      text-decoration: none;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    }
+
+    .schema-action:hover,
+    .schema-action:focus {
+      color: #0f172a;
+      text-decoration: none;
+      background: #ffffff;
+    }
+
+    .schema-action--primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
+    }
+
+    .schema-action--primary:hover,
+    .schema-action--primary:focus {
+      color: #ffffff;
+      background: #1d4ed8;
+    }
+
+    .schema-action--help {
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+
+    .schema-heading {
+      margin-bottom: 22px;
+    }
+
+    .schema-heading h1 {
+      margin: 0;
+      color: #071633;
+      font-size: clamp(2.05rem, 4vw, 3.2rem);
+      font-weight: 850;
+      letter-spacing: 0;
+      line-height: 1.05;
+    }
+
+    .schema-heading p {
+      max-width: 780px;
+      margin: 8px 0 0;
+      color: #64748b;
+      font-size: 1rem;
+      line-height: 1.55;
+    }
+
+    .schema-heading-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .schema-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 6px 11px;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.78rem;
+      font-weight: 850;
+    }
+
+    .schema-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .schema-summary-item {
+      min-height: 76px;
+      padding: 14px 16px;
+      border: 1px solid rgba(219, 226, 239, 0.82);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+      backdrop-filter: blur(12px);
+    }
+
+    .schema-summary-value {
+      display: block;
+      color: #071633;
+      font-size: 1.45rem;
+      font-weight: 850;
+      line-height: 1;
+    }
+
+    .schema-summary-label {
+      display: block;
+      margin-top: 8px;
+      color: #64748b;
+      font-size: 0.84rem;
+      font-weight: 750;
+    }
+
+    .schema-builder-surface {
+      border: 1px solid rgba(219, 226, 239, 0.9);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+      padding: 18px;
+    }
+
+    .schema-builder-surface > .d-flex.justify-content-between.align-items-start.mb-3 {
+      display: none !important;
+    }
+
+    .schema-builder-surface .alert {
+      border-radius: 8px;
+    }
+
+    .schema-builder-form {
+      margin: 0;
+    }
+
+    .schema-builder-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+      gap: 0;
+      align-items: stretch;
+    }
+
+    .schema-builder-main {
+      min-width: 0;
+      padding: 18px;
+      border-right: 1px solid #e2e8f0;
+    }
+
+    .schema-builder-aside {
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(248, 250, 252, 0.78), rgba(255, 255, 255, 0.95));
+    }
+
+    .schema-workflow-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 18px;
+      border: 0;
+    }
+
+    .schema-builder-surface .tab-content {
+      padding: 0 !important;
+    }
+
+    .schema-workflow-tabs .nav-item {
+      margin: 0;
+    }
+
+    .schema-workflow-tabs .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 58px;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #475569;
+      font-weight: 850;
+      line-height: 1.15;
+    }
+
+    .schema-workflow-tabs .nav-link:hover,
+    .schema-workflow-tabs .nav-link:focus {
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+
+    .schema-workflow-tabs .nav-link.active {
+      border-color: #93c5fd;
+      background: #eff6ff;
+      color: #1d4ed8;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+    }
+
+    .schema-tab-step {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      color: currentColor;
+      font-size: 0.78rem;
+      font-weight: 900;
+    }
+
+    .schema-tab-copy {
+      min-width: 0;
+    }
+
+    .schema-tab-copy strong,
+    .schema-tab-copy span {
+      display: block;
+    }
+
+    .schema-tab-copy span {
+      margin-top: 3px;
+      color: #64748b;
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+
+    .schema-section-panel {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    .schema-section-panel > .d-flex,
+    .schema-section-panel > .font-weight-bold,
+    .schema-section-panel > .pill-help {
+      margin: 0 !important;
+      padding: 16px 18px;
+    }
+
+    .schema-section-panel > .pill-help {
+      padding-top: 0;
+    }
+
+    .schema-section-panel > .table-responsive {
+      margin: 0;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .schema-section-panel .table {
+      margin-bottom: 0;
+      min-width: 980px;
+    }
+
+    .schema-section-panel .table thead th {
+      border-top: 0;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.78rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .schema-section-panel .table tbody td {
+      border-color: #edf2f7;
+    }
+
+    .schema-section-panel .btn-outline-primary {
+      border-color: #bfdbfe;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 850;
+    }
+
+    .schema-section-panel .btn-outline-primary:hover,
+    .schema-section-panel .btn-outline-primary:focus {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #ffffff;
+    }
+
+    .schema-section-panel #advancedJson {
+      margin: 0 18px 18px;
+      width: calc(100% - 36px);
+      min-height: 430px;
+      border-radius: 8px;
+      border-color: #cbd5e1;
+      background: #0f172a;
+      color: #dbeafe;
+    }
+
+    .schema-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+
+    .schema-section-title {
+      color: #0f172a;
+      font-size: 1rem;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+
+    .schema-section-body {
+      padding: 0;
+    }
+
+    .schema-table-wrap {
+      max-height: calc(100vh - 420px);
+      overflow: auto;
+    }
+
+    .schema-workspace table.table {
+      margin: 0;
+      border-collapse: separate;
+      border-spacing: 0;
+      border: 0;
+    }
+
+    .schema-workspace table.table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      border-top: 0;
+      border-right: 0;
+      border-left: 0;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.74rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .schema-workspace table.table td {
+      border-right: 0;
+      border-left: 0;
+      border-color: #e2e8f0;
+      background: #ffffff;
+    }
+
+    .schema-workspace table.table tbody tr:hover td {
+      background: #f8fafc;
+    }
+
+    #computedTable tbody tr {
+      --formula-row-bg: #ffffff;
+      --formula-row-hover-bg: #f8fafc;
+      --formula-card-bg: #ffffff;
+      --formula-card-border: #e2e8f0;
+      --formula-soft-bg: #f8fafc;
+      --formula-side-border: #e2e8f0;
+    }
+
+    #computedTable tbody tr:nth-child(even) {
+      --formula-row-bg: #f7f9fc;
+      --formula-row-hover-bg: #f3f6fa;
+      --formula-card-bg: #fbfcfe;
+      --formula-card-border: #dbe3ee;
+      --formula-soft-bg: #eef3f8;
+      --formula-side-border: #cbd5e1;
+    }
+
+    #computedTable tbody tr td {
+      background: var(--formula-row-bg);
+    }
+
+    #computedTable tbody tr:hover td {
+      background: var(--formula-row-hover-bg);
+    }
+
+    #computedTable tbody tr td:first-child {
+      border-left: 4px solid var(--formula-side-border);
+    }
+
+    #computedTable tbody tr .step-card,
+    #computedTable tbody tr [data-box="exec_trampoli"],
+    #computedTable tbody tr [data-box="select_sum"],
+    #computedTable tbody tr [data-box="member_treatment"] {
+      border-color: var(--formula-card-border) !important;
+      background: var(--formula-card-bg);
+    }
+
+    #computedTable tbody tr .microflow {
+      background: var(--formula-soft-bg);
+      border-color: var(--formula-card-border);
+    }
+
+    .schema-workspace input:not([type="checkbox"]):not([type="radio"]),
+    .schema-workspace select,
+    .schema-workspace textarea,
+    .schema-workspace .form-control {
+      width: 100%;
+      border-color: #cbd5e1;
+      border-radius: 8px;
+      color: #0f172a;
+      font-weight: 650;
+      box-shadow: none;
+    }
+
+    .schema-workspace input:focus,
+    .schema-workspace select:focus,
+    .schema-workspace textarea:focus,
+    .schema-workspace .form-control:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+    }
+
+    .schema-workspace .form-check-input {
+      width: auto;
+    }
+
+    .schema-json-panel {
+      padding: 16px 18px 18px;
+      background: #0f172a;
+    }
+
+    .schema-json-panel .schema-section-title,
+    .schema-json-panel .pill-help {
+      color: #e2e8f0;
+    }
+
+    .schema-json-panel .pill-help {
+      color: #94a3b8;
+    }
+
+    #advancedJson {
+      min-height: 520px;
+      border-color: #334155;
+      background: #020617;
+      color: #dbeafe;
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+
+    .schema-side-card {
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .schema-side-card + .schema-side-card {
+      margin-top: 12px;
+    }
+
+    .schema-side-card h2,
+    .schema-side-card h3 {
+      margin: 0 0 8px;
+      color: #0f172a;
+      font-size: 0.98rem;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+
+    .schema-side-card p {
+      margin: 0;
+      color: #64748b;
+      font-size: 0.86rem;
+      line-height: 1.45;
+    }
+
+    .schema-side-list {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: #64748b;
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .schema-form-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 16px 18px;
+      border-top: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+
+    @media (max-width: 1100px) {
+      .schema-builder-body {
+        grid-template-columns: 1fr;
+      }
+
+      .schema-builder-main {
+        border-right: 0;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .schema-builder-aside {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .schema-side-card + .schema-side-card {
+        margin-top: 0;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .schema-workspace {
+        padding-inline: 12px;
+      }
+
+      .schema-workspace-topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .schema-workspace-actions,
+      .schema-action,
+      .schema-form-footer .schema-action {
+        width: 100%;
+      }
+
+      .schema-summary,
+      .schema-workflow-tabs,
+      .schema-builder-aside {
+        grid-template-columns: 1fr;
+      }
+
+      .schema-section-head,
+      .schema-form-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+
   </style>
 
-  <div class="card-surface">
+  <div class="schema-workspace-topbar">
+    <img class="schema-workspace-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
+    <div class="schema-workspace-actions">
+      <button type="button" class="schema-action schema-action--help help-trigger" data-help-key="global_overview">Ajuda</button>
+      <a class="schema-action" href="{{ next }}">Cancel·lar</a>
+      <button class="schema-action schema-action--primary" type="submit" form="schemaForm">Desar esquema</button>
+    </div>
+  </div>
+
+  <header class="schema-heading">
+    <h1>Puntuació · {{ aparell.nom }}</h1>
+    <p>Defineix els camps que omplirà el jurat, construeix fórmules guiades i revisa el JSON final dins un mateix espai de treball.</p>
+    <div class="schema-heading-badges">
+      {% if competicio %}
+        <span class="schema-badge">Competició · {{ competicio.nom }}</span>
+      {% else %}
+        <span class="schema-badge">Schema global</span>
+      {% endif %}
+      {% if schema_builder_config.is_team_unit %}
+        <span class="schema-badge">Unitat · Equip</span>
+      {% else %}
+        <span class="schema-badge">Unitat · Individual</span>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="schema-summary" aria-label="Resum de l'esquema">
+    <div class="schema-summary-item">
+      <span class="schema-summary-value" id="schemaFieldsCount">0</span>
+      <span class="schema-summary-label">Camps d'entrada</span>
+    </div>
+    <div class="schema-summary-item">
+      <span class="schema-summary-value" id="schemaComputedCount">0</span>
+      <span class="schema-summary-label">Fórmules</span>
+    </div>
+    <div class="schema-summary-item">
+      <span class="schema-summary-value">{% if schema_builder_config.is_team_unit %}Equip{% else %}Individual{% endif %}</span>
+      <span class="schema-summary-label">Mode de puntuació</span>
+    </div>
+    <div class="schema-summary-item">
+      <span class="schema-summary-value" id="schemaDraftState">Actiu</span>
+      <span class="schema-summary-label">Estat del builder</span>
+    </div>
+  </div>
+
+  <div class="schema-builder-surface card-surface">
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
         <h2 class="mb-1">Puntuació · {{ aparell.nom }}</h2>
@@ -83,7 +701,7 @@
       </div>
     </div>
 
-    <form method="post" id="schemaForm">
+    <form method="post" id="schemaForm" class="schema-builder-form">
       {% csrf_token %}
 
       {% if schema_builder_config.is_team_unit %}
@@ -132,22 +750,33 @@
 
       {{ form.schema_json }}
 
-      <ul class="nav nav-tabs" role="tablist">
+      <ul class="nav nav-tabs schema-workflow-tabs" role="tablist">
         <li class="nav-item">
-          <a class="nav-link active" data-toggle="tab" href="#tab-fields" role="tab">Camps</a>
+          <a class="nav-link active" data-toggle="tab" href="#tab-fields" role="tab">
+            <span class="schema-tab-step">1</span>
+            <span>Camps</span>
+            <strong id="schemaFieldsTabCount">0</strong>
+          </a>
         </li>
         <li class="nav-item">
-          <a class="nav-link" data-toggle="tab" href="#tab-formules" role="tab">Fórmules</a>
+          <a class="nav-link" data-toggle="tab" href="#tab-formules" role="tab">
+            <span class="schema-tab-step">2</span>
+            <span>Fórmules</span>
+            <strong id="schemaComputedTabCount">0</strong>
+          </a>
         </li>
         <li class="nav-item">
-          <a class="nav-link" data-toggle="tab" href="#tab-advanced" role="tab">Avançat (JSON)</a>
+          <a class="nav-link" data-toggle="tab" href="#tab-advanced" role="tab">
+            <span class="schema-tab-step">3</span>
+            <span>JSON</span>
+          </a>
         </li>
       </ul>
 
       <div class="tab-content pt-3">
         <!-- CAMPS -->
         <div class="tab-pane fade show active" id="tab-fields" role="tabpanel">
-          <div class="border rounded p-3">
+          <div class="schema-section-panel">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <div class="font-weight-bold">Camps d’entrada</div>
@@ -188,7 +817,7 @@
 
         <!-- FÒRMULES -->
         <div class="tab-pane fade" id="tab-formules" role="tabpanel">
-          <div class="border rounded p-3">
+          <div class="schema-section-panel">
 
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
@@ -230,7 +859,7 @@
 
         <!-- AVANÇAT JSON -->
         <div class="tab-pane fade" id="tab-advanced" role="tabpanel">
-          <div class="border rounded p-3">
+          <div class="schema-section-panel">
             <div class="font-weight-bold mb-2">
               Avançat (JSON)
               <button type="button" class="help-trigger help-trigger--inline" data-help-key="advanced_json" aria-label="Ajuda JSON avancat">?</button>
@@ -241,13 +870,14 @@
         </div>
       </div>
 
-      <div class="d-flex flex-wrap gap-2 mt-3">
-        <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary" href="{{ next }}">Cancel·lar</a>
+      <div class="schema-form-footer">
+        <a class="schema-action" href="{{ next }}">Cancel·lar</a>
+        <button class="schema-action schema-action--primary" type="submit">Desar esquema</button>
       </div>
     </form>
   </div>
 </div>
+</section>
 
 <div id="schemaHelpDrawer" class="schema-help-drawer" aria-hidden="true">
   <div class="schema-help-backdrop" data-help-close></div>
@@ -1619,6 +2249,31 @@
     return { meta, fields, computed, ui: { columns: cols } };
   }
 
+  function updateSchemaSummary(){
+    const fieldsCount = document.querySelectorAll("#fieldsTable tbody tr").length;
+    const computedCount = document.querySelectorAll("#computedTable tbody tr").length;
+    const pairs = [
+      ["schemaFieldsCount", fieldsCount],
+      ["schemaFieldsTabCount", fieldsCount],
+      ["schemaComputedCount", computedCount],
+      ["schemaComputedTabCount", computedCount],
+    ];
+
+    pairs.forEach(([id, value])=>{
+      const el = qs("#" + id);
+      if(el) el.textContent = String(value);
+    });
+
+    const draftEl = qs("#schemaDraftState");
+    if(draftEl){
+      let label = "Actiu";
+      if(ACTIVE_SCHEMA_SOURCE === "session_draft") label = "Esborrany";
+      else if(ACTIVE_SCHEMA_SOURCE === "posted_invalid" || ACTIVE_SCHEMA_SOURCE === "raw_invalid_json" || ACTIVE_DRAFT_MODE === "raw_json") label = "Revisar";
+      else if(MANUAL_JSON_MODE) label = "JSON";
+      draftEl.textContent = label;
+    }
+  }
+
   function refreshAll(opts){
     const preserveManualJson = !!(opts && opts.preserveManualJson);
     if(MANUAL_JSON_MODE && !preserveManualJson){
@@ -1633,6 +2288,7 @@
     // actualitza JSON avançat
     const adv = qs("#advancedJson");
     if (adv && !MANUAL_JSON_MODE) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
+    updateSchemaSummary();
     scheduleDraftSave();
     scheduleUiStateSave();
   }

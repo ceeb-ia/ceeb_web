@@ -6,8 +6,8 @@
       {% if r.grup %}
         <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}" data-pane-id="{% if pane_id == '__single__' %}__single__{% else %}pane-{{ pane_id }}{% endif %}">
           <td colspan="{{ table_colspan|add:'1' }}">
-            <div class="d-flex justify-content-between align-items-center">
-              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+            <div class="group-row-inner">
+              <div class="group-row-main">
                 {% with gkey=r.grup|stringformat:"s" %}
                   <span class="font-weight-bold group-title">
                     <span class="group-name-text" data-group="{{ r.grup }}">
@@ -62,20 +62,74 @@
         </div>
       </td>
       {% for col in selected_table_columns %}
-        <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
+        <td class="{% if col.code == 'nom_i_cognoms' %}insc-col-name{% endif %} {% if col.code == '__actions__' %}text-nowrap insc-col-actions{% endif %}{% if col.code == 'grup' %} insc-col-grup{% elif col.code == 'equip' %} insc-col-equip{% elif col.code == '__aparells__' %} insc-col-aparells{% endif %}">
           {% if col.code == "__actions__" %}
-            <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ inscripcions_return_url|urlencode }}">Editar</a>
-            <a class="btn btn-sm btn-outline-danger" href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">Eliminar</a>
+            <div class="row-actions">
+              <a class="btn btn-sm btn-outline-primary row-action-edit" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ inscripcions_return_url|urlencode }}">Editar</a>
+              <details class="row-actions-menu">
+                <summary class="row-actions-toggle" title="Accions secundàries" aria-label="Accions secundàries">&#8942;</summary>
+                <div class="row-actions-popover">
+                  <a class="row-action-link" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ inscripcions_return_url|urlencode }}">Editar</a>
+                  {% if can_edit_inscripcions %}
+                    {% with rid=r.id|stringformat:"s" %}
+                      {% with baixa=table_runtime.inscripcio_baixes_map|get_item:rid %}
+                        {% if baixa %}
+                          <button type="button" class="row-action-link js-clear-baixa" data-ins-id="{{ r.id }}">Treure baixa</button>
+                        {% else %}
+                          <button type="button" class="row-action-link js-set-baixa" data-ins-id="{{ r.id }}" data-ins-name="{{ r.nom_i_cognoms|default:'' }}">Marcar baixa</button>
+                        {% endif %}
+                      {% endwith %}
+                    {% endwith %}
+                    <div class="row-action-media-upload">
+                      <div class="row-action-upload-title">Pujar fitxer</div>
+                      <div class="media-upload-row">
+                        <label class="media-file-trigger">
+                          <span>Tria fitxer</span>
+                          <input type="file" class="form-control form-control-sm js-media-upload-input media-upload-native" data-ins-id="{{ r.id }}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-secondary js-media-upload-btn media-upload-btn" data-ins-id="{{ r.id }}">Pujar</button>
+                      </div>
+                    </div>
+                  {% endif %}
+                  <a class="row-action-link row-action-link-danger" href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">Eliminar</a>
+                </div>
+              </details>
+            </div>
           {% elif col.code == "nom_i_cognoms" %}
-            {{ r.nom_i_cognoms|default:"-" }}
-          {% elif col.code == "equip" %}
-            {% if r.base_equip_id %}
-              <span class="equip-badge">
-                {% if r.base_equip_name %}{{ r.base_equip_name }}{% else %}Equip {{ r.base_equip_id }}{% endif %}
+            <div class="participant-cell">
+              <span class="participant-avatar" aria-hidden="true">{{ r.nom_i_cognoms|initials }}</span>
+              <span class="participant-copy">
+                <span class="participant-name">{{ r.nom_i_cognoms|default:"-" }}</span>
+                {% with rid=r.id|stringformat:"s" %}
+                  {% with baixa=table_runtime.inscripcio_baixes_map|get_item:rid %}
+                    {% if baixa %}
+                      <span class="badge badge-danger ml-1" title="{{ baixa.motiu|default:'Baixa' }}">Baixa</span>
+                      <span class="small text-muted">{{ baixa.label|default:"" }}</span>
+                    {% endif %}
+                  {% endwith %}
+                {% endwith %}
               </span>
+            </div>
+          {% elif col.code == "equip" %}
+            <div class="team-context-cell" title="{{ r.team_context_tooltip|default:'' }}">
+            {% if r.context_equip_id %}
+              <span class="team-context-badge">
+                <span class="team-context-name">
+                  {% if r.context_equip_name %}{{ r.context_equip_name }}{% else %}Equip {{ r.context_equip_id }}{% endif %}
+                </span>
+                <span class="team-context-label">Context: {{ r.team_context_label|default:team_context_selected_label|default:"Base" }}</span>
+              </span>
+              {% if r.other_team_contexts_count %}
+                <span class="team-context-more">+{{ r.other_team_contexts_count }} contextos</span>
+              {% endif %}
             {% else %}
-              -
+              <span class="team-context-empty">Sense equip</span>
+              <span class="team-context-label">Context: {{ r.team_context_label|default:team_context_selected_label|default:"Base" }}</span>
+              {% if r.other_team_contexts_count %}
+                <span class="team-context-more">+{{ r.other_team_contexts_count }} contextos</span>
+              {% endif %}
             {% endif %}
+            </div>
           {% elif col.code == "grup" %}
             {% if r.grup %}
               {% with gkey=r.grup|stringformat:"s" %}
@@ -88,30 +142,33 @@
             {% else %}
               -
             {% endif %}
-          {% elif col.code == "ordre_sortida" %}
-            <span class="js-ordre-sortida-cell" data-ins-id="{{ r.id }}">{{ r.ordre_sortida|default:"-" }}</span>
           {% elif col.code == "__aparells__" %}
             {% with rid=r.id|stringformat:"s" %}
               {% with ex_ids=table_runtime.inscripcio_aparells_excluded_map|get_item:rid %}
                 <div class="aparells-select-wrap">
-                  <select
-                    class="form-control form-control-sm aparells-select js-aparells-select"
-                    data-ins-id="{{ r.id }}"
-                    multiple
-                    size="3"
-                    title="Per defecte competeix a tots els aparells individuals. Desmarca nomes exclusions."
-                    aria-label="Aparells de la inscripcio {{ r.nom_i_cognoms }}"
-                    {% if not can_edit_inscripcions %}disabled{% endif %}>
-                    {% for app in inscripcio_aparells_cfg %}
-                      <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.display_nom }}</option>
-                    {% empty %}
-                      <option value="" disabled>(Sense aparells actius)</option>
-                    {% endfor %}
-                  </select>
-                  <div class="aparells-select-meta">
-                    <div class="small font-weight-semibold aparells-select-summary js-aparells-select-summary" data-ins-id="{{ r.id }}"></div>
-                    <div class="small text-muted aparells-select-status js-aparells-select-status" data-ins-id="{{ r.id }}" aria-live="polite"></div>
-                  </div>
+                  <details class="aparells-select-disclosure">
+                    <summary class="aparells-select-trigger">
+                      <span class="small font-weight-semibold aparells-select-summary js-aparells-select-summary" data-ins-id="{{ r.id }}"></span>
+                      <span class="aparells-select-caret" aria-hidden="true">&#8964;</span>
+                    </summary>
+                    <div class="aparells-select-panel">
+                      <select
+                        class="form-control form-control-sm aparells-select js-aparells-select"
+                        data-ins-id="{{ r.id }}"
+                        multiple
+                        size="4"
+                        title="Per defecte competeix a tots els aparells individuals. Desmarca nomes exclusions."
+                        aria-label="Aparells de la inscripcio {{ r.nom_i_cognoms }}"
+                        {% if not can_edit_inscripcions %}disabled{% endif %}>
+                        {% for app in inscripcio_aparells_cfg %}
+                          <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.display_nom }}</option>
+                        {% empty %}
+                          <option value="" disabled>(Sense aparells actius)</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </details>
+                  <div class="small text-muted aparells-select-status js-aparells-select-status" data-ins-id="{{ r.id }}" aria-live="polite"></div>
                 </div>
               {% endwith %}
             {% endwith %}
@@ -128,21 +185,11 @@
                           <span class="media-badge-name" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
                         {% endif %}
                         <span class="text-muted">{{ m.tipus }}</span>
-                        {% if can_edit_inscripcions %}
-                          <button type="button" class="media-icon-btn js-media-set-primary" data-media-id="{{ m.id }}" title="Marcar com a principal">*</button>
-                          <button type="button" class="media-icon-btn js-media-delete" data-media-id="{{ m.id }}" title="Eliminar fitxer">x</button>
-                        {% endif %}
                       </span>
                     {% empty %}
                       <span class="small text-muted js-media-empty" data-ins-id="{{ r.id }}">Sense fitxers</span>
                     {% endfor %}
                   </div>
-                  {% if can_edit_inscripcions %}
-                    <div class="media-upload-row">
-                      <input type="file" class="form-control form-control-sm js-media-upload-input" data-ins-id="{{ r.id }}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
-                      <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="{{ r.id }}">Pujar</button>
-                    </div>
-                  {% endif %}
                 </div>
               {% endwith %}
             {% endwith %}

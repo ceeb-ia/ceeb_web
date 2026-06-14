@@ -8,14 +8,48 @@ from .program_units import (
     next_program_unit_order,
 )
 from .dashboard import phase_dashboard_context
+from .qualification import (
+    CIRCULAR_SOURCE_PHASE_MESSAGE,
+    QualificationError,
+    apply_qualification,
+    confirm_qualification_partition,
+    mark_qualification_stale_if_needed,
+    preview_as_dict,
+    preview_qualification,
+    qualification_is_stale,
+    record_qualification_preview,
+    validate_classificacio_not_circular_source,
+)
+from .group_plan import (
+    GroupPlanPreview,
+    GroupPlanUnitPreview,
+    apply_group_plan,
+    group_plan_as_dict,
+    preview_group_plan,
+)
 
 __all__ = [
+    "GroupPlanPreview",
+    "GroupPlanUnitPreview",
+    "CIRCULAR_SOURCE_PHASE_MESSAGE",
+    "QualificationError",
     "SlotSubject",
+    "apply_group_plan",
+    "apply_qualification",
+    "confirm_qualification_partition",
     "create_program_unit_from_subjects",
     "create_program_unit_with_empty_slots",
     "create_units_one_per_partition",
     "create_units_split_by_capacity",
     "fill_program_unit_slots",
+    "group_plan_as_dict",
     "next_program_unit_order",
     "phase_dashboard_context",
+    "preview_group_plan",
+    "mark_qualification_stale_if_needed",
+    "preview_as_dict",
+    "preview_qualification",
+    "qualification_is_stale",
+    "record_qualification_preview",
+    "validate_classificacio_not_circular_source",
 ]

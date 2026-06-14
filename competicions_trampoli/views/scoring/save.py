@@ -15,6 +15,8 @@ from ...services.scoring.scoring_subjects import (
     resolve_scoring_subject,
     serialize_subject_payload,
 )
+from ...services.scoring.phase_eligibility import phase_subject_is_scoreable
+from ...services.scoring.notes_units import effective_exercise_count
 from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.judge_presence import (
     build_runtime_inputs_from_canonical,
@@ -77,6 +79,16 @@ def scoring_save(request, pk):
     )
     if error_response is not None:
         return error_response
+    if fase is not None and not phase_subject_is_scoreable(
+        fase,
+        comp_aparell=comp_aparell,
+        subject_kind=subject["subject_kind"],
+        subject_id=subject["subject_id"],
+    ):
+        return JsonResponse(
+            {"ok": False, "error": "Aquest subjecte no esta publicat per puntuar en aquesta fase."},
+            status=403,
+        )
 
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
     team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None
@@ -110,7 +122,7 @@ def scoring_save(request, pk):
     except Exception:
         return JsonResponse({"ok": False, "error": "Error inesperat calculant."}, status=500)
 
-    max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
+    max_ex = effective_exercise_count(comp_aparell, phase=fase)
     exercici = max(1, min(max_ex, exercici))
 
     entry, _ = get_or_create_subject_entry_locked(
@@ -183,8 +195,18 @@ def scoring_save_partial(request, pk):
     )
     if error_response is not None:
         return error_response
+    if fase is not None and not phase_subject_is_scoreable(
+        fase,
+        comp_aparell=comp_aparell,
+        subject_kind=subject["subject_kind"],
+        subject_id=subject["subject_id"],
+    ):
+        return JsonResponse(
+            {"ok": False, "error": "Aquest subjecte no esta publicat per puntuar en aquesta fase."},
+            status=403,
+        )
 
-    max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
+    max_ex = effective_exercise_count(comp_aparell, phase=fase)
     exercici = max(1, min(max_ex, exercici))
 
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)

@@ -13,7 +13,6 @@
       },
       sanitizeUiState: function (uiState, context, policy) {
         return tieSanitizeUiStateForContract(uiState, context, {
-          forceExerciseSelectionScope: "per_member",
           allowExerciseConfig: true,
           allowPerAppOverrides: true,
           allowParticipants: true,
@@ -22,7 +21,6 @@
       },
       sanitizeCanonicalTie: function (canonicalTie, context, fallbackPipeline, policy) {
         return tieSanitizeCanonicalTieForContract(canonicalTie, context, fallbackPipeline, {
-          forceExerciseSelectionScope: "per_member",
           allowExerciseConfig: true,
           allowPerAppOverrides: true,
           allowParticipants: true,
@@ -31,7 +29,6 @@
       },
       validateCanonicalTie: function (canonicalTie, context, policy) {
         return tieValidateCanonicalTieForContract(canonicalTie, context, {
-          forceExerciseSelectionScope: "per_member",
           allowExerciseConfig: true,
           allowPerAppOverrides: true,
           allowParticipants: true,

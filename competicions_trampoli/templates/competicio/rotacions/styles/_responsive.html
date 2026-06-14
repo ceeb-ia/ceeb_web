@@ -1,0 +1,166 @@
+    @media (max-width: 1200px) {
+      .rotation-dashboard-shell {
+        --rotation-drawer-left-width: min(94vw, 560px);
+        --rotation-drawer-export-width: min(92vw, 420px);
+        --rotation-cell-width: 210px;
+        width: calc(100% - 12px);
+        margin-top: 6px;
+        padding: 12px;
+      }
+
+      body.planner-left-open .rotation-dashboard-main,
+      body.planner-export-open .rotation-dashboard-main {
+        padding-left: 0;
+        padding-right: 0;
+      }
+
+      .cardx-left,
+      .cardx-right {
+        top: 50%;
+        height: min(calc(100vh - 24px), 760px);
+        max-width: calc(100vw - 20px);
+      }
+
+      .cardx-left {
+        left: 10px;
+      }
+
+      .cardx-right {
+        right: 10px;
+      }
+
+      .planner-left-toggle,
+      body.planner-left-open .planner-left-toggle {
+        left: 10px;
+      }
+
+      .planner-export-toggle,
+      body.planner-export-open .planner-export-toggle {
+        right: 10px;
+      }
+
+      body.planner-left-open #planner-left-backdrop,
+      body.planner-export-open #planner-export-backdrop {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+
+      .rotation-toolbar {
+        top: 4px;
+      }
+
+      .rotation-toolbar-strip {
+        align-items: stretch;
+      }
+
+      .rotation-toolbar-brand {
+        min-width: 180px;
+      }
+
+      .rotation-toolbar-panels {
+        max-height: min(58vh, 520px);
+      }
+
+      .rotation-toolbar.rotation-toolbar-height-compact .rotation-toolbar-panels {
+        max-height: min(34vh, 320px);
+      }
+
+      .rotation-toolbar.rotation-toolbar-height-medium .rotation-toolbar-panels {
+        max-height: min(58vh, 520px);
+      }
+
+      .rotation-toolbar.rotation-toolbar-height-large .rotation-toolbar-panels {
+        max-height: min(76vh, 720px);
+      }
+
+      .rotation-toolbar-panel-grid > [data-drawer-panel="globals"],
+      .rotation-toolbar-panel-grid > [data-drawer-panel="franges"] {
+        grid-column: span 12;
+      }
+
+      .planner-sidebar-nav {
+        grid-template-columns: 1fr;
+      }
+
+      .franja-actions {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .rotation-dashboard-header {
+        gap: 12px;
+      }
+
+      .rotation-dashboard-shell {
+        --rotation-cell-width: 190px;
+        --rotation-cell-max-height: 132px;
+      }
+
+      .rotation-header-actions {
+        justify-content: flex-start;
+      }
+
+      .cardx-left,
+      .cardx-right {
+        width: calc(100vw - 20px);
+        height: calc(100vh - 20px);
+      }
+
+      .rotation-drawer-body {
+        padding: 12px;
+      }
+
+      .rotation-toolbar-brand {
+        min-width: 150px;
+      }
+
+      .planner-toolbar-nav-btn {
+        min-width: 104px;
+      }
+
+      .rotation-toolbar-panels {
+        padding: 10px;
+      }
+
+      .rotation-grid-titlebar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .rotation-grid-meta {
+        justify-content: flex-start;
+      }
+
+      .rotation-export-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .rotation-export-fields,
+      .rotation-export-logo,
+      .rotation-export-save {
+        grid-column: 1;
+      }
+
+      .planner-drawer-toggle {
+        width: 62px;
+        min-width: 62px;
+        height: 62px;
+      }
+
+      .planner-drawer-toggle-icon {
+        width: 48px;
+        height: 48px;
+      }
+
+      .planner-drawer-toggle-icon img {
+        width: 42px;
+        height: 42px;
+      }
+
+      #btnClearAll {
+        width: 100%;
+      }
+    }

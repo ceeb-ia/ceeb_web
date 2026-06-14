@@ -1,0 +1,108 @@
+  @media (max-width: 1199.98px) {
+    .phase-dashboard-shell {
+      --phase-drawer-width: min(92vw, 560px);
+      --phase-drawer-top: 82px;
+    }
+
+    .phase-dashboard-sidebar.phase-drawer {
+      right: 12px;
+      max-width: calc(100vw - 24px);
+    }
+
+    .phase-page-shell.is-drawer-open .phase-actions-toggle {
+      right: calc(var(--phase-drawer-width) + 18px);
+    }
+
+    .phase-page-shell.is-drawer-open .phase-drawer-backdrop {
+      display: block;
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .phase-dashboard-shell {
+      --phase-drawer-width: min(95vw, 640px);
+      --phase-drawer-top: 74px;
+      padding: 12px;
+    }
+
+    .phase-dashboard-body-card {
+      padding: 12px;
+    }
+
+    .phase-tree-node,
+    .phase-unit-row,
+    .phase-partition-item {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-tree-base-shell,
+    .phase-tree-node-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-setup-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-summary-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-base-summary-grid,
+    .phase-base-detail-form {
+      grid-template-columns: 1fr;
+    }
+
+    .phase-summary-card.is-wide {
+      grid-row: auto;
+    }
+
+    .phase-summary-list > div {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+
+    .phase-actions-toggle,
+    .phase-page-shell.is-drawer-open .phase-actions-toggle {
+      right: 12px;
+      top: 50%;
+    }
+
+    .phase-dashboard-sidebar.phase-drawer {
+      top: 50%;
+      right: 10px;
+      max-width: calc(100vw - 20px);
+      max-height: calc(100vh - 20px);
+    }
+
+    .phase-drawer-shell {
+      max-height: calc(100vh - 20px);
+    }
+
+    .phase-drawer-body {
+      grid-template-columns: 1fr;
+      overflow: auto;
+    }
+
+    .phase-drawer-nav {
+      border-right: 0;
+      border-bottom: 1px solid var(--phase-border);
+      padding: 12px;
+    }
+
+    .phase-drawer-panels {
+      overflow: visible;
+    }
+
+    .phase-drawer-content {
+      overflow: visible;
+      padding: 12px;
+    }
+
+    .phase-open-actions-btn {
+      width: 100%;
+    }
+  }

@@ -1,13 +1,14 @@
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET
 
 from ...models import Competicio
-from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoreEntry, TeamScoreEntry
 from ...services.shared.incremental_feeds import FeedCursor, parse_feed_cursor
 from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
+from ...services.inscripcions.admission import filter_score_entries_admeses
 from ...services.scoring.team_scoring import is_team_context_app
 from ...services.scoring.team_subject_contract import build_team_subject_registry, filter_team_subject_ids_for_serie
 from .helpers import (
@@ -164,15 +165,7 @@ def scoring_updates(request, pk):
 
     rows = []
     allowed_inputs_by_app = {}
-    qs = ScoreEntry.objects.filter(competicio=competicio, fase__isnull=True)
-    qs = qs.annotate(
-        _excluded=Exists(
-            InscripcioAparellExclusio.objects.filter(
-                inscripcio_id=OuterRef("inscripcio_id"),
-                comp_aparell_id=OuterRef("comp_aparell_id"),
-            )
-        )
-    ).filter(_excluded=False)
+    qs = filter_score_entries_admeses(ScoreEntry.objects.filter(competicio=competicio, fase__isnull=True))
 
     if comp_aparell_id:
         qs = qs.filter(comp_aparell_id=comp_aparell_id)

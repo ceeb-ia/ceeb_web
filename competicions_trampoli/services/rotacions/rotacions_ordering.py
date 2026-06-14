@@ -1,4 +1,5 @@
 import hashlib
+import re
 from typing import Dict, Iterable, List, Sequence, Tuple, TypeVar
 
 
@@ -128,6 +129,68 @@ def effective_rotate_steps(mode: str, base_step: int = 0) -> int:
     if clean_mode == ORDER_MODE_ROTATE:
         return step + 1
     return step
+
+
+def canonical_rotation_unit_item(item, default_kind: str = "g") -> str:
+    text = str(item or "").strip()
+    if not text:
+        return ""
+
+    default_kind = str(default_kind or "g").strip() or "g"
+    if text.isdigit():
+        return f"{default_kind}:{int(text)}"
+
+    match = re.match(r"^app-\d+-serie-(\d+)$", text)
+    if match:
+        return f"s:{int(match.group(1))}"
+
+    match = re.match(r"^serie-(\d+)$", text)
+    if match:
+        return f"s:{int(match.group(1))}"
+
+    return text
+
+
+def canonical_rotation_unit_key(unit_key, default_kind: str = "g") -> str:
+    text = str(unit_key or "").strip()
+    if not text:
+        return ""
+    if text.startswith("unit:"):
+        parts = [
+            canonical_rotation_unit_item(part, default_kind=default_kind)
+            for part in text[len("unit:"):].split("+")
+        ]
+        parts = [part for part in parts if part]
+        return "unit:" + "+".join(parts) if len(parts) > 1 else (parts[0] if parts else "")
+    return canonical_rotation_unit_item(text, default_kind=default_kind)
+
+
+def rotation_order_seed(*, competicio_id, franja_id, unit_key, default_kind: str = "g") -> str:
+    canonical_key = canonical_rotation_unit_key(unit_key, default_kind=default_kind)
+    return f"rotation-cell|{int(competicio_id or 0)}|{int(franja_id or 0)}|{canonical_key}"
+
+
+def order_rotation_cell_pairs(
+    pairs: Sequence[Tuple[int, T]],
+    *,
+    competicio_id,
+    franja_id,
+    unit_key,
+    mode: str,
+    rotate_step: int = 0,
+    default_kind: str = "g",
+) -> List[Tuple[int, T]]:
+    return order_pairs_for_mode(
+        pairs,
+        mode,
+        rotate_steps=effective_rotate_steps(mode, rotate_step),
+        seed_prefix=rotation_order_seed(
+            competicio_id=competicio_id,
+            franja_id=franja_id,
+            unit_key=unit_key,
+            default_kind=default_kind,
+        ),
+    )
 
 
 def rotation_unit_key(item_ids: Iterable) -> object:

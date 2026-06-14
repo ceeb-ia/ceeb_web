@@ -470,6 +470,42 @@ def _build_team_by_app_score(
     return team_by_app
 
 
+def _build_global_member_score(
+    *,
+    member_ids,
+    get_selected_rows_agg_for_ins=None,
+    resolve_global_participants=None,
+    global_member_agg_exercicis="sum",
+):
+    member_vals = []
+    for member_id in member_ids or []:
+        rows_by_app = (
+            get_selected_rows_agg_for_ins(member_id)
+            if callable(get_selected_rows_agg_for_ins)
+            else {}
+        )
+        values = []
+        for rows in (rows_by_app or {}).values():
+            values.extend(_to_float(_selected_row_value(row)) for row in (rows or []))
+        if values:
+            member_vals.append(float(_apply_simple_agg(values, global_member_agg_exercicis)))
+
+    if not member_vals:
+        return 0.0
+
+    participants_cfg, agg_participants = (
+        resolve_global_participants()
+        if callable(resolve_global_participants)
+        else ({"mode": "tots"}, "sum")
+    )
+    selected_member_vals = _pick_participants(
+        member_vals,
+        (participants_cfg or {}).get("mode"),
+        int((participants_cfg or {}).get("n") or 1),
+    )
+    return float(_apply_simple_agg(selected_member_vals, agg_participants))
+
+
 def _build_team_rows(
     grouped,
     *,
@@ -484,11 +520,15 @@ def _build_team_rows(
     agg_aparells="sum",
     exercise_selection_scope="",
     allow_main_participant_selection_step=False,
+    allow_global_participant_selection_step=False,
     desempat=None,
     get_main_selected_rows_agg_for_team=None,
     get_selected_rows_agg_for_derived_team=None,
+    get_selected_rows_agg_for_ins=None,
     resolve_agregacio_exercicis_for_app=None,
     resolve_participants_for_app=None,
+    resolve_global_participants=None,
+    global_member_agg_exercicis="sum",
     tie_key_resolver=None,
     is_pipeline_tie=None,
     pipeline_metric_map_for_crit=None,
@@ -555,21 +595,29 @@ def _build_team_rows(
                     final_pkey = base_partition_key
 
             member_ids = [int(getattr(member, "id")) for member, _resolved_equip in members]
-            team_by_app = _build_team_by_app_score(
-                equip_id=equip_id,
-                member_ids=member_ids,
-                members=members,
-                aparells=aparells,
-                use_native_team_mode=use_native_team_mode,
-                per_ins=per_ins,
-                exercise_selection_scope=exercise_selection_scope,
-                allow_main_participant_selection_step=allow_main_participant_selection_step,
-                get_main_selected_rows_agg_for_team=get_main_selected_rows_agg_for_team,
-                get_selected_rows_agg_for_derived_team=get_selected_rows_agg_for_derived_team,
-                resolve_agregacio_exercicis_for_app=resolve_agregacio_exercicis_for_app,
-                resolve_participants_for_app=resolve_participants_for_app,
-            )
-            team_score = float(_apply_simple_agg(list(team_by_app.values()), agg_aparells))
+            if allow_global_participant_selection_step and not use_native_team_mode:
+                team_score = _build_global_member_score(
+                    member_ids=member_ids,
+                    get_selected_rows_agg_for_ins=get_selected_rows_agg_for_ins,
+                    resolve_global_participants=resolve_global_participants,
+                    global_member_agg_exercicis=global_member_agg_exercicis,
+                )
+            else:
+                team_by_app = _build_team_by_app_score(
+                    equip_id=equip_id,
+                    member_ids=member_ids,
+                    members=members,
+                    aparells=aparells,
+                    use_native_team_mode=use_native_team_mode,
+                    per_ins=per_ins,
+                    exercise_selection_scope=exercise_selection_scope,
+                    allow_main_participant_selection_step=allow_main_participant_selection_step,
+                    get_main_selected_rows_agg_for_team=get_main_selected_rows_agg_for_team,
+                    get_selected_rows_agg_for_derived_team=get_selected_rows_agg_for_derived_team,
+                    resolve_agregacio_exercicis_for_app=resolve_agregacio_exercicis_for_app,
+                    resolve_participants_for_app=resolve_participants_for_app,
+                )
+                team_score = float(_apply_simple_agg(list(team_by_app.values()), agg_aparells))
             team_tie = _compose_team_tie(
                 equip_id=equip_id,
                 member_ids=member_ids,
@@ -619,11 +667,15 @@ def _build_team_grouped_and_rows(
     agg_aparells="sum",
     exercise_selection_scope="",
     allow_main_participant_selection_step=False,
+    allow_global_participant_selection_step=False,
     desempat=None,
     get_main_selected_rows_agg_for_team=None,
     get_selected_rows_agg_for_derived_team=None,
+    get_selected_rows_agg_for_ins=None,
     resolve_agregacio_exercicis_for_app=None,
     resolve_participants_for_app=None,
+    resolve_global_participants=None,
+    global_member_agg_exercicis="sum",
     tie_key_resolver=None,
     is_pipeline_tie=None,
     pipeline_metric_map_for_crit=None,
@@ -659,11 +711,15 @@ def _build_team_grouped_and_rows(
         agg_aparells=agg_aparells,
         exercise_selection_scope=exercise_selection_scope,
         allow_main_participant_selection_step=allow_main_participant_selection_step,
+        allow_global_participant_selection_step=allow_global_participant_selection_step,
         desempat=desempat,
         get_main_selected_rows_agg_for_team=get_main_selected_rows_agg_for_team,
         get_selected_rows_agg_for_derived_team=get_selected_rows_agg_for_derived_team,
+        get_selected_rows_agg_for_ins=get_selected_rows_agg_for_ins,
         resolve_agregacio_exercicis_for_app=resolve_agregacio_exercicis_for_app,
         resolve_participants_for_app=resolve_participants_for_app,
+        resolve_global_participants=resolve_global_participants,
+        global_member_agg_exercicis=global_member_agg_exercicis,
         tie_key_resolver=tie_key_resolver,
         is_pipeline_tie=is_pipeline_tie,
         pipeline_metric_map_for_crit=pipeline_metric_map_for_crit,

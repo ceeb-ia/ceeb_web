@@ -1,153 +1,807 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
+{% load static %}
 {% block title %}Configurar aparell - {{ competicio.nom }}{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <div class="card-surface">
+<style>
+  .local-apparatus-page {
+    --local-app-base: #2563eb;
+    --local-app-hover: #1d4ed8;
+    --local-app-soft: #eff6ff;
+    --local-app-border: #bfdbfe;
+    --local-app-neutral: #e2e8f0;
+    --local-app-muted: #64748b;
+    --local-app-text: #0f172a;
+    --local-app-title: #1e3a8a;
+    position: relative;
+    isolation: isolate;
+    min-height: calc(100vh - 190px);
+    padding: 28px clamp(12px, 3vw, 42px) 40px;
+    color: var(--local-app-text);
+  }
+
+  .local-apparatus-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image: url("{% static 'general/wallpapers/fases.png' %}");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    pointer-events: none;
+  }
+
+  .local-apparatus-shell {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .local-apparatus-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+    padding: 12px 4px 16px;
+    border-bottom: 1px solid var(--local-app-neutral);
+  }
+
+  .local-apparatus-title-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .local-apparatus-title-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+  }
+
+  .local-apparatus-title-logo img {
+    display: block;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+
+  .local-apparatus-title {
+    margin: 0;
+    color: var(--local-app-title);
+    font-size: clamp(1.9rem, 3vw, 2.45rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  .local-apparatus-subtitle {
+    margin-top: 10px;
+    color: var(--local-app-muted);
+    font-size: 0.9rem;
+    line-height: 1.35;
+  }
+
+  .local-apparatus-subtitle strong {
+    color: var(--local-app-text);
+    font-weight: 650;
+  }
+
+  .local-apparatus-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .local-apparatus-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--local-app-neutral);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.96);
+    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.10);
+  }
+
+  .local-apparatus-form,
+  .local-apparatus-aside {
+    min-width: 0;
+    padding: clamp(20px, 3vw, 32px);
+  }
+
+  .local-apparatus-form {
+    border-right: 1px solid var(--local-app-neutral);
+    background: rgba(255, 255, 255, 0.9);
+  }
+
+  .local-apparatus-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    color: var(--local-app-base);
+    font-size: 0.85rem;
+    font-weight: 850;
+  }
+
+  .local-apparatus-kicker img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+  }
+
+  .local-apparatus-heading {
+    margin: 0;
+    color: #071633;
+    font-size: clamp(2rem, 4vw, 2.85rem);
+    font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
+
+  .local-apparatus-copy {
+    max-width: 620px;
+    margin: 10px 0 26px;
+    color: var(--local-app-muted);
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .local-apparatus-section {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+
+  .local-apparatus-section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--local-app-neutral);
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0;
+  }
+
+  .local-apparatus-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(150px, 0.75fr);
+    gap: 16px;
+  }
+
+  .local-apparatus-field {
+    min-width: 0;
+  }
+
+  .local-apparatus-field--full {
+    grid-column: 1 / -1;
+  }
+
+  .local-apparatus-field label {
+    display: block;
+    margin-bottom: 8px;
+    color: #334155;
+    font-size: 0.88rem;
+    font-weight: 850;
+  }
+
+  .local-apparatus-field input,
+  .local-apparatus-field select {
+    width: 100%;
+    min-height: 50px;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: var(--local-app-text);
+    font-size: 0.98rem;
+    font-weight: 650;
+    box-shadow: none;
+  }
+
+  .local-apparatus-field input {
+    padding: 0 15px;
+  }
+
+  .local-apparatus-field select {
+    padding: 0 40px 0 12px;
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--local-app-base) 50%),
+      linear-gradient(135deg, var(--local-app-base) 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) 50%,
+      calc(100% - 13px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+
+  .local-apparatus-field input:focus,
+  .local-apparatus-field select:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+    outline: none;
+  }
+
+  .local-apparatus-help {
+    margin-top: 7px;
+    color: var(--local-app-muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+
+  .local-apparatus-error,
+  .local-apparatus-field .errorlist {
+    margin: 7px 0 0;
+    padding: 0;
+    color: #dc2626;
+    font-size: 0.82rem;
+    font-weight: 700;
+    list-style: none;
+  }
+
+  .local-apparatus-exercise-row {
+    display: grid;
+    grid-template-columns: minmax(104px, 0.36fr) minmax(0, 0.64fr);
+    gap: 12px;
+    align-items: start;
+  }
+
+  .local-apparatus-exercise-options {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .local-apparatus-exercise-choice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 50px;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1e3a8a;
+    font-weight: 850;
+    line-height: 1;
+  }
+
+  .local-apparatus-exercise-choice:hover,
+  .local-apparatus-exercise-choice:focus {
+    border-color: #93c5fd;
+    background: var(--local-app-soft);
+    outline: none;
+  }
+
+  .local-apparatus-exercise-choice.is-active {
+    border-color: #60a5fa;
+    background: var(--local-app-soft);
+    color: #1d4ed8;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  }
+
+  .local-apparatus-unit-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 76px;
+    padding: 14px;
+    border: 1px solid var(--local-app-border);
+    border-radius: 8px;
+    background: var(--local-app-soft);
+  }
+
+  .local-apparatus-unit-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--local-app-base);
+    font-size: 1.2rem;
+    font-weight: 900;
+  }
+
+  .local-apparatus-unit-note strong {
+    display: block;
+    color: var(--local-app-title);
+    font-size: 0.96rem;
+    font-weight: 850;
+    line-height: 1.2;
+  }
+
+  .local-apparatus-unit-note span {
+    display: block;
+    margin-top: 5px;
+    color: var(--local-app-muted);
+    font-size: 0.84rem;
+    line-height: 1.4;
+  }
+
+  .local-apparatus-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 28px;
+  }
+
+  .local-apparatus-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-weight: 800;
+    line-height: 1.15;
+    text-decoration: none;
+  }
+
+  .local-apparatus-btn:hover,
+  .local-apparatus-btn:focus {
+    color: var(--local-app-text);
+    text-decoration: none;
+    background: #f8fafc;
+  }
+
+  .local-apparatus-btn--primary {
+    border-color: var(--local-app-base);
+    background: var(--local-app-base);
+    color: #ffffff;
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
+  }
+
+  .local-apparatus-btn--primary:hover,
+  .local-apparatus-btn--primary:focus {
+    color: #ffffff;
+    background: var(--local-app-hover);
+  }
+
+  .local-apparatus-btn--warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+  }
+
+  .local-apparatus-btn.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .local-apparatus-aside {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.78), rgba(255, 255, 255, 0.9));
+  }
+
+  .local-apparatus-preview-card {
+    border: 1px solid rgba(219, 226, 239, 0.92);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.09);
+    padding: 22px;
+  }
+
+  .local-apparatus-preview-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--local-app-neutral);
+  }
+
+  .local-apparatus-preview-code {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    min-height: 64px;
+    max-width: 118px;
+    padding: 10px 12px;
+    border: 1px solid var(--local-app-border);
+    border-radius: 8px;
+    background: var(--local-app-soft);
+    color: #1d4ed8;
+    font-size: 0.95rem;
+    font-weight: 900;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .local-apparatus-preview-title {
+    min-width: 0;
+  }
+
+  .local-apparatus-preview-title strong {
+    display: block;
+    overflow-wrap: anywhere;
+    color: #071633;
+    font-size: 1.16rem;
+    font-weight: 850;
+    line-height: 1.2;
+  }
+
+  .local-apparatus-preview-title span {
+    display: block;
+    margin-top: 7px;
+    color: var(--local-app-muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .local-apparatus-preview-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .local-apparatus-preview-chip {
+    min-height: 58px;
+    padding: 10px 12px;
+    border: 1px solid var(--local-app-neutral);
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+
+  .local-apparatus-preview-chip span {
+    display: block;
+    color: var(--local-app-muted);
+    font-size: 0.74rem;
+    font-weight: 850;
+    line-height: 1.15;
+  }
+
+  .local-apparatus-preview-chip strong {
+    display: block;
+    margin-top: 6px;
+    color: var(--local-app-text);
+    font-size: 0.92rem;
+    font-weight: 850;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .local-apparatus-aside-note {
+    margin: 16px 0 0;
+    color: var(--local-app-muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+
+  @media (max-width: 980px) {
+    .local-apparatus-panel,
+    .local-apparatus-grid,
+    .local-apparatus-exercise-row {
+      grid-template-columns: 1fr;
+    }
+
+    .local-apparatus-form {
+      border-right: 0;
+      border-bottom: 1px solid var(--local-app-neutral);
+    }
+  }
+
+  @media (max-width: 560px) {
+    .local-apparatus-page {
+      padding-inline: 12px;
+    }
+
+    .local-apparatus-header,
+    .local-apparatus-header-actions,
+    .local-apparatus-actions {
+      align-items: stretch;
+      justify-content: flex-start;
+    }
+
+    .local-apparatus-header-actions .local-apparatus-btn,
+    .local-apparatus-actions .local-apparatus-btn,
+    .local-apparatus-actions button {
+      width: 100%;
+    }
+
+    .local-apparatus-actions {
+      flex-direction: column-reverse;
+    }
+
+    .local-apparatus-exercise-options,
+    .local-apparatus-preview-meta {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<section class="local-apparatus-page">
+  <div class="local-apparatus-shell">
     {% url 'trampoli_aparells_list' pk=competicio.id as competicio_aparells_url %}
 
-    <div class="d-flex justify-content-between align-items-start mb-3">
+    <header class="local-apparatus-header">
       <div>
-        <h2 class="mb-1">{% if object %}Editar{% else %}Afegir{% endif %} aparell</h2>
-        <div class="text-muted small">{{ competicio.nom }}</div>
+        <div class="local-apparatus-title-row">
+          <span class="local-apparatus-title-logo" aria-hidden="true">
+            <img src="{% static 'fases/aparells.png' %}" alt="">
+          </span>
+          <h1 class="local-apparatus-title">{% if object %}Editar aparell{% else %}Afegir aparell{% endif %}</h1>
+        </div>
+        <div class="local-apparatus-subtitle">
+          <strong>{{ competicio.nom }}</strong> - Configuracio d'aparell dins la competicio.
+        </div>
       </div>
-      <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">
+
+      <div class="local-apparatus-header-actions">
+        <a class="local-apparatus-btn" href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">
           Gestionar globals
         </a>
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">
-          Crear aparell
+        <a class="local-apparatus-btn" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">
+          Crear aparell global
         </a>
       </div>
-    </div>
+    </header>
 
-    <form method="post">
-      {% csrf_token %}
+    <div class="local-apparatus-panel">
+      <form method="post" class="local-apparatus-form">
+        {% csrf_token %}
 
-      {% if form.non_field_errors %}
-        <div class="alert alert-warning">
-          {{ form.non_field_errors }}
+        <div class="local-apparatus-kicker">
+          <img src="{% static 'dock/fases.png' %}" alt="">
+          <span>Aparell de competicio</span>
         </div>
-      {% endif %}
+        <h2 class="local-apparatus-heading">{% if object %}Actualitza la configuracio{% else %}Configura un aparell local{% endif %}</h2>
+        <p class="local-apparatus-copy">Tria l'aparell base i dona-li una identitat propia per aquesta competicio.</p>
 
-      {% if form.errors %}
-        <div class="alert alert-warning">
-          Revisa el formulari.
-          {{ form.errors|striptags }}
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        {% if form.errors %}
+          <div class="alert alert-warning">
+            Revisa el formulari.
+          </div>
+        {% endif %}
+
+        <section class="local-apparatus-section">
+          <div class="local-apparatus-section-title">Aparell base</div>
+          <div class="local-apparatus-field local-apparatus-field--full">
+            <label for="{{ form.aparell.id_for_label }}">{{ form.aparell.label }}</label>
+            {{ form.aparell }}
+            {{ form.aparell.errors }}
+          </div>
+        </section>
+
+        <section class="local-apparatus-section">
+          <div class="local-apparatus-section-title">Identitat local</div>
+          <div class="local-apparatus-grid">
+            <div class="local-apparatus-field">
+              <label for="{{ form.nom_local.id_for_label }}">{{ form.nom_local.label }}</label>
+              {{ form.nom_local }}
+              {% if form.nom_local.errors %}<div class="local-apparatus-error">{{ form.nom_local.errors|striptags }}</div>{% endif %}
+              {% if form.nom_local.help_text %}<div class="local-apparatus-help">{{ form.nom_local.help_text }}</div>{% endif %}
+            </div>
+
+            <div class="local-apparatus-field">
+              <label for="{{ form.codi_local.id_for_label }}">{{ form.codi_local.label }}</label>
+              {{ form.codi_local }}
+              {% if form.codi_local.errors %}<div class="local-apparatus-error">{{ form.codi_local.errors|striptags }}</div>{% endif %}
+              {% if form.codi_local.help_text %}<div class="local-apparatus-help">{{ form.codi_local.help_text }}</div>{% endif %}
+            </div>
+          </div>
+        </section>
+
+        <section class="local-apparatus-section">
+          <div class="local-apparatus-section-title">Format de competicio</div>
+          <div class="local-apparatus-exercise-row">
+            <div class="local-apparatus-field">
+              <label for="{{ form.nombre_exercicis.id_for_label }}">{{ form.nombre_exercicis.label }}</label>
+              {{ form.nombre_exercicis }}
+              {% if form.nombre_exercicis.errors %}<div class="local-apparatus-error">{{ form.nombre_exercicis.errors|striptags }}</div>{% endif %}
+            </div>
+
+            <div>
+              <label class="sr-only" id="exercise-choice-label">Nombre d'exercicis rapid</label>
+              <div class="local-apparatus-exercise-options" aria-labelledby="exercise-choice-label">
+                <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="1">1</button>
+                <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="2">2</button>
+                <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="3">3</button>
+                <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="4">4</button>
+                <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="5">5</button>
+              </div>
+              <div class="local-apparatus-help">Passades o exercicis que es puntuaran en aquest aparell.</div>
+            </div>
+          </div>
+
+          <div class="local-apparatus-unit-note">
+            <span class="local-apparatus-unit-icon" id="competition-unit-icon" aria-hidden="true">I</span>
+            <div>
+              <strong id="competition-unit-label">Selecciona un aparell</strong>
+              <span id="competition-unit-help"></span>
+            </div>
+          </div>
+        </section>
+
+        <div class="local-apparatus-actions">
+          <a class="local-apparatus-btn" href="{{ request.GET.next|default:competicio_aparells_url }}">Cancel-lar</a>
+          {% if object and object.pk %}
+          <a
+            id="puntuacio-link"
+            class="local-apparatus-btn local-apparatus-btn--warning"
+            href="{% url 'scoring_schema_update' competicio.id object.id %}?next={{ request.get_full_path|urlencode }}"
+          >Puntuacio</a>
+          {% else %}
+          <span
+            id="puntuacio-link"
+            class="local-apparatus-btn local-apparatus-btn--warning is-disabled"
+            title="Desa primer l'aparell dins la competicio"
+          >Puntuacio</span>
+          {% endif %}
+          <button class="local-apparatus-btn local-apparatus-btn--primary" type="submit">Desar aparell</button>
         </div>
-      {% endif %}
+      </form>
 
-      <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Dades basiques</div>
-        <div class="row g-3">
-          <div class="col-12 col-md-8">
-            <div class="d-flex justify-content-between align-items-center">
-              <label class="form-label mb-0" for="{{ form.aparell.id_for_label }}">Aparell</label>
+      <aside class="local-apparatus-aside" aria-label="Previsualitzacio de l'aparell de competicio">
+        <div class="local-apparatus-preview-card">
+          <div class="local-apparatus-preview-header">
+            <span class="local-apparatus-preview-code" id="localAppPreviewCode">CODI</span>
+            <div class="local-apparatus-preview-title">
+              <strong id="localAppPreviewName">Nom de l'aparell</strong>
+              <span id="localAppPreviewBase">Aparell base pendent</span>
             </div>
+          </div>
 
-            <div class="d-flex gap-2 align-items-start">
-              <div class="flex-grow-1">
-                {{ form.aparell }}
-                {{ form.aparell.errors }}
-              </div>
-              {% if object and object.pk %}
-              <a
-                id="puntuacio-link"
-                class="btn btn-outline-secondary"
-                href="{% url 'scoring_schema_update' competicio.id object.id %}?next={{ request.get_full_path|urlencode }}"
-              >Puntuacio</a>
-              {% else %}
-              <button
-                id="puntuacio-link"
-                type="button"
-                class="btn btn-outline-secondary"
-                disabled
-                title="Desa primer l'aparell dins la competicio"
-              >Puntuacio</button>
-              {% endif %}
+          <div class="local-apparatus-preview-meta">
+            <div class="local-apparatus-preview-chip">
+              <span>Unitat</span>
+              <strong id="localAppPreviewUnit">-</strong>
             </div>
-            <div class="row g-3 mt-1">
-              <div class="col-12 col-md-7">
-                <label class="form-label mb-0" for="{{ form.nom_local.id_for_label }}">Nom local</label>
-                <span class="text-muted small d-block">{{ form.nom_local.help_text }}</span>
-                {{ form.nom_local }}
-                {{ form.nom_local.errors }}
-              </div>
-              <div class="col-12 col-md-5">
-                <label class="form-label mb-0" for="{{ form.codi_local.id_for_label }}">Codi local</label>
-                <span class="text-muted small d-block">{{ form.codi_local.help_text }}</span>
-                {{ form.codi_local }}
-                {{ form.codi_local.errors }}
-              </div>
+            <div class="local-apparatus-preview-chip">
+              <span>Exercicis</span>
+              <strong id="localAppPreviewExercises">1</strong>
             </div>
-            <div class="d-flex justify-content-between align-items-center">
-              <label class="form-label mb-0" for="{{ form.nombre_exercicis.id_for_label }}">Nombre d'Exercicis</label>
+            <div class="local-apparatus-preview-chip">
+              <span>Competicio</span>
+              <strong>{{ competicio.nom }}</strong>
             </div>
-            <span class="text-muted small">Selecciona el nombre d'exercicis o passades que els esportistes realitzaran en aquest aparell</span>
-            <div class="d-flex gap-2 align-items-start">
-              <div class="flex-grow-1">
-                {{ form.nombre_exercicis }}
-                {{ form.nombre_exercicis.errors }}
-              </div>
+            <div class="local-apparatus-preview-chip">
+              <span>Flux</span>
+              <strong>{% if object %}Configurat{% else %}Nou{% endif %}</strong>
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Unitat competitiva</div>
-        <div class="small text-muted mb-2">
-          El tipus de l'aparell es global i es defineix a la fitxa de l'aparell. Aquesta configuracio de competicio nomes decideix l'ús de l'aparell.
-        </div>
-        <div class="alert alert-light border mb-0">
-          <strong id="competition-unit-label">Selecciona un aparell</strong>
-          <div class="small text-muted mt-1" id="competition-unit-help"></div>
-        </div>
-      </div>
-
-      <div class="d-flex flex-wrap gap-2">
-        <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary"
-           href="{{ request.GET.next|default:competicio_aparells_url }}">Cancelar</a>
-      </div>
-    </form>
-
+        <p class="local-apparatus-aside-note">Despres podras ajustar puntuacio, participacio i fases des de les accions de l'aparell.</p>
+      </aside>
+    </div>
   </div>
-</div>
+</section>
+{% endblock %}
 
+{% block extra_scripts %}
 <script>
   (function () {
-    var select = document.getElementById('{{ form.aparell.id_for_label }}');
+    var select = document.getElementById("{{ form.aparell.id_for_label }}");
+    var nameInput = document.getElementById("{{ form.nom_local.id_for_label }}");
+    var codeInput = document.getElementById("{{ form.codi_local.id_for_label }}");
+    var exerciseInput = document.getElementById("{{ form.nombre_exercicis.id_for_label }}");
     if (!select) return;
-    var unitLabel = document.getElementById('competition-unit-label');
-    var unitHelp = document.getElementById('competition-unit-help');
-    var unitByAparell = {
+
+    var unitLabel = document.getElementById("competition-unit-label");
+    var unitHelp = document.getElementById("competition-unit-help");
+    var unitIcon = document.getElementById("competition-unit-icon");
+    var previewCode = document.getElementById("localAppPreviewCode");
+    var previewName = document.getElementById("localAppPreviewName");
+    var previewBase = document.getElementById("localAppPreviewBase");
+    var previewUnit = document.getElementById("localAppPreviewUnit");
+    var previewExercises = document.getElementById("localAppPreviewExercises");
+    var exerciseButtons = Array.prototype.slice.call(document.querySelectorAll("[data-exercise-choice]"));
+
+    var apparatusById = {
       {% for ap in form.aparell.field.queryset %}
       "{{ ap.id }}": {
-        "unit": "{{ ap.competition_unit|default:'individual' }}",
-        "label": "{% if ap.is_team_competition_unit %}Equip{% else %}Individual{% endif %}"
+        "unit": "{{ ap.competition_unit|default:'individual'|escapejs }}",
+        "unitLabel": "{% if ap.is_team_competition_unit %}Equip{% else %}Individual{% endif %}",
+        "name": "{{ ap.nom|escapejs }}",
+        "code": "{{ ap.codi|escapejs }}"
       },
       {% endfor %}
     };
 
-    function updateCompetitionUnit() {
-      if (!unitLabel || !unitHelp) return;
-      var info = unitByAparell[select.value];
-      if (!info) {
-        unitLabel.textContent = 'Selecciona un aparell';
-        unitHelp.textContent = '';
-        return;
-      }
-      if (info.unit === 'team') {
-        unitLabel.textContent = 'Aparell global d\'equip';
-        unitHelp.textContent = "Els contexts que competeixen en aquest aparell es configuren des del workspace d'equips de la competicio.";
-        return;
-      }
-      unitLabel.textContent = 'Aparell global individual';
-      unitHelp.textContent = "Aquest aparell competeix per inscripcions. Despres el pots usar en classificacions individuals o per equips.";
+    function selectedApp() {
+      return apparatusById[select.value] || null;
     }
-    select.addEventListener('change', updateCompetitionUnit);
-    updateCompetitionUnit();
+
+    function cleanExerciseValue() {
+      var value = parseInt(exerciseInput && exerciseInput.value ? exerciseInput.value : "1", 10);
+      if (isNaN(value)) value = 1;
+      return Math.max(1, Math.min(5, value));
+    }
+
+    function updateExerciseButtons(value) {
+      exerciseButtons.forEach(function (button) {
+        button.classList.toggle("is-active", button.getAttribute("data-exercise-choice") === String(value));
+      });
+    }
+
+    function fallbackName(info) {
+      return info && info.name ? info.name : "Nom de l'aparell";
+    }
+
+    function fallbackCode(info) {
+      return info && info.code ? info.code : "CODI";
+    }
+
+    function updateCompetitionUnit() {
+      var info = selectedApp();
+      if (!unitLabel || !unitHelp || !unitIcon) return;
+      if (!info) {
+        unitLabel.textContent = "Selecciona un aparell";
+        unitHelp.textContent = "";
+        unitIcon.textContent = "I";
+        return;
+      }
+      if (info.unit === "team") {
+        unitLabel.textContent = "Aparell global d'equip";
+        unitHelp.textContent = "Els contexts que competeixen en aquest aparell es configuren des del workspace d'equips de la competicio.";
+        unitIcon.textContent = "E";
+        return;
+      }
+      unitLabel.textContent = "Aparell global individual";
+      unitHelp.textContent = "Aquest aparell competeix per inscripcions i es pot usar en classificacions individuals o per equips.";
+      unitIcon.textContent = "I";
+    }
+
+    function updatePreview() {
+      var info = selectedApp();
+      var exerciseCount = cleanExerciseValue();
+      var localName = nameInput && nameInput.value ? nameInput.value.trim() : "";
+      var localCode = codeInput && codeInput.value ? codeInput.value.trim().toUpperCase() : "";
+
+      if (previewName) previewName.textContent = localName || fallbackName(info);
+      if (previewCode) previewCode.textContent = localCode || fallbackCode(info);
+      if (previewBase) previewBase.textContent = info ? ("Base: " + info.name) : "Aparell base pendent";
+      if (previewUnit) previewUnit.textContent = info ? info.unitLabel : "-";
+      if (previewExercises) previewExercises.textContent = String(exerciseCount);
+      updateExerciseButtons(exerciseCount);
+      updateCompetitionUnit();
+    }
+
+    exerciseButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (!exerciseInput) return;
+        exerciseInput.value = button.getAttribute("data-exercise-choice") || "1";
+        updatePreview();
+      });
+    });
+
+    [select, nameInput, codeInput, exerciseInput].forEach(function (element) {
+      if (!element) return;
+      element.addEventListener("input", updatePreview);
+      element.addEventListener("change", updatePreview);
+    });
+
+    updatePreview();
   })();
 </script>
 {% endblock %}

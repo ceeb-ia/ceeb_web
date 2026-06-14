@@ -147,6 +147,10 @@
   }
 
   async function postSupport(url, body){
+    const outbound = Object.assign({}, body || {});
+    if(typeof JUDGE_ASSIGNMENT_ID !== "undefined" && String(JUDGE_ASSIGNMENT_ID || "").trim()){
+      outbound.assignment_id = String(JUDGE_ASSIGNMENT_ID || "").trim();
+    }
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -154,7 +158,7 @@
         "Accept": "application/json",
         "X-CSRFToken": CSRF_TOKEN,
       },
-      body: JSON.stringify(body || {}),
+      body: JSON.stringify(outbound),
     });
     const data = await res.json().catch(() => ({}));
     if(!res.ok || !data.ok){

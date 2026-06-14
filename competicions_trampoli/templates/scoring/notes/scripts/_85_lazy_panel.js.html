@@ -203,7 +203,7 @@
       schemaLink.classList.remove("d-none");
     }
     if(judgesLink && appId){
-      judgesLink.href = `${NOTES_JUDGES_URL}?comp_aparell=${encodeURIComponent(appId)}`;
+      judgesLink.href = NOTES_JUDGES_URL;
       judgesLink.classList.remove("d-none");
     }
   }
@@ -908,7 +908,7 @@
         ].filter(Boolean).join(" - "),
       }),
     ]));
-    const openSingle = el("button", {type:"button", class:"btn btn-sm btn-outline-secondary", text:"Obrir sol"});
+    const openSingle = el("button", {type:"button", class:"btn btn-sm notes-btn-theme-outline", text:"Obrir sol"});
     openSingle.addEventListener("click", () => openNotesContext(contextForUnitExercise(unit, context.exercici || 1)));
     head.appendChild(openSingle);
     block.appendChild(head);
@@ -989,7 +989,7 @@
     const footer = el("div", {class:"d-flex flex-wrap align-items-center mb-3", style:"gap:8px;"});
     footer.appendChild(el("span", {class:"notes-status", text:`Mostrant ${nextLimit} de ${contexts.length} contextos.`}));
     if(nextLimit < contexts.length){
-      const more = el("button", {type:"button", class:"btn btn-sm btn-outline-primary", text:`Carrega ${Math.min(NOTES_EXPAND_PAGE_SIZE, contexts.length - nextLimit)} mes`});
+      const more = el("button", {type:"button", class:"btn btn-sm notes-btn-theme-outline", text:`Carrega ${Math.min(NOTES_EXPAND_PAGE_SIZE, contexts.length - nextLimit)} mes`});
       more.addEventListener("click", () => expandFilteredContexts(nextLimit + NOTES_EXPAND_PAGE_SIZE));
       footer.appendChild(more);
     }
@@ -1056,7 +1056,7 @@
       const pageSize = Math.min(NOTES_EXPAND_PAGE_SIZE, expansionContexts.length);
       const expandBtn = el("button", {
         type:"button",
-        class:"btn btn-sm btn-primary",
+        class:"btn btn-sm notes-btn-theme-solid",
         text: expansionContexts.length > NOTES_EXPAND_PAGE_SIZE
           ? `Expandir ${pageSize} primers`
           : "Expandir resultats",
@@ -1090,7 +1090,7 @@
           textWrap.appendChild(el("div", {class:"notes-warning-item-meta", text:`${unit.count || 0} subjectes`}));
           const actions = el("div", {class:"d-flex flex-wrap justify-content-end", style:"gap:6px;"});
           filteredExerciseValuesForUnit(unit).forEach((exercise) => {
-            const btn = el("button", {type:"button", class:"btn btn-sm btn-outline-primary", text:`Obrir ex. ${exercise}`});
+            const btn = el("button", {type:"button", class:"btn btn-sm notes-btn-theme-outline", text:`Obrir ex. ${exercise}`});
             btn.addEventListener("click", () => openNotesContext(contextForUnitExercise(unit, exercise), {subject: NOTES_STATE.focusedSubject || null}));
             actions.appendChild(btn);
           });
@@ -1218,7 +1218,7 @@
         wrapper.appendChild(filterBtn);
       }
       contexts.forEach((context) => {
-        const btn = el("button", {type:"button", class:"btn btn-sm btn-outline-primary mt-1 mr-1", text:context.label || "Obrir context"});
+        const btn = el("button", {type:"button", class:"btn btn-sm notes-btn-theme-outline mt-1 mr-1", text:context.label || "Obrir context"});
         btn.addEventListener("click", async () => {
           resultsEl.classList.remove("show");
           await openNotesContext({

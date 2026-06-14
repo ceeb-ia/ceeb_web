@@ -19,6 +19,7 @@ from ...services.shared.incremental_feeds import (
     build_single_model_feed_meta,
     parse_feed_cursor,
 )
+from ...services.avatar.notes.suport import AVATAR_MESSAGES as JUDGE_SUPPORT_AVATAR_MESSAGES
 
 
 JUDGE_MESSAGE_MAX_LENGTH = 500
@@ -84,7 +85,67 @@ def _preview_for_message(message_type, text):
     return "Nou missatge"
 
 
+def _app_label(comp_aparell):
+    if comp_aparell is None:
+        return ""
+    return getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or ""
+
+
+def _phase_label(fase):
+    return getattr(fase, "nom", "") or "Preliminar"
+
+
+def _token_assignment_context(token_obj):
+    prefetched = getattr(token_obj, "_prefetched_objects_cache", {}).get("portal_assignments")
+    if prefetched is not None:
+        assignments = sorted(
+            (item for item in prefetched if item.is_active),
+            key=lambda item: (item.ordre, item.id),
+        )
+    else:
+        assignments = list(
+            token_obj.portal_assignments
+            .filter(is_active=True)
+            .select_related("comp_aparell__aparell", "fase")
+            .order_by("ordre", "id")
+        )
+    if not assignments:
+        label = _app_label(token_obj.comp_aparell)
+        return {
+            "count": 1 if label else 0,
+            "labels": [label] if label else [],
+            "summary": label,
+            "is_legacy": True,
+        }
+
+    labels = []
+    for assignment in assignments:
+        app = _app_label(assignment.comp_aparell)
+        phase = _phase_label(assignment.fase)
+        title = (assignment.label or "").strip()
+        if title and app:
+            labels.append(f"{title} - {app}")
+        elif title:
+            labels.append(title)
+        elif app:
+            labels.append(f"{app} - {phase}")
+        else:
+            labels.append(phase)
+
+    preview = ", ".join(labels[:2])
+    if len(labels) > 2:
+        preview = f"{preview} +{len(labels) - 2}"
+    return {
+        "count": len(labels),
+        "labels": labels,
+        "summary": preview,
+        "is_legacy": False,
+    }
+
+
 def _conversation_payload(conv):
+    assignment_context = _token_assignment_context(conv.judge_token)
+    legacy_app_label = _app_label(conv.comp_aparell)
     return {
         "id": str(conv.id),
         "status": conv.status,
@@ -99,7 +160,12 @@ def _conversation_payload(conv):
         "token_id": str(conv.judge_token_id),
         "token_label": conv.judge_token.label or "",
         "comp_aparell_id": conv.comp_aparell_id,
-        "comp_aparell_label": getattr(conv.comp_aparell, "display_nom", "") or getattr(conv.comp_aparell.aparell, "nom", "") or "",
+        "comp_aparell_label": assignment_context["summary"] or legacy_app_label,
+        "legacy_comp_aparell_label": legacy_app_label,
+        "assignment_summary": assignment_context["summary"],
+        "assignment_labels": assignment_context["labels"],
+        "assignments_count": assignment_context["count"],
+        "assignment_context_is_legacy": assignment_context["is_legacy"],
     }
 
 
@@ -136,6 +202,41 @@ def _get_or_create_conversation_for_token(token_obj):
         dirty_fields.append("updated_at")
         conv.save(update_fields=dirty_fields)
     return conv
+
+
+def _message_context_payload(token_obj, payload=None):
+    payload = payload if isinstance(payload, dict) else {}
+    context = {
+        "device_token_id": str(token_obj.id),
+        "token_label": token_obj.label or "",
+    }
+    raw_assignment_id = str(payload.get("assignment_id") or "").strip()
+    if not raw_assignment_id:
+        return context
+    try:
+        assignment_id = int(raw_assignment_id)
+    except (TypeError, ValueError):
+        return context
+    assignment = (
+        token_obj.portal_assignments
+        .filter(pk=assignment_id, is_active=True)
+        .select_related("comp_aparell__aparell", "fase")
+        .first()
+    )
+    if assignment is None:
+        return context
+    app = _app_label(assignment.comp_aparell)
+    phase = _phase_label(assignment.fase)
+    context.update(
+        {
+            "assignment_id": assignment.id,
+            "assignment_label": assignment.label or "",
+            "assignment_app_label": app,
+            "assignment_phase_label": phase,
+            "assignment_context": " - ".join(part for part in (assignment.label or "", app, phase) if part),
+        }
+    )
+    return context
 
 
 def _support_cooldown_remaining(conversation, now_dt):
@@ -300,7 +401,10 @@ def judge_request_support(request, token):
             sender_type=JudgeConversationMessage.SenderType.JUDGE,
             message_type=message_type,
             text=text,
-            payload={"quick": message_type == JudgeConversationMessage.MessageType.SUPPORT_REQUEST_QUICK},
+            payload={
+                **_message_context_payload(token_obj, payload),
+                "quick": message_type == JudgeConversationMessage.MessageType.SUPPORT_REQUEST_QUICK,
+            },
         )
 
     return JsonResponse(
@@ -342,6 +446,7 @@ def judge_send_message(request, token):
             sender_type=JudgeConversationMessage.SenderType.JUDGE,
             message_type=JudgeConversationMessage.MessageType.REPLY,
             text=text,
+            payload=_message_context_payload(token_obj, payload),
         )
 
     return JsonResponse(
@@ -399,21 +504,26 @@ def judge_messages_hub(request, competicio_id):
         JudgeDeviceToken.objects
         .filter(competicio=competicio, is_active=True, revoked_at__isnull=True)
         .select_related("comp_aparell__aparell")
+        .prefetch_related("portal_assignments__comp_aparell__aparell", "portal_assignments__fase")
         .order_by("comp_aparell__ordre", "label", "created_at")
     )
-    tokens = [
-        {
-            "id": str(t.id),
-            "label": t.label or "",
-            "comp_aparell": {
-                "id": t.comp_aparell_id,
-                "aparell": {
-                    "nom": getattr(t.comp_aparell, "display_nom", "") or getattr(t.comp_aparell.aparell, "nom", "") or "",
+    tokens = []
+    for token_obj in token_rows:
+        assignment_context = _token_assignment_context(token_obj)
+        tokens.append(
+            {
+                "id": str(token_obj.id),
+                "label": token_obj.label or "",
+                "assignment_summary": assignment_context["summary"],
+                "assignment_labels": assignment_context["labels"],
+                "comp_aparell": {
+                    "id": token_obj.comp_aparell_id,
+                    "aparell": {
+                        "nom": _app_label(token_obj.comp_aparell),
+                    },
                 },
-            },
-        }
-        for t in token_rows
-    ]
+            }
+        )
     return render(
         request,
         "judge/judge_messages_hub.html",
@@ -421,6 +531,8 @@ def judge_messages_hub(request, competicio_id):
             "competicio": competicio,
             "tokens": tokens,
             "updates_cursor_init": timezone.now().isoformat(),
+            "avatar_messages": JUDGE_SUPPORT_AVATAR_MESSAGES,
+            "avatar_initial_topic": "judge_support_overview",
         },
     )
 
@@ -438,6 +550,7 @@ def judge_messages_updates_org(request, competicio_id):
         JudgeConversation.objects
         .filter(competicio=competicio)
         .select_related("judge_token", "comp_aparell__aparell")
+        .prefetch_related("judge_token__portal_assignments__comp_aparell__aparell", "judge_token__portal_assignments__fase")
     )
     if conversation_cursor.dt is None:
         conversations = list(_conversation_ordering_queryset(conv_qs)[:ORG_CONVERSATIONS_LIMIT])
@@ -461,7 +574,9 @@ def judge_messages_updates_org(request, competicio_id):
     selected_conversation = None
     if conversation_id:
         selected_conversation = get_object_or_404(
-            JudgeConversation.objects.select_related("judge_token", "comp_aparell__aparell"),
+            JudgeConversation.objects
+            .select_related("judge_token", "comp_aparell__aparell")
+            .prefetch_related("judge_token__portal_assignments__comp_aparell__aparell", "judge_token__portal_assignments__fase"),
             pk=conversation_id,
             competicio=competicio,
         )

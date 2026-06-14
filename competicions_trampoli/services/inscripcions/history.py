@@ -1,9 +1,10 @@
 from datetime import datetime
 
 from django.db import transaction
+from django.utils.dateparse import parse_datetime
 
 from ...models import Equip, EquipContext, GrupCompeticio, Inscripcio, InscripcioEquipAssignacio
-from ...models.competicio import InscripcioAparellExclusio
+from ...models.competicio import InscripcioAparellExclusio, InscripcioBaixa
 from ..shared.birth_year_ranges import clear_inscripcions_derived_group_config_cache
 from ..shared.competition_groups import sync_competicio_group_names_view
 from ..teams.equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, get_equip_context
@@ -94,6 +95,24 @@ def capture_inscripcions_history_snapshot(request, competicio):
         .order_by("inscripcio_id", "comp_aparell_id")
         .values("inscripcio_id", "comp_aparell_id", "motiu")
     )
+    baixes_rows = list(
+        InscripcioBaixa.objects
+        .filter(competicio=competicio)
+        .order_by("inscripcio_id", "comp_aparell_id", "id")
+        .values(
+            "inscripcio_id",
+            "comp_aparell_id",
+            "motiu",
+            "notes",
+            "marcada_per_id",
+            "anul_lada_at",
+            "anul_lada_per_id",
+        )
+    )
+    for row in baixes_rows:
+        anul_lada_at = row.get("anul_lada_at")
+        if hasattr(anul_lada_at, "isoformat"):
+            row["anul_lada_at"] = anul_lada_at.isoformat()
     equips_rows = list(
         Equip.objects
         .filter(competicio=competicio)
@@ -120,6 +139,7 @@ def capture_inscripcions_history_snapshot(request, competicio):
             "inscripcions_view": json_clone(competicio.inscripcions_view or {}),
         },
         "aparells_exclusions": json_clone(exclusions_rows),
+        "baixes": json_clone(baixes_rows),
         "equips_state": json_clone(equips_rows),
         "equip_contexts_state": json_clone(equip_context_rows),
         "equip_assignacions_state": json_clone(equip_assignacio_rows),
@@ -428,6 +448,44 @@ def _apply_aparells_exclusions_snapshot(competicio, exclusions):
         InscripcioAparellExclusio.objects.bulk_create(normalized, batch_size=500)
 
 
+def _apply_baixes_snapshot(competicio, baixes):
+    rows = baixes if isinstance(baixes, list) else []
+    normalized = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            ins_id = int(row.get("inscripcio_id"))
+        except Exception:
+            continue
+        raw_app_id = row.get("comp_aparell_id")
+        app_id = None
+        if raw_app_id not in (None, ""):
+            try:
+                app_id = int(raw_app_id)
+            except Exception:
+                continue
+        anul_lada_at = row.get("anul_lada_at") or None
+        if isinstance(anul_lada_at, str):
+            anul_lada_at = parse_datetime(anul_lada_at)
+        normalized.append(
+            InscripcioBaixa(
+                competicio=competicio,
+                inscripcio_id=ins_id,
+                comp_aparell_id=app_id,
+                motiu=str(row.get("motiu") or ""),
+                notes=str(row.get("notes") or ""),
+                marcada_per_id=row.get("marcada_per_id") or None,
+                anul_lada_at=anul_lada_at,
+                anul_lada_per_id=row.get("anul_lada_per_id") or None,
+            )
+        )
+
+    InscripcioBaixa.objects.filter(competicio=competicio).delete()
+    if normalized:
+        InscripcioBaixa.objects.bulk_create(normalized, batch_size=500)
+
+
 def _apply_competicio_fields_snapshot(competicio, competicio_fields):
     fields = competicio_fields if isinstance(competicio_fields, dict) else {}
     tab_merges = fields.get("tab_merges")
@@ -456,6 +514,7 @@ def apply_inscripcions_history_snapshot(request, competicio, snapshot):
         _apply_equip_assignacions_state_snapshot(competicio, snap.get("equip_assignacions_state"))
         _apply_legacy_base_assignacions_from_snapshot(competicio, snap.get("inscripcions_fields"))
         _apply_aparells_exclusions_snapshot(competicio, snap.get("aparells_exclusions"))
+        _apply_baixes_snapshot(competicio, snap.get("baixes"))
         _apply_competicio_fields_snapshot(competicio, snap.get("competicio_fields"))
 
     sync_competicio_group_names_view(competicio)

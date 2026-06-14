@@ -194,8 +194,7 @@
     const appScopeValue = String(row?.querySelector('[data-k="app_scope"]')?.value || "hereta").trim();
     const exScopeValue = String(row?.querySelector('[data-k="ex_scope"]')?.value || "hereta").trim();
     const exSelModeValue = tieNormalizeModeSeleccioExercicisValue(row?.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
-    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScopeValue || EXERCISE_SELECTION_SCOPE_INHERIT);
-    const usesPerAppOverride = !fixedTeamPool && exSelModeValue === "per_aparell_override";
+    const usesPerAppOverride = exSelModeValue === "per_aparell_override";
     const exModeValue = String(row?.querySelector('[data-k="ex_mode"]')?.value || "hereta").trim().toLowerCase();
     const exBestN = Math.max(1, Number(row?.querySelector('[data-k="ex_best_n"]')?.value || 1));
     const exIndex = Math.max(1, Number(row?.querySelector('[data-k="ex_index"]')?.value || 1));
@@ -241,7 +240,7 @@
       agregacio_participants: participants ? tieNormalizeAggValue(participants.agregacio || participants.agregacio_participants || "sum", "sum") : null,
       _builder_ui: tieCloneJson(builderUi, {}),
     };
-    if (!fixedTeamPool && !usesPerAppOverride) {
+    if (!usesPerAppOverride) {
       state.scope.exercicis = { mode: exModeValue };
       if (exModeValue === "millor_n" || exModeValue === "pitjor_n") state.scope.exercicis.best_n = exBestN;
       if (exModeValue === "index") state.scope.exercicis.index = exIndex;
@@ -412,16 +411,8 @@
       delete state.scope.participants;
       delete state.participants;
       delete state.agregacio_participants;
-      delete state.scope.exercicis;
-      delete state.mode_seleccio_exercicis;
-      delete state.exercicis_per_aparell;
-      delete state.agregacio_exercicis_per_aparell;
       delete state._builder_ui.participants_ui;
       delete state._builder_ui.agregacio_participants_ui;
-      delete state._builder_ui.scope_exercicis_ui;
-      delete state._builder_ui.mode_seleccio_exercicis_ui;
-      delete state._builder_ui.exercicis_per_aparell_ui;
-      delete state._builder_ui.agregacio_exercicis_per_aparell_ui;
     }
 
     return state;
@@ -469,7 +460,7 @@
     pipeline.mode_resultat_aparells = "score";
     pipeline.ordre = String(state.ordre || pipeline.ordre || "desc").trim().toLowerCase() === "asc" ? "asc" : "desc";
 
-    if (opts.allowExerciseConfig !== false && pipeline.exercise_selection_scope !== "team_pool") {
+    if (opts.allowExerciseConfig !== false) {
       pipeline.mode_seleccio_exercicis = tieNormalizeModeSeleccioExercicisValue(
         state.mode_seleccio_exercicis || pipeline.mode_seleccio_exercicis || "per_aparell_global"
       );

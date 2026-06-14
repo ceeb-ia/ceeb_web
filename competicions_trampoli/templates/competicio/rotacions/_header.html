@@ -1,0 +1,16 @@
+{% load static %}
+
+<header class="rotation-dashboard-header" data-avatar-anchor="rotations-header">
+  <div class="rotation-dashboard-title">
+    <div class="rotation-dashboard-title-row">
+      <span class="rotation-dashboard-title-logo" aria-hidden="true">
+        <img src="{% static 'dock/rotacions.png' %}" alt="">
+      </span>
+      <h1>Rotacions</h1>
+      <button class="btn btn-sm btn-outline-secondary rotation-context-help" type="button" data-avatar-topic="competition_rotations" aria-label="Ajuda sobre rotacions" title="Ajuda sobre rotacions">?</button>
+    </div>
+    <div class="text-muted small rotation-dashboard-subtitle">
+      <span class="rotation-dashboard-context-main">{{ competicio.nom }}</span> - arrossega grups a la graella i guarda el programa.
+    </div>
+  </div>
+</header>

@@ -1,0 +1,26 @@
+<section class="phase-panel" data-avatar-anchor="phase-status-form">
+  <div class="phase-panel-title">
+    <h5>Estat de la fase</h5>
+    <span class="badge badge-light border">{{ selected_phase.ui_user_status_label }}</span>
+  </div>
+  <div class="phase-panel-note mb-2">
+    Controla el flux competitiu visible. La resta son avisos calculats pel sistema.
+  </div>
+  <form method="post" class="phase-status-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_phase_status">
+    <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+    <div class="mb-2">
+      <label for="phase-status-select" class="form-label">Estat</label>
+      <select class="form-select" id="phase-status-select" name="estat">
+        {% for value,label in phase_status_choices %}
+          <option value="{{ value }}" {% if selected_phase.ui_status_form_value == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-sm btn-outline-primary" type="submit">Desar estat</button>
+  </form>
+</section>
+
+
+{% include "competicio/fases/drawer/_delete_phase.html" %}

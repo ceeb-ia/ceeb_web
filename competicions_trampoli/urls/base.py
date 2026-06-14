@@ -21,6 +21,7 @@ from ..views.competition.competicio import (
     CompeticioDeleteView,
     CompeticioHomeView,
     CompeticioListView,
+    CompeticioUpdateView,
     notes_home_router,
 )
 from ..views.scoring.schema import ScoringSchemaUpdate
@@ -118,6 +119,11 @@ urlpatterns = [
     ),
     path("competicions/created/", app_authenticated_view(CompeticioListView.as_view(), "competicions"), name="created"),
     path("competicions/", app_authenticated_view(CompeticioHomeView.as_view(), "competicions"), name="competicions_home"),
+    path(
+        "competicions/<int:pk>/editar/",
+        competition_view(CompeticioUpdateView.as_view(), "competition.edit"),
+        name="competicio_update",
+    ),
     path(
         "competicions/<int:pk>/delete/",
         competition_view(CompeticioDeleteView.as_view(), "competition.delete"),

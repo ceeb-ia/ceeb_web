@@ -1,3 +1,27 @@
+        <div class="judge-view-mode judge-view-mode--center mb-3">
+          <div class="judge-view-mode-title">Visualitzacio</div>
+          <div class="btn-group btn-group-sm judge-view-mode-toggle" role="group" aria-label="Canviar visualitzacio del portal">
+            {% for value, label in portal_display_mode_options %}
+              <input
+                class="btn-check d-none"
+                type="radio"
+                name="portal_view_mode"
+                id="portalViewMode{{ value }}"
+                value="{{ value }}"
+                {% if value == portal_display_mode %}checked{% endif %}
+                data-portal-view-mode
+              >
+              <label
+                class="btn btn-outline-primary{% if value == portal_display_mode %} active{% endif %}"
+                for="portalViewMode{{ value }}"
+                aria-pressed="{% if value == portal_display_mode %}true{% else %}false{% endif %}"
+              >
+                {{ label }}
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
         {% if group_blocks or out_of_program_group_blocks %}
           <div class="judge-group-switcher mb-3" id="groupSwitcher">
             <button
@@ -10,6 +34,7 @@
               &lsaquo;
             </button>
             <div class="judge-group-select-wrap">
+              <span class="judge-group-select-label">Grup actual</span>
               <select class="form-select judge-group-select" id="groupSelect" aria-label="Seleccionar grup">
                 {% for bloc in group_blocks %}
                   <option

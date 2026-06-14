@@ -42,10 +42,36 @@
   }
   function initPortalViewModeControl(){
     const select = document.getElementById("portalViewModeSelect");
-    if(!select) return;
-    select.value = sanitizePortalDisplayMode(PORTAL_DISPLAY_MODE);
-    select.addEventListener("change", () => {
-      updatePortalDisplayMode(select.value);
+    if(select){
+      select.value = sanitizePortalDisplayMode(PORTAL_DISPLAY_MODE);
+      select.addEventListener("change", () => {
+        updatePortalDisplayMode(select.value);
+      });
+    }
+    const toggles = Array.from(document.querySelectorAll("[data-portal-view-mode]"));
+    if(!toggles.length) return;
+    const current = sanitizePortalDisplayMode(PORTAL_DISPLAY_MODE);
+    toggles.forEach((toggle) => {
+      const isActive = sanitizePortalDisplayMode(toggle.value) === current;
+      toggle.checked = isActive;
+      const label = document.querySelector(`label[for="${toggle.id}"]`);
+      if(label){
+        label.classList.toggle("active", isActive);
+        label.setAttribute("aria-pressed", isActive ? "true" : "false");
+      }
+      toggle.addEventListener("change", () => {
+        if(toggle.checked){
+          toggles.forEach((item) => {
+            const itemLabel = document.querySelector(`label[for="${item.id}"]`);
+            const itemActive = item === toggle;
+            if(itemLabel){
+              itemLabel.classList.toggle("active", itemActive);
+              itemLabel.setAttribute("aria-pressed", itemActive ? "true" : "false");
+            }
+          });
+          updatePortalDisplayMode(toggle.value);
+        }
+      });
     });
   }
   function isCompetitionOrderMode(){

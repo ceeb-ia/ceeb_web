@@ -1,0 +1,628 @@
+<script>
+  (function () {
+    const root = document.getElementById('phase-page-shell');
+    if (!root) return;
+
+    const drawer = document.getElementById('phase-actions-drawer');
+    const toggle = document.getElementById('phase-actions-toggle');
+    const close = document.getElementById('phase-drawer-close');
+    const backdrop = document.getElementById('phase-drawer-backdrop');
+    if (!drawer || !toggle) return;
+
+    const storageKey = [
+      'phaseDrawerOpen',
+      root.dataset.competicioId || '',
+      root.dataset.selectedAppId || '',
+    ].join(':');
+    const panelStorageKey = [
+      'phaseDrawerPanel',
+      root.dataset.competicioId || '',
+      root.dataset.selectedAppId || '',
+    ].join(':');
+    const scrollStorageKey = [
+      'phasePlannerScroll',
+      root.dataset.competicioId || '',
+      root.dataset.selectedAppId || '',
+    ].join(':');
+
+    function hasDrawerFeedback() {
+      return !!drawer.querySelector('.errorlist, .alert, .is-invalid');
+    }
+
+    function setDrawerOpen(open, options) {
+      const opts = options || {};
+      const isOpen = !!open;
+      root.classList.toggle('is-drawer-open', isOpen);
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.setAttribute('title', isOpen ? 'Amagar accions de fase' : 'Mostrar accions de fase');
+      toggle.setAttribute('aria-label', isOpen ? 'Amagar accions de fase' : 'Mostrar accions de fase');
+      drawer.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+      if (backdrop) {
+        backdrop.hidden = !isOpen;
+      }
+      if (!opts.skipSave) {
+        try {
+          window.localStorage.setItem(storageKey, isOpen ? '1' : '0');
+        } catch (error) {
+          // localStorage can be unavailable in restricted browsing contexts.
+        }
+      }
+    }
+
+    function getInitialOpenState() {
+      if (hasDrawerFeedback()) return true;
+      try {
+        return window.localStorage.getItem(storageKey) === '1';
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function saveScrollPosition() {
+      try {
+        window.sessionStorage.setItem(scrollStorageKey, JSON.stringify({
+          y: window.scrollY || window.pageYOffset || 0,
+          savedAt: Date.now(),
+        }));
+      } catch (error) {
+        // sessionStorage can be unavailable in restricted browsing contexts.
+      }
+    }
+
+    function restoreScrollPosition() {
+      let payload = null;
+      try {
+        payload = JSON.parse(window.sessionStorage.getItem(scrollStorageKey) || 'null');
+        window.sessionStorage.removeItem(scrollStorageKey);
+      } catch (error) {
+        return;
+      }
+      if (!payload || typeof payload !== 'object') return;
+      const y = Number(payload.y);
+      const savedAt = Number(payload.savedAt);
+      const isFresh = Number.isFinite(savedAt) && Date.now() - savedAt < 15000;
+      if (!Number.isFinite(y) || y < 0 || !isFresh) return;
+      const restore = () => {
+        window.scrollTo({ top: y, left: 0, behavior: 'auto' });
+      };
+      requestAnimationFrame(() => requestAnimationFrame(restore));
+      window.setTimeout(restore, 120);
+    }
+
+    function normalizeSearchText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+    }
+
+    function setActiveDrawerPanel(panelKey, options) {
+      const opts = options || {};
+      const key = String(panelKey || '').trim() || 'origin';
+      const panels = Array.from(document.querySelectorAll('[data-phase-panel]'));
+      const hasPanel = panels.some((panel) => panel.getAttribute('data-phase-panel') === key);
+      const activeKey = hasPanel ? key : 'origin';
+      panels.forEach((panel) => {
+        const isActive = panel.getAttribute('data-phase-panel') === activeKey;
+        panel.classList.toggle('is-active', isActive);
+        panel.hidden = !isActive;
+      });
+      document.querySelectorAll('[data-phase-panel-target]').forEach((button) => {
+        button.classList.toggle('is-active', button.getAttribute('data-phase-panel-target') === activeKey);
+      });
+      if (!opts.skipSave) {
+        try {
+          window.localStorage.setItem(panelStorageKey, activeKey);
+        } catch (error) {
+          // localStorage can be unavailable in restricted browsing contexts.
+        }
+      }
+    }
+
+    function getInitialDrawerPanel() {
+      try {
+        return window.localStorage.getItem(panelStorageKey) || 'origin';
+      } catch (error) {
+        return 'origin';
+      }
+    }
+
+    window.PhasePlanner = Object.assign({}, window.PhasePlanner || {}, {
+      openPanel(panelKey) {
+        setDrawerOpen(true);
+        setActiveDrawerPanel(panelKey || 'origin');
+        return Promise.resolve();
+      },
+    });
+
+    const confirmModal = document.getElementById('phase-confirm-modal');
+    const confirmBackdrop = document.getElementById('phase-confirm-backdrop');
+    const confirmTitle = document.getElementById('phase-confirm-title');
+    const confirmMessage = document.getElementById('phase-confirm-message');
+    const confirmAccept = document.getElementById('phase-confirm-accept');
+    let pendingConfirm = null;
+
+    function confirmConfigFromSubmit(event) {
+      const submitter = event.submitter;
+      const source = submitter?.getAttribute?.('data-phase-confirm-message') ? submitter : event.target;
+      const message = source?.getAttribute?.('data-phase-confirm-message') || '';
+      if (!message) return null;
+      return {
+        source,
+        message,
+        title: source.getAttribute('data-phase-confirm-title') || 'Confirmar accio',
+        label: source.getAttribute('data-phase-confirm-label') || 'Continuar',
+        tone: source.getAttribute('data-phase-confirm-tone') || 'primary',
+      };
+    }
+
+    function setConfirmTone(tone) {
+      if (!confirmModal || !confirmAccept) return;
+      confirmModal.classList.remove('is-danger', 'is-warning');
+      let buttonClass = 'btn btn-sm btn-primary';
+      if (tone === 'danger') {
+        confirmModal.classList.add('is-danger');
+        buttonClass = 'btn btn-sm btn-danger';
+      } else if (tone === 'warning') {
+        confirmModal.classList.add('is-warning');
+        buttonClass = 'btn btn-sm btn-warning';
+      }
+      confirmAccept.className = buttonClass;
+    }
+
+    function openPhaseConfirm(form, submitter, config) {
+      if (!confirmModal || !confirmBackdrop || !confirmAccept) {
+        return true;
+      }
+      pendingConfirm = { form, submitter };
+      if (confirmTitle) confirmTitle.textContent = config.title;
+      if (confirmMessage) confirmMessage.textContent = config.message;
+      confirmAccept.textContent = config.label;
+      setConfirmTone(config.tone);
+      if (confirmModal.parentElement !== document.body) document.body.appendChild(confirmModal);
+      if (confirmBackdrop.parentElement !== document.body) document.body.appendChild(confirmBackdrop);
+      confirmModal.hidden = false;
+      confirmBackdrop.hidden = false;
+      confirmModal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('phase-confirm-open');
+      window.setTimeout(() => confirmAccept.focus(), 0);
+      return false;
+    }
+
+    function closePhaseConfirm() {
+      pendingConfirm = null;
+      if (confirmModal) {
+        confirmModal.hidden = true;
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
+      if (confirmBackdrop) confirmBackdrop.hidden = true;
+      document.body.classList.remove('phase-confirm-open');
+    }
+
+    function submitPendingConfirm() {
+      if (!pendingConfirm?.form) return;
+      const { form, submitter } = pendingConfirm;
+      pendingConfirm = null;
+      form.dataset.phaseConfirmAccepted = '1';
+      saveScrollPosition();
+      if (submitter && typeof form.requestSubmit === 'function') {
+        form.requestSubmit(submitter);
+      } else {
+        form.submit();
+      }
+      closePhaseConfirm();
+    }
+
+    function handleConfirmSubmit(event) {
+      const form = event.target;
+      if (!form || form.dataset.phaseConfirmAccepted === '1') {
+        if (form) delete form.dataset.phaseConfirmAccepted;
+        return;
+      }
+      const config = confirmConfigFromSubmit(event);
+      if (!config) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const accepted = openPhaseConfirm(form, event.submitter, config);
+      if (accepted) {
+        form.dataset.phaseConfirmAccepted = '1';
+        saveScrollPosition();
+        if (event.submitter && typeof form.requestSubmit === 'function') {
+          form.requestSubmit(event.submitter);
+        } else {
+          form.submit();
+        }
+      }
+    }
+
+    function closeOtherSlotMenus(current) {
+      document.querySelectorAll('.phase-slot-actions[open]').forEach((details) => {
+        if (details !== current) {
+          details.removeAttribute('open');
+        }
+      });
+    }
+
+    function positionSlotMenu(details) {
+      const summary = details.querySelector(':scope > summary');
+      const menu = details.querySelector(':scope > .phase-slot-actions-menu');
+      if (!summary || !menu || !details.open) return;
+
+      const rect = summary.getBoundingClientRect();
+      const gap = 8;
+      const viewportPadding = 12;
+      const menuWidth = Math.min(340, Math.max(280, window.innerWidth - (viewportPadding * 2)));
+      const left = Math.min(
+        Math.max(viewportPadding, rect.right - menuWidth),
+        Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding)
+      );
+      const spaceBelow = window.innerHeight - rect.bottom - gap - viewportPadding;
+      const spaceAbove = rect.top - gap - viewportPadding;
+      const openAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(220, Math.min(520, openAbove ? spaceAbove : spaceBelow));
+      const top = openAbove ? Math.max(viewportPadding, rect.top - gap - maxHeight) : rect.bottom + gap;
+
+      menu.classList.add('is-floating');
+      menu.style.setProperty('--phase-slot-menu-left', `${left}px`);
+      menu.style.setProperty('--phase-slot-menu-top', `${top}px`);
+      menu.style.setProperty('--phase-slot-menu-max-height', `${maxHeight}px`);
+      menu.style.width = `${menuWidth}px`;
+    }
+
+    function clearSlotMenuPosition(details) {
+      const menu = details.querySelector(':scope > .phase-slot-actions-menu');
+      if (!menu) return;
+      menu.classList.remove('is-floating');
+      menu.style.removeProperty('--phase-slot-menu-left');
+      menu.style.removeProperty('--phase-slot-menu-top');
+      menu.style.removeProperty('--phase-slot-menu-max-height');
+      menu.style.removeProperty('width');
+    }
+
+    function repositionOpenSlotMenus() {
+      document.querySelectorAll('.phase-slot-actions[open]').forEach(positionSlotMenu);
+    }
+
+    function slotOrderWorkspace(id) {
+      return id ? document.getElementById(id) : null;
+    }
+
+    function slotOrderBackdrop(id) {
+      if (!id) return null;
+      return Array.from(document.querySelectorAll('[data-slot-order-backdrop]'))
+        .find((node) => node.getAttribute('data-slot-order-backdrop') === id) || null;
+    }
+
+    function refreshSlotOrderIndexes(workspace) {
+      if (!workspace) return;
+      let visibleIndex = 0;
+      workspace.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+        const label = item.querySelector('[data-slot-order-index]');
+        if (!label) return;
+        if (item.hidden) {
+          label.textContent = '';
+        } else {
+          visibleIndex += 1;
+          label.textContent = String(visibleIndex);
+        }
+      });
+    }
+
+    function serializeSlotOrder(form) {
+      const input = form.querySelector('[data-slot-order-input]');
+      const list = form.querySelector('[data-slot-order-list]');
+      if (!input || !list) return;
+      input.value = Array.from(list.querySelectorAll('[data-slot-order-item]'))
+        .map((item) => item.getAttribute('data-slot-id'))
+        .filter(Boolean)
+        .join(',');
+    }
+
+    function slotOrderScope(node) {
+      return node?.closest?.('[data-slot-order-workspace], [data-unit-preview-modal]') || null;
+    }
+
+    function openSlotOrderWorkspace(id) {
+      const workspace = slotOrderWorkspace(id);
+      if (!workspace) return;
+      closeOtherSlotMenus(null);
+      const backdrop = slotOrderBackdrop(id);
+      if (backdrop && backdrop.parentElement !== document.body) {
+        document.body.appendChild(backdrop);
+      }
+      if (workspace.parentElement !== document.body) {
+        document.body.appendChild(workspace);
+      }
+      workspace.hidden = false;
+      if (backdrop) backdrop.hidden = false;
+      document.body.classList.add('phase-slot-order-open');
+      refreshSlotOrderIndexes(workspace);
+      const search = workspace.querySelector('[data-slot-order-filter]');
+      if (search) {
+        search.value = '';
+        search.focus();
+      }
+      workspace.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+        item.hidden = false;
+      });
+    }
+
+    function closeSlotOrderWorkspace(id) {
+      const workspace = slotOrderWorkspace(id);
+      if (workspace) workspace.hidden = true;
+      const backdrop = slotOrderBackdrop(id);
+      if (backdrop) backdrop.hidden = true;
+      if (!document.querySelector('[data-slot-order-workspace]:not([hidden])')) {
+        document.body.classList.remove('phase-slot-order-open');
+      }
+    }
+
+    function unitPreviewModal(id) {
+      return id ? document.getElementById(id) : null;
+    }
+
+    function unitPreviewBackdrop(id) {
+      if (!id) return null;
+      return Array.from(document.querySelectorAll('[data-unit-preview-backdrop]'))
+        .find((node) => node.getAttribute('data-unit-preview-backdrop') === id) || null;
+    }
+
+    function openUnitPreviewModal(id) {
+      const modal = unitPreviewModal(id);
+      if (!modal) return;
+      closeOtherSlotMenus(null);
+      document.querySelectorAll('[data-slot-order-workspace]:not([hidden])').forEach((workspace) => {
+        closeSlotOrderWorkspace(workspace.id);
+      });
+      const previewBackdrop = unitPreviewBackdrop(id);
+      if (previewBackdrop && previewBackdrop.parentElement !== document.body) {
+        document.body.appendChild(previewBackdrop);
+      }
+      if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+      }
+      modal.hidden = false;
+      if (previewBackdrop) previewBackdrop.hidden = false;
+      document.body.classList.add('phase-unit-preview-open');
+      refreshSlotOrderIndexes(modal);
+      modal.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+        item.hidden = false;
+      });
+      const search = modal.querySelector('[data-slot-order-filter]');
+      if (search) search.value = '';
+      const closeButton = modal.querySelector('[data-close-unit-preview-modal]');
+      window.setTimeout(() => closeButton?.focus(), 0);
+    }
+
+    function closeUnitPreviewModal(id) {
+      const modal = unitPreviewModal(id);
+      if (modal) modal.hidden = true;
+      const previewBackdrop = unitPreviewBackdrop(id);
+      if (previewBackdrop) previewBackdrop.hidden = true;
+      if (!document.querySelector('[data-unit-preview-modal]:not([hidden])')) {
+        document.body.classList.remove('phase-unit-preview-open');
+      }
+    }
+
+    function closeOpenUnitPreviewModals() {
+      document.querySelectorAll('[data-unit-preview-modal]:not([hidden])').forEach((modal) => {
+        closeUnitPreviewModal(modal.id);
+      });
+    }
+
+    function moveSlotOrderItem(item, direction) {
+      if (!item) return;
+      const list = item.closest('[data-slot-order-list]');
+      if (!list) return;
+      if (direction === 'up') {
+        let prev = item.previousElementSibling;
+        while (prev && prev.hidden) prev = prev.previousElementSibling;
+        if (prev) list.insertBefore(item, prev);
+      } else if (direction === 'down') {
+        let next = item.nextElementSibling;
+        while (next && next.hidden) next = next.nextElementSibling;
+        if (next) list.insertBefore(next, item);
+      }
+      refreshSlotOrderIndexes(slotOrderScope(item));
+      item.focus?.();
+    }
+
+    function dragAfterElement(container, y) {
+      const candidates = Array.from(container.querySelectorAll('[data-slot-order-item]:not(.is-dragging):not([hidden])'));
+      return candidates.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          return { offset, element: child };
+        }
+        return closest;
+      }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+
+    toggle.addEventListener('click', () => {
+      setDrawerOpen(!root.classList.contains('is-drawer-open'));
+    });
+    close?.addEventListener('click', () => setDrawerOpen(false));
+    backdrop?.addEventListener('click', () => setDrawerOpen(false));
+    confirmBackdrop?.addEventListener('click', closePhaseConfirm);
+    confirmAccept?.addEventListener('click', submitPendingConfirm);
+    document.querySelectorAll('[data-phase-confirm-cancel]').forEach((button) => {
+      button.addEventListener('click', closePhaseConfirm);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && pendingConfirm) {
+        closePhaseConfirm();
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (document.querySelector('[data-unit-preview-modal]:not([hidden])')) {
+          closeOpenUnitPreviewModals();
+          return;
+        }
+        closeOtherSlotMenus(null);
+        document.querySelectorAll('[data-slot-order-workspace]:not([hidden])').forEach((workspace) => {
+          closeSlotOrderWorkspace(workspace.id);
+        });
+        if (root.classList.contains('is-drawer-open')) {
+          setDrawerOpen(false);
+        }
+      }
+    });
+    document.addEventListener('click', (event) => {
+      const openMenu = event.target.closest('.phase-slot-actions[open]');
+      if (openMenu) return;
+      closeOtherSlotMenus(null);
+    });
+    document.querySelectorAll('[data-open-phase-actions]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const panelTarget = button.getAttribute('data-open-phase-panel');
+        const phaseUrl = button.getAttribute('data-phase-url');
+        setDrawerOpen(true);
+        if (panelTarget) {
+          setActiveDrawerPanel(panelTarget);
+        }
+        if (phaseUrl) {
+          const target = new URL(phaseUrl, window.location.href);
+          const current = new URL(window.location.href);
+          if (target.pathname !== current.pathname || target.search !== current.search) {
+            saveScrollPosition();
+            window.location.href = target.toString();
+          }
+        }
+      });
+    });
+    document.querySelectorAll('[data-phase-panel-target]').forEach((button) => {
+      button.addEventListener('click', () => {
+        setActiveDrawerPanel(button.getAttribute('data-phase-panel-target'));
+      });
+    });
+    document.querySelectorAll('.phase-tree-node, .phase-tree-base').forEach((link) => {
+      link.addEventListener('click', saveScrollPosition);
+    });
+    root.addEventListener('submit', handleConfirmSubmit, true);
+    document.addEventListener('submit', (event) => {
+      if (event.target?.closest?.('[data-unit-preview-modal]')) {
+        handleConfirmSubmit(event);
+      }
+    }, true);
+    document.querySelectorAll('.phase-child-create-form, .phase-drawer-body form, .phase-base-exercise-form').forEach((form) => {
+      form.addEventListener('submit', saveScrollPosition);
+    });
+    document.querySelectorAll('.phase-slot-actions form').forEach((form) => {
+      form.addEventListener('submit', saveScrollPosition);
+    });
+    root.addEventListener('submit', saveScrollPosition, true);
+    document.addEventListener('submit', (event) => {
+      if (event.target?.closest?.('[data-unit-preview-modal]')) {
+        saveScrollPosition();
+      }
+    }, true);
+    document.querySelectorAll('.phase-slot-actions').forEach((details) => {
+      details.addEventListener('toggle', () => {
+        if (details.open) {
+          closeOtherSlotMenus(details);
+          positionSlotMenu(details);
+        } else {
+          clearSlotMenuPosition(details);
+        }
+      });
+    });
+    window.addEventListener('resize', repositionOpenSlotMenus);
+    window.addEventListener('scroll', repositionOpenSlotMenus, true);
+    document.querySelectorAll('[data-slot-manual-filter]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const slotId = input.getAttribute('data-slot-manual-filter');
+        const select = document.getElementById(`manual-inscripcio-${slotId}`);
+        if (!select) return;
+        const needle = normalizeSearchText(input.value);
+        Array.from(select.options).forEach((option, index) => {
+          if (index === 0) {
+            option.hidden = false;
+            return;
+          }
+          option.hidden = !!needle && !normalizeSearchText(option.textContent).includes(needle);
+        });
+      });
+    });
+    document.querySelectorAll('[data-open-slot-order-workspace]').forEach((button) => {
+      button.addEventListener('click', () => {
+        openSlotOrderWorkspace(button.getAttribute('data-open-slot-order-workspace'));
+      });
+    });
+    document.querySelectorAll('[data-close-slot-order-workspace]').forEach((button) => {
+      button.addEventListener('click', () => {
+        closeSlotOrderWorkspace(button.getAttribute('data-close-slot-order-workspace'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-backdrop]').forEach((backdrop) => {
+      backdrop.addEventListener('click', () => {
+        closeSlotOrderWorkspace(backdrop.getAttribute('data-slot-order-backdrop'));
+      });
+    });
+    document.querySelectorAll('[data-open-unit-preview-modal]').forEach((button) => {
+      button.addEventListener('click', () => {
+        openUnitPreviewModal(button.getAttribute('data-open-unit-preview-modal'));
+      });
+    });
+    document.querySelectorAll('[data-close-unit-preview-modal]').forEach((button) => {
+      button.addEventListener('click', () => {
+        closeUnitPreviewModal(button.getAttribute('data-close-unit-preview-modal'));
+      });
+    });
+    document.querySelectorAll('[data-unit-preview-backdrop]').forEach((previewBackdrop) => {
+      previewBackdrop.addEventListener('click', () => {
+        closeUnitPreviewModal(previewBackdrop.getAttribute('data-unit-preview-backdrop'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-form]').forEach((form) => {
+      form.addEventListener('submit', () => {
+        saveScrollPosition();
+        serializeSlotOrder(form);
+      });
+    });
+    document.querySelectorAll('[data-slot-order-filter]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const workspace = slotOrderWorkspace(input.getAttribute('data-slot-order-filter'));
+        if (!workspace) return;
+        const needle = normalizeSearchText(input.value);
+        workspace.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+          const text = item.getAttribute('data-search-text') || item.textContent || '';
+          item.hidden = !!needle && !normalizeSearchText(text).includes(needle);
+        });
+        refreshSlotOrderIndexes(workspace);
+      });
+    });
+    document.querySelectorAll('[data-slot-order-move]').forEach((button) => {
+      button.addEventListener('click', () => {
+        moveSlotOrderItem(button.closest('[data-slot-order-item]'), button.getAttribute('data-slot-order-move'));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-item]').forEach((item) => {
+      item.addEventListener('dragstart', () => {
+        item.classList.add('is-dragging');
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('is-dragging');
+        refreshSlotOrderIndexes(slotOrderScope(item));
+      });
+    });
+    document.querySelectorAll('[data-slot-order-list]').forEach((list) => {
+      list.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        const dragging = list.querySelector('.is-dragging');
+        if (!dragging) return;
+        const after = dragAfterElement(list, event.clientY);
+        if (after == null) {
+          list.appendChild(dragging);
+        } else {
+          list.insertBefore(dragging, after);
+        }
+      });
+    });
+
+    setDrawerOpen(getInitialOpenState(), { skipSave: true });
+    setActiveDrawerPanel(getInitialDrawerPanel(), { skipSave: true });
+    restoreScrollPosition();
+  })();
+</script>

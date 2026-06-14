@@ -1695,6 +1695,11 @@ def _global_builder_known_merge_shape():
             "agregacio_aparells": None,
             "mode_resultat_aparells": None,
             "exercise_selection_scope": None,
+            "participants_global": {
+                "mode": None,
+                "n": None,
+            },
+            "agregacio_participants_global": None,
             "participants_per_aparell": None,
             "agregacio_participants_per_aparell": None,
             "victories": {
@@ -2169,6 +2174,49 @@ def validate_template_schema_global(
                 agg_participants = str(raw_value or "sum").strip().lower()
                 if agg_participants not in {"sum", "avg", "median", "max", "min"}:
                     errors.append(f"puntuacio.agregacio_participants_per_aparell[{app_key}] invalid: {agg_participants}")
+
+    allow_global_member_selection = (
+        str(tipus or "").strip().lower() == "equips"
+        and team_mode_value == "derived_from_individual"
+        and exercise_selection_scope_value == "per_member"
+        and str(punt.get("mode_seleccio_exercicis") or "per_aparell_override").strip().lower() == "global_pool"
+    )
+    participants_global_cfg = punt.get("participants_global")
+    agg_participants_global = punt.get("agregacio_participants_global")
+    global_mode_value = (
+        str(participants_global_cfg.get("mode") or "tots").strip().lower()
+        if isinstance(participants_global_cfg, dict)
+        else ""
+    )
+    has_non_default_global_cfg = participants_global_cfg not in (None, {}) and not (
+        isinstance(participants_global_cfg, dict)
+        and global_mode_value == "tots"
+        and participants_global_cfg.get("n") in (None, "", 1, "1")
+    )
+    agg_participants_global_value = str(agg_participants_global or "").strip().lower()
+    has_non_default_global_agg = agg_participants_global not in (None, "") and agg_participants_global_value != "sum"
+    if has_non_default_global_cfg or has_non_default_global_agg:
+        if not allow_global_member_selection:
+            errors.append(
+                "puntuacio.participants_global nomes es compatible amb tipus='equips' + team_mode=derived_from_individual + exercise_selection_scope=per_member + mode_seleccio_exercicis=global_pool."
+            )
+        if participants_global_cfg is not None and not isinstance(participants_global_cfg, dict):
+            errors.append("puntuacio.participants_global ha de ser un objecte.")
+        elif isinstance(participants_global_cfg, dict):
+            mode = str(participants_global_cfg.get("mode") or "tots").strip().lower()
+            if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+                errors.append(f"puntuacio.participants_global.mode invalid: {mode}")
+            if mode in {"millor_n", "pitjor_n"}:
+                try:
+                    n_value = int(participants_global_cfg.get("n") or 0)
+                except Exception:
+                    n_value = 0
+                if n_value <= 0:
+                    errors.append(f"puntuacio.participants_global.n invalid per mode {mode}.")
+        if agg_participants_global not in (None, ""):
+            agg_participants = str(agg_participants_global or "sum").strip().lower()
+            if agg_participants not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(f"puntuacio.agregacio_participants_global invalid: {agg_participants}")
 
     # Legacy global participant selection is still accepted by old ties but
     # ignored by the active puntuacio flow.

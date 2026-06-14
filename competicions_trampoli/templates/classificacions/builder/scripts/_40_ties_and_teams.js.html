@@ -413,6 +413,10 @@
   }
 
   function getTieTargetAppIds(tr){
+    if (typeof readTieSelectedAppIdsFromRow === "function") {
+      const directIds = readTieSelectedAppIdsFromRow(tr);
+      if (directIds.length) return directIds;
+    }
     const appScope = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta");
     if (appScope === "tots") return getAppChoices([], { includeStale: false }).map(a => a.id);
     if (appScope.startsWith("app:")) {
@@ -425,7 +429,39 @@
     return getTieInheritedAppIds();
   }
 
-  function tiePerAppExercicisHTML(tr, compAparellId, exCfg){
+  function tieExerciseStepCopyForTreatment(rawTreatment){
+    const treatment = String(rawTreatment || "per_member").trim().toLowerCase();
+    if (treatment === "team_pool" || treatment === "team_pool_flat" || treatment === "flat") {
+      return {
+        title: "Notes de la bossa d'equip",
+        label: "Notes de la bossa",
+        hint: "Selecciona i agrega notes dins la bossa comuna de l'equip.",
+        summaryPrefix: "Bossa d'equip",
+        aggLabel: "Agregacio notes",
+        compact: false,
+      };
+    }
+    if (treatment === "team_pool_per_exercici") {
+      return {
+        title: "Seleccio entre exercicis resultants",
+        label: "Subtotals per exercici",
+        hint: "Selecciona i agrega els subtotals generats per les bosses d'exercici.",
+        summaryPrefix: "Subtotals per exercici",
+        aggLabel: "Agregacio subtotals",
+        compact: false,
+      };
+    }
+    return {
+      title: "Exercicis del membre",
+      label: "Exercicis del membre",
+      hint: "Selecciona i agrega els exercicis de cada membre abans del pas entre membres.",
+      summaryPrefix: "Exercicis del membre",
+      aggLabel: "Agregacio exercicis",
+      compact: false,
+    };
+  }
+
+  function tiePerAppExercicisHTML(tr, compAparellId, exCfg, copy){
     const cfg = normalizeTieExercicisCfg(exCfg);
     const mode = String(cfg.mode || "tots").toLowerCase().trim();
     const bestN = Math.max(1, Number(cfg.best_n || 1));
@@ -435,10 +471,18 @@
     const aggEx = normalizeTieAggValue(readTiePerAppAggState(tr)[String(compAparellId)] || "sum", "sum");
     const app = getAparellById(compAparellId);
     const appName = app ? app.nom : `Aparell ${compAparellId}`;
-    const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    const labels = copy || tieExerciseStepCopyForTreatment(tr?.querySelector?.('[data-k="ex_scope"]')?.value || "per_member");
+    const compact = !!labels.compact;
+    const isDirectTie = !!tr?.matches?.('[data-tie-ux="direct"]');
+    const treatment = String(tr?.querySelector?.('[data-k="ex_scope"]')?.value || "per_member").trim().toLowerCase();
+    const showMaxPerParticipant = !isDirectTie && (
+      !isDerivedExerciseSelectionScopeAvailable() ||
+      getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    ) && treatment !== "team_pool_per_exercici";
     return `
       <div class="border rounded p-2 mt-2" data-k="tie_app_ex_card" data-app-id="${esc(compAparellId)}">
-        <div class="small font-weight-bold mb-1">${esc(appName)} (${esc(compAparellId)})</div>
+        ${compact ? "" : `<div class="small font-weight-bold mb-1">${esc(appName)} (${esc(compAparellId)})</div>`}
+        ${compact || !labels.hint ? "" : `<div class="small text-muted mb-2">${esc(labels.hint)}</div>`}
         <select class="form-control form-control-sm mb-1" data-k="tie_app_ex_mode" data-app-id="${esc(compAparellId)}">
           <option value="tots" ${mode==="tots" ? "selected" : ""}>Tots</option>
           <option value="millor_1" ${mode==="millor_1" ? "selected" : ""}>Millor 1</option>
@@ -456,18 +500,20 @@
         <input class="form-control form-control-sm mb-1"
                data-k="tie_app_ex_index" data-app-id="${esc(compAparellId)}"
                type="number" min="1" value="${esc(index)}" placeholder="Índex">
-        <input class="form-control form-control-sm mb-1"
-               data-k="tie_app_ex_max_pp" data-app-id="${esc(compAparellId)}"
-               type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)" style="${showMaxPerParticipant ? "" : "display:none;"}">
+        ${showMaxPerParticipant ? `
+          <input class="form-control form-control-sm mb-1"
+                 data-k="tie_app_ex_max_pp" data-app-id="${esc(compAparellId)}"
+                 type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)">
+        ` : ""}
         <input class="form-control form-control-sm"
                data-k="tie_app_ex_ids" data-app-id="${esc(compAparellId)}"
                type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
         <select class="form-control form-control-sm mt-1" data-k="tie_app_ex_agg" data-app-id="${esc(compAparellId)}">
-          <option value="sum" ${aggEx==="sum" ? "selected" : ""}>Agregacio exercicis: Suma</option>
-          <option value="avg" ${aggEx==="avg" ? "selected" : ""}>Agregacio exercicis: Mitjana</option>
-          <option value="median" ${aggEx==="median" ? "selected" : ""}>Agregacio exercicis: Mediana</option>
-          <option value="max" ${aggEx==="max" ? "selected" : ""}>Agregacio exercicis: Maxim</option>
-          <option value="min" ${aggEx==="min" ? "selected" : ""}>Agregacio exercicis: Minim</option>
+          <option value="sum" ${aggEx==="sum" ? "selected" : ""}>${esc(labels.aggLabel || "Agregacio exercicis")}: Suma</option>
+          <option value="avg" ${aggEx==="avg" ? "selected" : ""}>${esc(labels.aggLabel || "Agregacio exercicis")}: Mitjana</option>
+          <option value="median" ${aggEx==="median" ? "selected" : ""}>${esc(labels.aggLabel || "Agregacio exercicis")}: Mediana</option>
+          <option value="max" ${aggEx==="max" ? "selected" : ""}>${esc(labels.aggLabel || "Agregacio exercicis")}: Maxim</option>
+          <option value="min" ${aggEx==="min" ? "selected" : ""}>${esc(labels.aggLabel || "Agregacio exercicis")}: Minim</option>
         </select>
       </div>
     `;
@@ -481,8 +527,13 @@
     const idx = card.querySelector('[data-k="tie_app_ex_index"]');
     const max = card.querySelector('[data-k="tie_app_ex_max_pp"]');
     const ids = card.querySelector('[data-k="tie_app_ex_ids"]');
-    const tr = card.closest("tr");
-    const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    const tr = card.closest("[data-tie-row]") || card.closest("tr");
+    const isDirectTie = !!tr?.matches?.('[data-tie-ux="direct"]');
+    const treatment = String(tr?.querySelector?.('[data-k="ex_scope"]')?.value || "per_member").trim().toLowerCase();
+    const showMaxPerParticipant = !isDirectTie && (
+      !isDerivedExerciseSelectionScopeAvailable() ||
+      getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    ) && treatment !== "team_pool_per_exercici";
     if (best) best.style.display = isBestNMode(mode) ? "" : "none";
     if (idx) idx.style.display = (mode === "index") ? "" : "none";
     if (max) max.style.display = showMaxPerParticipant ? "" : "none";
@@ -549,7 +600,9 @@
       if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
       if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
       const maxPerParticipant = Math.max(0, Number(maxNode?.value || 0));
-      if ((!isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL) && maxPerParticipant > 0) {
+      const isDirectTie = !!tr?.matches?.('[data-tie-ux="direct"]');
+      const treatment = String(tr?.querySelector?.('[data-k="ex_scope"]')?.value || "per_member").trim().toLowerCase();
+      if (!isDirectTie && treatment !== "team_pool_per_exercici" && (!isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL) && maxPerParticipant > 0) {
         cfg.max_per_participant = maxPerParticipant;
       }
       if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
@@ -579,10 +632,6 @@
   }
 
   function readTiePerAppExercicisFromRow(tr, fallbackMap){
-    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
-      writeTiePerAppState(tr, {});
-      return {};
-    }
     const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
     if (modeSel === "per_aparell_override") {
@@ -594,10 +643,6 @@
   }
 
   function readTiePerAppAggExercicisFromRow(tr, fallbackMap){
-    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
-      writeTiePerAppAggState(tr, {});
-      return {};
-    }
     const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     let state = normalizeTiePipelineAggMap(fallbackMap || readTiePerAppAggState(tr), {}, [], "sum");
     if (modeSel === "per_aparell_override") {
@@ -609,16 +654,6 @@
   }
 
   function renderTiePerAppExercicisUI(tr){
-    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
-      writeTiePerAppState(tr, {});
-      writeTiePerAppAggState(tr, {});
-      const box = tr.querySelector('[data-k="ex_per_app_box"]');
-      if (box) {
-        box.style.display = "none";
-        box.innerHTML = "";
-      }
-      return;
-    }
     const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     const box = tr.querySelector('[data-k="ex_per_app_box"]');
     if (!box) return;

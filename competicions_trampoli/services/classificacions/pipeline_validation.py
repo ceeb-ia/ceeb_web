@@ -87,7 +87,20 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
             if not isinstance(raw_codes, (list, tuple, str)):
                 errors.append(f"{prefix}.camps_per_aparell[{app_key}] ha de ser una llista o text.")
 
-    for key in ("agregacio_camps_per_aparell", "candidate_source_per_aparell", "exercicis_per_aparell", "agregacio_exercicis_per_aparell", "participants_per_aparell", "agregacio_participants_per_aparell"):
+    for key in (
+        "agregacio_camps_per_aparell",
+        "camps_mode_per_aparell",
+        "camps_per_exercici_per_aparell",
+        "agregacio_camps_per_exercici_per_aparell",
+        "candidate_source_per_aparell",
+        "exercicis_per_aparell",
+        "agregacio_exercicis_per_aparell",
+        "participants_per_aparell",
+        "agregacio_participants_per_aparell",
+        "team_pool_mode_per_aparell",
+        "team_pool_participants_per_exercici_per_aparell",
+        "team_pool_agregacio_participants_per_exercici_per_aparell",
+    ):
         if key in raw_pipeline and not isinstance(raw_pipeline.get(key), dict):
             errors.append(f"{prefix}.{key} ha de ser un objecte.")
 

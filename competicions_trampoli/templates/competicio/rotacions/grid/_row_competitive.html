@@ -1,0 +1,106 @@
+                  <tr class="franja-row-competitive js-franja-visual-target"
+                      data-avatar-anchor="rotations-first-competitive-row"
+                      data-franja-row="{{ f.id }}"
+                      data-franja-visual-row="{{ f.id }}"
+                      data-color-raw="{{ f.color_fons|default_if_none:'' }}"
+                      draggable="true"
+                      style="--franja-bg: {{ f.resolved_background_color }}; --franja-fg: {{ f.resolved_text_color }}; --franja-border: {{ f.resolved_border_color }};">
+                    <th class="franja-header-cell">
+                      <div class="franja-head">
+                        <div class="franja-info">
+                          <div class="franja-title">
+                            <input type="checkbox"
+                                   class="franja-selection-check js-franja-select"
+                                   data-franja-id="{{ f.id }}"
+                                   data-franja-tipus="{{ f.tipus }}"
+                                   data-franja-competitive="1"
+                                   aria-label="Seleccionar {{ f.display_label|default:'Franja' }}">
+                            <span class="franja-drag-handle" title="Arrossega per reordenar">&#8942;&#8942;</span>
+                            <span>{{ f.display_label|default:"Franja" }}</span>
+                            {% if f.nota_interna %}
+                              <span class="franja-note-badge" title="Te nota interna">Nota</span>
+                            {% endif %}
+                          </div>
+                          <div class="mini">{{ f.hora_inici }} - {{ f.hora_fi }}</div>
+                          <div class="mini mt-1 franja-order-control" data-avatar-anchor="rotations-slot-order">
+                            <span class="franja-order-label">Ordre</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rotation-context-help" data-avatar-topic="rotations_slot_order" aria-label="Ajuda mode ordre franja">?</button>
+                            <select class="form-control form-control-sm js-franja-order-mode"
+                                    data-fr="{{ f.id }}">
+                              {% for opt in order_mode_options %}
+                                <option value="{{ opt.value }}">{{ opt.label }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div class="dropdown franja-actions" data-avatar-anchor="rotations-franja-actions">
+                          <button class="btn btn-sm btn-light franja-menu-toggle"
+                                  type="button"
+                                  aria-haspopup="true"
+                                  aria-expanded="false"
+                                  title="Accions de franja">
+                            <span aria-hidden="true">...</span>
+                          </button>
+                          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end franja-actions-menu">
+                            <button type="button" class="dropdown-item" data-avatar-topic="rotations_slot_actions">
+                              <span class="franja-action-icon" aria-hidden="true">?</span>
+                              <span>Ajuda</span>
+                            </button>
+                            <button class="dropdown-item js-edit-fr"
+                                    data-url="{% url 'rotacions_franja_update_inline' competicio.id f.id %}"
+                                    data-titol="{{ f.titol|default_if_none:''|escape }}"
+                                    data-hi="{{ f.hora_inici|time:'H:i' }}"
+                                    data-hf="{{ f.hora_fi|time:'H:i' }}"
+                                    data-tipus="{{ f.tipus }}"
+                                    data-color="{{ f.color_fons|default_if_none:'' }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#9998;</span>
+                              <span>Editar</span>
+                            </button>
+                            <button class="dropdown-item js-insert-after"
+                                    data-fr="{{ f.id }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">+</span>
+                              <span>Inserir despres</span>
+                            </button>
+                            <button class="dropdown-item js-clear-franja"
+                                    data-fr="{{ f.id }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#9003;</span>
+                              <span>Netejar franja</span>
+                            </button>
+                            <button class="dropdown-item js-extrapolar"
+                                    data-fr="{{ f.id }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#8599;</span>
+                              <span>Extrapolar</span>
+                            </button>
+                            <button class="dropdown-item js-franja-note"
+                                    data-fr="{{ f.id }}"
+                                    data-label="{{ f.display_label|default:'Franja'|escape }}"
+                                    data-note="{{ f.nota_interna|default_if_none:''|escape }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">N</span>
+                              <span>Nota interna</span>
+                            </button>
+                            <button class="dropdown-item text-danger js-del-fr"
+                                    data-fr="{{ f.id }}"
+                                    type="button">
+                              <span class="franja-action-icon" aria-hidden="true">&#10005;</span>
+                              <span>Eliminar</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                    </th>
+
+                    {% for a in estacions %}
+                      <td>
+                        <div class="cell js-cell" data-franja="{{ f.id }}" data-estacio="{{ a.id }}">
+                          <span class="pill empty">-</span>
+                        </div>
+                      </td>
+                    {% endfor %}
+                  </tr>

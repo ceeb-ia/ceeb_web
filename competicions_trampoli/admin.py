@@ -4,8 +4,16 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import Competicio, CompeticioMembership
 from .models.classificacions import ClassificacioTemplateGlobal
-from .models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
-from .models.judging import JudgeConversation, JudgeConversationMessage
+from .models.competicio import (
+    CompeticioAparell,
+    CompeticioAparellFase,
+    FasePartitionState,
+    InscripcioBaixa,
+    ProgramUnit,
+    ProgramUnitSlot,
+    QualificationRun,
+)
+from .models.judging import JudgeConversation, JudgeConversationMessage, JudgeDeviceToken, JudgePortalAssignment
 from .models.rotacions import RotacioAssignacioProgramUnit
 
 
@@ -25,7 +33,7 @@ class CompeticioMembershipByUserInline(admin.TabularInline):
 
 @admin.register(Competicio)
 class CompeticioAdmin(admin.ModelAdmin):
-    list_display = ("nom", "tipus", "data", "created_at")
+    list_display = ("nom", "tipus", "data", "data_fi", "created_at")
     search_fields = ("nom",)
     list_filter = ("tipus",)
     inlines = (CompeticioMembershipByCompeticioInline,)
@@ -73,6 +81,33 @@ class ProgramUnitSlotAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
 
 
+@admin.register(QualificationRun)
+class QualificationRunAdmin(admin.ModelAdmin):
+    list_display = ("fase", "source_classificacio", "source_phase", "status", "snapshot_hash", "applied_at", "created_at")
+    list_filter = ("status", "fase__competicio")
+    search_fields = ("fase__nom", "source_classificacio__nom", "snapshot_hash")
+    autocomplete_fields = ("fase", "source_phase")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(InscripcioBaixa)
+class InscripcioBaixaAdmin(admin.ModelAdmin):
+    list_display = ("inscripcio", "competicio", "comp_aparell", "motiu", "anul_lada_at", "created_at")
+    list_filter = ("competicio", "comp_aparell", "anul_lada_at")
+    search_fields = ("inscripcio__nom_i_cognoms", "inscripcio__document", "motiu", "notes")
+    autocomplete_fields = ("competicio", "comp_aparell", "marcada_per", "anul_lada_per")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(FasePartitionState)
+class FasePartitionStateAdmin(admin.ModelAdmin):
+    list_display = ("fase", "partition_key", "status", "qualification_run", "confirmed_at", "updated_at")
+    list_filter = ("status", "fase__competicio")
+    search_fields = ("fase__nom", "partition_key", "source_snapshot_hash")
+    autocomplete_fields = ("fase", "qualification_run")
+    readonly_fields = ("created_at", "updated_at")
+
+
 @admin.register(RotacioAssignacioProgramUnit)
 class RotacioAssignacioProgramUnitAdmin(admin.ModelAdmin):
     list_display = ("assignacio", "program_unit", "ordre")
@@ -87,6 +122,24 @@ class ClassificacioTemplateGlobalAdmin(admin.ModelAdmin):
     list_filter = ("tipus", "activa")
     search_fields = ("nom", "slug", "descripcio")
     readonly_fields = ("version", "uses_count", "last_used_at", "created_at", "updated_at")
+
+
+@admin.register(JudgeDeviceToken)
+class JudgeDeviceTokenAdmin(admin.ModelAdmin):
+    list_display = ("id", "label", "competicio", "comp_aparell", "is_active", "revoked_at", "last_used_at")
+    list_filter = ("is_active", "competicio", "comp_aparell")
+    search_fields = ("id", "label", "competicio__nom", "comp_aparell__nom_local", "comp_aparell__codi_local")
+    autocomplete_fields = ("competicio", "comp_aparell")
+    readonly_fields = ("created_at", "last_used_at")
+
+
+@admin.register(JudgePortalAssignment)
+class JudgePortalAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("judge_token", "competicio", "comp_aparell", "fase", "label", "ordre", "is_active")
+    list_filter = ("is_active", "competicio", "comp_aparell")
+    search_fields = ("judge_token__label", "judge_token__id", "label", "comp_aparell__nom_local")
+    autocomplete_fields = ("judge_token", "competicio", "comp_aparell", "fase")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(JudgeConversation)

@@ -1,0 +1,111 @@
+{% load static %}
+
+<section class="phase-detail-panel phase-base-detail-panel" aria-label="Detall de la preliminar implícita">
+  <div class="phase-detail-heading">
+    <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_base" aria-label="Ajuda sobre la preliminar implicita" title="Ajuda sobre la preliminar implicita">?</button>
+    <h5>Detall de la preliminar implícita</h5>
+  </div>
+
+  <article class="phase-node phase-node-base-detail" data-avatar-anchor="phase-base-detail">
+    <header class="phase-node-header is-base">
+      <div>
+        <div class="phase-node-title">
+          <strong>Preliminar implícita</strong>
+          <span class="badge badge-light border">DEFAULT</span>
+          <span class="badge badge-secondary">Base de l'aparell</span>
+          <span class="badge badge-light border">{{ comp_aparell.nombre_exercicis }} exercici(s)</span>
+        </div>
+        <div class="text-muted small">Aparell: {{ comp_aparell.display_nom }} - {{ comp_aparell.display_codi }}</div>
+        <div class="phase-node-overview">
+          <span>{{ root_phases|length }} fase(s) filla</span>
+          <span>{{ phase_count }} fase(s) avancada(es)</span>
+          <span>{{ unit_count }} unitats de programa</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="phase-node-body">
+      <div class="phase-summary-grid phase-base-summary-grid">
+        <section class="phase-summary-card phase-base-info-card is-ready">
+          <div class="phase-summary-card-head">
+            <div>
+              <div class="phase-summary-kicker">
+                <img src="{% static 'fases/preliminar.png' %}" alt="">
+                <span>Base</span>
+              </div>
+              <h6>Què representa?</h6>
+            </div>
+            <span class="badge phase-badge-blue">Implícita</span>
+          </div>
+          <div class="phase-summary-note">
+            La preliminar no es desa com una fase avançada. Representa la puntuació i l'ordre base de l'aparell abans de crear semifinals, finals o altres rondes.
+          </div>
+          <dl class="phase-summary-list">
+            <div>
+              <dt>Origen</dt>
+              <dd>Inscripcions i notes base de l'aparell</dd>
+            </div>
+            <div>
+              <dt>Continuació</dt>
+              <dd>Les fases filles poden classificar participants, equips o grups des d'aquesta base.</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="phase-summary-card phase-base-scoring-card is-ready" data-avatar-anchor="phase-base-scoring">
+          <div class="phase-summary-card-head">
+            <div>
+              <div class="phase-summary-kicker">
+                <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+                <span>Puntuació</span>
+              </div>
+              <h6>Configuració base</h6>
+            </div>
+            <span class="badge phase-badge-blue">{{ comp_aparell.nombre_exercicis }} exercici(s)</span>
+          </div>
+          <form method="post" class="phase-base-detail-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_base_scoring_settings">
+            <input type="hidden" name="comp_aparell_id" value="{{ comp_aparell.id }}">
+            <label class="phase-child-create-field">
+              <span>Exercicis de la preliminar</span>
+              <input class="form-control form-control-sm" type="number" name="nombre_exercicis" min="1" max="5" value="{{ comp_aparell.nombre_exercicis }}">
+            </label>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
+          </form>
+          <div class="phase-action-row">
+            <a class="btn btn-sm btn-outline-warning phase-themed-btn"
+               href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+              <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+              <span>Configurar puntuació</span>
+            </a>
+          </div>
+        </section>
+
+        <section class="phase-summary-card phase-base-actions-card is-pending" data-avatar-anchor="phase-base-next-step">
+          <div class="phase-summary-card-head">
+            <div>
+              <div class="phase-summary-kicker">
+                <img src="{% static 'fases/nova_fase.png' %}" alt="">
+                <span>Continuar</span>
+              </div>
+              <h6>Següent pas</h6>
+            </div>
+          </div>
+          <div class="phase-base-action-stack">
+            {% include "competicio/fases/_create_child_phase_form.html" with parent_id="" %}
+            <a class="btn btn-sm btn-outline-primary"
+               href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+              Configurar participació
+            </a>
+          </div>
+          {% if root_phases %}
+            <div class="phase-summary-note">Ja hi ha fases filles creades des de la preliminar. Selecciona'n una a l'arbre per editar-ne origen, tall, unitats i estat.</div>
+          {% else %}
+            <div class="phase-summary-note">Crea una fase filla quan necessitis semifinals, finals o rondes posteriors.</div>
+          {% endif %}
+        </section>
+      </div>
+    </div>
+  </article>
+</section>

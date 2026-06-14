@@ -1059,6 +1059,55 @@ def _validate_participants_per_aparell(competicio, schema: dict, *, tipus="indiv
     return errors
 
 
+def _validate_participants_global(schema: dict, *, tipus="individual", team_mode=""):
+    schema = schema or {}
+    punt = schema.get("puntuacio")
+    if not isinstance(punt, dict):
+        punt = {}
+
+    raw_cfg = punt.get("participants_global")
+    raw_agg = punt.get("agregacio_participants_global")
+    raw_mode = str(raw_cfg.get("mode") or "tots").strip().lower() if isinstance(raw_cfg, dict) else ""
+    has_non_default_cfg = raw_cfg not in (None, {}) and not (
+        isinstance(raw_cfg, dict)
+        and raw_mode == "tots"
+        and raw_cfg.get("n") in (None, "", 1, "1")
+    )
+    raw_agg_value = str(raw_agg or "").strip().lower()
+    has_non_default_agg = raw_agg not in (None, "") and raw_agg_value != "sum"
+    if not has_non_default_cfg and not has_non_default_agg:
+        return []
+
+    allow_global_member_selection = (
+        _is_derived_team_scope_enabled(tipus=tipus, team_mode=team_mode)
+        and str(punt.get("exercise_selection_scope") or "").strip().lower() == EXERCISE_SELECTION_SCOPE_PER_MEMBER
+        and str(punt.get("mode_seleccio_exercicis") or "per_aparell_override").strip().lower() == "global_pool"
+    )
+    if not allow_global_member_selection:
+        return [
+            "puntuacio.participants_global nomes es compatible amb tipus='equips' + team_mode=derived_from_individual + exercise_selection_scope=per_member + mode_seleccio_exercicis=global_pool.",
+        ]
+
+    errors = []
+    if raw_cfg is not None and not isinstance(raw_cfg, dict):
+        errors.append("puntuacio.participants_global ha de ser un objecte.")
+    elif isinstance(raw_cfg, dict):
+        mode = str(raw_cfg.get("mode") or "tots").strip().lower()
+        if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+            errors.append(f"puntuacio.participants_global.mode invalid: {mode}")
+        elif mode in {"millor_n", "pitjor_n"}:
+            try:
+                if int(raw_cfg.get("n") or 0) <= 0:
+                    raise ValueError
+            except Exception:
+                errors.append("puntuacio.participants_global.n invalid.")
+    if raw_agg not in (None, ""):
+        agg = str(raw_agg or "sum").strip().lower()
+        if agg not in {"sum", "avg", "median", "max", "min"}:
+            errors.append(f"puntuacio.agregacio_participants_global invalid: {agg}")
+    return errors
+
+
 def _team_pool_per_exercici_app_ids(punt: dict):
     punt = punt if isinstance(punt, dict) else {}
     raw_map = punt.get("team_pool_mode_per_aparell") or {}
@@ -2516,15 +2565,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             errors.append(f"desempat[{idx}] ha de ser un objecte.")
             continue
         raw_pipeline = tie.get("pipeline")
-        for key in (
-            "team_pool_mode_per_aparell",
-            "team_pool_participants_per_exercici_per_aparell",
-            "team_pool_agregacio_participants_per_exercici_per_aparell",
-        ):
-            if key in tie:
-                errors.append(f"desempat[{idx}].{key} no esta permes.")
-            if isinstance(raw_pipeline, dict) and key in raw_pipeline:
-                errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
         if allow_pipeline_exercise_scope:
             raw_team_pool_contract_errors = validate_team_pool_tie_contract(
                 tie,
@@ -2537,13 +2577,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             continue
         pipeline_for_shape = raw_pipeline
         if isinstance(raw_pipeline, dict):
-            for key in (
-                "camps_mode_per_aparell",
-                "camps_per_exercici_per_aparell",
-                "agregacio_camps_per_exercici_per_aparell",
-            ):
-                if key in raw_pipeline:
-                    errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
             errors.extend(
                 _validate_tie_pipeline_input_source(
                     raw_pipeline,
@@ -2627,6 +2660,13 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(
         _validate_participants_per_aparell(
             competicio,
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
+    errors.extend(
+        _validate_participants_global(
             schema_local,
             tipus=tipus,
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),

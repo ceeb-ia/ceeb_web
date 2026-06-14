@@ -126,7 +126,7 @@
       const pageSize = Math.min(8, contexts.length);
       const expandBtn = el("button", {
         type:"button",
-        class:"btn btn-sm btn-primary",
+        class:"btn btn-sm notes-btn-theme-solid",
         text: contexts.length > pageSize ? `Expandir ${pageSize} primers` : "Expandir avisos",
       });
       expandBtn.addEventListener("click", () => expandFilteredContexts(pageSize));
@@ -147,7 +147,7 @@
           ].filter(Boolean).join(" - "),
         }));
         const actions = el("div", {class:"d-flex flex-wrap justify-content-end", style:"gap:6px;"});
-        const openBtn = el("button", {type:"button", class:"btn btn-sm btn-outline-primary", text:"Obrir"});
+        const openBtn = el("button", {type:"button", class:"btn btn-sm notes-btn-theme-outline", text:"Obrir"});
         openBtn.addEventListener("click", () => openNotesContext(context));
         actions.appendChild(openBtn);
         item.appendChild(textWrap);
@@ -278,7 +278,7 @@
         ].filter(Boolean).join(" · "),
       }));
       const actions = el("div", {class:"d-flex flex-wrap justify-content-end", style:"gap:6px;"});
-      const btn = el("button", {type:"button", class:"btn btn-sm btn-outline-primary", text:"Obrir"});
+      const btn = el("button", {type:"button", class:"btn btn-sm notes-btn-theme-outline", text:"Obrir"});
       const validateBtn = el("button", {type:"button", class:"btn btn-sm btn-outline-success", text:"Validar"});
       btn.addEventListener("click", () => openWarningContext(warning));
       validateBtn.addEventListener("click", () => validateGlobalWarning(warning, validateBtn));

@@ -1,0 +1,22 @@
+<section class="phase-panel phase-danger-panel">
+  <div class="phase-panel-title">
+    <h5>Eliminar fase</h5>
+  </div>
+  {% if selected_phase.ui_can_delete %}
+    <form
+      method="post"
+      data-phase-confirm-title="Eliminar fase"
+      data-phase-confirm-message="Eliminar aquesta fase buida?"
+      data-phase-confirm-label="Eliminar fase"
+      data-phase-confirm-tone="danger">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="delete_phase">
+      <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+      <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar fase buida</button>
+    </form>
+  {% else %}
+    <div class="phase-panel-note">
+      Nomes es poden eliminar fases sense filles ni unitats des d'aquest panell. Per eliminar una branca sencera sense unitats programades a rotacions, fes servir el menu de tres punts del node a l'arbre.
+    </div>
+  {% endif %}
+</section>

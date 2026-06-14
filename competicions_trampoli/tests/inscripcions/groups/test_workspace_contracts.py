@@ -456,7 +456,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(data.get("target_ids"), [self.ins_free_a.id, self.ins_free_b.id])
         self.assertEqual(int(data.get("total") or 0), 2)
 
-    def test_groups_workspace_resolve_auto_context_returns_global_buckets_without_selection(self):
+    def test_groups_workspace_resolve_auto_context_does_not_use_group_by_as_bucket_source(self):
         self.ins_programmed_a.categoria = "Alevi"
         self.ins_programmed_a.save(update_fields=["categoria"])
         self.ins_free_a.categoria = "Alevi"
@@ -488,13 +488,62 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(int(data.get("selection_count") or 0), 0)
         self.assertEqual(data.get("source_scope"), "competition_all")
         self.assertEqual(int(data.get("source_total") or 0), 5)
-        self.assertEqual(int(data.get("buckets_total") or 0), 3)
-        self.assertEqual(len(data.get("default_bucket_keys") or []), 3)
+        self.assertEqual(int(data.get("buckets_total") or 0), 0)
+        self.assertEqual(len(data.get("default_bucket_keys") or []), 0)
+        self.assertEqual(data.get("layers_used"), [])
         self.assertFalse(data.get("used_fallback"))
+        self.assertEqual(data.get("buckets"), [])
+
+    def test_groups_workspace_resolve_auto_context_selected_scope_intersects_workspace_filters(self):
+        self.ins_programmed_a.categoria = "Alevi"
+        self.ins_programmed_a.save(update_fields=["categoria"])
+        self.ins_free_a.categoria = "Alevi"
+        self.ins_free_a.save(update_fields=["categoria"])
+        self.ins_programmed_b.categoria = "Senior"
+        self.ins_programmed_b.save(update_fields=["categoria"])
+        self.ins_other.categoria = "Infantil"
+        self.ins_other.save(update_fields=["categoria"])
+        self.ins_free_b.categoria = "Senior"
+        self.ins_free_b.save(update_fields=["categoria"])
+
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "operation": "resolve_auto_context",
+                "selected_ids": [self.ins_programmed_a.id, self.ins_other.id, self.ins_free_b.id],
+                "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "workspace_filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "categories": ["Alevi", "Senior"],
+                },
+                "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
+                "source_scope": "selected",
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("source_scope"), "selected")
+        self.assertEqual(data.get("target_scope"), "selected")
+        self.assertEqual(int(data.get("selection_count") or 0), 3)
+        self.assertEqual(int(data.get("source_total") or 0), 2)
+        self.assertEqual(int(data.get("buckets_total") or 0), 2)
         self.assertEqual(
             sorted(bucket.get("label") for bucket in (data.get("buckets") or [])),
-            ["Alevi", "Infantil", "Senior"],
+            ["Alevi", "Senior"],
         )
+        buckets_by_label = {
+            bucket.get("label"): bucket
+            for bucket in (data.get("buckets") or [])
+        }
+        self.assertEqual(int((buckets_by_label["Alevi"] or {}).get("global_count") or 0), 1)
+        self.assertEqual(int((buckets_by_label["Alevi"] or {}).get("selected_count") or 0), 1)
+        self.assertNotIn("Infantil", buckets_by_label)
 
     def test_groups_workspace_resolve_auto_context_combines_workspace_bucket_fields(self):
         rows = [
@@ -525,25 +574,28 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data.get("ok"))
-        self.assertEqual(data.get("workspace_bucket_fields"), ["entitat"])
-        self.assertEqual(data.get("layers_used"), ["tabs", "workspace"])
+        self.assertEqual(data.get("workspace_bucket_fields"), ["categoria", "entitat"])
+        self.assertEqual(data.get("layers_used"), ["workspace"])
         self.assertEqual(int(data.get("buckets_total") or 0), 5)
         self.assertEqual(
             sorted(bucket.get("label") for bucket in (data.get("buckets") or [])),
             [
-                "Alevi / Club A",
-                "Alevi / Club B",
-                "Infantil / Club B",
-                "Senior / Club A",
-                "Senior / Club B",
+                "Alevi · Club A",
+                "Alevi · Club B",
+                "Infantil · Club B",
+                "Senior · Club A",
+                "Senior · Club B",
             ],
         )
         self.assertEqual(
             data.get("detected_workspace_fields"),
-            [{"code": "entitat", "label": "Entitat (Nativa)"}],
+            [
+                {"code": "categoria", "label": "Categoria (Nativa)"},
+                {"code": "entitat", "label": "Entitat (Nativa)"},
+            ],
         )
         self.assertTrue(
-            all(sorted(bucket.get("kinds") or []) == ["tabs", "workspace"] for bucket in (data.get("buckets") or []))
+            all(sorted(bucket.get("kinds") or []) == ["workspace"] for bucket in (data.get("buckets") or []))
         )
 
     def test_groups_workspace_resolve_auto_context_supports_excel_workspace_bucket_fields(self):
@@ -610,6 +662,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
                 },
                 "fallback_mode": "all_filtered",
                 "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
                 "source_scope": "competition_all",
             },
         )
@@ -619,7 +672,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(data.get("ok"))
         self.assertEqual(int(data.get("selection_count") or 0), 2)
         self.assertEqual(int(data.get("buckets_total") or 0), 3)
-        self.assertEqual(sorted(data.get("layers_used") or []), ["tabs"])
+        self.assertEqual(sorted(data.get("layers_used") or []), ["workspace"])
         buckets_by_label = {
             bucket.get("label"): bucket
             for bucket in (data.get("buckets") or [])
@@ -650,6 +703,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
                 "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
                 "source_scope": "competition_all",
             },
         )
@@ -670,6 +724,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
                 "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
                 "source_scope": "competition_all",
             },
         )
@@ -690,6 +745,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
                 "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
                 "source_scope": "competition_all",
             },
         )
@@ -707,12 +763,65 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
                 "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
                 "source_scope": "competition_all",
             },
         )
         self.assertEqual(set_resp.status_code, 200)
         set_data = set_resp.json()
         self.assertEqual(set_data.get("selected_ids"), [self.ins_other.id])
+
+    def test_groups_workspace_apply_auto_context_selection_selected_scope_cannot_expand_outside_selection(self):
+        self.ins_programmed_a.categoria = "Alevi"
+        self.ins_programmed_a.save(update_fields=["categoria"])
+        self.ins_free_a.categoria = "Alevi"
+        self.ins_free_a.save(update_fields=["categoria"])
+        self.ins_programmed_b.categoria = "Senior"
+        self.ins_programmed_b.save(update_fields=["categoria"])
+
+        selected_ids = [self.ins_programmed_a.id, self.ins_programmed_b.id]
+        resolve_resp = self._post_groups_contract(
+            "workspace",
+            {
+                "operation": "resolve_auto_context",
+                "selected_ids": selected_ids,
+                "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
+                "source_scope": "selected",
+            },
+        )
+        self.assertEqual(resolve_resp.status_code, 200)
+        resolve_data = resolve_resp.json()
+        bucket_keys_by_label = {
+            bucket.get("label"): bucket.get("key")
+            for bucket in (resolve_data.get("buckets") or [])
+        }
+        self.assertEqual(
+            sorted(bucket_keys_by_label.keys()),
+            ["Alevi", "Senior"],
+        )
+
+        set_resp = self._post_groups_contract(
+            "workspace",
+            {
+                "operation": "apply_auto_context_selection",
+                "selection_mode": "set",
+                "bucket_keys": [bucket_keys_by_label["Alevi"]],
+                "selected_ids": selected_ids,
+                "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria"],
+                "source_scope": "selected",
+            },
+        )
+        self.assertEqual(set_resp.status_code, 200)
+        set_data = set_resp.json()
+        self.assertEqual(set_data.get("selected_ids"), [self.ins_programmed_a.id])
+        self.assertNotIn(self.ins_free_a.id, set_data.get("selected_ids") or [])
+        self.assertEqual(int(set_data.get("target_ids_count") or 0), 1)
 
     def test_groups_workspace_filtered_scope_respects_column_filters(self):
         self.ins_free_a.entitat = "Club Filtrat"
@@ -988,6 +1097,7 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
                 scope="selected",
                 selected_ids=[self.ins_free_a.id, self.ins_free_b.id],
                 group_by=["categoria"],
+                workspace_bucket_fields=["categoria"],
                 selected_keys=[],
                 bucket_selection_mode="none",
             ),

@@ -11,6 +11,7 @@ from ....models.competicio import CompeticioAparell, ProgramUnitSlot
 from ....models.scoring import ScoreEntry, TeamScoreEntry
 from ..phase_scope import PHASE_SCOPE_PER_APP, normalize_phase_scope_payload
 from ...scoring.team_scoring import is_team_context_app
+from ...inscripcions.admission import load_excluded_app_ids_by_inscripcio as load_admission_excluded_app_ids_by_inscripcio
 from ...teams.equip_contexts import normalize_equip_context_code
 from .common import (
     get_effective_team_context_code,
@@ -66,6 +67,36 @@ def load_comp_aparells(competicio, *, punt=None) -> list[CompeticioAparell]:
     if app_mode == "seleccionar" and selected_ids:
         qs = qs.filter(id__in=selected_ids)
     return list(qs.order_by("ordre", "id"))
+
+
+def load_excluded_app_ids_by_inscripcio(competicio, app_ids=None) -> dict[int, set[int]]:
+    return load_admission_excluded_app_ids_by_inscripcio(competicio, app_ids)
+
+
+def filter_inscripcions_by_app_admission(inscripcions, app_ids=None, excluded_by_inscripcio=None) -> list[Inscripcio]:
+    clean_app_ids = {
+        app_id
+        for app_id in (normalize_positive_int(raw_id) for raw_id in (app_ids or []))
+        if app_id is not None
+    }
+    if not clean_app_ids:
+        return list(inscripcions or [])
+
+    excluded = excluded_by_inscripcio or {}
+    return [
+        ins
+        for ins in (inscripcions or [])
+        if clean_app_ids - set(excluded.get(int(ins.id), set()))
+    ]
+
+
+def filter_score_entries_by_app_admission(notes, excluded_by_inscripcio=None) -> list[ScoreEntry]:
+    excluded = excluded_by_inscripcio or {}
+    return [
+        note
+        for note in (notes or [])
+        if int(note.comp_aparell_id) not in excluded.get(int(note.inscripcio_id), set())
+    ]
 
 
 def load_inscripcions(
@@ -307,6 +338,7 @@ def load_engine_orm_data(
             else phase_slot_subject_ids(competicio, normalized_phase_scope)
         )
         app_ids = [int(comp_aparell.id) for comp_aparell in aparells]
+        excluded_by_inscripcio = load_excluded_app_ids_by_inscripcio(competicio, app_ids)
         phase_ins_filters_by_app, phase_team_filters_by_app, phase_explicit_app_ids = phase_scope_subject_filters_by_app(
             competicio,
             normalized_phase_scope,
@@ -317,6 +349,12 @@ def load_engine_orm_data(
             filtres=filtres,
             matches_filter=matches_filter,
         )
+        ins_list = filter_inscripcions_by_app_admission(
+            ins_list,
+            app_ids,
+            excluded_by_inscripcio,
+        )
+        ins_by_id = {int(ins.id): ins for ins in ins_list}
         if phase_inscripcio_ids is not None:
             ins_list = [ins for ins in ins_list if int(ins.id) in phase_inscripcio_ids]
             ins_by_id = {int(ins.id): ins for ins in ins_list}
@@ -333,6 +371,7 @@ def load_engine_orm_data(
             phase_id=phase_id,
             include_all_phases=normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP,
         )
+        notes = filter_score_entries_by_app_admission(notes, excluded_by_inscripcio)
         if normalized_phase_scope.get("mode") == PHASE_SCOPE_PER_APP:
             notes = [
                 note for note in notes
@@ -416,8 +455,11 @@ __all__ = [
     "EngineOrmData",
     "build_score_indexes",
     "build_team_score_indexes",
+    "filter_inscripcions_by_app_admission",
+    "filter_score_entries_by_app_admission",
     "load_comp_aparells",
     "load_engine_orm_data",
+    "load_excluded_app_ids_by_inscripcio",
     "load_inscripcions",
     "load_score_entries",
     "load_team_score_entries",

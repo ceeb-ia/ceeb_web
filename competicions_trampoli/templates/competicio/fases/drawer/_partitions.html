@@ -1,0 +1,42 @@
+{% if selected_phase.ui_generated_partitions %}
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Particions de snapshot</h5>
+    </div>
+    <div class="phase-panel-note mb-2">
+      Estat de les particions vinculades al snapshot congelat o pendent de confirmar.
+    </div>
+    <div class="phase-partition-list">
+      {% for partition in selected_phase.ui_generated_partitions %}
+        <div class="phase-partition-item">
+          <div>
+            <strong>{{ partition.key }}</strong>
+            <div class="phase-panel-note">
+              {{ partition.status_label }}
+              {% if partition.is_stale %} - {{ partition.stale_label }}{% endif %}
+              {% if partition.warnings %} - {{ partition.warnings|length }} avisos{% endif %}
+            </div>
+            {% if partition.warnings %}
+              <div class="phase-partition-warning-list">
+                {% for warning in partition.warnings %}
+                  <div>{{ warning }}</div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          {% if partition.can_confirm %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="confirm_partition">
+              <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
+              <input type="hidden" name="partition_key" value="{{ partition.key }}">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar particio</button>
+            </form>
+          {% else %}
+            <span class="badge badge-light border">{{ partition.status_label }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}

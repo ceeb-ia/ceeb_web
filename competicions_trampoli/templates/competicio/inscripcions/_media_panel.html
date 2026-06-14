@@ -1,8 +1,24 @@
-<section class="action-panel" id="panel-media" data-panel-key="media">
+{% load static %}
+
+<section class="action-panel" id="panel-media" data-panel-key="media" data-avatar-anchor="media-panel">
   <div class="action-panel-header">
     <div>
-      <p class="panel-title mb-0">Multimedia</p>
-      <div class="subtle">Workspace per ajustar el match, revisar la preview i gestionar assignacions existents.</div>
+      <div class="inscripcions-help-title">
+        <p class="panel-title mb-0">Multimedia</p>
+        <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_workspace" aria-label="Ajuda sobre multimedia" title="Ajuda sobre multimedia">?</button>
+      </div>
+    </div>
+    <div class="tab-select-card-tools">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+        data-expand-target="media-main-card"
+        data-label-collapsed="Obrir workspace"
+        data-label-expanded="Tancar vista ampla"
+        aria-expanded="false"
+      >
+        Obrir gestor de multimèdia
+      </button>
     </div>
   </div>
 
@@ -10,182 +26,329 @@
     <div
       class="tab-select-card team-workbench-card"
       id="media-main-card"
+      data-avatar-anchor="media-workspace"
       data-expand-card="media-main-card"
-      data-expand-title="Workspace de multimedia"
+      data-expand-title="Inscripcions   &rarr;   Gestor de multimèdia"
       data-expand-subtitle="Configura el match, revisa la preview i gestiona les assignacions en una sola vista."
     >
-        <div class="tab-select-card-head">
-          <div>
-            <div class="fw-semibold">Workspace de multimedia</div>
-            <div class="small text-muted">
-              Ajusta pesos i llindars, prova una preview amb configuracio draft i revisa el que ja esta assignat.
+        <div class="media-quick-strip" id="media-quick-strip" data-avatar-anchor="media-quick-match">
+          <div class="media-quick-copy">
+            <div class="inscripcions-help-title">
+              <div class="fw-semibold mb-2">Match assistit</div>
+              <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_quick_match" aria-label="Ajuda sobre match assistit rapid" title="Ajuda sobre match assistit rapid">?</button>
             </div>
+            <div class="small text-muted">Carrega una carpeta i calcula una preview abans d'obrir el gestor de multimèdia.</div>
           </div>
-          <div class="tab-select-card-tools">
-            <span class="badge badge-light border" id="media-compact-config-badge">Config carregant...</span>
-            <span class="badge badge-light border" id="media-compact-preview-badge">Preview 0 fitxers</span>
-            <span class="badge badge-light border" id="media-compact-workspace-badge">Workspace 0</span>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
-              data-expand-target="media-main-card"
-              data-label-collapsed="Obrir workspace"
-              data-label-expanded="Tancar vista ampla"
-              aria-expanded="false"
+          <div class="media-quick-controls">
+            <input
+              type="file"
+              id="media-quick-folder-input"
+              class="form-control form-control-sm"
+              webkitdirectory
+              directory
+              multiple
             >
-              Obrir workspace
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-quick-match-preview">
+              Previsualitzar match
             </button>
           </div>
-        </div>
-
-        <div class="team-compact-summary">
-          <div class="team-compact-summary-copy">
-            <div class="fw-semibold mb-1">Flux de treball</div>
-            <div class="small text-muted">
-              Carrega una carpeta local per revisar el match assistit, desa canvis de configuracio quan els tinguis
-              validats i torna a carregar el workspace per veure l'impacte sobre les inscripcions.
-            </div>
+          <div class="media-quick-badges" aria-live="polite">
+            <span class="badge badge-light border" id="media-compact-summary-folder">Cap carpeta</span>
+            <span class="badge badge-light border" id="media-compact-preview-badge">Preview 0 fitxers</span>
+            <span class="badge badge-light border" id="media-quick-auto-badge">0 auto</span>
+            <span class="badge badge-light border" id="media-quick-review-badge">0 review</span>
+            <span class="badge badge-light border" id="media-quick-unmatched-badge">0 sense match</span>
           </div>
-          <div class="team-compact-summary-metrics" id="media-compact-summary-metrics">
-            <span class="group-preview-badge badge badge-light border" id="media-compact-summary-config">Config</span>
-            <span class="group-preview-badge badge badge-light border" id="media-compact-summary-thresholds">Llindars</span>
-            <span class="group-preview-badge badge badge-light border" id="media-compact-summary-folder">Cap carpeta carregada</span>
-          </div>
-        </div>
-
-        <div class="team-compact-summary media-bulk-actions-summary">
-          <div class="team-compact-summary-copy">
-            <div class="fw-semibold mb-1">Accions rapides</div>
-            <div class="small text-muted">
-              Previsualitza el match amb la configuracio actual, aplica les assignacions seleccionades i refresca el
-              workspace quan canviis fitxers.
-            </div>
-          </div>
-          <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 760px);">
-            <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-              <input
-                type="file"
-                id="media-folder-input"
-                class="form-control form-control-sm"
-                webkitdirectory
-                directory
-                multiple
-              >
-              <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-match-preview">
-                Previsualitzar match
-              </button>
-              <button type="button" class="btn btn-sm btn-primary" id="btn-media-match-apply" {% if not can_edit_inscripcions %}disabled{% endif %}>
-                Aplicar assignacions
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-refresh">
-                Refrescar workspace
-              </button>
-            </div>
-            <div class="small text-muted" id="media-match-summary">Cap fitxer carregat.</div>
-          </div>
+          <div class="media-quick-status" id="media-quick-match-summary">Cap fitxer carregat.</div>
         </div>
 
         <div class="team-workspace-shell media-workspace-shell" id="media-workspace-shell">
-          <div class="team-workspace-header">
-            <div class="team-workspace-header-bar">
-              <div class="team-workspace-header-main">
-                <div class="team-workspace-title-wrap">
-                  <div class="team-workspace-title">Workspace de multimedia</div>
-                  <div class="small text-muted">
-                    Una vista per validar la configuracio, comparar candidats i gestionar les assignacions reals.
-                  </div>
-                </div>
-              </div>
-              <div class="team-workspace-header-tools">
-                <span class="badge badge-light border" id="media-summary-preview-count"><strong id="media-summary-preview-total">0</strong> preview</span>
-                <span class="badge badge-light border" id="media-summary-workspace-count"><strong id="media-summary-workspace-total">0</strong> inscripcions</span>
-                <span class="badge badge-light border" id="media-summary-primary-count"><strong id="media-summary-primary-total">0</strong> principals</span>
-                <span class="badge badge-light border" id="media-summary-folder-count"><strong id="media-summary-folder-total">0</strong> fitxers</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="team-workspace-grid media-workspace-grid">
-            <section class="team-workspace-pane">
-              <div class="team-pane-card">
+          <div class="media-workspace-grid">
+            <div class="media-workspace-row media-workspace-row-top">
+            <section class="team-workspace-pane media-pane media-pane-universe">
+              <div class="team-pane-card groups-pane-card groups-pane-card-universe media-universe-card" data-avatar-anchor="media-file-universe">
                 <div class="team-pane-head">
-                  <div>
-                    <div class="fw-semibold">Configuracio de match</div>
-                    <div class="small text-muted">
-                      Ajusta els pesos i els llindars per treballar amb el match assistit sense desar res fins que ho
-                      tinguis clar.
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/univers.png' %}" alt="">
+                    <div>
+                      <div class="fw-semibold">1. Univers de fitxers</div>
+                      <div class="small text-muted">
+                        Carrega una carpeta, calcula el match assistit i prepara els fitxers que vols aplicar.
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                <div class="team-filters-grid media-config-grid" id="media-config-grid">
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-weight-nom">Nom</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-nom">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-weight-categoria">Categoria</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-categoria">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-weight-subcategoria">Subcategoria</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-subcategoria">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-weight-entitat">Entitat</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-entitat">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-weight-sexe">Sexe</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-sexe">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-auto-score-min">Llindar auto</label>
-                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-auto-score-min">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-review-score-min">Llindar review</label>
-                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-review-score-min">
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-config-auto-margin-min">Margen auto</label>
-                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-auto-margin-min">
+                  <div class="inscripcions-help-title">
+                    <span class="badge badge-light border" id="media-universe-folder-badge">0 fitxers</span>
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_file_universe" aria-label="Ajuda sobre univers de fitxers" title="Ajuda sobre univers de fitxers">?</button>
                   </div>
                 </div>
 
-                <div class="small text-muted" id="media-config-status">Carregant configuracio...</div>
-                <div class="d-flex flex-wrap" style="gap:8px;">
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-config-preview">
-                    Previsualitzar amb aquesta configuracio
-                  </button>
-                  <button type="button" class="btn btn-sm btn-primary" id="btn-media-config-save" {% if not can_edit_inscripcions %}disabled{% endif %}>
-                    Desar configuracio
-                  </button>
+                <div class="media-folder-loader" data-avatar-anchor="media-folder-loader">
+                  <div class="media-folder-loader-main">
+                    <label class="media-folder-input-wrap" for="media-folder-input">
+                      <span class="media-folder-input-title">Carpeta local</span>
+                      <span class="media-folder-input-help">Selecciona la carpeta amb audios, videos o imatges.</span>
+                      <input
+                        type="file"
+                        id="media-folder-input"
+                        class="form-control form-control-sm"
+                        webkitdirectory
+                        directory
+                        multiple
+                      >
+                    </label>
+                    <div class="media-folder-actions">
+                      <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-match-preview">
+                        Previsualitzar match
+                      </button>
+                      <button type="button" class="btn btn-sm btn-primary" id="btn-media-match-apply" {% if not can_edit_inscripcions %}disabled{% endif %}>
+                        Aplicar assignacions
+                      </button>
+                      <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_apply_assignments" aria-label="Ajuda sobre aplicar assignacions multimedia" title="Ajuda sobre aplicar assignacions multimedia">?</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-refresh">
+                        Refrescar workspace
+                      </button>
+                    </div>
+                  </div>
+                  <div class="media-folder-status" id="media-match-summary">Cap fitxer carregat.</div>
+                </div>
+
+                <div class="media-universe-config" data-avatar-anchor="media-match-config">
+                  <details class="media-config-details">
+                    <summary class="media-config-summary">
+                      <span>
+                        <span class="media-config-summary-title">Configuracio de match</span>
+                        <span class="media-config-summary-copy">Ajusta pesos i llindars sense sortir de l'univers de fitxers.</span>
+                      </span>
+                    </summary>
+                    <div class="team-filters-grid media-config-grid" id="media-config-grid">
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-weight-nom">Nom</label>
+                        <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-nom">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-weight-categoria">Categoria</label>
+                        <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-categoria">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-weight-subcategoria">Subcategoria</label>
+                        <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-subcategoria">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-weight-entitat">Entitat</label>
+                        <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-entitat">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-weight-sexe">Sexe</label>
+                        <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-sexe">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-auto-score-min">Llindar auto</label>
+                        <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-auto-score-min">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-review-score-min">Llindar review</label>
+                        <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-review-score-min">
+                      </div>
+                      <div>
+                        <label class="small text-muted mb-1 d-block" for="media-config-auto-margin-min">Marge auto</label>
+                        <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-auto-margin-min">
+                      </div>
+                    </div>
+                    <div class="media-config-footer">
+                      <div class="inscripcions-help-title">
+                        <div class="small text-muted" id="media-config-status">Carregant configuracio...</div>
+                        <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_match_config" aria-label="Ajuda sobre configuracio de match" title="Ajuda sobre configuracio de match">?</button>
+                      </div>
+                      <div class="media-config-actions">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-config-preview">
+                          Previsualitzar amb aquesta configuracio
+                        </button>
+                        <button type="button" class="btn btn-sm btn-primary" id="btn-media-config-save" {% if not can_edit_inscripcions %}disabled{% endif %}>
+                          Desar configuracio
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
+                <div class="media-universe-preview-hint">
+                  <span class="badge badge-light border">Auto</span>
+                  <span class="badge badge-light border">Review</span>
+                  <span class="badge badge-light border">Sense match</span>
+                  <span class="small text-muted">La previsualitzacio detallada es mostra a la seguent zona.</span>
                 </div>
               </div>
             </section>
 
-            <section class="team-workspace-pane">
-              <div class="team-pane-card">
+            <section class="team-workspace-pane media-pane media-pane-preview">
+              <div class="team-pane-card groups-pane-card groups-pane-card-preview media-preview-card" data-avatar-anchor="media-match-preview">
                 <div class="team-pane-head">
-                  <div>
-                    <div class="fw-semibold">Previsualitzacio de match</div>
-                    <div class="small text-muted">
-                      Filtra per estat i canvia entre vista compacta i expandida per revisar score, marge i
-                      desglossament.
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/detall.png' %}" alt="">
+                    <div>
+                      <div class="fw-semibold">2. Previsualitzacio de match</div>
+                      <div class="small text-muted">
+                        Visualitza la relacio entre fitxers i inscripcions, amb confiança, marge i camps que expliquen el match.
+                      </div>
                     </div>
                   </div>
-                  <div class="d-flex flex-wrap" style="gap:6px;">
-                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="all">Totes</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="auto">Auto</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="review">Review</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="unmatched">Sense match</button>
+                  <div class="inscripcions-help-title">
+                    <span class="badge badge-light border" id="media-preview-visible-badge">0 visibles</span>
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_match_preview" aria-label="Ajuda sobre previsualitzacio de match" title="Ajuda sobre previsualitzacio de match">?</button>
                   </div>
                 </div>
 
-                <div class="d-flex flex-wrap align-items-center justify-content-between" style="gap:8px;">
-                  <div class="small text-muted" id="media-preview-status-line">Encara no s'ha calculat cap previsualitzacio.</div>
-                  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+                <div class="groups-universe-filterbar media-preview-filterbar">
+                  <div class="groups-filter-search">
+                    <label class="small text-muted mb-1 d-block" for="media-preview-filter-q">Cerca</label>
+                    <input type="text" class="form-control form-control-sm" id="media-preview-filter-q" placeholder="Fitxer, inscripcio, entitat o categoria...">
+                  </div>
+                  <div class="groups-filter-buttons" aria-label="Filtres de previsualitzacio de match">
+                    <div class="groups-filter-popover media-preview-filter-popover" data-media-preview-filter-popover data-select-id="media-preview-filter-status" data-filter-label="Estat">
+                      <select id="media-preview-filter-status" class="form-control form-control-sm groups-filter-native">
+                        <option value="all">Totes</option>
+                        <option value="auto">Auto</option>
+                        <option value="review">Review</option>
+                        <option value="unmatched">Sense match</option>
+                      </select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Estat</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Totes</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Estat</span>
+                            <button type="button" class="groups-filter-clear" data-media-preview-filter-clear="media-preview-filter-status">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options">
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-status" data-value="all">Totes</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-status" data-value="auto">Auto</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-status" data-value="review">Review</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-status" data-value="unmatched">Sense match</button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div class="groups-filter-popover media-preview-filter-popover" data-media-preview-filter-popover data-select-id="media-preview-filter-confidence" data-filter-label="Confiança">
+                      <select id="media-preview-filter-confidence" class="form-control form-control-sm groups-filter-native">
+                        <option value="all">Qualsevol</option>
+                        <option value="high">Alta</option>
+                        <option value="medium">Mitjana</option>
+                        <option value="low">Baixa</option>
+                      </select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Confiança</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Confiança</span>
+                            <button type="button" class="groups-filter-clear" data-media-preview-filter-clear="media-preview-filter-confidence">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options">
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-confidence" data-value="all">Qualsevol</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-confidence" data-value="high">Alta</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-confidence" data-value="medium">Mitjana</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-confidence" data-value="low">Baixa</button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div class="groups-filter-popover media-preview-filter-popover" data-media-preview-filter-popover data-select-id="media-preview-filter-margin" data-filter-label="Marge">
+                      <select id="media-preview-filter-margin" class="form-control form-control-sm groups-filter-native">
+                        <option value="all">Qualsevol</option>
+                        <option value="clear">Clar</option>
+                        <option value="tight">Dubtos</option>
+                      </select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Marge</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Marge</span>
+                            <button type="button" class="groups-filter-clear" data-media-preview-filter-clear="media-preview-filter-margin">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options">
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-margin" data-value="all">Qualsevol</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-margin" data-value="clear">Clar</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-margin" data-value="tight">Dubtos</button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div class="groups-filter-popover media-preview-filter-popover" data-media-preview-filter-popover data-select-id="media-preview-filter-field" data-filter-label="Camp">
+                      <select id="media-preview-filter-field" class="form-control form-control-sm groups-filter-native">
+                        <option value="all">Qualsevol</option>
+                        <option value="nom">Nom</option>
+                        <option value="categoria">Categoria</option>
+                        <option value="subcategoria">Subcategoria</option>
+                        <option value="entitat">Entitat</option>
+                        <option value="sexe">Sexe</option>
+                      </select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Camp</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+                        </summary>
+                        <div class="groups-filter-panel groups-filter-panel-wide">
+                          <div class="groups-filter-panel-head">
+                            <span>Camp amb match</span>
+                            <button type="button" class="groups-filter-clear" data-media-preview-filter-clear="media-preview-filter-field">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options">
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-field" data-value="all">Qualsevol</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-field" data-value="nom">Nom</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-field" data-value="categoria">Categoria</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-field" data-value="subcategoria">Subcategoria</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-field" data-value="entitat">Entitat</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-field" data-value="sexe">Sexe</button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div class="groups-filter-popover media-preview-filter-popover" data-media-preview-filter-popover data-select-id="media-preview-filter-candidate" data-filter-label="Candidat">
+                      <select id="media-preview-filter-candidate" class="form-control form-control-sm groups-filter-native">
+                        <option value="all">Tots</option>
+                        <option value="with">Amb candidat</option>
+                        <option value="without">Sense candidat</option>
+                      </select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Candidat</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Candidat</span>
+                            <button type="button" class="groups-filter-clear" data-media-preview-filter-clear="media-preview-filter-candidate">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options">
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-candidate" data-value="all">Tots</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-candidate" data-value="with">Amb candidat</button>
+                            <button type="button" class="groups-filter-option" data-media-preview-filter-value="media-preview-filter-candidate" data-value="without">Sense candidat</button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+                <div class="groups-filter-active-chips" id="media-preview-filter-active-chips" aria-live="polite"></div>
+
+                <div class="media-preview-toolbar">
+                  <div>
+                    <div class="small text-muted" id="media-preview-status-line">Encara no s'ha calculat cap previsualitzacio.</div>
+                    <div class="small text-muted" id="media-preview-summary"></div>
+                  </div>
+                  <div class="media-preview-toolbar-actions">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-preview-refresh">Refrescar vista</button>
                     <button type="button" class="btn btn-sm btn-outline-info" id="btn-media-preview-mode">
                       Vista expandida
@@ -193,64 +356,122 @@
                   </div>
                 </div>
 
-                <div class="small text-muted" id="media-preview-summary"></div>
-
                 <div class="media-preview-wrap mt-2" id="media-preview-wrap">
                   <div class="text-muted small">Carrega fitxers per veure la previsualitzacio.</div>
                 </div>
               </div>
             </section>
+            </div>
 
-            <section class="team-workspace-pane">
-              <div class="team-pane-card">
+            <div class="media-workspace-row media-workspace-row-bottom">
+            <section class="team-workspace-pane media-pane media-pane-assignments">
+              <div class="team-pane-card groups-pane-card groups-pane-card-board media-assignments-card" data-avatar-anchor="media-current-assignments">
                 <div class="team-pane-head">
-                  <div>
-                    <div class="fw-semibold">Assignacions actuals</div>
-                    <div class="small text-muted">
-                      Llistat filtrable per estat, origen, tipus, inscripcio i cerca. Pots obrir el fitxer, marcar
-                      principal, reassignar o eliminar cada media.
+                  <div class="groups-title-with-logo">
+                    <img class="groups-title-logo" src="{% static 'inscripcions/grups/grups_existents.png' %}" alt="">
+                    <div>
+                      <div class="fw-semibold">3. Assignacions actuals</div>
+                      <div class="small text-muted">
+                        Univers d'assignacions de multimedia amb filtres, fitxers associats i accions per cada media.
+                      </div>
                     </div>
+                  </div>
+                  <div class="media-card-head-actions">
+                    <button class="inscripcions-context-help" type="button" data-avatar-topic="multimedia_current_assignments" aria-label="Ajuda sobre assignacions multimedia actuals" title="Ajuda sobre assignacions multimedia actuals">?</button>
+                    <span class="badge badge-light border" id="media-workspace-count-badge">0 assignacions</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-workspace-refresh">Refrescar</button>
                   </div>
                 </div>
 
-                <div class="team-filters-grid media-workspace-filters">
-                  <div>
+                <div class="groups-universe-filterbar media-assignments-filterbar">
+                  <div class="groups-filter-search">
                     <label class="small text-muted mb-1 d-block" for="media-workspace-filter-q">Cerca</label>
                     <input type="text" class="form-control form-control-sm" id="media-workspace-filter-q" placeholder="Nom, inscripcio, fitxer o entitat...">
                   </div>
-                  <div>
+
+                  <div class="media-assignment-id-filter">
                     <label class="small text-muted mb-1 d-block" for="media-workspace-filter-inscripcio-id">Inscripcio ID</label>
                     <input type="number" class="form-control form-control-sm" id="media-workspace-filter-inscripcio-id" min="1" step="1" placeholder="Opcional">
                   </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-media-state">Estat</label>
-                    <select class="form-control form-control-sm" id="media-workspace-filter-media-state"></select>
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-source">Origen</label>
-                    <select class="form-control form-control-sm" id="media-workspace-filter-source"></select>
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-tipus">Tipus</label>
-                    <select class="form-control form-control-sm" id="media-workspace-filter-tipus"></select>
-                  </div>
-                  <div>
-                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-page">Pagina</label>
-                    <input type="number" class="form-control form-control-sm" id="media-workspace-filter-page" min="1" step="1" value="1">
+
+                  <div class="groups-filter-buttons" aria-label="Filtres d'assignacions multimedia">
+                    <div class="groups-filter-popover media-workspace-filter-popover" data-media-workspace-filter-popover data-select-id="media-workspace-filter-media-state" data-filter-label="Estat">
+                      <select class="form-control form-control-sm groups-filter-native" id="media-workspace-filter-media-state"></select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Estat</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Estat</span>
+                            <button type="button" class="groups-filter-clear" data-media-workspace-filter-clear="media-workspace-filter-media-state">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options" data-workspace-filter-options-for="media-workspace-filter-media-state"></div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div class="groups-filter-popover media-workspace-filter-popover" data-media-workspace-filter-popover data-select-id="media-workspace-filter-source" data-filter-label="Origen">
+                      <select class="form-control form-control-sm groups-filter-native" id="media-workspace-filter-source"></select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Origen</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Origen</span>
+                            <button type="button" class="groups-filter-clear" data-media-workspace-filter-clear="media-workspace-filter-source">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options" data-workspace-filter-options-for="media-workspace-filter-source"></div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div class="groups-filter-popover media-workspace-filter-popover" data-media-workspace-filter-popover data-select-id="media-workspace-filter-tipus" data-filter-label="Tipus">
+                      <select class="form-control form-control-sm groups-filter-native" id="media-workspace-filter-tipus"></select>
+                      <details class="groups-filter-menu">
+                        <summary class="groups-filter-trigger">
+                          <span class="groups-filter-trigger-label">Tipus</span>
+                          <span class="groups-filter-trigger-summary" data-filter-summary>Tots</span>
+                        </summary>
+                        <div class="groups-filter-panel">
+                          <div class="groups-filter-panel-head">
+                            <span>Tipus de fitxer</span>
+                            <button type="button" class="groups-filter-clear" data-media-workspace-filter-clear="media-workspace-filter-tipus">Netejar</button>
+                          </div>
+                          <div class="groups-filter-options" data-workspace-filter-options-for="media-workspace-filter-tipus"></div>
+                        </div>
+                      </details>
+                    </div>
                   </div>
                 </div>
+                <input type="hidden" id="media-workspace-filter-page" value="1">
+                <div class="groups-filter-active-chips" id="media-workspace-filter-active-chips" aria-live="polite"></div>
 
-                <div class="d-flex flex-wrap" style="gap:8px;">
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-prev">Anterior</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-next">Seguent</button>
-                </div>
+                <div class="groups-universe-body media-assignments-body">
+                  <div class="groups-candidates-toolbar media-assignments-toolbar">
+                    <div class="groups-selection-inline-metrics">
+                      <span class="badge badge-light border" id="media-workspace-page-size-badge">0 visibles</span>
+                      <span class="badge badge-light border" id="media-workspace-primary-badge">0 principals</span>
+                    </div>
+                  </div>
 
-                <div class="small text-muted" id="media-workspace-summary">Carregant assignacions...</div>
-                <div class="media-workspace-list-wrap mt-2" id="media-workspace-list-wrap">
-                  <div class="text-muted small">Carregant workspace...</div>
+                  <div class="small text-muted" id="media-workspace-summary">Carregant assignacions...</div>
+                  <div class="media-workspace-list-wrap" id="media-workspace-list-wrap">
+                    <div class="text-muted small">Carregant workspace...</div>
+                  </div>
+                  <div class="team-candidates-footer media-workspace-pager">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-prev">Anterior</button>
+                    <span class="small text-muted" id="media-workspace-page-label">Pagina 1</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-next">Seguent</button>
+                  </div>
                 </div>
               </div>
             </section>
+            {% include "competicio/inscripcions/multimedia/_detail_panel.html" %}
+            </div>
           </div>
         </div>
     </div>

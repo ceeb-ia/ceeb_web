@@ -1,92 +1,100 @@
-              <section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section>
-                <div class="builder-section__header">
-                  <div>
-                    <div class="builder-section__eyebrow">Entrada</div>
-                    <h4 class="builder-section__title">Filtres <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="filtres_overview" aria-label="Ajuda filtres">?</button></h4>
-                    <p class="builder-section__desc">Decideixen qui entra a la classificació abans de calcular resultats o mostrar particions.</p>
-                  </div>
-                  <div class="builder-help-badge">Abans del càlcul</div>
-                </div>
-                <div class="builder-section__body">
-                  <div class="builder-section__stack">
-                    <div class="builder-subsection">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Filtres simples</p>
-                          <p class="builder-subsection__desc">Combina entitats, categories, subcategories i grups per limitar la mostra de participants.</p>
-                        </div>
-                      </div>
-                      <div class="row">
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Entitats</label>
-                          <select class="form-control" id="fEntitats" multiple>
-                            {% for o in filter_choices.entitats %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Categories</label>
-                          <select class="form-control" id="fCategories" multiple>
-                            {% for o in filter_choices.categories %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Subcategories</label>
-                          <select class="form-control" id="fSubcategories" multiple>
-                            {% for o in filter_choices.subcategories %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Grups</label>
-                          <select class="form-control" id="fGrups" multiple>
-                            {% for o in filter_choices.grups %}
-                              <option value="{{ o.value }}">{{ o.label }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+{% load static %}
 
-                    <div class="builder-subsection builder-subsection--muted" id="detailConfigBox">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Detall desplegable</p>
-                          <p class="builder-subsection__desc">Afegeix un segon nivell sota cada fila. Aquest detall es configura per seccions i, en les taules, per aparell.</p>
-                        </div>
-                      </div>
-                      <div id="detailScopeHint" class="alert alert-secondary py-2 px-3 small mb-3">
-                        Configura seccions desplegables sota cada fila, limitades al tipus de classificació actual.
-                      </div>
-                      <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="detailEnabled">
-                        <label class="form-check-label" for="detailEnabled">Activar detall desplegable</label>
-                      </div>
-                      <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" id="detailDefaultOpen">
-                        <label class="form-check-label" for="detailDefaultOpen">Obrir el detall per defecte</label>
-                      </div>
-                      <div class="d-flex flex-wrap gap-2 mb-2">
-                        <select class="form-control form-control-sm w-auto" id="detailSectionType"></select>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnDetailSectionAdd">+ Seccio</button>
-                      </div>
-                      <div id="detailConfigAlert" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;"></div>
-                      <div id="detailSectionsBox" class="mb-2"></div>
-                    </div>
+<section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section data-avatar-anchor="classifications-filters-section">
+  <div class="builder-section__header">
+    <div>
+      <div class="builder-section__eyebrow">Entrada</div>
+      <h4 class="builder-section__title">Filtres <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button></h4>
+      <p class="builder-section__desc">Decideixen qui entra a la classificacio abans de calcular resultats o mostrar particions. <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters_partitions" aria-label="Ajuda sobre filtres i particions" title="Ajuda sobre filtres i particions">?</button></p>
+    </div>
+    <div class="builder-help-badge">Abans del calcul</div>
+  </div>
 
-                    <details class="builder-advanced">
-                      <summary class="small text-muted">Filtres avançats (JSON)</summary>
-                      <div class="mt-2">
-                        <textarea class="form-control" id="tFiltres" rows="3"></textarea>
-                        <div class="form-text text-muted">
-                          Exemple: {"categories_in":[1,2],"grups_in":["A"]}
-                        </div>
-                      </div>
-                    </details>
-                  </div>
-                </div>
-              </section>
+  <div class="builder-section__body">
+    <div class="builder-section__stack classif-filtres-flow">
+      <div class="builder-subsection classif-filtres-panel classif-filtres-panel--simple" data-avatar-anchor="classifications-filters-simple">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">01</span>
+            <div class="classif-panel-title-row">
+              <span class="classif-panel-icon" aria-hidden="true">
+                <img src="{% static 'classificacions/sections/filtres.png' %}" alt="">
+              </span>
+              <div class="classif-panel-title-copy">
+                <p class="builder-subsection__title">Filtres simples <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters_fields" aria-label="Ajuda sobre camps dels filtres" title="Ajuda sobre camps dels filtres">?</button></p>
+                <p class="builder-subsection__desc">Combina entitats, categories, subcategories i grups per limitar la mostra de participants.</p>
+              </div>
+            </div>
+          </div>
+          <div class="builder-inline-note">Mostra</div>
+        </div>
+
+        <div class="row classif-filtres-grid" data-avatar-anchor="classifications-filters-fields">
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Entitats</label>
+              <select class="form-control" id="fEntitats" multiple>
+                {% for o in filter_choices.entitats %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Categories</label>
+              <select class="form-control" id="fCategories" multiple>
+                {% for o in filter_choices.categories %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Subcategories</label>
+              <select class="form-control" id="fSubcategories" multiple>
+                {% for o in filter_choices.subcategories %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <div class="classif-filter-card">
+              <label class="font-weight-bold">Grups</label>
+              <select class="form-control" id="fGrups" multiple>
+                {% for o in filter_choices.grups %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted classif-filtres-panel classif-filtres-panel--advanced" data-avatar-anchor="classifications-filters-advanced">
+        <div class="builder-subsection__head">
+          <div class="classif-step-heading">
+            <span class="classif-step-index">02</span>
+            <span>
+              <p class="builder-subsection__title">Filtres avancats <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_filters_advanced" aria-label="Ajuda sobre filtres avançats" title="Ajuda sobre filtres avançats">?</button></p>
+              <p class="builder-subsection__desc">Acces directe al JSON dels filtres per manteniment o compatibilitat.</p>
+            </span>
+          </div>
+          <div class="builder-inline-note">JSON</div>
+        </div>
+
+        <details class="builder-advanced classif-filtres-advanced">
+          <summary class="small text-muted">Opcions avancades</summary>
+          <div class="mt-2">
+            <textarea class="form-control" id="tFiltres" rows="3"></textarea>
+            <div class="form-text text-muted">
+              Exemple: {"categories_in":[1,2],"grups_in":["A"]}
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</section>

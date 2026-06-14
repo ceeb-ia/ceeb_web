@@ -42,6 +42,38 @@
     --puntuacio-step-shared-bg: #f5f7fb;
     --puntuacio-step-shared-border: #d7dfeb;
   }
+  .classif-context-help,
+  body.competicions-app .btn.classif-context-help {
+    display: inline-grid;
+    place-items: center;
+    width: 1.45rem;
+    height: 1.45rem;
+    min-width: 1.45rem;
+    padding: 0;
+    border: 1px solid #f0bccb;
+    border-radius: 999px;
+    background: #fff1f2;
+    color: #9f1239;
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: pointer;
+    box-shadow: 0 5px 12px rgba(159, 18, 57, 0.08);
+  }
+  .classif-context-help:hover,
+  .classif-context-help:focus,
+  body.competicions-app .btn.classif-context-help:hover,
+  body.competicions-app .btn.classif-context-help:focus {
+    background: #ffffff;
+    color: #881337;
+    border-color: #e89aae;
+    box-shadow: 0 8px 18px rgba(159, 18, 57, 0.14);
+    outline: 0;
+  }
+  .classif-context-help--inline {
+    margin-left: 0.25rem;
+  }
   .builder-editor-body {
     padding: 1rem;
   }
@@ -220,10 +252,28 @@
     cursor: not-allowed;
     box-shadow: none;
   }
+  .builder-cfg-delete {
+    border-color: #fecdd3;
+    color: #be123c;
+    background: #fff1f2;
+    font-size: 1rem;
+    font-weight: 800;
+  }
+  .builder-cfg-delete:hover,
+  .builder-cfg-delete:focus {
+    border-color: #fb7185;
+    color: #9f1239;
+    background: #fff;
+  }
   .list-group-item.active .builder-cfg-move {
     border-color: rgba(255, 255, 255, 0.65);
     background: rgba(255, 255, 255, 0.12);
     color: #fff;
+  }
+  .list-group-item.active .builder-cfg-delete {
+    border-color: #fecdd3;
+    background: #fff;
+    color: #be123c;
   }
   .list-group-item.active .builder-cfg-move:hover,
   .list-group-item.active .builder-cfg-move:focus {
@@ -246,7 +296,7 @@
   .builder-section--meta { --section-accent: #2563eb; --section-tint: #f7faff; }
   .builder-section--particions { --section-accent: #0f766e; --section-tint: #f4fbfa; }
   .builder-section--puntuacio { --section-accent: #b45309; --section-tint: #fff9f1; }
-  .builder-section--desempat { --section-accent: #7c3aed; --section-tint: #faf7ff; }
+  .builder-section--desempat { --section-accent: var(--classif-base, #9F1239); --section-tint: var(--classif-soft, #FFF1F2); }
   .builder-section--filtres { --section-accent: #c2410c; --section-tint: #fff7f2; }
   .builder-section--presentacio { --section-accent: #1d4ed8; --section-tint: #f5f8ff; }
   .builder-section__header {
@@ -318,6 +368,203 @@
   }
   #classif-builder-v2 .tie-criterion-row--b > td {
     background-color: #f8fcfa;
+  }
+  .classif-tie-direct {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .classif-tie-direct-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 0.85fr) minmax(280px, 1.15fr);
+    gap: 0.65rem;
+    align-items: start;
+  }
+  .classif-tie-flow-card {
+    border: 1px solid #dde5ef;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.035);
+    overflow: hidden;
+  }
+  .classif-tie-flow-card--config {
+    grid-column: 1 / -1;
+  }
+  .classif-tie-flow-card__head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.6rem;
+    background: #f8fafc;
+    border-bottom: 1px solid #e5eaf1;
+  }
+  .classif-tie-flow-card__step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.45rem;
+    height: 1.45rem;
+    border-radius: 999px;
+    background: var(--classif-soft, #FFF1F2);
+    color: var(--classif-text, #881337);
+    font-size: 0.68rem;
+    font-weight: 800;
+  }
+  .classif-tie-flow-card__title {
+    color: #0f172a;
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .classif-tie-flow-card__body {
+    padding: 0.6rem;
+  }
+  .classif-tie-flow-card__body--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.55rem;
+    align-items: start;
+  }
+  .classif-tie-flow-inline {
+    display: grid;
+    grid-template-columns: minmax(90px, auto) minmax(180px, 1fr);
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .classif-tie-mini-label {
+    display: block;
+    margin: 0 0 0.25rem;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .classif-tie-flow-note,
+  .classif-tie-direct-summary {
+    color: #64748b;
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+  .classif-tie-exercise-row {
+    border: 1px solid #e5eaf1;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 0.55rem;
+  }
+  .classif-tie-exercise-row + .classif-tie-exercise-row {
+    margin-top: 0.5rem;
+  }
+  .classif-tie-exercise-row__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.45rem;
+    color: #0f172a;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+  .classif-tie-app-check-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.35rem 0.7rem;
+    margin-bottom: 0.55rem;
+  }
+  .classif-tie-app-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.25;
+  }
+  .classif-tie-app-check .form-check-input {
+    margin-left: 0;
+    margin-top: 0.15rem;
+    position: static;
+  }
+  .classif-tie-app-check .form-check-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .classif-tie-app-mini-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.6rem;
+  }
+  .classif-tie-app-mini-card {
+    --tie-app-accent: var(--classif-base, #9F1239);
+    border: 1px solid var(--classif-border, #FECDD3);
+    border-left: 4px solid var(--tie-app-accent);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .classif-tie-app-mini-card--tone-1,
+  .classif-tie-app-mini-card--tone-2,
+  .classif-tie-app-mini-card--tone-3 { --tie-app-accent: var(--classif-base, #9F1239); background: #fff; }
+  .classif-tie-app-mini-card__head {
+    padding: 0.48rem 0.6rem;
+    background: rgba(255, 255, 255, 0.72);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+  .classif-tie-app-mini-card__eyebrow {
+    color: #64748b;
+    font-size: 0.64rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .classif-tie-app-mini-card__title {
+    color: #0f172a;
+    font-size: 0.84rem;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+  .classif-tie-app-mini-card__body {
+    display: grid;
+    grid-template-columns: minmax(170px, 1.2fr) minmax(150px, 0.8fr);
+    gap: 0.5rem;
+    padding: 0.6rem;
+  }
+  .classif-tie-mini-section--fields-mode,
+  .classif-tie-mini-section--per-exercise-fields,
+  .classif-tie-mini-section--team-pool-exercise,
+  .classif-tie-mini-section--exercise {
+    grid-column: 1 / -1;
+  }
+  .classif-tie-mini-section--team-pool-exercise,
+  .classif-tie-mini-section--per-exercise-fields {
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    padding-top: 0.55rem;
+  }
+  .classif-tie-mini-section--exercise {
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding-top: 0.55rem;
+  }
+  .classif-tie-direct [data-k="tie_app_camps"] {
+    min-height: 6.4rem;
+  }
+  .classif-tie-direct [data-k="tie_app_ex_card"] {
+    margin-top: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent;
+  }
+  .classif-tie-direct [data-k="tie_app_ex_card"] .small.font-weight-bold {
+    display: none;
+  }
+  .classif-tie-direct [data-k="tie_app_ex_card"] .form-control {
+    margin-bottom: 0.35rem !important;
+  }
+  .classif-tie-direct-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.7rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #e5eaf1;
+    border-radius: 8px;
+    background: #f8fafc;
   }
   .puntuacio-app-list {
     display: flex;
@@ -615,6 +862,20 @@
     align-items: center;
   }
   @media (max-width: 767.98px) {
+    .classif-tie-direct-grid {
+      grid-template-columns: 1fr;
+    }
+    .classif-tie-flow-card__body--grid,
+    .classif-tie-app-mini-card__body,
+    .classif-tie-flow-inline {
+      grid-template-columns: 1fr;
+    }
+    .classif-tie-app-mini-list {
+      grid-template-columns: 1fr;
+    }
+    .classif-tie-app-check-grid {
+      grid-template-columns: 1fr;
+    }
     .puntuacio-app-card__head {
       padding: 0.8rem 0.8rem 0.75rem;
     }
@@ -900,5 +1161,8 @@
       gap: 0.2rem;
     }
   }
+
+{% include "classificacions/builder/styles/_three_pane_layout.html" %}
+{% include "classificacions/builder/styles/_controls.html" %}
 
 </style>

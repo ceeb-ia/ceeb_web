@@ -4,7 +4,8 @@ from django.db.models import Count
 from django.db.models import Prefetch
 
 from ...models import Inscripcio, InscripcioMedia
-from ...models.competicio import CompeticioAparell, CompeticioAparellFase, InscripcioAparellExclusio, ProgramUnit, ProgramUnitSlot
+from ...models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
+from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
 from ...models.scoring import SerieEquipItem
 from ...services.rotacions.rotacions_ordering import (
@@ -19,6 +20,10 @@ from ...services.rotacions.rotacions_ordering import (
     rotation_unit_label,
 )
 from ...services.shared.competition_groups import get_group_maps, group_label
+from ...services.scoring.phase_eligibility import (
+    is_program_unit_scoreable,
+    scoreable_slot_statuses,
+)
 from ...services.scoring.team_scoring import is_team_context_app
 from ...services.scoring.team_subject_contract import build_team_subject_registry
 from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
@@ -34,15 +39,31 @@ def normalize_unit_lookup_key(value):
     return str(value)
 
 
-def clamp_exercici(value, comp_aparell=None):
+def effective_exercise_count(comp_aparell=None, phase=None, max_exercicis=None):
+    if max_exercicis not in (None, ""):
+        raw = max_exercicis
+    else:
+        raw = None
+        phase_config = getattr(phase, "config", None)
+        if isinstance(phase_config, dict):
+            scoring_config = phase_config.get("scoring")
+            if isinstance(scoring_config, dict):
+                raw = scoring_config.get("nombre_exercicis")
+        if raw in (None, ""):
+            raw = getattr(comp_aparell, "nombre_exercicis", 1)
+    try:
+        count = int(raw or 1)
+    except Exception:
+        count = 1
+    return max(1, min(5, count))
+
+
+def clamp_exercici(value, comp_aparell=None, *, phase=None, max_exercicis=None):
     try:
         exercici = int(value or 1)
     except Exception:
         exercici = 1
-    try:
-        max_ex = int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)
-    except Exception:
-        max_ex = 1
+    max_ex = effective_exercise_count(comp_aparell, phase=phase, max_exercicis=max_exercicis)
     return max(1, min(max_ex, exercici))
 
 
@@ -63,7 +84,7 @@ def serialize_comp_aparell(comp_aparell):
         "code": str(getattr(comp_aparell, "display_codi", "") or getattr(comp_aparell.aparell, "codi", "") or ""),
         "ordre": comp_aparell.ordre,
         "subject_mode": "team" if is_team_context_app(comp_aparell) else "individual",
-        "exercicis": list(range(1, clamp_exercici(999, comp_aparell) + 1)),
+        "exercicis": list(range(1, effective_exercise_count(comp_aparell) + 1)),
     }
 
 
@@ -81,20 +102,11 @@ def _inscripcions_by_group(competicio):
 
 
 def _excluded_by_inscripcio(competicio, app_ids):
-    excluded = defaultdict(set)
-    if not app_ids:
-        return excluded
-    rows = (
-        InscripcioAparellExclusio.objects
-        .filter(inscripcio__competicio=competicio, comp_aparell_id__in=app_ids)
-        .values_list("inscripcio_id", "comp_aparell_id")
-    )
-    for inscripcio_id, app_id in rows:
-        excluded[int(inscripcio_id)].add(int(app_id))
-    return excluded
+    return load_excluded_app_ids_by_inscripcio(competicio, app_ids)
 
 
 def serialize_phase(phase):
+    exercise_count = effective_exercise_count(phase.comp_aparell, phase=phase)
     return {
         "id": phase.id,
         "label": str(phase.nom or ""),
@@ -102,6 +114,8 @@ def serialize_phase(phase):
         "ordre": phase.ordre,
         "estat": phase.estat,
         "comp_aparell_id": phase.comp_aparell_id,
+        "nombre_exercicis": exercise_count,
+        "exercicis": list(range(1, exercise_count + 1)),
     }
 
 
@@ -322,6 +336,7 @@ def build_notes_units_context(competicio):
                 "program_units",
                 queryset=(
                     ProgramUnit.objects
+                    .select_related("fase")
                     .prefetch_related(
                         Prefetch(
                             "slots",
@@ -336,20 +351,26 @@ def build_notes_units_context(competicio):
     )
     phases_by_app = defaultdict(list)
     phase_units = []
-    filled_statuses = {ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL}
+    filled_statuses = scoreable_slot_statuses()
     for phase in phases:
         app_id = int(phase.comp_aparell_id)
         comp_aparell = apps_by_id.get(app_id)
         if comp_aparell is None:
             continue
-        phases_by_app[app_id].append(phase)
+        exercise_count = effective_exercise_count(comp_aparell, phase=phase)
         subject_kind = "team_unit" if app_id in team_app_ids else "inscripcio"
+        phase_has_scoreable_unit = False
         for program_unit in phase.program_units.all():
+            if not is_program_unit_scoreable(program_unit):
+                continue
             slots = [
                 slot
                 for slot in program_unit.slots.all()
                 if slot.status in filled_statuses and slot.subject_id and str(slot.subject_kind or "").strip().lower() == subject_kind
             ]
+            if not slots:
+                continue
+            phase_has_scoreable_unit = True
             subject_refs = [f"{subject_kind}:{int(slot.subject_id)}" for slot in slots]
             unit_key = f"phase:{phase.id}:unit:{program_unit.id}"
             unit = {
@@ -364,6 +385,8 @@ def build_notes_units_context(competicio):
                 "program_unit_id": program_unit.id,
                 "comp_aparell_id": app_id,
                 "app_label": str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "Aparell"),
+                "nombre_exercicis": exercise_count,
+                "exercicis": list(range(1, exercise_count + 1)),
                 "member_keys": [],
                 "subject_refs": subject_refs,
                 "subject_kind": subject_kind,
@@ -376,6 +399,8 @@ def build_notes_units_context(competicio):
             phase_units.append(unit)
             unit_by_lookup[(app_id, normalize_unit_lookup_key(unit_key), None)] = unit
             unit_by_lookup[(app_id, normalize_unit_lookup_key(unit_key), f"phase:{phase.id}")] = unit
+        if phase_has_scoreable_unit:
+            phases_by_app[app_id].append(phase)
 
     return {
         "competicio": competicio,
@@ -426,13 +451,12 @@ def resolve_notes_unit(context, comp_aparell_id, *, unit_key=None, group=None, f
 def subjects_for_unit(context, unit, comp_aparell):
     app_id = int(comp_aparell.id)
     if unit.get("phase_id") and unit.get("program_unit_id"):
+        program_unit = ProgramUnit.objects.filter(pk=unit.get("program_unit_id")).select_related("fase").first()
+        if program_unit is None or not is_program_unit_scoreable(program_unit):
+            return []
         slots = list(
-            ProgramUnitSlot.objects
-            .filter(
-                unit_id=unit.get("program_unit_id"),
-                status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
-                subject_id__isnull=False,
-            )
+            program_unit.slots
+            .filter(status__in=scoreable_slot_statuses(), subject_id__isnull=False)
             .order_by("ordre", "slot_index", "id")
         )
         if app_id in context["team_app_ids"]:

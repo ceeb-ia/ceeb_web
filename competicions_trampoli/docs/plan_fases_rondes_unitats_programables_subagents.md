@@ -79,6 +79,27 @@
 - Les rotacions actuals poden programar un grup mes d'una vegada en franges diferents, pero aixo no crea una segona participacio competitiva.
 - Les classificacions calculen resultats i poden servir de font configurada per una fase, pero encara no materialitzen participants d'una fase posterior de manera automatica.
 
+## Actualitzacio UI Snapshot - 2026-05-18
+
+### Criteri de producte
+- El planner ha de girar al voltant de l'arbre de fases. El drawer lateral es tracta com una eina suplementaria, no com el lloc principal on s'entenen les fases.
+- `Origen i tall` desa una recepta: classificacio font, abast global/per particio, nombre de classificats, reserves i politica d'empats. No ha de crear grups ni congelar participants.
+- `Grups dins de la fase` defineix l'estructura programable de la fase: contenidors, places i criteri de repartiment. Aquesta estructura ha de ser coherent amb la recepta de tall.
+- `Estat de la fase` concentra el flux viu: previsualitzar el snapshot, congelar-lo, activar la fase per jutges i tancar/reobrir quan pertoqui.
+
+### Implementacio UI aplicada
+- Les accions de `preview_qualification`, `apply_qualification` i `regenerate_qualification` es mostren ara dins l'apartat `Estat de la fase` amb llenguatge de snapshot.
+- L'apartat `Origen i tall` queda com a formulari de configuracio de recepta i usa el boto `Desar recepta`.
+- L'apartat de grups parla de contenidors/grups de fase, no d'aplicar tall.
+- La UI deixa una nota tecnica: el backend actual encara acobla `Congelar snapshot` amb l'ompliment de `ProgramUnit`/`ProgramUnitSlot`.
+
+### Evolucio backend pendent
+- Separar semanticament `preview snapshot`, `freeze snapshot` i `populate program units`.
+- Fer que el snapshot congelat sigui el registre estable de participants classificats, reserves, particio d'origen i politica d'empats aplicada.
+- Fer que la creacio/configuracio de grups sigui previa i independent del snapshot, validant que els slots totals no superen els classificats disponibles segons la recepta.
+- Afegir doble validacio sempre que es modifiqui una recepta, grup o snapshot ja congelat, especialment si hi ha slots manuals, bloquejats, programats a rotacions o ja puntuats.
+- Usar `Estat de la fase` per exposar el pas de `programada` a `activa` per al portal de jutges, i de `activa` a `tancada` quan el flux de competicio estigui complet.
+
 ## Decisions Tancades
 
 ### Separacio de conceptes
@@ -1194,6 +1215,127 @@
   - confirmacio parcial
   - deteccio de stale/snapshot.
 
+### Tancament inicial implementat
+- Estat: implementacio inicial del tall congelat completada.
+- Decisio funcional aplicada:
+  - La classificacio es continua calculant al motor de classificacions.
+  - La fase desti no queda dependent en viu de la classificacio font.
+  - En aplicar el tall, el resultat queda congelat dins `ProgramUnit` i `ProgramUnitSlot`.
+  - Canvis posteriors a la classificacio o a les notes d'origen no reescriuen automaticament la fase desti.
+- Implementacio feta:
+  - Afegit servei:
+    - `services/fases/qualification.py`
+  - Afegides operacions:
+    - `preview_qualification(fase)`
+    - `apply_qualification(fase)`
+    - `qualification_is_stale(fase)`
+  - El servei llegeix el contracte existent dins `phase.config`:
+    - `source.classificacio_id`
+    - `cut.mode`
+    - `cut.qualifiers_count`
+    - `cut.reserve_count`
+    - `cut.partition_mode`
+    - `cut.unit_capacity`
+    - `cut.unit_name_template`
+  - Suport inicial implementat:
+    - tall `top_n`
+    - mode global
+    - mode per particions de la classificacio font
+    - reserves
+    - avis si hi ha menys participants que places
+    - avis d'empat real a la zona de tall
+  - En aplicar el tall:
+    - es creen `ProgramUnit` en estat `generated`
+    - s'omplen `ProgramUnitSlot` amb estat `filled` o `reserve`
+    - es desa `source_classificacio`
+    - es desa `source_particio_key`
+    - es desa `source_position`
+    - es desa `source_score`
+    - es desa `source_row`
+    - es desa `qualification.snapshot_hash` dins `fase.config`
+    - la fase desti passa a estat `generated`
+  - Si la classificacio font esta scoped a una fase persistent, `apply_qualification` exigeix que la fase origen estigui:
+    - `confirmed`
+    - o `closed`
+  - La preliminar implicita continua sense fase persistent i pot actuar com a font legacy.
+  - Si la fase desti ja te unitats, l'aplicacio queda bloquejada per defecte per evitar sobreescriptures accidentals.
+  - S'ha deixat un cami intern `replace_existing` protegit contra slots manuals o bloquejats.
+- UI i planner:
+  - Afegides accions al planner de fases:
+    - `preview_qualification`
+    - `apply_qualification`
+  - Afegida seccio `Qualificacio congelada` a la pantalla comuna de fases.
+  - El preview mostra resum de participants/reserves, places, unitats i warnings.
+- Guardrails respectats:
+  - No s'ha creat cap fase default persistent.
+  - No s'ha convertit `ClassificacioConfig` en propietaria de la fase.
+  - No es recalculen ni reescriuen slots automaticament quan canvia la font.
+  - No s'ha canviat encara el portal de jutges.
+  - No s'ha implementat confirmacio parcial persistent per particio.
+- Tests afegits/ajustats:
+  - `competicions_trampoli.tests.fases.test_qualification`
+  - Ajustos al contracte basic del planner de fases.
+  - Cobertura de:
+    - preview i aplicacio del tall
+    - congelacio de participants/reserves en slots
+    - bloqueig si la fase origen persistent no esta confirmada/tancada
+    - deteccio `stale` sense reescriure slots
+    - exposicio d'accions al planner
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.fases.test_qualification competicions_trampoli.tests.fases.test_basic_planner_contract --verbosity 1`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.fases competicions_trampoli.tests.classificacions.test_phase_scope competicions_trampoli.tests.rotacions.test_program_unit_assignments competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1`
+- Pendent identificat a la iteracio inicial:
+  - Resolts en el tancament complet: `QualificationRun`, `FasePartitionState`, confirmacio parcial, politica configurable d'empats i controls de regeneracio.
+  - Es mante fora de Fase 6 el flux complet per equips derivats quan una classificacio individual classifica un equip complet.
+
+### Tancament complet de Fase 6
+- Estat: Fase 6 tancada a nivell intern de planner, sense entrar encara a portal ni publicacio a jutges.
+- Persistencia d'execucions:
+  - Afegits i connectats `QualificationRun` i `FasePartitionState`.
+  - El preview del planner desa un run `previewed`.
+  - Cada `apply_qualification` crea un run `applied` amb fase desti, classificacio font, hash, resum, warnings i payload.
+- Confirmacio per particio:
+  - En aplicar el tall, cada particio queda en `FasePartitionState.status=generated`.
+  - `confirm_qualification_partition(fase, partition_key)` confirma nomes aquella particio.
+  - Si totes les particions estan confirmades, la fase passa a `confirmed`; si nomes una part esta confirmada, passa a `partially_confirmed`.
+  - Les unitats de la particio confirmada passen a `ProgramUnit.status=confirmed`.
+- Stale i regeneracio:
+  - `qualification_is_stale(fase)` compara el hash congelat amb un preview recalculat.
+  - El planner mostra indicador de font canviada quan la classificacio font ja no coincideix amb el hash congelat.
+  - `mark_qualification_stale_if_needed(fase)` marca run aplicat, particions i fase com `stale`.
+  - La regeneracio nomes substitueix la proposta amb confirmacio explicita.
+  - Si hi ha slots manuals o bloquejats, el servei requereix confirmacio especifica (`allow_replace_protected=True`).
+  - No hi ha reescriptura automatica de slots per canvis de la font.
+- Empats:
+  - `classification_order`: respecta l'ordre calculat per la classificacio.
+  - `include_all_at_cut`: inclou tots els empatats al tall com a `filled`.
+  - `manual_decision`: deixa tots els empatats al tall com a `pending_decision`.
+  - La politica es desa a `phase.config.cut.tie_policy` des del planner.
+- UI minima del planner:
+  - Accio `Previsualitzar tall`.
+  - Accio `Aplicar tall` per generar unitats, slots, run i particions `generated`.
+  - Llista de particions generades dins cada fase.
+  - Boto `Confirmar particio` per particio generada.
+  - Indicador `Font canviada` / `Stale` quan la font ha canviat.
+- Guardrails mantinguts:
+  - No es publica res automaticament als jutges.
+  - No es crea cap fase default persistent.
+  - No es toca el portal de jutges.
+  - No es reescriuen unitats existents sense accio explicita de l'usuari.
+- Tests afegits/ajustats:
+  - Runs persistits i particions generades.
+  - Confirmacio de particio.
+  - Empats `manual_decision` i `include_all_at_cut`.
+  - Regeneracio protegida amb slots bloquejats/manuals.
+  - Contracte del planner amb apply, confirmacio de particio i regeneracio.
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.fases.test_qualification competicions_trampoli.tests.fases.test_basic_planner_contract --verbosity 1`
+- Fora de Fase 6:
+  - Publicacio al portal de jutges.
+  - Flux complet per equips derivats quan una classificacio individual classifica un equip complet.
+
 ## Fase 7. Rotacions Sobre Unitats Programables
 
 ### Objectiu
@@ -1299,8 +1441,8 @@
 - Panell de notes nomes mostra slots publicats.
 - Slots pendents no son puntuables.
 
-### Tancament Parcial Implementat
-- Estat: base de model, runtime legacy i panell central de Notes completats per fase.
+### Tancament Implementat
+- Estat: completada per al panell central de Notes i runtime administratiu; el portal de jutges scoped per fase queda a Fase 9.
 - Implementacio feta:
   - `ScoreEntry` te camp opcional `fase`.
   - `TeamScoreEntry` te camp opcional `fase`.
@@ -1320,20 +1462,26 @@
   - Les taules lazy de Notes carreguen participants de slots `filled` o `manual`.
   - Les claus locals de Notes i el guardat inclouen `fase_id` quan toca.
   - Els avisos de Notes respecten la fase seleccionada.
+  - S'ha afegit un servei central d'elegibilitat de fase:
+    - `fase = null` continua sent preliminar/legacy i es considera puntuable.
+    - una fase avancada es puntuable si la fase esta `published` o si la `ProgramUnit` concreta esta `published`.
+    - nomes els slots `filled` i `manual` son puntuables.
+    - slots `pending_decision`, `reserve`, `empty` i equivalents no entren a Notes ni accepten guardat.
+  - El manifest i les taules de Notes amaguen fases/unitats que encara no son puntuables.
+  - `scoring_save` i `scoring_save_partial` rebutgen amb `403` subjectes que no formen part d'un slot publicat/puntuable de la fase demanada.
+  - El context multimedia del panell central de Notes accepta `fase_id` i carrega el video de jutge del score d'aquella fase, no el legacy.
+  - Els payloads de cerca/context de Notes propaguen `fase_id`/`phase_id` per mantenir els deep links interns i el playback dins la mateixa fase.
 - Migracio:
   - `0063_score_entries_phase_scope.py`.
 - Guardrails respectats:
   - No s'ha creat cap fase default persistent.
   - Les notes existents queden com a legacy amb `fase = null`.
-  - No s'ha canviat encara el portal de jutges cap a home de fases.
-  - No s'ha fet que una `ProgramUnit` sigui puntuable nomes per estar publicada o programada.
-- Abast pendent dins Fase 8:
-  - Deep links i estat visual mes fi per fase al panell de Notes.
-  - Regla estricta de publicacio:
-    - ara Notes usa slots `filled` o `manual`
-    - encara no bloqueja per estat `published` de fase/unitat.
+  - Els endpoints legacy sense `fase_id` continuen filtrant `fase is null`.
+  - No s'ha canviat encara el portal de jutges cap a home de fases; aquest tall queda a Fase 9.
+- Fora d'abast i traslladat a Fase 9:
   - Deep links i tokens de jutge scoped per fase.
-  - Separacio/gestio de video per fase mes enlla de la FK del score.
+  - Home del portal de jutges amb selector de fases disponibles.
+  - Publicacio cap a jutges i control d'acces per token de fase.
 - Nota important:
   - El portal de jutges continua puntuant preliminar/legacy si no rep `fase_id`.
   - La home de fases per jutges queda dins Fase 9.
@@ -1343,44 +1491,340 @@
   - `docker compose exec -T web python manage.py check`.
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.fases competicions_trampoli.tests.classificacions.test_phase_scope --verbosity 1 --keepdb`.
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1 --keepdb`.
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.notes.test_phase_eligibility competicions_trampoli.tests.scoring.notes.test_notes_api --verbosity 1 --noinput`.
 
 ## Fase 9. Portal De Jutges Amb Home De Fases
 
 ### Objectiu
-- Fer que el portal de jutges mostri fases disponibles per puntuar.
+- Fer que el QR/token de jutge deixi de representar directament un acces unic a
+  `CompeticioAparell + camps`, i passi a representar un dispositiu o jutge dins
+  una competicio.
+- Fer que cada token pugui tenir multiples accessos puntuables, cadascun amb el
+  seu aparell local, fase opcional i permisos de camps.
+- Crear una home del portal de jutges que mostri aquests accessos com a entrades
+  separades, amb estat obert/bloquejat segons fase, unitats publicades i permisos.
+- Reutilitzar el portal actual com a pantalla de puntuacio d'un acces concret,
+  no com a desti directe del token.
 
 ### Write set principal
 - `models/judging.py`
 - `views/judge/portal.py`
 - `views/judge/admin.py`
+- `views/judge/save.py`
+- `views/judge/updates.py`
+- `views/judge/video.py`
 - templates de portal
 - tests de jutges
 
+### Decisio de model
+- `JudgeDeviceToken` passa a ser la identitat estable del dispositiu/jutge:
+  - un QR fisic
+  - una competicio
+  - etiqueta de dispositiu/jutge
+  - estat actiu/revocat
+- Els permisos de puntuacio han de passar a una entitat filla nova, per exemple:
+  - `JudgePortalAssignment`
+  - o `JudgeTokenScope`
+- Cada assignacio representa un acces puntuable concret:
+  - `judge_token`
+  - `competicio`
+  - `comp_aparell`
+  - `fase = null` per preliminar/legacy implicit
+  - `permissions`
+  - `label`
+  - `ordre`
+  - `is_active`
+  - camps opcionals de visibilitat o notes internes si cal.
+- Els camps actuals `JudgeDeviceToken.comp_aparell` i
+  `JudgeDeviceToken.permissions` queden com a legacy temporal.
+- Un token antic equival semanticament a una assignacio implicita:
+  - mateix `comp_aparell`
+  - `fase = null`
+  - mateixos `permissions`.
+
+### UX prevista
+- Obrir el QR porta a una home del jutge.
+- La home mostra accessos separats, per exemple:
+  - `Trampoli A / Preliminar`
+  - `Trampoli A / Final`
+  - `Equip B / Preliminar`
+- Cada acces mostra estat:
+  - obert si es puntuable
+  - bloquejat si la fase encara no esta publicada o no te unitats puntuables
+  - no disponible si l'assignacio esta inactiva o el token no te permis.
+- Entrar en un acces obert porta al portal actual, scoped per assignacio:
+  - `token`
+  - `assignment_id`
+  - `comp_aparell`
+  - `fase_id` opcional
+  - `permissions` propis de l'assignacio.
+- La preliminar legacy continua sent `fase = null`.
+
 ### Tasques
-- Evolucionar permisos de token:
-  - per aparell local
-  - per fase
-  - per conjunt de fases
-- Crear home de portal:
-  - llista fases puntuables
-  - estat de cada fase
-  - acces a unitats publicades
-- Permetre que una fase aparegui quan:
-  - esta `published`
-  - te unitats amb slots puntuables
-  - el token te permis
-- Mantenir deep links legacy quan token apunta a un sol aparell/fase.
+1. Afegir model d'assignacio de portal de jutges.
+   - Crear la taula filla del token amb `comp_aparell`, `fase`, `permissions`,
+     `label`, `ordre` i `is_active`.
+   - Validar que `fase`, si existeix, pertany a la mateixa competicio i al mateix
+     `comp_aparell`.
+   - Validar que l'assignacio pertany a la mateixa competicio que el token.
+
+2. Mantenir compatibilitat legacy.
+   - Els tokens existents han de continuar funcionant sense migracio destructiva.
+   - Si un token no te assignacions filles, el sistema ha de construir una
+     assignacio implicita a partir de `token.comp_aparell` i `token.permissions`.
+   - Els deep links antics `judge_portal(token)` han de continuar entrant al flux
+     legacy si nomes hi ha una assignacio implicita o una sola assignacio oberta.
+
+3. Crear admin/UI de configuracio d'assignacions.
+   - L'admin de QRs ha de permetre definir varies assignacions per un mateix QR.
+   - Cada assignacio pot tenir camps de puntuacio diferents.
+   - La UI ha de permetre preparar assignacions futures encara bloquejades per
+     estat de fase.
+   - Exemple valid:
+     - mateix QR
+     - preliminar aparell A amb camps `E`
+     - final aparell A amb camps `D/E`
+     - preliminar aparell d'equip B amb camps propis d'equip.
+
+4. Crear home del portal.
+   - `judge_portal(token)` ha de renderitzar una home quan hi ha mes d'un acces,
+     o quan el producte decideixi mostrar sempre la home.
+   - La home calcula accessos disponibles a partir de les assignacions.
+   - Cada targeta/link mostra aparell, fase, label, estat i motiu de bloqueig.
+   - Una fase avancada nomes pot aparèixer com a oberta si:
+     - la fase esta `published`, o la `ProgramUnit` concreta esta `published`
+       segons el contracte de `phase_eligibility`
+     - hi ha slots puntuables (`filled` o `manual`)
+     - l'assignacio esta activa.
+   - Una assignacio legacy/preliminar (`fase = null`) continua oberta si el token
+     es valid i l'aparell te subjectes puntuables pel flux legacy.
+
+5. Fer que el portal actual treballi scoped per assignacio.
+   - Afegir ruta o parametre estable per entrar a una assignacio concreta.
+   - El portal actual ha de resoldre `assignment_id` i usar:
+     - `assignment.comp_aparell`
+     - `assignment.fase`
+     - `assignment.permissions`
+   - El portal no ha de llegir `token.comp_aparell` ni `token.permissions` si hi
+     ha assignacio explicita.
+   - Els subjectes del portal han de sortir dels slots de fase quan `fase != null`
+     i del flux legacy quan `fase = null`.
+
+6. Adaptar guardat, updates i video.
+   - `judge_save_partial` i equivalents han de rebre/resoldre l'assignacio.
+   - El guardat ha d'enviar `fase_id` quan l'assignacio apunta a fase.
+   - El guardat ha de rebutjar subjectes fora dels slots puntuables de la fase.
+   - `judge_updates` ha de filtrar per `fase_id` de l'assignacio, no sempre per
+     `fase__isnull=True`.
+   - Els endpoints de video han de carregar i crear videos del score scoped per
+     fase quan pertoqui.
+
+7. Ajustar permissos de camps.
+   - Els permisos efectius venen de l'assignacio.
+   - El mateix token pot tenir camps diferents en assignacions diferents.
+   - La resolucio de permisos per subjecte/equip ha de reutilitzar la logica
+     actual, pero amb `assignment.permissions`.
+
+8. Polir bloquejos i missatges.
+   - Si una fase esta pendent, la home pot mostrar-la com a bloquejada.
+   - Si una fase esta publicada pero no te slots puntuables, mostrar-la com a
+     pendent de participants/unitats.
+   - Si una assignacio esta inactiva, no ha d'obrir el portal.
+   - Si una fase es tanca, decidir si la home la mostra com a tancada o l'amaga;
+     recomanacio inicial: mostrar-la com a tancada si l'assignacio existeix.
+
+9. Migracio final posterior.
+   - Quan el flux nou estigui estable, migrar tokens legacy a assignacions reals.
+   - Despres d'una o mes versions, plantejar retirar l'us directe de
+     `JudgeDeviceToken.comp_aparell` i `JudgeDeviceToken.permissions` del runtime.
 
 ### Guardrails
 - No mostrar fases pendents com puntuables.
 - No deixar que un jutge entri a slots `empty` o `pending_decision`.
 - Els tokens antics han de continuar sent utilitzables en el flux inicial/preliminar implicit.
+- No duplicar QRs per resoldre canvis de fase/aparell: el QR representa el
+  dispositiu, les assignacions representen que pot puntuar.
+- No fer que publicar una fase crei o modifiqui assignacions de jutge
+  automaticament.
+- No barrejar permisos de camps entre assignacions diferents del mateix token.
 
 ### Tests
-- Portal home mostra preliminar oberta.
-- Semifinal pendent no es puntuable.
-- Semifinal apareix despres de confirmacio/publicacio.
+- Token legacy sense assignacions continua obrint el portal preliminar actual.
+- Token amb una assignacio explicita preliminar obre el portal amb `fase = null`.
+- Token amb multiples assignacions mostra home.
+- Home mostra preliminar oberta.
+- Home mostra fase final pendent com a bloquejada abans de publicacio.
+- Fase final apareix oberta despres de confirmacio/publicacio i slots puntuables.
 - Token restringit a una fase no veu altres fases.
+- Mateix token pot tenir permisos de camps diferents per cada assignacio.
+- Guardat de jutge en assignacio de fase crea/actualitza `ScoreEntry` o
+  `TeamScoreEntry` amb `fase_id`.
+- Guardat de jutge rebutja subjecte fora dels slots puntuables de la fase.
+- `judge_updates` no barreja notes legacy amb notes de fase.
+- Video de jutge es vincula al score de la fase correcta.
+
+### Tancament Iteracio 1 - Model I Compatibilitat
+- Estat: completada la base de dades i el contracte intern de resolucio, sense
+  canviar encara el portal visible.
+- Implementacio feta:
+  - Afegit model `JudgePortalAssignment`.
+  - Cada assignacio queda vinculada a:
+    - `judge_token`
+    - `competicio`
+    - `comp_aparell`
+    - `fase` opcional (`null` = preliminar/legacy)
+    - `permissions`
+    - `label`
+    - `ordre`
+    - `is_active`
+  - Afegides validacions de consistencia:
+    - assignacio i token dins la mateixa competicio
+    - aparell local dins la mateixa competicio
+    - fase dins la mateixa competicio i el mateix aparell local
+    - `permissions` com a llista JSON.
+  - Afegit registre basic a admin per `JudgeDeviceToken` i
+    `JudgePortalAssignment`.
+  - Afegit servei `services/judging/assignments.py` amb:
+    - `EffectiveJudgeAssignment`
+    - `effective_assignments_for_token(token)`
+    - `resolve_effective_assignment(token, assignment_id)`
+  - El servei manté compatibilitat legacy:
+    - si un token no te assignacions explicites, retorna una assignacio
+      implicita amb `token.comp_aparell`, `token.permissions` i `fase = null`.
+    - si hi ha assignacions explicites, aquestes substitueixen el fallback
+      legacy.
+    - si el token esta inactiu o revocat, no hi ha assignacions efectives.
+- Migracio:
+  - `0068_judgeportalassignment.py`.
+- Tests afegits:
+  - `competicions_trampoli.tests.scoring.judge.test_portal_assignments`.
+  - Cobertura de fallback legacy.
+  - Cobertura d'assignacions explicites amb permisos i fases diferents.
+  - Cobertura d'assignacions inactives sense retorn al legacy.
+  - Cobertura de token inactiu.
+  - Cobertura de validacions de model.
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_portal_assignments --verbosity 1`
+  - `docker compose run --rm web python -m compileall competicions_trampoli/models/judging.py competicions_trampoli/services/judging competicions_trampoli/tests/scoring/judge/test_portal_assignments.py`
+- Fora d'aquesta iteracio:
+  - Home visual del portal.
+  - Rutes amb `assignment_id`.
+  - Adaptacio de `judge_save_partial`, `judge_updates` i video.
+  - Migracio de tokens existents a assignacions reals.
+
+### Tancament Iteracio 2 - Home I Portal Scoped
+- Estat: completada la navegacio de portal per assignacio i la home del QR.
+- Implementacio feta:
+  - Afegida ruta:
+    - `judge/<token>/assignment/<assignment_id>/`
+  - `judge_portal(token)` ara resol assignacions efectives del token.
+  - Si el token no te assignacions explicites, continua obrint el portal legacy
+    directament amb l'assignacio implicita.
+  - Si el token te multiples assignacions, renderitza una home de QR.
+  - Si una assignacio unica esta bloquejada, renderitza la home en comptes
+    d'entrar al portal de puntuacio.
+  - Afegit template `judge/portal_home.html`.
+  - La home mostra cada acces amb:
+    - label
+    - aparell local
+    - fase o preliminar
+    - estat obert/bloquejat/tancat/pendent
+    - motiu de bloqueig
+    - link d'entrada nomes quan l'acces es puntuable.
+  - El portal actual pot obrir una assignacio explicita i usar:
+    - `assignment.comp_aparell`
+    - `assignment.fase`
+    - `assignment.permissions`
+  - En assignacions de fase, el render inicial del portal carrega subjectes dels
+    `ProgramUnitSlot` puntuables (`filled` o `manual`) de la fase.
+  - Les notes inicials mostrades pel portal es filtren per `fase` quan
+    l'assignacio apunta a una fase, o per `fase = null` en preliminar/legacy.
+  - Les assignacions de fase pendents queden bloquejades fins que la fase o les
+    seves unitats siguin puntuables segons `phase_eligibility`.
+- Tests afegits/ampliats:
+  - token legacy sense assignacions obre `judge/portal.html`.
+  - token amb multiples assignacions mostra `judge/portal_home.html`.
+  - assignacio a fase pendent surt bloquejada i el link directe retorna home amb
+    `403`.
+  - `assignment_id` obre portal scoped amb aparell, fase i permisos de
+    l'assignacio.
+- Verificacio executada:
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_portal_assignments --verbosity 1`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_item_labels competicions_trampoli.tests.scoring.judge.test_exclusions_and_partial_save --verbosity 1`
+  - `docker compose run --rm web python -m compileall competicions_trampoli/views/judge/portal.py competicions_trampoli/urls/judge.py competicions_trampoli/tests/scoring/judge/test_portal_assignments.py`
+- Fora d'aquesta iteracio i pendent per Iteracio 3:
+  - `judge_save_partial` encara ha de resoldre l'assignacio i persistir
+    `fase_id`.
+  - `judge_updates` encara ha de filtrar per assignacio/fase.
+  - Els endpoints de video encara han de vincular-se al score scoped de la fase.
+  - La PWA/manifest continua apuntant al token base; si cal, es podra ajustar
+    quan el runtime complet d'assignacions estigui tancat.
+
+### Tancament Iteracio 3 - Runtime Scoped I Tancament Oficial Fase 9
+- Estat: Fase 9 tancada funcionalment. El QR ja representa el dispositiu/jutge i
+  el runtime de puntuacio treballa contra l'assignacio efectiva quan n'hi ha una.
+- Implementacio feta:
+  - Afegit helper intern `views/judge/_assignment_scope.py` per resoldre, de forma
+    comuna, el scope efectiu de cada endpoint:
+    - assignacio
+    - competicio
+    - aparell local
+    - fase opcional
+    - permisos efectius.
+  - El portal injecta `assignment_id` als endpoints API de l'assignacio:
+    - guardat parcial
+    - feed incremental d'updates
+    - estat de video
+    - upload de video
+    - delete de video.
+  - El bootstrap JS exposa `JUDGE_ASSIGNMENT_ID` i `JUDGE_FASE_ID`.
+  - El guardat parcial del jutge:
+    - resol l'assignacio efectiva
+    - usa `assignment.permissions`
+    - usa `assignment.comp_aparell`
+    - persisteix `ScoreEntry`/`TeamScoreEntry` amb `fase=assignment.fase`
+      quan correspon
+    - rebutja subjectes que no estan en slots puntuables de la fase.
+  - `judge_updates`:
+    - resol l'assignacio efectiva
+    - filtra per `fase=assignment.fase` o `fase__isnull=True` en legacy
+    - manté el filtre de permisos de camps segons l'assignacio.
+  - Els endpoints de video:
+    - `judge_video_status`
+    - `judge_video_upload`
+    - `judge_video_delete`
+    - `judge_video_file`
+    ara carreguen o creen el video del score scoped per fase quan l'assignacio
+    apunta a una fase.
+  - Les URLs de fitxer de video incorporen `assignment_id` quan el video ve d'una
+    assignacio explicita, evitant caure al score legacy.
+- Compatibilitat:
+  - Tokens antics sense `JudgePortalAssignment` continuen funcionant com abans:
+    `token.comp_aparell`, `token.permissions`, `fase = null`.
+  - Si un token te assignacions explicites, els endpoints requereixen un scope
+    resoluble; amb multiples assignacions no hi ha fallback implicit ambigu.
+- Tests afegits/ampliats:
+  - Guardat en assignacio de fase crea `ScoreEntry` amb `fase_id`.
+  - Guardat en assignacio de fase rebutja subjecte fora dels slots puntuables.
+  - `judge_updates` separa notes de fase i notes legacy.
+  - Video status d'assignacio de fase retorna el video del score de fase i URL
+    amb `assignment_id`.
+  - El portal scoped exposa URLs API amb `assignment_id`.
+- Verificacio executada:
+  - `docker compose run --rm web python -m compileall competicions_trampoli/views/judge competicions_trampoli/tests/scoring/judge/test_portal_assignments.py`
+  - `docker compose run --rm web python manage.py check`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_portal_assignments --verbosity 1`
+  - `docker compose run --rm web python manage.py test competicions_trampoli.tests.scoring.judge.test_exclusions_and_partial_save competicions_trampoli.tests.scoring.judge.test_video_api --verbosity 1`
+- Residual no bloquejant per fases futures:
+  - La UI administrativa d'assignacions pot polir-se per fer mes comoda la gestio
+    massiva de QRs i assignacions.
+  - La PWA/manifest encara te scope base del token; funcionalment no bloqueja la
+    Fase 9, pero es pot especialitzar si es vol instal.lar cada assignacio com a
+    entrada independent.
+  - La migracio massiva de tokens legacy cap a assignacions explicites queda per
+    la migracio final posterior descrita a la tasca 9.
 
 ## Fase 10. Publicacio, Estat I Recalculs
 

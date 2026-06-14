@@ -15,6 +15,7 @@ from ...models.competicio import ProgramUnit
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja, normalize_hex_color
 from ...models.scoring import SerieEquip
 from ...services.rotacions.rotacions_ordering import set_rotacio_order_mode
+from ...services.rotacions.validation import validate_rotacions_program
 from ...services.shared.competition_groups import get_group_maps
 from ._shared import (
     _assignacio_program_keys,
@@ -26,10 +27,13 @@ from ._shared import (
 from ._timing import (
     FRANJA_DAY,
     FRANJA_FALLBACK_DURATION_MINUTES,
+    TimeChange,
     build_competitive_reorder_plan,
     build_competitive_shift_plan,
     build_delete_shift_plan,
     format_time,
+    franja_duration_delta,
+    franja_duration_minutes,
     is_competitive_franja,
     build_competitive_visual_sync_sequence,
     build_visual_reorder_sequence,
@@ -186,6 +190,221 @@ def _competitive_preview_response(*, preview_only, confirm_reorder, origin, affe
     if affected and not confirm_reorder:
         return preview, JsonResponse(preview, status=409)
     return preview, None
+
+
+def _json_payload(request):
+    try:
+        return json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        raise ValueError("JSON invalid")
+
+
+def _clean_franja_ids(payload):
+    raw_ids = payload.get("franja_ids") or []
+    if not isinstance(raw_ids, list):
+        raise ValueError("franja_ids ha de ser una llista.")
+    out = []
+    seen = set()
+    for raw_id in raw_ids:
+        try:
+            franja_id = int(raw_id)
+        except Exception:
+            continue
+        if franja_id <= 0 or franja_id in seen:
+            continue
+        seen.add(franja_id)
+        out.append(franja_id)
+    if not out:
+        raise ValueError("Cal seleccionar com a minim una franja.")
+    return out
+
+
+def _selected_franges_or_400(competicio, payload):
+    franja_ids = _clean_franja_ids(payload)
+    franges = list(
+        RotacioFranja.objects
+        .filter(competicio=competicio, id__in=franja_ids)
+        .order_by("ordre", "id")
+    )
+    if len(franges) != len(franja_ids):
+        raise ValueError("Alguna franja seleccionada no existeix.")
+    return franges
+
+
+def _competitive_overlap_message(franges):
+    competitive = sort_franges_temporally([fr for fr in franges if is_competitive_franja(fr)])
+    previous = None
+    for franja in competitive:
+        if previous is not None and time_to_dt(franja.hora_inici) < time_to_dt(previous.hora_fi):
+            return f"La franja {franja.display_label} solapa amb {previous.display_label}."
+        previous = franja
+    return ""
+
+
+def _build_competitive_push_plan(franges, fixed_changes):
+    fixed = [change for change in list(fixed_changes or []) if is_competitive_franja(change.franja)]
+    fixed_existing_ids = {
+        int(change.franja.id)
+        for change in fixed
+        if getattr(change.franja, "id", None)
+    }
+    fixed_intervals = sorted(
+        [
+            {
+                "franja": change.franja,
+                "start": time_to_dt(change.new_start),
+                "end": time_to_dt(change.new_end),
+            }
+            for change in fixed
+        ],
+        key=lambda interval: (
+            interval["start"],
+            interval["end"],
+            int(getattr(interval["franja"], "id", 0) or 0),
+        )
+    )
+
+    previous_fixed = None
+    for interval in fixed_intervals:
+        if previous_fixed is not None and interval["start"] < previous_fixed["end"]:
+            previous_label = previous_fixed["franja"].display_label
+            raise ValueError(f"La franja {interval['franja'].display_label} solapa amb {previous_label}.")
+        previous_fixed = interval
+
+    changes = []
+    current_end = None
+    for franja in sort_franges_temporally([fr for fr in franges if is_competitive_franja(fr)]):
+        if int(franja.id) in fixed_existing_ids:
+            continue
+        duration = franja_duration_delta(franja, fallback_minutes=FRANJA_FALLBACK_DURATION_MINUTES)
+        new_start = time_to_dt(franja.hora_inici)
+        if current_end is not None and new_start < current_end:
+            new_start = current_end
+        new_end = new_start + duration
+        moved_over_fixed = True
+        while moved_over_fixed:
+            moved_over_fixed = False
+            for interval in fixed_intervals:
+                if interval["start"] < new_end and interval["end"] > new_start:
+                    new_start = interval["end"]
+                    new_end = new_start + duration
+                    moved_over_fixed = True
+                    break
+        if new_start.date() != FRANJA_DAY or new_end.date() != FRANJA_DAY:
+            raise ValueError("El desplacament deixa alguna franja fora del dia.")
+        if new_start.time() != franja.hora_inici or new_end.time() != franja.hora_fi:
+            changes.append(
+                TimeChange(
+                    franja=franja,
+                    old_start=franja.hora_inici,
+                    old_end=franja.hora_fi,
+                    new_start=new_start.time(),
+                    new_end=new_end.time(),
+                    duration_minutes=int(duration.total_seconds() // 60),
+                )
+            )
+        current_end = new_end
+
+    return changes
+
+
+def _build_competitive_resize_plan(franges, selected_changes):
+    selected_by_id = {
+        int(change.franja.id): change
+        for change in list(selected_changes or [])
+        if getattr(change.franja, "id", None) and is_competitive_franja(change.franja)
+    }
+    changes = []
+    current_end = None
+    for franja in sort_franges_temporally([fr for fr in franges if is_competitive_franja(fr)]):
+        selected_change = selected_by_id.get(int(franja.id))
+        preferred_start = time_to_dt(franja.hora_inici)
+        if selected_change is not None:
+            duration_minutes = max(1, int(selected_change.duration_minutes or 1))
+            duration = timedelta(minutes=duration_minutes)
+        else:
+            duration = franja_duration_delta(franja, fallback_minutes=FRANJA_FALLBACK_DURATION_MINUTES)
+            duration_minutes = int(duration.total_seconds() // 60)
+
+        new_start = preferred_start if current_end is None or preferred_start >= current_end else current_end
+        new_end = new_start + duration
+        if new_start.date() != FRANJA_DAY or new_end.date() != FRANJA_DAY:
+            raise ValueError("El canvi de durada deixa alguna franja fora del dia.")
+
+        if (
+            selected_change is not None
+            or new_start.time() != franja.hora_inici
+            or new_end.time() != franja.hora_fi
+        ):
+            changes.append(
+                TimeChange(
+                    franja=franja,
+                    old_start=franja.hora_inici,
+                    old_end=franja.hora_fi,
+                    new_start=new_start.time(),
+                    new_end=new_end.time(),
+                    duration_minutes=duration_minutes,
+                )
+            )
+        current_end = new_end
+
+    return changes
+
+
+def _preview_for_changes(changes, *, action, action_label):
+    first = changes[0] if changes else None
+    return _preview_payload(
+        origin=_serialize_origin_preview(
+            franja_id=first.franja.id if first else None,
+            title=first.franja.display_label if first else "Franja",
+            old_start=first.old_start if first else None,
+            old_end=first.old_end if first else None,
+            new_start=first.new_start if first else None,
+            new_end=first.new_end if first else None,
+            tipus=first.franja.tipus if first else RotacioFranja.TIPUS_COMPETITION,
+        ),
+        affected=changes,
+        action=action,
+        action_label=action_label,
+    )
+
+
+def _copy_assignments(competicio, source_to_target):
+    if not source_to_target:
+        return 0
+    groups_by_id = get_group_maps(competicio)["by_id"]
+    series_by_id = {
+        int(serie.id): serie
+        for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
+    }
+    program_units_by_id = {
+        int(unit.id): unit
+        for unit in ProgramUnit.objects.filter(fase__competicio=competicio).select_related("fase", "fase__comp_aparell")
+    }
+    copied = 0
+    source_ids = list(source_to_target.keys())
+    for assignacio in (
+        RotacioAssignacio.objects
+        .filter(competicio=competicio, franja_id__in=source_ids)
+        .select_related("estacio")
+        .prefetch_related("grup_links__grup", "serie_links__serie", "program_unit_links__program_unit__fase")
+    ):
+        target = source_to_target.get(int(assignacio.franja_id))
+        if target is None:
+            continue
+        keys = _assignacio_program_keys(assignacio)
+        group_ids, serie_ids, unit_ids = _split_program_keys(keys)
+        new_assignacio, _created = RotacioAssignacio.objects.update_or_create(
+            competicio=competicio,
+            franja=target,
+            estacio_id=assignacio.estacio_id,
+            defaults={"grups": [], "grup": None},
+        )
+        _sync_assignacio_groups(new_assignacio, group_ids, groups_by_id)
+        _sync_assignacio_series(new_assignacio, serie_ids, series_by_id)
+        _sync_assignacio_program_units(new_assignacio, unit_ids, program_units_by_id)
+        copied += 1
+    return copied
 
 
 @require_POST
@@ -963,6 +1182,337 @@ def rotacions_extrapolar(request, pk, franja_id):
 
 @require_POST
 @csrf_protect
+def rotacions_franges_bulk_clear(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franges = _selected_franges_or_400(competicio, payload)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    deleted, _details = RotacioAssignacio.objects.filter(competicio=competicio, franja__in=franges).delete()
+    return JsonResponse({"ok": True, "deleted_assignacions": deleted})
+
+
+@require_POST
+@csrf_protect
+def rotacions_franges_bulk_delete(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franges = _selected_franges_or_400(competicio, payload)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    with transaction.atomic():
+        RotacioAssignacio.objects.filter(competicio=competicio, franja__in=franges).delete()
+        deleted_count = len(franges)
+        RotacioFranja.objects.filter(competicio=competicio, id__in=[fr.id for fr in franges]).delete()
+        _resequence_all_franges(competicio)
+        _resequence_all_visual_franges(competicio)
+    return JsonResponse({"ok": True, "deleted_franges": deleted_count})
+
+
+@require_POST
+@csrf_protect
+def rotacions_franges_bulk_update(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franges = _selected_franges_or_400(competicio, payload)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    fields = []
+    if "color_fons" in payload:
+        try:
+            color_fons = _clean_color_fons(payload.get("color_fons"))
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+        for franja in franges:
+            franja.color_fons = color_fons
+        fields.append("color_fons")
+
+    if "tipus" in payload:
+        tipus = str(payload.get("tipus") or "").strip().lower()
+        allowed = {choice[0] for choice in RotacioFranja.TIPUS_CHOICES}
+        if tipus not in allowed:
+            return HttpResponseBadRequest("Tipus de franja invalid.")
+        if tipus != RotacioFranja.TIPUS_COMPETITION:
+            assigned_ids = set(
+                RotacioAssignacio.objects
+                .filter(competicio=competicio, franja__in=franges)
+                .values_list("franja_id", flat=True)
+            )
+            blocked = [fr.display_label for fr in franges if fr.is_competitive and fr.id in assigned_ids]
+            if blocked:
+                return HttpResponseBadRequest(
+                    "No pots convertir franges competitives amb assignacions en franges no competitives."
+                )
+        for franja in franges:
+            franja.tipus = tipus
+        fields.append("tipus")
+
+    if not fields:
+        return HttpResponseBadRequest("No hi ha cap camp per actualitzar.")
+
+    try:
+        for franja in franges:
+            franja.full_clean()
+    except ValidationError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    with transaction.atomic():
+        RotacioFranja.objects.bulk_update(franges, fields, batch_size=200)
+        _resequence_all_franges(competicio)
+        _resequence_all_visual_franges(competicio)
+    return JsonResponse({"ok": True, "updated": len(franges)})
+
+
+@require_POST
+@csrf_protect
+def rotacions_franges_bulk_shift(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franges = _selected_franges_or_400(competicio, payload)
+        minutes = int(payload.get("minutes") or 0)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    except Exception:
+        return HttpResponseBadRequest("minutes ha de ser un enter.")
+    if minutes == 0:
+        return HttpResponseBadRequest("El desplacament no pot ser 0 minuts.")
+
+    preview_only, confirm_reorder = _parse_preview_flags(payload)
+    selected_ids = {int(fr.id) for fr in franges}
+    changes = []
+    for franja in franges:
+        new_start_dt = time_to_dt(franja.hora_inici) + timedelta(minutes=minutes)
+        new_end_dt = time_to_dt(franja.hora_fi) + timedelta(minutes=minutes)
+        if new_start_dt.date() != FRANJA_DAY or new_end_dt.date() != FRANJA_DAY:
+            return HttpResponseBadRequest("El desplacament deixa alguna franja fora del dia.")
+        changes.append(
+            TimeChange(
+                franja=franja,
+                old_start=franja.hora_inici,
+                old_end=franja.hora_fi,
+                new_start=new_start_dt.time(),
+                new_end=new_end_dt.time(),
+                duration_minutes=franja_duration_minutes(franja),
+            )
+        )
+    try:
+        affected = _build_competitive_push_plan(_load_franges(competicio), changes)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    all_changes = changes + affected
+
+    preview = _preview_for_changes(
+        all_changes,
+        action="bulk_shift",
+        action_label="Desplaçar franges seleccionades",
+    )
+    preview["requires_confirmation"] = any(fr.is_competitive for fr in franges) or bool(affected)
+    preview["selected_ids"] = list(selected_ids)
+    if preview_only:
+        return JsonResponse(preview)
+    if preview["requires_confirmation"] and not confirm_reorder:
+        return JsonResponse(preview, status=409)
+
+    with transaction.atomic():
+        _apply_time_changes(competicio, all_changes)
+        _resequence_all_visual_franges(competicio)
+    return JsonResponse({"ok": True, "shifted": len(all_changes), "affected": len(affected)})
+
+
+@require_POST
+@csrf_protect
+def rotacions_franges_bulk_duration(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franges = _selected_franges_or_400(competicio, payload)
+        minutes = int(payload.get("minutes") or 0)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    except Exception:
+        return HttpResponseBadRequest("minutes ha de ser un enter.")
+    if minutes == 0:
+        return HttpResponseBadRequest("El canvi de durada no pot ser 0 minuts.")
+
+    preview_only, confirm_reorder = _parse_preview_flags(payload)
+    selected_ids = {int(fr.id) for fr in franges}
+    selected_competitive_changes = []
+    non_competitive_changes = []
+    for franja in franges:
+        old_start_dt = time_to_dt(franja.hora_inici)
+        old_duration = franja_duration_delta(franja, fallback_minutes=FRANJA_FALLBACK_DURATION_MINUTES)
+        new_duration = old_duration + timedelta(minutes=minutes)
+        new_duration_minutes = int(new_duration.total_seconds() // 60)
+        if new_duration_minutes <= 0:
+            return HttpResponseBadRequest("La durada final de cada franja ha de ser positiva.")
+        new_end_dt = old_start_dt + new_duration
+        if new_end_dt.date() != FRANJA_DAY:
+            return HttpResponseBadRequest("El canvi de durada deixa alguna franja fora del dia.")
+        change = TimeChange(
+            franja=franja,
+            old_start=franja.hora_inici,
+            old_end=franja.hora_fi,
+            new_start=franja.hora_inici,
+            new_end=new_end_dt.time(),
+            duration_minutes=new_duration_minutes,
+        )
+        if is_competitive_franja(franja):
+            selected_competitive_changes.append(change)
+        else:
+            non_competitive_changes.append(change)
+
+    try:
+        competitive_changes = _build_competitive_resize_plan(_load_franges(competicio), selected_competitive_changes)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    all_changes = competitive_changes + non_competitive_changes
+    affected = [change for change in all_changes if int(change.franja.id) not in selected_ids]
+
+    preview = _preview_for_changes(
+        all_changes,
+        action="bulk_duration",
+        action_label="Ajustar durada de franges seleccionades",
+    )
+    preview["requires_confirmation"] = any(fr.is_competitive for fr in franges) or bool(affected)
+    preview["selected_ids"] = list(selected_ids)
+    if preview_only:
+        return JsonResponse(preview)
+    if preview["requires_confirmation"] and not confirm_reorder:
+        return JsonResponse(preview, status=409)
+
+    with transaction.atomic():
+        _apply_time_changes(competicio, all_changes)
+        _resequence_all_visual_franges(competicio)
+    return JsonResponse({"ok": True, "resized": len(all_changes), "affected": len(affected)})
+
+
+@require_POST
+@csrf_protect
+def rotacions_franges_bulk_duplicate(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franges = _selected_franges_or_400(competicio, payload)
+        offset_minutes = int(payload.get("offset_minutes") or 0)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    except Exception:
+        return HttpResponseBadRequest("offset_minutes ha de ser un enter.")
+
+    preview_only, confirm_reorder = _parse_preview_flags(payload)
+    copy_assignments = bool(payload.get("copy_assignments"))
+    selected_temporal = sort_franges_temporally(franges)
+    anchor = max(time_to_dt(fr.hora_fi) for fr in selected_temporal) + timedelta(minutes=offset_minutes)
+    max_ord = (RotacioFranja.objects.filter(competicio=competicio).aggregate(Max("ordre"))["ordre__max"] or 0)
+    max_visual = (RotacioFranja.objects.filter(competicio=competicio).aggregate(Max("ordre_visual"))["ordre_visual__max"] or 0)
+
+    preview_changes = []
+    candidates = []
+    cursor = anchor
+    for idx, franja in enumerate(selected_temporal, start=1):
+        duration = franja_duration_delta(franja)
+        new_start_dt = cursor
+        new_end_dt = new_start_dt + duration
+        if new_start_dt.date() != FRANJA_DAY or new_end_dt.date() != FRANJA_DAY:
+            return HttpResponseBadRequest("La duplicacio deixa alguna franja fora del dia.")
+        cursor = new_end_dt
+        max_ord += 1
+        max_visual += 1
+        clone = RotacioFranja(
+            competicio=competicio,
+            hora_inici=new_start_dt.time(),
+            hora_fi=new_end_dt.time(),
+            ordre=max_ord,
+            ordre_visual=max_visual,
+            titol=f"{franja.titol or franja.display_label} copia",
+            tipus=franja.tipus,
+            color_fons=franja.color_fons,
+            nota_interna=franja.nota_interna,
+        )
+        try:
+            clone.full_clean()
+        except ValidationError as exc:
+            return HttpResponseBadRequest(str(exc))
+        candidates.append((franja, clone))
+        preview_changes.append(
+            TimeChange(
+                franja=clone,
+                old_start=franja.hora_inici,
+                old_end=franja.hora_fi,
+                new_start=clone.hora_inici,
+                new_end=clone.hora_fi,
+                duration_minutes=franja_duration_minutes(franja),
+            )
+        )
+
+    try:
+        affected = _build_competitive_push_plan(_load_franges(competicio), preview_changes)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    all_changes = preview_changes + affected
+
+    preview = _preview_for_changes(
+        all_changes,
+        action="bulk_duplicate",
+        action_label="Duplicar franges seleccionades",
+    )
+    preview["requires_confirmation"] = any(clone.is_competitive for _src, clone in candidates) or bool(affected)
+    if preview_only:
+        return JsonResponse(preview)
+    if preview["requires_confirmation"] and not confirm_reorder:
+        return JsonResponse(preview, status=409)
+
+    with transaction.atomic():
+        created = RotacioFranja.objects.bulk_create([clone for _src, clone in candidates], batch_size=200)
+        copied = 0
+        if copy_assignments:
+            source_to_target = {
+                int(source.id): target
+                for (source, _clone), target in zip(candidates, created)
+            }
+            copied = _copy_assignments(competicio, source_to_target)
+        if affected:
+            _apply_time_changes(competicio, affected)
+        else:
+            _resequence_all_franges(competicio)
+        _resequence_all_visual_franges(competicio)
+    return JsonResponse({"ok": True, "created": len(created), "copied_assignacions": copied, "affected": len(affected)})
+
+
+@require_POST
+@csrf_protect
+def rotacions_franja_note_save(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = _json_payload(request)
+        franja_id = int(payload.get("franja_id") or 0)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    except Exception:
+        return HttpResponseBadRequest("franja_id invalid.")
+    franja = get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+    nota = str(payload.get("nota_interna") or "").strip()
+    franja.nota_interna = nota
+    franja.save(update_fields=["nota_interna"])
+    return JsonResponse({"ok": True, "franja_id": franja.id, "nota_interna": franja.nota_interna})
+
+
+@require_POST
+@csrf_protect
+def rotacions_validate_program(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    return JsonResponse({"ok": True, **validate_rotacions_program(competicio)})
+
+
+@require_POST
+@csrf_protect
 def rotacions_clear_all(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
     with transaction.atomic():
@@ -980,6 +1530,14 @@ __all__ = [
     "franges_reorder_visual",
     "franja_order_mode_set",
     "franja_update_inline",
+    "rotacions_franja_note_save",
+    "rotacions_franges_bulk_clear",
+    "rotacions_franges_bulk_delete",
+    "rotacions_franges_bulk_duplicate",
+    "rotacions_franges_bulk_duration",
+    "rotacions_franges_bulk_shift",
+    "rotacions_franges_bulk_update",
     "rotacions_clear_all",
     "rotacions_extrapolar",
+    "rotacions_validate_program",
 ]

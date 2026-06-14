@@ -1,3 +1,8 @@
 <div class="phase-empty">
-  No hi ha aparells actius configurats per aquesta competicio.
+  <div>No hi ha aparells actius configurats per aquesta competicio.</div>
+  <a class="phase-app-tab phase-app-tab-add mt-3" href="{% url 'trampoli_aparell_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">
+    <span class="phase-app-tab-add-icon">+</span>
+    <span class="phase-app-tab-title">Afegir aparell</span>
+    <span class="phase-app-tab-detail">Configura una nova instancia local</span>
+  </a>
 </div>

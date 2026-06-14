@@ -6,6 +6,7 @@ import mimetypes
 import os
 import subprocess
 import tempfile
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse
@@ -278,7 +279,7 @@ def _protected_video_response(video_file, *, original_filename: str = "", mime_t
     return response
 
 
-def _serialize_video_record(video_record, request, *, token_obj=None, subject=None, exercici=None):
+def _serialize_video_record(video_record, request, *, token_obj=None, subject=None, exercici=None, assignment_id=None):
     url = None
     if video_record.video_file and token_obj is not None and subject is not None and exercici is not None:
         try:
@@ -291,6 +292,8 @@ def _serialize_video_record(video_record, request, *, token_obj=None, subject=No
                     "exercici": int(exercici),
                 },
             )
+            if assignment_id not in (None, "", 0, "0"):
+                media_url = f"{media_url}?{urlencode({'assignment_id': assignment_id})}"
             url = request.build_absolute_uri(media_url)
         except Exception:
             url = None

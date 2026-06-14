@@ -3,10 +3,29 @@ from django.urls import path
 from ..views import judge as views_judge
 from ..views.judge import admin as views_judge_admin
 from ..views.judge import messages as views_judge_messages
+from ..views.judge import qr_admin as views_qr_admin
 from .base import competition_view
 
 
 urlpatterns = [
+    path(
+        "scoring/<int:competicio_id>/qr-admin/",
+        competition_view(
+            views_qr_admin.qr_admin_home,
+            "judge_tokens.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="qr_admin_home",
+    ),
+    path(
+        "scoring/<int:competicio_id>/qr-admin/<uuid:token_id>/",
+        competition_view(
+            views_qr_admin.qr_admin_home,
+            "judge_tokens.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="qr_admin_detail",
+    ),
     path(
         "scoring/<int:competicio_id>/judges-qr/",
         competition_view(
@@ -82,6 +101,7 @@ urlpatterns = [
     path("judge/<uuid:token>/manifest.json", views_judge.judge_manifest, name="judge_manifest"),
     path("judge/<uuid:token>/sw.js", views_judge.judge_service_worker, name="judge_service_worker"),
     path("judge/pwa/<str:filename>", views_judge.judge_pwa_icon, name="judge_pwa_icon"),
+    path("judge/<uuid:token>/assignment/<int:assignment_id>/", views_judge.judge_portal, name="judge_portal_assignment"),
     path("judge/<uuid:token>/", views_judge.judge_portal, name="judge_portal"),
     path("judge/<uuid:token>/qr.png", views_judge.judge_qr_png, name="judge_qr_png"),
     path("judge/<uuid:token>/api/save/", views_judge.judge_save_partial, name="judge_save_partial"),

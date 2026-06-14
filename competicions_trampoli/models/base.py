@@ -9,8 +9,10 @@ class Competicio(models.Model):
         PATINATGE = "patinatge", "Patinatge"
         TRAMPOLI = "trampoli", "Gimnàstica trampolí"
         ARTISTICA = "artistica", "Gimnàstica artística"
+        RITMICA = "ritmica", "Gimnastica ritmica"
     nom = models.CharField(max_length=255)
     data = models.DateField(blank=True, null=True)
+    data_fi = models.DateField(blank=True, null=True)
     tipus = models.CharField(max_length=20, choices=Tipus.choices, default=Tipus.TRAMPOLI)
     group_by_default = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -20,6 +22,11 @@ class Competicio(models.Model):
 
     def te_notes(self) -> bool:
             return True
+
+    def clean(self):
+        super().clean()
+        if self.data and self.data_fi and self.data_fi < self.data:
+            raise ValidationError({"data_fi": "La data de fi no pot ser anterior a la data d'inici."})
 
     def __str__(self):
         return self.nom

@@ -6,9 +6,9 @@
           {% if not judge_kiosk %}<span class="judge-portal-mode">Entrada per QR</span>{% endif %}
         </h2>
         <div class="judge-portal-context">
-          <span>Competició: <span class="fw-semibold">{{ competicio.nom }}</span></span>
+          <span><strong>Competició:</strong> <span class="fw-semibold">{{ competicio.nom }}</span></span>
           {% if token_obj.label %}
-            <span>QR: <span class="fw-semibold">{{ token_obj.label }}</span></span>
+            <span><strong>QR:</strong> <span class="fw-semibold">{{ token_obj.label }}</span></span>
           {% endif %}
         </div>
         {% if permissions %}
@@ -17,31 +17,17 @@
             <span class="judge-assignment-values" data-perm-text></span>
           </div>
         {% endif %}
-        <div class="mt-2">
-          <div class="judge-meta">
-            Ordre segons la franja assignada a cada {% if team_subject_mode %}sèrie{% else %}grup{% endif %}.
-            {% if exercicis|length > 1 and portal_display_mode != "competition_order" %}
-              Exercici inicial obert: {{ exercici }}.
-            {% elif exercicis|length > 1 %}
-              Mode ordre competició: exercicis desplegats en seqüència.
-            {% endif %}
-            {% if franja_override %}
-              Override actiu: {{ franja_override.titol|default:"Franja" }} - {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
-            {% endif %}
-          </div>
-          {% if exercicis|length > 1 %}
-          <div class="judge-view-mode mt-2">
-            <span class="judge-view-mode-label">Visualització</span>
-            <select class="form-select form-select-sm judge-view-mode-select" id="portalViewModeSelect" aria-label="Canviar visualització del portal">
-              {% for value, label in portal_display_mode_options %}
-                <option value="{{ value }}" {% if value == portal_display_mode %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          {% endif %}
-        </div>
+
       </div>
       <div class="judge-portal-actions d-flex align-items-center">
+        <a
+          class="btn btn-sm judge-home-return-btn"
+          href="{{ judge_portal_home_url|default:'#' }}"
+          aria-label="Tornar al Home del QR"
+          title="Home del QR"
+        >
+          <span aria-hidden="true">&#8962;</span> Home
+        </a>
         {% if not judge_kiosk %}
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
         {% endif %}
@@ -52,6 +38,7 @@
           class="btn btn-sm btn-outline-secondary"
           onclick="if(window.refreshJudgePortal){ refreshJudgePortal(); } else { window.location.reload(); }"
         >
+       <span class="judge-home-refresh-mark" aria-hidden="true">&#8635;</span>
           Actualitzar
         </button>
         {% endif %}

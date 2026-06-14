@@ -1,10 +1,10 @@
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from ...models import Competicio, Inscripcio, InscripcioMedia
-from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
 from ...models.scoring import ScoreEntry, ScoreEntryVideo, TeamScoreEntry, TeamScoreEntryVideo
 from ...services.shared.competition_groups import (
@@ -26,10 +26,12 @@ from ...services.rotacions.rotacions_ordering import (
     unique_ordered,
 )
 from ...services.scoring.scoring_subjects import score_store_key
+from ...services.inscripcions.admission import filter_score_entries_admeses, load_excluded_app_ids_by_inscripcio
 from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
 from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
 from ...services.scoring.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
+from ...services.avatar.notes.overview import AVATAR_MESSAGES as NOTES_AVATAR_MESSAGES
 from .helpers import (
     _allowed_input_codes_for_schema,
     _bucket_app_id,
@@ -140,18 +142,7 @@ class ScoringNotesHome(TemplateView):
         apparells_cfg_by_id = {int(ca.id): ca for ca in aparells_cfg}
         active_app_ids = [ca.id for ca in aparells_cfg]
         team_app_ids = {ca.id for ca in aparells_cfg if is_team_context_app(ca)}
-        excluded_by_ins = defaultdict(set)
-        if active_app_ids:
-            excl_pairs = (
-                InscripcioAparellExclusio.objects
-                .filter(
-                    inscripcio__in=ins,
-                    comp_aparell_id__in=active_app_ids,
-                )
-                .values_list("inscripcio_id", "comp_aparell_id")
-            )
-            for ins_id, app_id in excl_pairs:
-                excluded_by_ins[ins_id].add(app_id)
+        excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, active_app_ids)
         
         def clamp_ex(n):
             try:
@@ -198,14 +189,7 @@ class ScoringNotesHome(TemplateView):
             comp_aparell__in=[ca for ca in aparells_cfg if not is_team_context_app(ca)],
             fase__isnull=True,
         )
-        scores_qs = scores_qs.annotate(
-            _excluded=Exists(
-                InscripcioAparellExclusio.objects.filter(
-                    inscripcio_id=OuterRef("inscripcio_id"),
-                    comp_aparell_id=OuterRef("comp_aparell_id"),
-                )
-            )
-        ).filter(_excluded=False)
+        scores_qs = filter_score_entries_admeses(scores_qs)
 
         scores = {}
         for s in scores_qs:
@@ -555,6 +539,8 @@ class ScoringNotesHome(TemplateView):
             "judge_video_presence_by_key": judge_video_presence_by_key,
             "team_issues_by_app": team_issues_by_app,
             "updates_cursor_init": timezone.now().isoformat(),
+            "avatar_messages": NOTES_AVATAR_MESSAGES,
+            "avatar_initial_topic": "scores_qrs_overview",
         })
         return ctx
 

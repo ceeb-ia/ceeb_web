@@ -1,0 +1,521 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Participacio - {{ comp_aparell.display_nom }}{% endblock %}
+
+{% block content %}
+{% include "competicio/fases/_styles.html" %}
+<style>
+  .participation-page-shell {
+    --phase-wallpaper: url("{% static 'general/wallpapers/fases.png' %}");
+  }
+
+  .participation-page-shell .participation-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .participation-summary-grid,
+  .participation-form-grid {
+    display: grid;
+    gap: 12px;
+  }
+
+  .participation-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 14px;
+  }
+
+  .participation-form-grid {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+    align-items: start;
+  }
+
+  .participation-summary-card {
+    min-height: 100%;
+  }
+
+  .participation-metric {
+    margin: 4px 0 2px;
+    color: var(--phase-text);
+    font-size: 2.1rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .participation-muted {
+    color: var(--phase-muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+
+  .participation-page-shell .form-label,
+  .participation-page-shell label {
+    margin-bottom: 4px;
+    color: var(--phase-text-main);
+    font-size: 0.78rem;
+    font-weight: 760;
+  }
+
+  .participation-page-shell select.form-select,
+  .participation-page-shell select.form-control,
+  .participation-page-shell input.form-control {
+    min-height: 36px;
+    height: auto;
+    border: 1px solid var(--phase-border);
+    border-radius: 9px;
+    background-color: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    color: #334155;
+    font-size: 0.86rem;
+    font-weight: 680;
+    line-height: 1.35;
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, color .16s ease;
+  }
+
+  .participation-page-shell select.form-select,
+  .participation-page-shell select.form-control {
+    padding: 0.42rem 2.15rem 0.42rem 0.68rem;
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--phase-base) 50%),
+      linear-gradient(135deg, var(--phase-base) 50%, transparent 50%);
+    background-position:
+      calc(100% - 16px) 50%,
+      calc(100% - 11px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+
+  .participation-page-shell input.form-control {
+    padding: 0.42rem 0.68rem;
+  }
+
+  .participation-page-shell select.form-select:hover,
+  .participation-page-shell select.form-control:hover,
+  .participation-page-shell input.form-control:hover {
+    border-color: var(--phase-base);
+    background-color: var(--phase-soft);
+    color: var(--phase-text);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+  }
+
+  .participation-page-shell select.form-select:focus,
+  .participation-page-shell select.form-control:focus,
+  .participation-page-shell input.form-control:focus {
+    border-color: var(--phase-base);
+    background-color: #fff;
+    color: var(--phase-text-main);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    outline: none;
+  }
+
+  .participation-page-shell select.form-select:disabled,
+  .participation-page-shell select.form-control:disabled,
+  .participation-page-shell input.form-control:disabled {
+    border-color: #E2E8F0;
+    background-color: #F8FAFC;
+    color: #94A3B8;
+    cursor: not-allowed;
+  }
+
+  .participation-filter-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .participation-filter-row {
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--phase-neutral-border);
+    border-radius: 8px;
+    background: #F8FAFC;
+  }
+
+  .participation-clear-filter {
+    min-height: 36px;
+    font-weight: 800;
+  }
+
+  .participation-preview-panel {
+    border-color: var(--phase-border);
+    background: var(--phase-soft);
+  }
+
+  .participation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+
+  @media (max-width: 991.98px) {
+    .participation-summary-grid,
+    .participation-form-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .participation-page-shell .phase-dashboard-header {
+      align-items: stretch;
+    }
+
+    .participation-page-shell .participation-header-actions,
+    .participation-actions {
+      justify-content: stretch;
+    }
+
+    .participation-page-shell .participation-header-actions .btn,
+    .participation-actions .btn {
+      flex: 1 1 auto;
+    }
+  }
+</style>
+
+<div class="phase-dashboard-shell phase-page-shell participation-page-shell" id="participation-page-shell">
+  {% url 'trampoli_aparells_list' pk=competicio.id as competicio_aparells_url %}
+
+  <header class="phase-dashboard-header">
+    <div class="phase-dashboard-title">
+      <div class="phase-dashboard-title-row">
+        <span class="phase-dashboard-title-logo" aria-hidden="true">
+          <img src="{% static 'fases/aparells.png' %}" alt="">
+        </span>
+        <h1>Participacio</h1>
+      </div>
+      <div class="text-muted small phase-dashboard-subtitle">
+        <span class="phase-dashboard-context-main">{{ comp_aparell.display_nom }}</span>
+        - {{ competicio.nom }} - {{ comp_aparell.display_codi }}
+      </div>
+      <div class="phase-dashboard-stats" aria-label="Resum de participacio">
+        <span class="phase-stat">
+          <span class="phase-stat-value">{{ current_participation_preview.included_count }}</span>
+          <span class="phase-stat-label">Competeixen</span>
+        </span>
+        <span class="phase-stat">
+          <span class="phase-stat-value">{{ current_participation_preview.excluded_count }}</span>
+          <span class="phase-stat-label">Excloses</span>
+        </span>
+        <span class="phase-stat">
+          <span class="phase-stat-value">{{ current_participation_preview.total }}</span>
+          <span class="phase-stat-label">Inscripcions</span>
+        </span>
+      </div>
+    </div>
+    <div class="participation-header-actions">
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Editar aparell</a>
+      <a class="btn btn-sm btn-outline-primary" href="{{ request.GET.next|default:competicio_aparells_url }}">Tornar</a>
+    </div>
+  </header>
+
+  <div class="phase-dashboard-body-card">
+    {% if messages %}
+      <div class="phase-dashboard-messages">
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }} mb-2">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if is_team_app %}
+      <div class="alert alert-warning">
+        Aquest panell nomes aplica a aparells individuals. Els aparells d'equip es configuren des del workspace d'equips.
+      </div>
+    {% endif %}
+
+    <div class="participation-summary-grid">
+      <section class="phase-summary-card participation-summary-card is-ready">
+        <div class="phase-summary-card-head">
+          <div>
+            <div class="phase-summary-kicker">
+              <img src="{% static 'fases/preliminar.png' %}" alt="">
+              <span>Estat</span>
+            </div>
+            <h6>Estat actual</h6>
+          </div>
+          <span class="badge phase-badge-blue">Actiu</span>
+        </div>
+        <div class="participation-metric">{{ current_participation_preview.included_count }}</div>
+        <div class="participation-muted">competeixen</div>
+        <div class="phase-summary-note mt-2">
+          {{ current_participation_preview.excluded_count }} excloses de {{ current_participation_preview.total }} inscripcions.
+        </div>
+      </section>
+
+      <section class="phase-summary-card participation-summary-card is-ready">
+        <div class="phase-summary-card-head">
+          <div>
+            <div class="phase-summary-kicker">
+              <img src="{% static 'fases/status.png' %}" alt="">
+              <span>Regla</span>
+            </div>
+            <h6>Ultima regla aplicada</h6>
+          </div>
+        </div>
+        {% if comp_aparell.participation_config.last_applied_at %}
+          <div class="phase-summary-note">{{ comp_aparell.participation_config.last_applied_at }}</div>
+          <dl class="phase-summary-list mt-2">
+            <div>
+              <dt>Dins</dt>
+              <dd>{{ comp_aparell.participation_config.last_summary.included_count }}</dd>
+            </div>
+            <div>
+              <dt>Fora</dt>
+              <dd>{{ comp_aparell.participation_config.last_summary.excluded_count }}</dd>
+            </div>
+          </dl>
+        {% else %}
+          <div class="phase-summary-empty">Encara no hi ha cap regla aplicada.</div>
+        {% endif %}
+      </section>
+
+      <section class="phase-summary-card participation-summary-card is-pending">
+        <div class="phase-summary-card-head">
+          <div>
+            <div class="phase-summary-kicker">
+              <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+              <span>Aplicacio</span>
+            </div>
+            <h6>Aplicacio massiva</h6>
+          </div>
+        </div>
+        <div class="phase-summary-note">
+          Aplicar substitueix la participacio actual d'aquest aparell: primer elimina les exclusions existents i despres crea les noves.
+        </div>
+      </section>
+    </div>
+
+    <form method="post" id="participation-form">
+      {% csrf_token %}
+      <input type="hidden" name="confirm_participation_apply" id="confirm-participation-apply" value="">
+
+      <div class="participation-form-grid">
+        <section class="phase-panel">
+          <div class="phase-panel-title">
+            <h5>Regla</h5>
+          </div>
+          <div class="phase-panel-note mb-2">
+            Defineix si el filtre inclou o exclou participants de l'aparell.
+          </div>
+          <label class="form-label" for="participation-mode">Mode</label>
+          <select class="form-select" id="participation-mode" name="participation_mode">
+            {% for mode in participation_mode_choices %}
+              <option value="{{ mode.code }}" {% if participation_config.mode == mode.code %}selected{% endif %}>{{ mode.label }}</option>
+            {% endfor %}
+          </select>
+        </section>
+
+        <section class="phase-panel">
+          <div class="phase-panel-title">
+            <div>
+              <h5>Filtres</h5>
+              <div class="phase-panel-note">Les files actives es combinen amb AND.</div>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="participation-add-filter">Afegir filtre</button>
+          </div>
+
+          <div class="participation-filter-list" id="participation-filter-list">
+            {% for row in participation_filter_rows %}
+              <div class="row g-2 align-items-end participation-filter-row {% if not row.field and not forloop.first %}d-none{% endif %}">
+                <div class="col-12 col-md-4">
+                  <label class="form-label small mb-1">Columna</label>
+                  <select class="form-select form-select-sm" name="filter_field" data-participation-field>
+                    <option value="">Sense filtre</option>
+                    {% for field in participation_fields %}
+                      <option value="{{ field.code }}" {% if row.field == field.code %}selected{% endif %}>{{ field.ui_label|default:field.label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label small mb-1">Condicio</label>
+                  <select class="form-select form-select-sm" name="filter_operator">
+                    {% for operator in participation_operator_choices %}
+                      <option value="{{ operator.code }}" {% if row.operator == operator.code %}selected{% endif %}>{{ operator.label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label small mb-1">Valors</label>
+                  <input
+                    class="form-control form-control-sm"
+                    type="text"
+                    name="filter_values"
+                    value="{{ row.values|join:', ' }}"
+                    list="participation-value-list"
+                    placeholder="Un o mes valors, separats per comes">
+                </div>
+                <div class="col-12 col-md-1">
+                  <button class="btn btn-sm btn-outline-secondary w-100 participation-clear-filter" type="button" data-participation-clear-filter title="Buida el filtre">x</button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <datalist id="participation-value-list"></datalist>
+        </section>
+      </div>
+
+      {% if participation_preview %}
+        <section class="phase-panel participation-preview-panel mt-3">
+          <div class="phase-panel-title">
+            <h5>Previsualitzacio</h5>
+            <span class="badge badge-light border">{{ participation_preview.total }} total</span>
+          </div>
+          <div class="phase-summary-note">
+            {{ participation_preview.included_count }} competeixen - {{ participation_preview.excluded_count }} queden excloses.
+          </div>
+          <div class="phase-panel-note mt-1">
+            Canvis sobre l'estat actual: {{ participation_preview.will_add_exclusions_count }} exclusions noves,
+            {{ participation_preview.will_remove_exclusions_count }} exclusions que s'eliminaran.
+          </div>
+        </section>
+      {% endif %}
+
+      <div class="participation-actions">
+        <button class="btn btn-outline-primary" type="submit" name="intent" value="preview">Previsualitzar</button>
+        <button class="btn btn-primary" type="submit" name="intent" value="apply" id="participation-apply-button" {% if is_team_app %}disabled{% endif %}>
+          Aplicar i substituir participacio
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="phase-confirm-backdrop" id="participation-confirm-backdrop" hidden></div>
+<section
+  class="phase-confirm-modal is-warning"
+  id="participation-confirm-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-hidden="true"
+  aria-labelledby="participation-confirm-title"
+  hidden>
+  <div class="phase-confirm-head">
+    <div>
+      <p class="phase-confirm-kicker">Confirmacio</p>
+      <h5 id="participation-confirm-title">Substituir participacio</h5>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-participation-confirm-cancel>Tancar</button>
+  </div>
+  <div class="phase-confirm-body">
+    <p>Aplicar aquesta regla refa totes les exclusions actuals de l'aparell. Vols continuar?</p>
+  </div>
+  <div class="phase-confirm-foot">
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-participation-confirm-cancel>Cancel-lar</button>
+    <button class="btn btn-sm btn-warning" type="button" id="participation-confirm-accept">Aplicar regla</button>
+  </div>
+</section>
+
+{{ participation_field_values|json_script:"participation-field-values" }}
+<script>
+  (function () {
+    const valuesEl = document.getElementById('participation-field-values');
+    const valueList = document.getElementById('participation-value-list');
+    const valuesByField = valuesEl ? JSON.parse(valuesEl.textContent || '{}') : {};
+    const rows = Array.from(document.querySelectorAll('.participation-filter-row'));
+    const addButton = document.getElementById('participation-add-filter');
+    const form = document.getElementById('participation-form');
+    const confirmInput = document.getElementById('confirm-participation-apply');
+    const confirmModal = document.getElementById('participation-confirm-modal');
+    const confirmBackdrop = document.getElementById('participation-confirm-backdrop');
+    const confirmAccept = document.getElementById('participation-confirm-accept');
+    let pendingSubmitter = null;
+
+    function refreshDatalist(fieldCode) {
+      if (!valueList) return;
+      valueList.innerHTML = '';
+      (valuesByField[fieldCode] || []).forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.value === '__EMPTY__' ? '' : item.value;
+        option.label = item.count ? `${item.label} (${item.count})` : item.label;
+        valueList.appendChild(option);
+      });
+    }
+
+    function revealNextRow() {
+      const next = rows.find((row) => row.classList.contains('d-none'));
+      if (next) {
+        next.classList.remove('d-none');
+        const select = next.querySelector('[data-participation-field]');
+        if (select) select.focus();
+      }
+    }
+
+    rows.forEach((row) => {
+      const field = row.querySelector('[data-participation-field]');
+      if (field) {
+        field.addEventListener('change', () => refreshDatalist(field.value));
+        field.addEventListener('focus', () => refreshDatalist(field.value));
+      }
+      const clear = row.querySelector('[data-participation-clear-filter]');
+      if (clear) {
+        clear.addEventListener('click', () => {
+          row.querySelectorAll('select, input').forEach((input) => {
+            if (input.name === 'filter_operator') input.value = 'is_any';
+            else input.value = '';
+          });
+        });
+      }
+    });
+    function openConfirm(submitter) {
+      pendingSubmitter = submitter || null;
+      if (!confirmModal || !confirmBackdrop) return false;
+      if (confirmModal.parentElement !== document.body) document.body.appendChild(confirmModal);
+      if (confirmBackdrop.parentElement !== document.body) document.body.appendChild(confirmBackdrop);
+      confirmModal.hidden = false;
+      confirmBackdrop.hidden = false;
+      confirmModal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('phase-confirm-open');
+      window.setTimeout(() => confirmAccept?.focus(), 0);
+      return true;
+    }
+
+    function closeConfirm() {
+      pendingSubmitter = null;
+      if (confirmModal) {
+        confirmModal.hidden = true;
+        confirmModal.setAttribute('aria-hidden', 'true');
+      }
+      if (confirmBackdrop) confirmBackdrop.hidden = true;
+      document.body.classList.remove('phase-confirm-open');
+    }
+
+    if (addButton) addButton.addEventListener('click', revealNextRow);
+    if (form && confirmInput) {
+      form.addEventListener('submit', (event) => {
+        const submitter = event.submitter || pendingSubmitter;
+        if (!submitter || submitter.value !== 'apply' || form.dataset.participationConfirmAccepted === '1') {
+          delete form.dataset.participationConfirmAccepted;
+          return;
+        }
+        event.preventDefault();
+        if (!openConfirm(submitter)) {
+          confirmInput.value = '1';
+          form.dataset.participationConfirmAccepted = '1';
+          if (typeof form.requestSubmit === 'function') form.requestSubmit(submitter);
+          else form.submit();
+        }
+      });
+    }
+    confirmAccept?.addEventListener('click', () => {
+      if (!form) return;
+      const submitter = pendingSubmitter;
+      confirmInput.value = '1';
+      form.dataset.participationConfirmAccepted = '1';
+      closeConfirm();
+      if (submitter && typeof form.requestSubmit === 'function') form.requestSubmit(submitter);
+      else form.submit();
+    });
+    confirmBackdrop?.addEventListener('click', closeConfirm);
+    document.querySelectorAll('[data-participation-confirm-cancel]').forEach((button) => {
+      button.addEventListener('click', closeConfirm);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && pendingSubmitter) closeConfirm();
+    });
+  })();
+</script>
+{% endblock %}

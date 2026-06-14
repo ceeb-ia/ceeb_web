@@ -215,9 +215,9 @@
 
       {% if not is_public %}
         <div class="d-flex flex-wrap justify-content-end gap-2">
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_live' competicio.id %}">Live tabs</a>
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
+          <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
+          <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_live' competicio.id %}">Live tabs</a>
+          <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
         </div>
       {% endif %}
     </div>

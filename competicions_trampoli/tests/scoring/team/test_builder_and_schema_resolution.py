@@ -456,6 +456,35 @@ class TeamContextScoringBuilderAndSchemaResolutionTests(TeamContextScoringFlowTe
         self.assertIsNone(local_schema.aparell_id)
         self.assertEqual(local_schema.schema["fields"][0]["code"], "ALT")
 
+    def test_competicio_aparell_creation_copies_global_schema_locally_for_builder(self):
+        app = self._create_aparell("COPY", "Copia schema")
+        global_schema = ScoringSchema.objects.create(
+            aparell=app,
+            schema={
+                "fields": [
+                    {"code": "BASE", "label": "Base", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+
+        comp_app = self._create_comp_aparell(self.comp, app, ordre=2)
+
+        local_schema = ScoringSchema.objects.get(comp_aparell=comp_app)
+        self.assertIsNone(local_schema.aparell_id)
+        self.assertEqual(local_schema.schema, global_schema.schema)
+
+        local_schema.schema["fields"][0]["code"] = "LOCAL"
+        local_schema.save()
+        global_schema.refresh_from_db()
+        self.assertEqual(global_schema.schema["fields"][0]["code"], "BASE")
+
+        response = self.client.get(reverse("classificacions_home", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        options = response.context["aparell_field_options"][str(comp_app.id)]
+        self.assertEqual([item["code"] for item in options], ["LOCAL"])
+
     def test_scoring_schema_builder_rehydrates_last_posted_invalid_schema(self):
         existing = ScoringSchema.objects.create(
             aparell=self.app,

@@ -1,39 +1,90 @@
-<section class="phase-flow-stack">
+{% load static %}
+
+<section class="phase-flow-stack" data-avatar-anchor="phase-workspace">
   <div class="phase-flow-head">
     <div>
       <h4>{{ comp_aparell.display_nom }}</h4>
-      <div class="text-muted small">{{ comp_aparell.display_codi }} - {{ phase_count }} fases - {{ unit_count }} unitats competitives</div>
+      <div class="text-muted small">{{ comp_aparell.display_codi }} - {{ phase_count }} fases - {{ unit_count }} unitats competitives - {{ comp_aparell.nombre_exercicis }} exercici(s) base</div>
     </div>
-    <div class="phase-action-row">
-      <a class="btn btn-sm btn-outline-secondary" href="{% url 'rotacions_planner' competicio.id %}">Obrir rotacions</a>
+    <div class="phase-flow-actions">
+      <a class="btn btn-sm btn-outline-primary"
+         data-avatar-action="phase-participation"
+         href="{% url 'trampoli_aparell_participation' pk=competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+        <span>Participació</span>
+      </a>
+      <a class="btn btn-sm btn-outline-warning phase-themed-btn"
+         href="{% url 'scoring_schema_update' competicio.id comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">
+        <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
+        <span>Puntuació</span>
+      </a>
     </div>
   </div>
 
-  <article class="phase-node is-base">
-    <header class="phase-node-header is-base">
-      <div>
-        <div class="phase-node-title">
-          <strong>Preliminar implicita</strong>
-          <span class="badge badge-light border">DEFAULT reservat</span>
+  <div class="phase-tree-panel" data-avatar-anchor="phase-tree">
+    <div class="phase-panel-title">
+      <h5 class="mb-0">Arbre de fases</h5>
+      <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_tree" aria-label="Ajuda sobre arbre de fases" title="Ajuda sobre arbre de fases">?</button>
+    </div>
+    <div class="phase-tree-root">
+      <div class="phase-tree-base-shell">
+        <div class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}" data-avatar-anchor="phase-base-node">
+          <a class="phase-tree-base-link"
+             href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
+            <span class="phase-tree-node-main">
+              <span class="phase-tree-title-line">
+                <img class="phase-tree-phase-logo" src="{% static 'fases/preliminar.png' %}" alt="">
+                <span class="phase-tree-base-title">Preliminar implícita</span>
+              </span>
+              <span class="phase-tree-base-meta">Arrel visual - DEFAULT reservat - {{ comp_aparell.nombre_exercicis }} exercici(s)</span>
+            </span>
+          </a>
+          <details class="phase-node-menu phase-base-menu">
+            <summary
+              class="btn btn-sm btn-outline-secondary phase-node-menu-toggle"
+              aria-label="Accions de la preliminar"
+              title="Accions de la preliminar">
+              &hellip;
+            </summary>
+            <div class="phase-node-menu-panel">
+              <form method="post" class="phase-exercise-form phase-exercise-form-menu phase-base-exercise-form" title="Exercicis de la preliminar">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_base_scoring_settings">
+                <input type="hidden" name="comp_aparell_id" value="{{ comp_aparell.id }}">
+                <label>
+                  <span>Exercicis</span>
+                  <input class="form-control form-control-sm" type="number" name="nombre_exercicis" min="1" max="5" value="{{ comp_aparell.nombre_exercicis }}">
+                </label>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Desar</button>
+              </form>
+            </div>
+          </details>
         </div>
-        <div class="text-muted small">Arrel visual de l'arbre. No es desa com a fase; representa el flux inicial existent, les rotacions normals i les notes sense fase_id.</div>
+        <div class="phase-tree-base-tools">
+          {% include "competicio/fases/_create_child_phase_form.html" with parent_id="" %}
+        </div>
       </div>
-      <span class="badge badge-secondary">No editable aqui</span>
-    </header>
-  </article>
+    </div>
 
-  {% if phases %}
-    <div class="phase-tree">
-      {% for phase in phases %}
-        <div class="phase-tree-item">
-          {% include "competicio/fases/_phase_node.html" with phase=phase %}
-        </div>
-      {% endfor %}
-    </div>
+    {% if root_phases %}
+      <ol class="phase-tree-list">
+        {% include "competicio/fases/_phase_tree_branch.html" with phases=root_phases %}
+      </ol>
+    {% else %}
+      <div class="phase-empty">
+        La preliminar/default no es crea aqui. Crea una fase filla des de la Preliminar per preparar semifinals, finals o rondes posteriors d'aquest aparell.
+      </div>
+    {% endif %}
+  </div>
+
+  {% if selected_phase %}
+    <section class="phase-detail-panel" aria-label="Detall de fase seleccionada" data-avatar-anchor="phase-detail-panel">
+      <div class="phase-detail-heading">
+        <h5>Detall de la fase seleccionada</h5>
+        <button class="btn btn-sm btn-outline-secondary phase-context-help" type="button" data-avatar-topic="phase_selected_detail" aria-label="Ajuda sobre el detall de fase" title="Ajuda sobre el detall de fase">?</button>
+      </div>
+      {% include "competicio/fases/_phase_node.html" with phase=selected_phase %}
+    </section>
   {% else %}
-    <div class="phase-empty">
-      Encara no hi ha fases avancades. La preliminar/default no es crea aqui: surt dels grups d'inscripcions i del planner de rotacions.
-      Crea una fase per preparar semifinals, finals o rondes posteriors d'aquest aparell.
-    </div>
+    {% include "competicio/fases/_base_phase_detail.html" %}
   {% endif %}
 </section>

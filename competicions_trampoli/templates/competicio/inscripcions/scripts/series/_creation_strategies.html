@@ -1,0 +1,177 @@
+  function readPositiveSeriesInput(id, label) {
+    const value = Number.parseInt(document.getElementById(id)?.value || '', 10);
+    if (!Number.isFinite(value) || value < 1) {
+      showAlertMessage(`Indica un valor valid per ${label}.`);
+      return null;
+    }
+    return value;
+  }
+
+  function describeSeriesCreationStrategy(strategy) {
+    switch (String(strategy || '').trim()) {
+      case 'count':
+        return 'Crear X series';
+      case 'size_fixed':
+        return 'Crear per mida fixa';
+      case 'size_balanced':
+        return 'Crear per mida equilibrada';
+      case 'range_balanced':
+        return 'Equilibrades min-max';
+      case 'count_with_range':
+        return 'X series amb forquilla';
+      default:
+        return 'Crear series';
+    }
+  }
+
+  function resolveSeriesCreationPayload(strategy, extraPayload = {}) {
+    const ids = selectedIds();
+    if (!ids.length) {
+      showAlertMessage('Selecciona almenys una unitat competitiva.');
+      return null;
+    }
+    const resolvedStrategy = String(strategy || '').trim();
+    const payload = {
+      comp_aparell_id: state.compAparellId,
+      strategy: resolvedStrategy,
+      selected_ids: ids,
+      ...extraPayload,
+    };
+    if (
+      Number.isFinite(payload.min_size)
+      && Number.isFinite(payload.max_size)
+      && payload.min_size > payload.max_size
+    ) {
+      showAlertMessage('La mida minima no pot superar la mida maxima.');
+      return null;
+    }
+    return payload;
+  }
+
+  function syncSeriesCreationConfirmIntent(payload, preview) {
+    const signature = String(preview?.plan_signature || '').trim();
+    if (!signature || preview?.can_run === false) {
+      clearPreviewConfirmIntent();
+      return;
+    }
+    const frozenPayload = JSON.parse(JSON.stringify(payload || {}));
+    setPreviewConfirmIntent({
+      label: `Previsualitzacio de: ${describeSeriesCreationStrategy(payload?.strategy)}`,
+      buttonLabel: 'Confirmar aquesta creacio',
+      canConfirm: true,
+      execute: () => runSeriesCreateMany(frozenPayload, signature),
+    });
+  }
+
+  async function requestSeriesCreationPreview(strategy, extraPayload = {}) {
+    const payload = resolveSeriesCreationPayload(strategy, extraPayload);
+    if (!payload) return null;
+    setPreviewLoading(true);
+    try {
+      const data = await postJson(creationPreviewUrl, payload);
+      if (data?.ok === false) throw new Error(data?.error || "No s'ha pogut calcular la previsualitzacio.");
+      const preview = data?.preview || {};
+      renderPreview(preview);
+      syncSeriesCreationConfirmIntent(payload, preview);
+      setRightPaneTab('preview');
+      return { payload, preview };
+    } catch (error) {
+      clearPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
+      showAlertMessage(error?.message || String(error));
+      return null;
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function runSeriesCreateMany(payload, planSignature) {
+    const signature = String(planSignature || '').trim();
+    if (!signature) {
+      showAlertMessage('Torna a previsualitzar la creacio abans de confirmar-la.');
+      return false;
+    }
+    try {
+      const data = await postJson(createManyUrl, {
+        ...payload,
+        plan_signature: signature,
+      });
+      if (data?.ok === false) throw new Error(data?.error || "No s'han pogut crear les series.");
+      setHistory(data);
+      state.detailCache = {};
+      clearPreview('Series creades. Torna a previsualitzar per revisar una altra configuracio.');
+      showAlertMessage('Series creades.');
+      await refreshWorkspace({ preservePage: true });
+      return true;
+    } catch (error) {
+      showAlertMessage(error?.message || String(error));
+      return false;
+    }
+  }
+
+  async function createSeriesStrategy(strategy, extraPayload = {}) {
+    const result = await requestSeriesCreationPreview(strategy, extraPayload);
+    const signature = String(result?.preview?.plan_signature || '').trim();
+    if (!result || !signature || result.preview?.can_run === false) return false;
+    return runSeriesCreateMany(result.payload, signature);
+  }
+
+  function readSeriesRangePayload() {
+    const minSize = readPositiveSeriesInput('series-series-min-size', 'la mida minima');
+    const maxSize = readPositiveSeriesInput('series-series-max-size', 'la mida maxima');
+    if (minSize === null || maxSize === null) return null;
+    return { min_size: minSize, max_size: maxSize };
+  }
+
+  function bindSeriesStrategyButton(id, strategy, readExtraPayload, createImmediately) {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      const extraPayload = typeof readExtraPayload === 'function' ? readExtraPayload() : {};
+      if (extraPayload === null) return;
+      if (createImmediately) await createSeriesStrategy(strategy, extraPayload);
+      else await requestSeriesCreationPreview(strategy, extraPayload);
+    });
+  }
+
+  const seriesCountPayload = () => {
+    const seriesCount = readPositiveSeriesInput('series-series-count', 'el nombre de series');
+    return seriesCount === null ? null : { series_count: seriesCount };
+  };
+  const seriesSizePayload = () => {
+    const seriesSize = readPositiveSeriesInput('series-series-size', 'la mida de les series');
+    return seriesSize === null ? null : { series_size: seriesSize };
+  };
+  const seriesCountRangePayload = () => {
+    const seriesCount = readPositiveSeriesInput('series-series-count-range', 'el nombre de series');
+    const range = readSeriesRangePayload();
+    return seriesCount === null || !range ? null : { series_count: seriesCount, ...range };
+  };
+  const seriesSizeStrategy = () => (
+    String(document.getElementById('series-series-size-mode')?.value || 'fixed') === 'balanced'
+      ? 'size_balanced'
+      : 'size_fixed'
+  );
+
+  bindSeriesStrategyButton('btn-series-preview-count', 'count', seriesCountPayload, false);
+  bindSeriesStrategyButton('btn-series-create-count', 'count', seriesCountPayload, true);
+  bindSeriesStrategyButton('btn-series-preview-range-balanced', 'range_balanced', readSeriesRangePayload, false);
+  bindSeriesStrategyButton('btn-series-create-range-balanced', 'range_balanced', readSeriesRangePayload, true);
+  bindSeriesStrategyButton('btn-series-preview-count-range', 'count_with_range', seriesCountRangePayload, false);
+  bindSeriesStrategyButton('btn-series-create-count-range', 'count_with_range', seriesCountRangePayload, true);
+  document.getElementById('btn-series-preview-size')?.addEventListener('click', async () => {
+    const payload = seriesSizePayload();
+    if (payload) await requestSeriesCreationPreview(seriesSizeStrategy(), payload);
+  });
+  document.getElementById('btn-series-create-size')?.addEventListener('click', async () => {
+    const payload = seriesSizePayload();
+    if (payload) await createSeriesStrategy(seriesSizeStrategy(), payload);
+  });
+
+  [
+    'series-series-count',
+    'series-series-size',
+    'series-series-size-mode',
+    'series-series-min-size',
+    'series-series-max-size',
+    'series-series-count-range',
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', markPreviewDirty);
+  });

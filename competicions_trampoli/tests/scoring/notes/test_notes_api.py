@@ -6,7 +6,7 @@ from django.urls import reverse
 from ....models import CompeticioMembership
 from ....models.rotacions import RotacioAssignacio, RotacioAssignacioGrup, RotacioEstacio, RotacioFranja
 from ....models.scoring import ScoreEntry, ScoreWarningAcknowledgement, ScoringSchema
-from ....models.competicio import CompeticioAparellFase
+from ....models.competicio import CompeticioAparellFase, ProgramUnit
 from ....services.fases import SlotSubject, create_program_unit_from_subjects
 from ....services.scoring.notes_units import build_notes_units_context
 from ...base import _BaseTrampoliDataMixin
@@ -127,11 +127,13 @@ class NotesUnitsApiTests(_BaseTrampoliDataMixin, TestCase):
             nom="Final",
             codi="FINAL",
             ordre=2,
+            estat=CompeticioAparellFase.Estat.PUBLISHED,
         )
         unit = create_program_unit_from_subjects(
             fase=phase,
             nom="Final",
             subjects=[SlotSubject("inscripcio", self.ins_2.id)],
+            status=ProgramUnit.Status.PUBLISHED,
         )
         ScoreEntry.objects.create(
             competicio=self.comp,

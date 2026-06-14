@@ -1,17 +1,21 @@
 import json
+from io import BytesIO
 
 from django.db import transaction
 from django.db.models import Count
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from ...access import user_has_competicio_capability
 from .base import InscripcionsListView
-from ...models import Competicio, Inscripcio, InscripcioMedia
+from ...models import Competicio, Inscripcio, InscripcioEquipAssignacio, InscripcioMedia
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...services.shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
@@ -23,6 +27,8 @@ from ...services.shared.birth_year_ranges import (
 from ...services.shared.competition_groups import get_group_for_display_num, get_group_maps, sync_competicio_group_names_view
 from ...services.teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
+    BASE_EQUIP_CONTEXT_NAME,
+    get_contextual_assignment_map,
     get_equip_context,
     get_equip_context_summary,
     normalize_equip_context_code,
@@ -35,6 +41,14 @@ from ...services.inscripcions.history import (
     with_inscripcions_history_payload,
 )
 from ...services.inscripcions.media_matching import normalize_media_matching_config
+from ...services.inscripcions.admission import (
+    active_baixes_qs,
+    baixa_summary_by_inscripcio,
+    clear_inscripcio_baixa,
+    set_inscripcio_baixa,
+)
+from ...services.avatar.competition.overview import AVATAR_MESSAGES as COMPETITION_AVATAR_MESSAGES
+from ...services.avatar.inscripcions.messages import AVATAR_MESSAGES as INSCRIPCIONS_AVATAR_MESSAGES
 from ...services.inscripcions.queries import (
     _label_with_source,
     _normalize_schema_extra_code,
@@ -62,10 +76,10 @@ BUILTIN_TABLE_FIELDS = [
     {"code": "equip", "label": "Equip", "kind": "builtin"},
     {"code": "__aparells__", "label": "Aparells", "kind": "ui"},
     {"code": "__media__", "label": "Media", "kind": "ui"},
-    {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
 
-SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "ordre_sortida", "__aparells__", "__media__", "__actions__"}
+HIDDEN_TABLE_COLUMN_CODES = {"ordre_sortida"}
+SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "__aparells__", "__media__", "__actions__"}
 
 # Frontend contract for Phase 2 incremental refresh:
 # GET `inscripcions_list` accepts `__fragments=header,toolbar,history,table,panel`
@@ -139,6 +153,8 @@ def get_available_table_columns(competicio):
             kind = col.get("kind") or "extra"
             if kind == "extra":
                 code = _normalize_schema_extra_code(code, reserved)
+            if code in HIDDEN_TABLE_COLUMN_CODES:
+                continue
             excel_codes.add(code)
 
     for field in BUILTIN_TABLE_FIELDS:
@@ -158,6 +174,8 @@ def get_available_table_columns(competicio):
             kind = col.get("kind") or "extra"
             if kind == "extra":
                 code = _normalize_schema_extra_code(code, reserved)
+            if code in HIDDEN_TABLE_COLUMN_CODES:
+                continue
             if code in seen:
                 continue
             label = col.get("label") or code
@@ -200,7 +218,6 @@ def get_selected_table_columns(competicio, available_cols):
             "equip",
             "__aparells__",
             "__media__",
-            "ordre_sortida",
             "__actions__",
         ]
 
@@ -267,6 +284,8 @@ class InscripcionsListNewView(InscripcionsListView):
         requested_fragments = self._get_requested_fragments()
         requested_panel_key = str(self.request.GET.get("__panel_key") or "").strip()
         ctx["inscripcions_lazy_panels"] = not ("panel" in requested_fragments and requested_panel_key)
+        ctx["avatar_messages"] = {**COMPETITION_AVATAR_MESSAGES, **INSCRIPCIONS_AVATAR_MESSAGES}
+        ctx["avatar_initial_topic"] = "competition_inscriptions"
         materialized_records = list(ctx.get("_inscripcions_materialized_records") or [])
         can_reuse_materialized = bool(materialized_records) and not bool(ctx.get("is_paginated"))
         with inscripcions_timing_section(self.request, "listing.permissions_counts"):
@@ -340,13 +359,13 @@ class InscripcionsListNewView(InscripcionsListView):
                     continue
                 sort_label_by_code[code] = item.get("ui_label") or item.get("label") or code
 
-            dir_to_symbol = {"asc": "\u2191", "desc": "\u2193", "arrow_asc": "\u2195\u2191", "arrow_desc": "\u2195\u2193", "custom": "C"}
+            dir_to_symbol = {"asc": "\u2191", "desc": "\u2193", "arrow_asc": "\u2195\u2191", "arrow_desc": "\u2195\u2193", "custom": "P"}
             dir_to_label = {
                 "asc": "Ascendent",
                 "desc": "Descendent",
                 "arrow_asc": "Fletxa ascendent",
                 "arrow_desc": "Fletxa descendent",
-                "custom": "Custom",
+                "custom": "Personalitzat",
             }
 
             sort_entries = []
@@ -453,10 +472,7 @@ class InscripcionsListNewView(InscripcionsListView):
                 team_context_code = NATIVE_EQUIP_CONTEXT_CODE
                 selected_team_context = get_equip_context(self.competicio, team_context_code)
             team_fields = group_field_options
-            team_field_codes = {field["code"] for field in team_fields}
-            default_team_fields = [code for code in ("entitat", "subcategoria", "sexe") if code in team_field_codes]
             ctx["team_partition_fields"] = team_fields
-            ctx["team_partition_default_fields"] = default_team_fields
             ctx["team_context_selected_code"] = team_context_code
             ctx["team_context_selected_label"] = str(
                 getattr(selected_team_context, "nom", "") or (
@@ -494,11 +510,13 @@ class InscripcionsListNewView(InscripcionsListView):
 
         with inscripcions_timing_section(self.request, "listing.media_maps"):
             visible_ins_ids = set()
+            visible_rows = []
             table_runtime = {}
             records_grouped = ctx.get("records_grouped")
             if records_grouped:
                 for _label, rows, _group_key in records_grouped:
                     for row in rows:
+                        visible_rows.append(row)
                         base_equip_id = getattr(row, "_base_equip_id_cache", None)
                         base_equip_name = getattr(row, "_base_equip_name_cache", "")
                         setattr(row, "base_equip_id", base_equip_id)
@@ -507,12 +525,113 @@ class InscripcionsListNewView(InscripcionsListView):
                             visible_ins_ids.add(row.id)
             else:
                 for row in (ctx.get("records") or []):
+                    visible_rows.append(row)
                     base_equip_id = getattr(row, "_base_equip_id_cache", None)
                     base_equip_name = getattr(row, "_base_equip_name_cache", "")
                     setattr(row, "base_equip_id", base_equip_id)
                     setattr(row, "base_equip_name", base_equip_name)
                     if getattr(row, "id", None):
                         visible_ins_ids.add(row.id)
+
+            if "equip" in selected_table_column_codes:
+                legacy_team_by_ins_id = {}
+                if visible_ins_ids:
+                    legacy_rows = (
+                        Inscripcio.objects
+                        .filter(id__in=visible_ins_ids)
+                        .select_related("equip")
+                        .values("id", "equip_id", "equip__nom")
+                    )
+                    for item in legacy_rows:
+                        equip_id = item.get("equip_id")
+                        if not equip_id:
+                            continue
+                        legacy_team_by_ins_id[int(item["id"])] = {
+                            "id": equip_id,
+                            "name": str(item.get("equip__nom") or "").strip(),
+                        }
+                selected_assignment_map = (
+                    get_contextual_assignment_map(self.competicio, visible_ins_ids, team_context_code)
+                    if visible_ins_ids
+                    else {}
+                )
+                assignments_by_ins_id = {}
+                if visible_ins_ids:
+                    assignment_rows = (
+                        InscripcioEquipAssignacio.objects
+                        .filter(competicio=self.competicio, inscripcio_id__in=visible_ins_ids)
+                        .select_related("context", "equip")
+                        .order_by("context__nom", "equip__nom", "id")
+                    )
+                    for assignment in assignment_rows:
+                        context = getattr(assignment, "context", None)
+                        equip = getattr(assignment, "equip", None)
+                        context_code = str(getattr(context, "code", "") or "").strip()
+                        context_label = (
+                            BASE_EQUIP_CONTEXT_NAME
+                            if context_code == NATIVE_EQUIP_CONTEXT_CODE
+                            else str(getattr(context, "nom", "") or "").strip()
+                        ) or context_code
+                        equip_name = str(getattr(equip, "nom", "") or "").strip()
+                        if not context_label or not equip_name:
+                            continue
+                        assignments_by_ins_id.setdefault(int(assignment.inscripcio_id), []).append(
+                            {
+                                "context_code": context_code,
+                                "context_label": context_label,
+                                "equip_name": equip_name,
+                            }
+                        )
+                for ins_id, legacy_team in legacy_team_by_ins_id.items():
+                    existing_native = any(
+                        item.get("context_code") == NATIVE_EQUIP_CONTEXT_CODE
+                        for item in assignments_by_ins_id.get(ins_id, [])
+                    )
+                    if existing_native:
+                        continue
+                    assignments_by_ins_id.setdefault(ins_id, []).append(
+                        {
+                            "context_code": NATIVE_EQUIP_CONTEXT_CODE,
+                            "context_label": BASE_EQUIP_CONTEXT_NAME,
+                            "equip_name": legacy_team.get("name") or f"Equip {legacy_team.get('id')}",
+                        }
+                    )
+                selected_context_label = str(ctx.get("team_context_selected_label") or team_context_code).strip()
+                for row in visible_rows:
+                    row_id = getattr(row, "id", None)
+                    selected_assignment = selected_assignment_map.get(row_id)
+                    selected_equip = getattr(selected_assignment, "equip", None) if selected_assignment is not None else None
+                    if selected_equip is None and team_context_code == NATIVE_EQUIP_CONTEXT_CODE:
+                        legacy_team = legacy_team_by_ins_id.get(int(row_id or 0), {})
+                        selected_equip_id = getattr(row, "base_equip_id", None) or legacy_team.get("id")
+                        selected_equip_name = getattr(row, "base_equip_name", "") or legacy_team.get("name") or ""
+                    else:
+                        selected_equip_id = getattr(selected_equip, "id", None)
+                        selected_equip_name = str(getattr(selected_equip, "nom", "") or "").strip()
+                    all_assignments = assignments_by_ins_id.get(int(row_id or 0), [])
+                    other_assignments = [
+                        item
+                        for item in all_assignments
+                        if item.get("context_code") != team_context_code
+                    ]
+                    tooltip_lines = [f"Context actual: {selected_context_label}"]
+                    if selected_equip_name:
+                        tooltip_lines.append(f"Equip actual: {selected_equip_name}")
+                    else:
+                        tooltip_lines.append("Sense equip en aquest context")
+                    if other_assignments:
+                        tooltip_lines.append("Altres contextos:")
+                        tooltip_lines.extend(
+                            f"{item['context_label']}: {item['equip_name']}"
+                            for item in other_assignments[:6]
+                        )
+                        if len(other_assignments) > 6:
+                            tooltip_lines.append(f"+{len(other_assignments) - 6} contextos mes")
+                    setattr(row, "context_equip_id", selected_equip_id)
+                    setattr(row, "context_equip_name", selected_equip_name)
+                    setattr(row, "team_context_label", selected_context_label)
+                    setattr(row, "other_team_contexts_count", len(other_assignments))
+                    setattr(row, "team_context_tooltip", "\n".join(tooltip_lines))
 
             if "__aparells__" in selected_table_column_codes:
                 excluded_map = {}
@@ -528,6 +647,13 @@ class InscripcionsListNewView(InscripcionsListView):
                 for ins_id in visible_ins_ids:
                     excluded_map.setdefault(str(ins_id), [])
                 table_runtime["inscripcio_aparells_excluded_map"] = excluded_map
+
+            if visible_ins_ids:
+                table_runtime["inscripcio_baixes_map"] = baixa_summary_by_inscripcio(
+                    self.competicio,
+                    active_app_ids,
+                    inscripcio_ids=visible_ins_ids,
+                )
 
             if "__media__" in selected_table_column_codes:
                 media_map = {}
@@ -573,6 +699,9 @@ class InscripcionsListNewView(InscripcionsListView):
                     "saveTableColumns": reverse("inscripcions_save_table_columns", kwargs={"pk": self.competicio.id}),
                     "setGroupName": reverse("inscripcions_set_group_name", kwargs={"pk": self.competicio.id}),
                     "setAparells": reverse("inscripcions_set_aparells", kwargs={"pk": self.competicio.id}),
+                    "setBaixa": reverse("inscripcions_set_baixa", kwargs={"pk": self.competicio.id}),
+                    "clearBaixa": reverse("inscripcions_clear_baixa", kwargs={"pk": self.competicio.id}),
+                    "exportBaixes": reverse("inscripcions_baixes_export", kwargs={"pk": self.competicio.id}),
                     "mergeTabs": reverse("inscripcions_merge_tabs", kwargs={"pk": self.competicio.id}),
                     "groupCompetitionOrderPreview": reverse("inscripcions_group_competition_order_preview", kwargs={"pk": self.competicio.id}),
                     "saveGroupCompetitionOrder": reverse("inscripcions_save_group_competition_order", kwargs={"pk": self.competicio.id}),
@@ -585,6 +714,10 @@ class InscripcionsListNewView(InscripcionsListView):
                     "mediaMatchingConfig": normalize_media_matching_config(
                         (self.competicio.inscripcions_view or {}).get("media_matching")
                     ),
+                    "baixaAparells": [
+                        {"id": int(app.id), "label": str(getattr(app, "display_nom", "") or app.id)}
+                        for app in individual_aparells_cfg
+                    ],
                 },
             }
         return ctx
@@ -776,12 +909,172 @@ def inscripcions_set_aparells(request, pk):
     )
 
 
+@require_POST
+@csrf_protect
+def inscripcions_set_baixa(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        inscripcio_id = int(payload.get("inscripcio_id"))
+    except Exception:
+        return HttpResponseBadRequest("inscripcio_id invalid")
+
+    inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
+    scope = str(payload.get("scope") or "").strip().lower()
+    global_scope = scope in {"global", "all", "tota", "tot"}
+    app_ids_raw = payload.get("comp_aparell_ids") or payload.get("app_ids") or []
+    if not isinstance(app_ids_raw, list):
+        return HttpResponseBadRequest("comp_aparell_ids ha de ser una llista")
+    if not global_scope and not app_ids_raw:
+        return HttpResponseBadRequest("Cal indicar almenys un aparell o marcar baixa global")
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    try:
+        set_inscripcio_baixa(
+            competicio,
+            inscripcio,
+            app_ids=app_ids_raw,
+            global_scope=global_scope,
+            motiu=payload.get("motiu") or "",
+            notes=payload.get("notes") or "",
+            user=request.user if getattr(request.user, "is_authenticated", False) else None,
+        )
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="set_baixa",
+        action_label="Marcar baixa",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    summary = baixa_summary_by_inscripcio(competicio, inscripcio_ids=[inscripcio.id]).get(str(inscripcio.id), {})
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "inscripcio_id": inscripcio.id,
+                "baixa": summary,
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_clear_baixa(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        inscripcio_id = int(payload.get("inscripcio_id"))
+    except Exception:
+        return HttpResponseBadRequest("inscripcio_id invalid")
+    inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    clear_inscripcio_baixa(
+        competicio,
+        inscripcio,
+        user=request.user if getattr(request.user, "is_authenticated", False) else None,
+    )
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="clear_baixa",
+        action_label="Treure baixa",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "inscripcio_id": inscripcio.id, "baixa": {}},
+            request,
+            competicio.id,
+        )
+    )
+
+
+def inscripcions_baixes_export(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    rows = list(
+        active_baixes_qs(competicio)
+        .select_related("inscripcio", "comp_aparell", "marcada_per")
+        .order_by("inscripcio__nom_i_cognoms", "comp_aparell__ordre", "comp_aparell_id", "id")
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Baixes"
+    headers = [
+        "Nom i cognoms",
+        "Document",
+        "Entitat",
+        "Categoria",
+        "Subcategoria",
+        "Abast",
+        "Aparell",
+        "Motiu",
+        "Notes",
+        "Data baixa",
+        "Marcada per",
+    ]
+    header_fill = PatternFill("solid", fgColor="FCE4E4")
+    for col_idx, label in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=label)
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+
+    for row_idx, baixa in enumerate(rows, start=2):
+        ins = baixa.inscripcio
+        app = baixa.comp_aparell
+        user = baixa.marcada_per
+        ws.cell(row=row_idx, column=1, value=getattr(ins, "nom_i_cognoms", "") or "")
+        ws.cell(row=row_idx, column=2, value=getattr(ins, "document", "") or "")
+        ws.cell(row=row_idx, column=3, value=getattr(ins, "entitat", "") or "")
+        ws.cell(row=row_idx, column=4, value=getattr(ins, "categoria", "") or "")
+        ws.cell(row=row_idx, column=5, value=getattr(ins, "subcategoria", "") or "")
+        ws.cell(row=row_idx, column=6, value="Tota la competicio" if app is None else "Aparell")
+        ws.cell(row=row_idx, column=7, value=str(getattr(app, "display_nom", "") or "") if app is not None else "")
+        ws.cell(row=row_idx, column=8, value=baixa.motiu or "")
+        ws.cell(row=row_idx, column=9, value=baixa.notes or "")
+        ws.cell(row=row_idx, column=10, value=baixa.created_at.strftime("%d/%m/%Y %H:%M") if baixa.created_at else "")
+        ws.cell(row=row_idx, column=11, value=getattr(user, "username", "") if user is not None else "")
+
+    for col_idx, label in enumerate(headers, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = max(14, min(42, len(label) + 8))
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    response = HttpResponse(
+        out.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="baixes_competicio_{competicio.pk}.xlsx"'
+    return response
+
+
 __all__ = [
     "InscripcionsListNewView",
     "get_available_table_columns",
     "get_selected_table_columns",
+    "inscripcions_baixes_export",
+    "inscripcions_clear_baixa",
     "inscripcions_save_birth_year_range_config",
     "inscripcions_save_table_columns",
+    "inscripcions_set_baixa",
     "inscripcions_set_aparells",
     "inscripcions_set_group_name",
 ]

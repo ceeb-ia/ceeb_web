@@ -11,6 +11,7 @@
   };
 
   const MEDIA_PREVIEW_FILTERS = ['all', 'auto', 'review', 'unmatched'];
+  const MEDIA_PREVIEW_FILTER_DEFAULTS = { q: '', confidence: 'all', margin: 'all', field: 'all', candidate: 'all' };
   const MEDIA_WORKSPACE_DEFAULTS = { q: '', media_state: 'all', source: 'all', tipus: 'all', page: 1 };
   const WORKSPACE_FILTER_DEFAULTS = { q: '', inscripcio_id: '', media_state: 'all', source: 'all', tipus: 'all' };
   const FALLBACK_WORKSPACE_FILTER_OPTIONS = {
@@ -49,9 +50,11 @@
     draftConfig: null,
     draftDirty: false,
     folderSelection: [],
+    activeFolderInputId: '',
     previewRows: [],
     previewCounts: {},
     previewFilter: 'all',
+    previewUiFilters: Object.assign({}, MEDIA_PREVIEW_FILTER_DEFAULTS),
     previewExpanded: false,
     workspace: {
       filters: Object.assign({}, {
@@ -62,7 +65,7 @@
         tipus: 'all',
       }),
       page: 1,
-      page_size: 40,
+      page_size: 20,
     },
     workspaceRows: [],
     workspaceCounts: {},
@@ -128,11 +131,12 @@
         draftConfig: cloneConfig(state.draftConfig || state.savedConfig),
         draftDirty: !!state.draftDirty,
         previewFilter: state.previewFilter,
+        previewUiFilters: Object.assign({}, state.previewUiFilters || MEDIA_PREVIEW_FILTER_DEFAULTS),
         previewExpanded: !!state.previewExpanded,
         workspace: {
           filters: Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS),
           page: state.workspace.page || 1,
-          page_size: state.workspace.page_size || 40,
+          page_size: state.workspace.page_size || 20,
         },
       }, extra || {}),
     });
@@ -151,6 +155,9 @@
     if (MEDIA_PREVIEW_FILTERS.includes(String(saved.previewFilter || ''))) {
       state.previewFilter = String(saved.previewFilter);
     }
+    if (saved.previewUiFilters && typeof saved.previewUiFilters === 'object') {
+      state.previewUiFilters = Object.assign({}, state.previewUiFilters || MEDIA_PREVIEW_FILTER_DEFAULTS, saved.previewUiFilters);
+    }
     if (Object.prototype.hasOwnProperty.call(saved, 'previewExpanded')) {
       state.previewExpanded = !!saved.previewExpanded;
     }
@@ -163,7 +170,7 @@
         state.workspace.page = Math.max(1, Math.floor(toNumber(workspace.page, 1)));
       }
       if (workspace.page_size) {
-        state.workspace.page_size = Math.max(1, Math.floor(toNumber(workspace.page_size, 40)));
+        state.workspace.page_size = Math.max(1, Math.floor(toNumber(workspace.page_size, 20)));
       }
     }
   }
@@ -217,9 +224,11 @@
     return String(Math.max(0, Math.floor(toNumber(value, 0))));
   }
 
-  function buildFolderSelection() {
-    const input = document.getElementById('media-folder-input');
+  function buildFolderSelection(sourceInput = null) {
+    const activeInput = state.activeFolderInputId ? document.getElementById(state.activeFolderInputId) : null;
+    const input = sourceInput || activeInput || document.getElementById('media-folder-input') || document.getElementById('media-quick-folder-input');
     const files = Array.from(input?.files || []);
+    state.activeFolderInputId = input?.id || state.activeFolderInputId || '';
     state.folderSelection = files.map((file, index) => ({
       key: String(index),
       filename: String(file?.name || ''),
@@ -342,7 +351,7 @@
             : [];
     const normalizedRows = rows.map(normalizeWorkspaceRow);
     const page = Math.max(1, Math.floor(toNumber(source?.page ?? data?.page ?? state.workspace.page, 1)));
-    const pageSize = Math.max(1, Math.floor(toNumber(source?.page_size ?? data?.page_size ?? state.workspace.page_size ?? 40, 40)));
+    const pageSize = Math.max(1, Math.floor(toNumber(source?.page_size ?? data?.page_size ?? state.workspace.page_size ?? 20, 20)));
     const pages = Math.max(page, Math.floor(toNumber(source?.pages ?? data?.pages ?? source?.total_pages ?? data?.total_pages ?? 1, 1)));
     const total = Math.max(normalizedRows.length, Math.floor(toNumber(source?.total ?? data?.total ?? source?.count ?? data?.count ?? normalizedRows.length, normalizedRows.length)));
     return {
@@ -365,6 +374,13 @@
     const summaryConfig = document.getElementById('media-compact-summary-config');
     const summaryThresholds = document.getElementById('media-compact-summary-thresholds');
     const summaryFolder = document.getElementById('media-compact-summary-folder');
+    const quickAutoBadge = document.getElementById('media-quick-auto-badge');
+    const quickReviewBadge = document.getElementById('media-quick-review-badge');
+    const quickUnmatchedBadge = document.getElementById('media-quick-unmatched-badge');
+    const previewCounts = state.previewCounts || {};
+    const autoCount = toNumber(previewCounts.auto ?? state.previewRows.filter((row) => row.status === 'auto').length, 0);
+    const reviewCount = toNumber(previewCounts.review ?? state.previewRows.filter((row) => row.status === 'review').length, 0);
+    const unmatchedCount = toNumber(previewCounts.unmatched ?? state.previewRows.filter((row) => row.status === 'unmatched').length, 0);
 
     if (configBadge) configBadge.textContent = `Nom ${formatWeight(cfg.weights.nom)} / Categoria ${formatWeight(cfg.weights.categoria)}`;
     if (previewBadge) previewBadge.textContent = `Preview ${formatCount(state.previewRows.length)} fitxers`;
@@ -376,15 +392,20 @@
       summaryThresholds.textContent = `Auto ${cfg.thresholds.auto_score_min.toFixed(2)} / Review ${cfg.thresholds.review_score_min.toFixed(2)} / Margin ${cfg.thresholds.auto_margin_min.toFixed(2)}`;
     }
     if (summaryFolder) summaryFolder.textContent = state.folderSelection.length ? `${state.folderSelection.length} fitxers carregats` : 'Cap carpeta carregada';
+    if (quickAutoBadge) quickAutoBadge.textContent = `${formatCount(autoCount)} auto`;
+    if (quickReviewBadge) quickReviewBadge.textContent = `${formatCount(reviewCount)} review`;
+    if (quickUnmatchedBadge) quickUnmatchedBadge.textContent = `${formatCount(unmatchedCount)} sense match`;
 
     const previewTotal = document.getElementById('media-summary-preview-total');
     const workspaceTotal = document.getElementById('media-summary-workspace-total');
     const primaryTotal = document.getElementById('media-summary-primary-total');
     const folderTotal = document.getElementById('media-summary-folder-total');
+    const universeFolderBadge = document.getElementById('media-universe-folder-badge');
     if (previewTotal) previewTotal.textContent = formatCount(state.previewRows.length);
     if (workspaceTotal) workspaceTotal.textContent = formatCount(state.workspaceTotal || state.workspaceRows.length);
     if (primaryTotal) primaryTotal.textContent = formatCount(state.workspaceRows.reduce((acc, row) => acc + row.media_items.filter((item) => item.is_primary).length, 0));
     if (folderTotal) folderTotal.textContent = formatCount(state.folderSelection.length);
+    if (universeFolderBadge) universeFolderBadge.textContent = `${formatCount(state.folderSelection.length)} fitxers`;
   }
 
   function setConfigStatus(message) {
@@ -410,6 +431,8 @@
   function setMediaMatchSummary(message) {
     const summary = document.getElementById('media-match-summary');
     if (summary) summary.textContent = String(message || '');
+    const quickSummary = document.getElementById('media-quick-match-summary');
+    if (quickSummary) quickSummary.textContent = String(message || '');
   }
 
   function renderConfigInputs() {
@@ -488,6 +511,134 @@
     setPreviewStatusLine(filtered.length ? `${filtered.length} fitxers visibles amb la vista ${state.previewExpanded ? 'expandida' : 'compacta'}.` : 'No hi ha resultats per a aquest filtre.');
   }
 
+  function previewFilterLabel(selectId, value) {
+    const select = document.getElementById(selectId);
+    const option = select ? Array.from(select.options || []).find((item) => String(item.value) === String(value)) : null;
+    return option ? String(option.textContent || value).trim() : String(value || '').trim();
+  }
+
+  function setPreviewFilterSelect(selectId, value) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.value = String(value || 'all');
+    const popover = select.closest('[data-media-preview-filter-popover]');
+    const summary = popover?.querySelector('[data-filter-summary]');
+    if (summary) summary.textContent = previewFilterLabel(selectId, select.value);
+    popover?.classList.toggle('is-active', !['', 'all'].includes(String(select.value || '')));
+    popover?.querySelectorAll('.groups-filter-option').forEach((button) => {
+      button.classList.toggle('is-selected', String(button.getAttribute('data-value') || '') === String(select.value || ''));
+    });
+  }
+
+  function applyPreviewFiltersToUi() {
+    const filters = state.previewUiFilters || MEDIA_PREVIEW_FILTER_DEFAULTS;
+    const q = document.getElementById('media-preview-filter-q');
+    if (q) q.value = filters.q || '';
+    setPreviewFilterSelect('media-preview-filter-status', state.previewFilter || 'all');
+    setPreviewFilterSelect('media-preview-filter-confidence', filters.confidence || 'all');
+    setPreviewFilterSelect('media-preview-filter-margin', filters.margin || 'all');
+    setPreviewFilterSelect('media-preview-filter-field', filters.field || 'all');
+    setPreviewFilterSelect('media-preview-filter-candidate', filters.candidate || 'all');
+  }
+
+  function readPreviewFiltersFromUi() {
+    const status = String(document.getElementById('media-preview-filter-status')?.value || 'all').trim() || 'all';
+    state.previewFilter = MEDIA_PREVIEW_FILTERS.includes(status) ? status : 'all';
+    state.previewUiFilters = {
+      q: String(document.getElementById('media-preview-filter-q')?.value || '').trim(),
+      confidence: String(document.getElementById('media-preview-filter-confidence')?.value || 'all').trim() || 'all',
+      margin: String(document.getElementById('media-preview-filter-margin')?.value || 'all').trim() || 'all',
+      field: String(document.getElementById('media-preview-filter-field')?.value || 'all').trim() || 'all',
+      candidate: String(document.getElementById('media-preview-filter-candidate')?.value || 'all').trim() || 'all',
+    };
+    saveWorkspaceState();
+  }
+
+  function resetPreviewFilter(selectId) {
+    setPreviewFilterSelect(selectId, 'all');
+    readPreviewFiltersFromUi();
+    renderMediaPreview();
+  }
+
+  function renderPreviewActiveChips() {
+    const wrap = document.getElementById('media-preview-filter-active-chips');
+    if (!wrap) return;
+    const filters = state.previewUiFilters || MEDIA_PREVIEW_FILTER_DEFAULTS;
+    const chips = [];
+    if (state.previewFilter && state.previewFilter !== 'all') chips.push({ label: `Estat: ${previewFilterLabel('media-preview-filter-status', state.previewFilter)}`, selectId: 'media-preview-filter-status' });
+    if (filters.confidence && filters.confidence !== 'all') chips.push({ label: `Confiança: ${previewFilterLabel('media-preview-filter-confidence', filters.confidence)}`, selectId: 'media-preview-filter-confidence' });
+    if (filters.margin && filters.margin !== 'all') chips.push({ label: `Marge: ${previewFilterLabel('media-preview-filter-margin', filters.margin)}`, selectId: 'media-preview-filter-margin' });
+    if (filters.field && filters.field !== 'all') chips.push({ label: `Camp: ${previewFilterLabel('media-preview-filter-field', filters.field)}`, selectId: 'media-preview-filter-field' });
+    if (filters.candidate && filters.candidate !== 'all') chips.push({ label: `Candidat: ${previewFilterLabel('media-preview-filter-candidate', filters.candidate)}`, selectId: 'media-preview-filter-candidate' });
+    if (filters.q) chips.push({ label: `Cerca: ${filters.q}`, search: true });
+    wrap.innerHTML = chips.map((chip) => `<span class="groups-filter-chip">${escapeHtml(chip.label)} <button type="button" ${chip.search ? 'data-media-preview-search-clear="1"' : `data-media-preview-filter-clear="${escapeHtml(chip.selectId)}"`}>x</button></span>`).join('');
+  }
+
+  function getPreviewConfidence(row) {
+    const score = toNumber(row?.score, 0);
+    if (score >= 0.85) return 'high';
+    if (score >= 0.65) return 'medium';
+    return 'low';
+  }
+
+  function getPreviewMarginState(row) {
+    const cfg = normalizeConfig(state.draftConfig || state.savedConfig);
+    return toNumber(row?.margin, 0) >= cfg.thresholds.auto_margin_min ? 'clear' : 'tight';
+  }
+
+  function normalizePreviewFieldName(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw.includes('subcategoria') || raw.includes('subcategory')) return 'subcategoria';
+    if (raw.includes('categoria') || raw.includes('category')) return 'categoria';
+    if (raw.includes('entitat') || raw.includes('entity') || raw.includes('club')) return 'entitat';
+    if (raw.includes('sexe') || raw.includes('gender')) return 'sexe';
+    if (raw.includes('nom') || raw.includes('name') || raw.includes('title')) return 'nom';
+    return raw;
+  }
+
+  function previewRowMatchesField(row, field) {
+    if (!field || field === 'all') return true;
+    return (row.breakdown || []).some((entry) => normalizePreviewFieldName(entry.field) === field);
+  }
+
+  function getPreviewSearchText(row) {
+    return [
+      row.relative_path,
+      row.filename,
+      row.inscripcio_label,
+      row.reason,
+      ...row.top_candidates.map((candidate) => candidate.label),
+      ...row.breakdown.map((entry) => entry.field),
+    ].join(' ').toLowerCase();
+  }
+
+  function getPreviewFilteredRows() {
+    const filters = state.previewUiFilters || MEDIA_PREVIEW_FILTER_DEFAULTS;
+    const q = String(filters.q || '').trim().toLowerCase();
+    return state.previewRows.filter((row) => {
+      if (state.previewFilter !== 'all' && row.status !== state.previewFilter) return false;
+      if (filters.confidence !== 'all' && getPreviewConfidence(row) !== filters.confidence) return false;
+      if (filters.margin !== 'all' && getPreviewMarginState(row) !== filters.margin) return false;
+      if (filters.candidate === 'with' && !row.inscripcio_id) return false;
+      if (filters.candidate === 'without' && row.inscripcio_id) return false;
+      if (!previewRowMatchesField(row, filters.field)) return false;
+      if (q && !getPreviewSearchText(row).includes(q)) return false;
+      return true;
+    });
+  }
+
+  function renderPreviewFilteredSummary(rows) {
+    const counts = state.previewCounts || {};
+    const total = toNumber(counts.total ?? state.previewRows.length, state.previewRows.length);
+    const auto = toNumber(counts.auto ?? state.previewRows.filter((row) => row.status === 'auto').length, 0);
+    const review = toNumber(counts.review ?? state.previewRows.filter((row) => row.status === 'review').length, 0);
+    const unmatched = toNumber(counts.unmatched ?? state.previewRows.filter((row) => row.status === 'unmatched').length, 0);
+    setPreviewSummary(`Fitxers: ${total} - Auto: ${auto} - Review: ${review} - Sense match: ${unmatched}`);
+    setPreviewStatusLine(rows.length ? `${rows.length} relacions visibles amb els filtres actuals.` : 'No hi ha resultats per a aquests filtres.');
+    const badge = document.getElementById('media-preview-visible-badge');
+    if (badge) badge.textContent = `${formatCount(rows.length)} visibles`;
+  }
+
   function renderPreviewRowSelect(row) {
     const options = ['<option value="">-- Sense assignar --</option>'];
     const current = row.inscripcio_id ? String(row.inscripcio_id) : '';
@@ -552,23 +703,78 @@
     </div>`;
   }
 
+  function renderPreviewBreakdownChips(row) {
+    if (!row.breakdown.length) return '';
+    return `<div class="media-preview-breakdown-chips">${row.breakdown.slice(0, 5).map((entry) => {
+      const value = entry.value && typeof entry.value === 'object' ? entry.value : { score: entry.value };
+      const score = value.score == null ? value.contribution : value.score;
+      return `<span class="media-preview-field-chip">${escapeHtml(entry.field)} ${escapeHtml(score == null || score === '' ? '-' : String(score))}</span>`;
+    }).join('')}</div>`;
+  }
+
+  function renderPreviewCandidateChips(row) {
+    if (!row.top_candidates.length) return '<div class="small text-muted">Sense candidats top.</div>';
+    return `<div class="media-preview-candidate-list">${row.top_candidates.slice(0, 5).map((candidate) => `<span class="media-preview-field-chip">${escapeHtml(candidate.label || candidate.id || '-')} <strong>${formatScore(candidate.score)}</strong></span>`).join('')}</div>`;
+  }
+
+  function renderPreviewRelationCard(row) {
+    const statusLabel = row.status === 'auto' ? 'AUTO' : row.status === 'review' ? 'REVIEW' : 'SENSE MATCH';
+    const scorePct = Math.max(0, Math.min(100, Math.round(toNumber(row.score, 0) * 100)));
+    const confidence = getPreviewConfidence(row);
+    const confidenceLabel = confidence === 'high' ? 'Alta' : confidence === 'medium' ? 'Mitjana' : 'Baixa';
+    const marginLabel = getPreviewMarginState(row) === 'clear' ? 'Marge clar' : 'Marge dubtos';
+    const targetLabel = row.inscripcio_label || row.top_candidates[0]?.label || (row.inscripcio_id ? `Inscripcio ${row.inscripcio_id}` : 'Sense candidat proposat');
+    return `<article class="media-preview-relation-card status-${escapeHtml(row.status)}" data-preview-row="${escapeHtml(row.key)}">
+      <div class="media-preview-node">
+        <div>
+          <p class="media-preview-node-title">${escapeHtml(row.relative_path || row.filename || '-')}</p>
+          <div class="media-preview-node-meta">${escapeHtml(row.filename || '')}${row.size ? ` - ${escapeHtml(String(row.size))} bytes` : ''}</div>
+        </div>
+        ${renderPreviewBreakdownChips(row)}
+      </div>
+      <div class="media-preview-confidence">
+        <span class="media-match-status ${escapeHtml(row.status)}">${statusLabel}</span>
+        <div class="media-preview-score">${formatScore(row.score)}</div>
+        <div class="media-preview-scorebar" style="--score-width:${scorePct}%"><span></span></div>
+        <div class="small text-muted">${confidenceLabel} - ${marginLabel} - Delta ${formatScore(row.margin)}</div>
+      </div>
+      <div class="media-preview-node">
+        <div>
+          <p class="media-preview-node-title">${escapeHtml(targetLabel)}</p>
+          <div class="media-preview-node-meta">${row.inscripcio_id ? `ID ${escapeHtml(row.inscripcio_id)}` : 'Cap assignacio seleccionada'}${row.reason ? ` - ${escapeHtml(row.reason)}` : ''}</div>
+        </div>
+        <div class="media-preview-match-select">${renderPreviewRowSelect(row)}</div>
+      </div>
+      ${state.previewExpanded ? `<div class="media-preview-expanded">
+        <div>
+          <div class="small fw-semibold mb-1">Top candidats</div>
+          ${renderPreviewCandidateChips(row)}
+        </div>
+        <div>
+          <div class="small fw-semibold mb-1">Desglossament de camps</div>
+          ${renderPreviewBreakdown(row) || '<div class="small text-muted">Sense desglossament disponible.</div>'}
+        </div>
+      </div>` : ''}
+    </article>`;
+  }
+
   function renderMediaPreview() {
+    applyPreviewFiltersToUi();
     renderPreviewStatusButtons();
-    renderPreviewSummary();
     const wrap = document.getElementById('media-preview-wrap');
     if (!wrap) return;
-    const rows = state.previewRows.filter((row) => state.previewFilter === 'all' || row.status === state.previewFilter);
+    const rows = getPreviewFilteredRows();
+    renderPreviewFilteredSummary(rows);
+    renderPreviewActiveChips();
     if (!rows.length) {
       wrap.innerHTML = '<div class="text-muted small">No hi ha resultats per a aquest filtre.</div>';
       return;
     }
-    wrap.innerHTML = state.previewExpanded
-      ? rows.map(renderPreviewExpandedRow).join('')
-      : `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Fitxer</th><th>Estat</th><th>Inscripcio</th><th>Score</th><th>Detall</th></tr></thead><tbody>${rows.map(renderPreviewCompactRow).join('')}</tbody></table></div>`;
+    wrap.innerHTML = `<div class="media-preview-list">${rows.map(renderPreviewRelationCard).join('')}</div>`;
   }
 
   function getFilteredPreviewRows() {
-    return state.previewRows.filter((row) => state.previewFilter === 'all' || row.status === state.previewFilter);
+    return getPreviewFilteredRows();
   }
 
   function renderWorkspaceCounts() {
@@ -592,6 +798,55 @@
     if (pageInput) pageInput.value = String(state.workspace.page || 1);
   }
 
+  function workspaceFilterLabel(selectId, value) {
+    const select = document.getElementById(selectId);
+    const option = Array.from(select?.options || []).find((entry) => String(entry.value) === String(value));
+    return option ? option.textContent.trim() : 'Tots';
+  }
+
+  function setWorkspaceFilterSelect(selectId, value) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.value = value || 'all';
+    const popover = select.closest('[data-media-workspace-filter-popover]');
+    const summary = popover?.querySelector('[data-filter-summary]');
+    if (summary) summary.textContent = workspaceFilterLabel(selectId, select.value);
+    popover?.classList.toggle('is-active', !!select.value && select.value !== 'all');
+    popover?.querySelectorAll('.groups-filter-option').forEach((button) => {
+      button.classList.toggle('is-selected', String(button.getAttribute('data-value') || '') === String(select.value || 'all'));
+    });
+  }
+
+  function renderWorkspaceActiveChips() {
+    const wrap = document.getElementById('media-workspace-filter-active-chips');
+    if (!wrap) return;
+    const filters = state.workspace.filters || WORKSPACE_FILTER_DEFAULTS;
+    const chips = [];
+    if (filters.media_state && filters.media_state !== 'all') chips.push({ label: `Estat: ${workspaceFilterLabel('media-workspace-filter-media-state', filters.media_state)}`, selectId: 'media-workspace-filter-media-state' });
+    if (filters.source && filters.source !== 'all') chips.push({ label: `Origen: ${workspaceFilterLabel('media-workspace-filter-source', filters.source)}`, selectId: 'media-workspace-filter-source' });
+    if (filters.tipus && filters.tipus !== 'all') chips.push({ label: `Tipus: ${workspaceFilterLabel('media-workspace-filter-tipus', filters.tipus)}`, selectId: 'media-workspace-filter-tipus' });
+    if (filters.inscripcio_id) chips.push({ label: `ID: ${filters.inscripcio_id}`, inputId: 'media-workspace-filter-inscripcio-id' });
+    if (filters.q) chips.push({ label: `Cerca: ${filters.q}`, inputId: 'media-workspace-filter-q' });
+    wrap.innerHTML = chips.map((chip) => `<span class="groups-filter-chip">${escapeHtml(chip.label)} <button type="button" ${chip.selectId ? `data-media-workspace-filter-clear="${escapeHtml(chip.selectId)}"` : `data-media-workspace-input-clear="${escapeHtml(chip.inputId)}"`}>x</button></span>`).join('');
+  }
+
+  function resetWorkspaceFilter(selectId) {
+    setWorkspaceFilterSelect(selectId, 'all');
+    state.workspace.page = 1;
+    renderWorkspacePageControls();
+    readWorkspaceFiltersFromUi();
+    scheduleWorkspaceRefresh();
+  }
+
+  function clearWorkspaceInput(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) input.value = '';
+    state.workspace.page = 1;
+    renderWorkspacePageControls();
+    readWorkspaceFiltersFromUi();
+    scheduleWorkspaceRefresh();
+  }
+
   function renderWorkspaceFilterOptions() {
     const optionsByKey = state.workspaceFilterOptions || {};
     const fallbackByKey = FALLBACK_WORKSPACE_FILTER_OPTIONS;
@@ -610,55 +865,80 @@
         return `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label || entry.code)}${count}</option>`;
       }).join('');
       select.value = options.some((entry) => String(entry.code) === previous) ? previous : 'all';
+      const optionWrap = document.querySelector(`[data-workspace-filter-options-for="${id}"]`);
+      if (optionWrap) {
+        optionWrap.innerHTML = options.map((entry) => {
+          const count = entry.count == null ? '' : ` <span class="text-muted">(${formatCount(entry.count)})</span>`;
+          const selected = String(entry.code) === String(select.value || 'all') ? ' is-selected' : '';
+          return `<button type="button" class="groups-filter-option${selected}" data-media-workspace-filter-value="${escapeHtml(id)}" data-value="${escapeHtml(entry.code)}">${escapeHtml(entry.label || entry.code)}${count}</button>`;
+        }).join('');
+      }
+      setWorkspaceFilterSelect(id, select.value || 'all');
     });
   }
 
   function renderWorkspaceList() {
     renderWorkspaceCounts();
     renderWorkspaceFilterOptions();
+    renderWorkspaceActiveChips();
     setCompactBadges();
     const wrap = document.getElementById('media-workspace-list-wrap');
     if (!wrap) return;
     const rows = state.workspaceRows || [];
-    if (!rows.length) {
-      wrap.innerHTML = '<div class="text-muted small">No hi ha assignacions per aquests filtres.</div>';
-      return;
-    }
     const page = Math.max(1, state.workspace.page || 1);
     const pages = Math.max(1, state.workspacePages || 1);
     const total = state.workspaceTotal || rows.length;
+    const primaryTotal = rows.reduce((acc, row) => acc + (Array.isArray(row.media_items) ? row.media_items : []).filter((item) => item.is_primary).length, 0);
+    const countBadge = document.getElementById('media-workspace-count-badge');
+    const pageSizeBadge = document.getElementById('media-workspace-page-size-badge');
+    const primaryBadge = document.getElementById('media-workspace-primary-badge');
+    const pageLabel = document.getElementById('media-workspace-page-label');
+    const prev = document.getElementById('btn-media-workspace-prev');
+    const next = document.getElementById('btn-media-workspace-next');
+    if (countBadge) countBadge.textContent = `${formatCount(total)} assignacions`;
+    if (pageSizeBadge) pageSizeBadge.textContent = `${formatCount(rows.length)} visibles`;
+    if (primaryBadge) primaryBadge.textContent = `${formatCount(primaryTotal)} principals`;
+    if (pageLabel) pageLabel.textContent = `Pagina ${page} de ${pages}`;
+    if (prev) prev.disabled = page <= 1 || state.loadingWorkspace;
+    if (next) next.disabled = page >= pages || state.loadingWorkspace;
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="media-assignment-empty">No hi ha assignacions per aquests filtres.</div>';
+      return;
+    }
     wrap.innerHTML = `<div class="media-assignment-list">${rows.map((row) => {
       const meta = [row.categoria, row.subcategoria, row.sexe].filter(Boolean).join(' / ');
-      const mediaCount = formatCount(row.media_items.length);
-      const primaryCount = formatCount(row.media_items.filter((item) => item.is_primary).length);
-      return `<article class="media-assignment-card" data-inscripcio-id="${escapeHtml(row.inscripcio_id)}">
-        <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:8px;">
+      const mediaItems = Array.isArray(row.media_items) ? row.media_items : [];
+      const mediaCount = formatCount(mediaItems.length);
+      const primaryCount = formatCount(mediaItems.filter((item) => item.is_primary).length);
+      const stateLabel = row.media_state === 'with' ? 'Amb media' : 'Sense media';
+      return `<article class="media-assignment-card ${mediaItems.length ? 'has-media' : 'no-media'}" data-inscripcio-id="${escapeHtml(row.inscripcio_id)}">
+        <div class="media-assignment-main">
           <div>
-            <div class="fw-semibold">${escapeHtml(row.nom_i_cognoms || row.inscripcio_label || `Inscripcio ${row.inscripcio_id}`)}</div>
-            <div class="small text-muted">
+            <p class="media-assignment-title">${escapeHtml(row.nom_i_cognoms || row.inscripcio_label || `Inscripcio ${row.inscripcio_id}`)}</p>
+            <div class="media-assignment-meta">
               ID ${escapeHtml(row.inscripcio_id || '-')}${row.entitat ? ` - ${escapeHtml(row.entitat)}` : ''}${meta ? ` - ${escapeHtml(meta)}` : ''}
             </div>
           </div>
-          <div class="d-flex flex-wrap" style="gap:6px;">
+          <div class="media-assignment-badges">
             <span class="badge badge-light border">${mediaCount} fitxers</span>
             <span class="badge badge-light border">${primaryCount} principals</span>
-            <span class="badge badge-light border">${escapeHtml(row.media_state === 'with' ? 'Amb media' : 'Sense media')}</span>
+            <span class="badge badge-light border">${escapeHtml(stateLabel)}</span>
           </div>
+          ${API.app.canEdit ? `<div class="media-upload-row media-assignment-upload">
+            <label class="media-file-trigger">
+              <span>Tria fitxer</span>
+              <input type="file" class="form-control form-control-sm js-media-upload-input media-upload-native" data-ins-id="${escapeHtml(row.inscripcio_id)}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+            </label>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-media-upload-btn media-upload-btn" data-ins-id="${escapeHtml(row.inscripcio_id)}">Pujar</button>
+          </div>` : ''}
         </div>
-        ${API.app.canEdit ? `<div class="media-upload-row mt-2">
-          <input type="file" class="form-control form-control-sm js-media-upload-input" data-ins-id="${escapeHtml(row.inscripcio_id)}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
-          <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="${escapeHtml(row.inscripcio_id)}">Pujar</button>
-        </div>` : ''}
         <div class="media-assignment-items">
-          ${row.media_items.length ? row.media_items.map((item) => `<div class="media-item" data-media-id="${escapeHtml(item.media_id)}">
-            <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:8px;">
-              <div>
-                <div class="fw-semibold">${escapeHtml(item.original_filename || 'Fitxer sense nom')}</div>
-                <div class="small text-muted">
-                  ${escapeHtml(item.source || 'manual')} / ${escapeHtml(item.tipus || 'other')}${item.size ? ` - ${escapeHtml(String(item.size))} bytes` : ''}
-                </div>
-              </div>
-              <div class="d-flex flex-wrap" style="gap:6px;">
+          ${mediaItems.length ? mediaItems.map((item) => `<div class="media-item" data-media-id="${escapeHtml(item.media_id)}">
+            <div class="media-item-main">
+              <div class="media-item-title">${escapeHtml(item.original_filename || 'Fitxer sense nom')}</div>
+              <div class="media-item-meta">${escapeHtml(item.source || 'manual')} / ${escapeHtml(item.tipus || 'other')}</div>
+              ${item.size ? `<div class="media-item-size">${escapeHtml(String(item.size))} bytes</div>` : ''}
+              <div class="media-item-badges">
                 <span class="badge badge-light border">${escapeHtml(item.source || 'manual')}</span>
                 <span class="badge badge-light border">${escapeHtml(item.tipus || 'other')}</span>
                 ${item.is_primary ? '<span class="badge badge-primary">Principal</span>' : '<span class="badge badge-light border">Secundari</span>'}
@@ -670,14 +950,10 @@
               <button type="button" class="btn btn-sm btn-outline-secondary js-media-reassign" data-media-id="${escapeHtml(item.media_id)}" data-inscripcio-id="${escapeHtml(row.inscripcio_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Reassignar</button>
               <button type="button" class="btn btn-sm btn-outline-danger js-media-delete" data-media-id="${escapeHtml(item.media_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Eliminar</button>
             </div>
-          </div>`).join('') : '<div class="small text-muted">No hi ha fitxers assignats.</div>'}
+          </div>`).join('') : '<div class="media-assignment-empty">No hi ha fitxers assignats.</div>'}
         </div>
       </article>`;
-    }).join('')}</div>
-    <div class="d-flex align-items-center justify-content-between flex-wrap mt-2" style="gap:8px;">
-      <div class="small text-muted">Pagina ${page} de ${pages} - ${total} resultats</div>
-      <div class="small text-muted">Mostrant ${formatCount(rows.length)} resultats visibles</div>
-    </div>`;
+    }).join('')}</div>`;
   }
 
   function readWorkspaceFiltersFromUi() {
@@ -707,6 +983,10 @@
     if (source) source.value = filters.source || 'all';
     if (tipus) tipus.value = filters.tipus || 'all';
     if (page) page.value = String(state.workspace.page == null ? 1 : state.workspace.page);
+    setWorkspaceFilterSelect('media-workspace-filter-media-state', filters.media_state || 'all');
+    setWorkspaceFilterSelect('media-workspace-filter-source', filters.source || 'all');
+    setWorkspaceFilterSelect('media-workspace-filter-tipus', filters.tipus || 'all');
+    renderWorkspaceActiveChips();
   }
 
   async function refreshPageFragmentsAfterMutation() {
@@ -739,11 +1019,11 @@
     const payload = {
       filters: Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS),
       page: state.workspace.page || 1,
-      page_size: state.workspace.page_size || 40,
+      page_size: state.workspace.page_size || 20,
     };
     if (extra && typeof extra === 'object') {
       if (Object.prototype.hasOwnProperty.call(extra, 'page')) payload.page = Math.max(1, Math.floor(toNumber(extra.page, 1)));
-      if (Object.prototype.hasOwnProperty.call(extra, 'page_size')) payload.page_size = Math.max(1, Math.floor(toNumber(extra.page_size, 40)));
+      if (Object.prototype.hasOwnProperty.call(extra, 'page_size')) payload.page_size = Math.max(1, Math.floor(toNumber(extra.page_size, 20)));
       if (extra.filters && typeof extra.filters === 'object') {
         payload.filters = Object.assign({}, payload.filters, extra.filters);
       }
@@ -788,7 +1068,7 @@
     readWorkspaceFiltersFromUi();
     if (extra && typeof extra === 'object') {
       if (Object.prototype.hasOwnProperty.call(extra, 'page')) state.workspace.page = Math.max(1, Math.floor(toNumber(extra.page, 1)));
-      if (Object.prototype.hasOwnProperty.call(extra, 'page_size')) state.workspace.page_size = Math.max(1, Math.floor(toNumber(extra.page_size, 40)));
+      if (Object.prototype.hasOwnProperty.call(extra, 'page_size')) state.workspace.page_size = Math.max(1, Math.floor(toNumber(extra.page_size, 20)));
       if (extra.filters && typeof extra.filters === 'object') {
         state.workspace.filters = Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS, extra.filters);
       }
@@ -988,8 +1268,9 @@
       const target = event.target;
       if (!(target instanceof Element)) return;
 
-      if (target.closest('#media-folder-input')) {
-        buildFolderSelection();
+      const folderInput = target.closest('#media-folder-input, #media-quick-folder-input');
+      if (folderInput) {
+        buildFolderSelection(folderInput);
         state.previewRows = [];
         state.previewCounts = {};
         renderMediaPreview();
@@ -998,6 +1279,10 @@
       }
 
       if (target.closest('#media-workspace-filter-q, #media-workspace-filter-inscripcio-id, #media-workspace-filter-media-state, #media-workspace-filter-source, #media-workspace-filter-tipus, #media-workspace-filter-page')) {
+        if (!target.closest('#media-workspace-filter-page')) {
+          state.workspace.page = 1;
+          renderWorkspacePageControls();
+        }
         readWorkspaceFiltersFromUi();
         scheduleWorkspaceRefresh();
         return;
@@ -1005,6 +1290,12 @@
 
       if (target.closest('#media-config-grid input')) {
         syncConfigFromInputs();
+        return;
+      }
+
+      if (target.closest('#media-preview-filter-status, #media-preview-filter-confidence, #media-preview-filter-margin, #media-preview-filter-field, #media-preview-filter-candidate')) {
+        readPreviewFiltersFromUi();
+        renderMediaPreview();
         return;
       }
 
@@ -1018,6 +1309,8 @@
       if (!(target instanceof Element)) return;
 
       if (target.closest('#media-workspace-filter-q, #media-workspace-filter-inscripcio-id')) {
+        state.workspace.page = 1;
+        renderWorkspacePageControls();
         readWorkspaceFiltersFromUi();
         scheduleWorkspaceRefresh();
         return;
@@ -1025,12 +1318,68 @@
 
       if (target.closest('#media-config-grid input')) {
         syncConfigFromInputs();
+        return;
+      }
+
+      if (target.closest('#media-preview-filter-q')) {
+        readPreviewFiltersFromUi();
+        renderMediaPreview();
       }
     });
 
     document.addEventListener('click', async (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+
+      const workspaceFilterValue = target.closest('[data-media-workspace-filter-value]');
+      if (workspaceFilterValue) {
+        const selectId = String(workspaceFilterValue.getAttribute('data-media-workspace-filter-value') || '').trim();
+        const value = String(workspaceFilterValue.getAttribute('data-value') || '').trim();
+        setWorkspaceFilterSelect(selectId, value || 'all');
+        state.workspace.page = 1;
+        renderWorkspacePageControls();
+        readWorkspaceFiltersFromUi();
+        scheduleWorkspaceRefresh();
+        workspaceFilterValue.closest('details')?.removeAttribute('open');
+        return;
+      }
+
+      const workspaceFilterClear = target.closest('[data-media-workspace-filter-clear]');
+      if (workspaceFilterClear) {
+        resetWorkspaceFilter(String(workspaceFilterClear.getAttribute('data-media-workspace-filter-clear') || '').trim());
+        return;
+      }
+
+      const workspaceInputClear = target.closest('[data-media-workspace-input-clear]');
+      if (workspaceInputClear) {
+        clearWorkspaceInput(String(workspaceInputClear.getAttribute('data-media-workspace-input-clear') || '').trim());
+        return;
+      }
+
+      const previewFilterValue = target.closest('[data-media-preview-filter-value]');
+      if (previewFilterValue) {
+        const selectId = String(previewFilterValue.getAttribute('data-media-preview-filter-value') || '').trim();
+        const value = String(previewFilterValue.getAttribute('data-value') || '').trim();
+        setPreviewFilterSelect(selectId, value);
+        readPreviewFiltersFromUi();
+        renderMediaPreview();
+        previewFilterValue.closest('details')?.removeAttribute('open');
+        return;
+      }
+
+      const previewFilterClear = target.closest('[data-media-preview-filter-clear]');
+      if (previewFilterClear) {
+        resetPreviewFilter(String(previewFilterClear.getAttribute('data-media-preview-filter-clear') || '').trim());
+        return;
+      }
+
+      if (target.closest('[data-media-preview-search-clear]')) {
+        const q = document.getElementById('media-preview-filter-q');
+        if (q) q.value = '';
+        readPreviewFiltersFromUi();
+        renderMediaPreview();
+        return;
+      }
 
       const previewStatusBtn = target.closest('.js-media-preview-status');
       if (previewStatusBtn) {
@@ -1074,7 +1423,7 @@
         return;
       }
 
-      if (target.closest('#btn-media-match-preview')) {
+      if (target.closest('#btn-media-match-preview, #btn-media-quick-match-preview')) {
         try {
           await previewMediaFolderMatch();
         } catch (error) {
@@ -1092,7 +1441,7 @@
         return;
       }
 
-      if (target.closest('#btn-media-workspace-refresh')) {
+      if (target.closest('#btn-media-workspace-refresh, .js-media-workspace-refresh')) {
         try {
           await refreshWorkspace();
         } catch (error) {
@@ -1126,7 +1475,7 @@
       const uploadBtn = target.closest('.js-media-upload-btn');
       if (uploadBtn) {
         const insId = Math.floor(toNumber(uploadBtn.getAttribute('data-ins-id') || '0', 0));
-        const scope = uploadBtn.closest('.media-assignment-card, .media-cell, .media-upload-row, .team-pane-card, .panel-body, .action-panel-body') || document;
+        const scope = uploadBtn.closest('.media-assignment-card, .media-cell, .row-actions-popover, .media-upload-row, .team-pane-card, .panel-body, .action-panel-body') || document;
         const input = scope.querySelector(`.js-media-upload-input[data-ins-id="${safeSelector(String(insId))}"]`) || document.querySelector(`.js-media-upload-input[data-ins-id="${safeSelector(String(insId))}"]`);
         const file = input?.files?.[0];
         if (!file) {
@@ -1185,6 +1534,8 @@
       }
     });
   }
+
+{% include "competicio/inscripcions/scripts/multimedia/_detail.html" %}
 
   async function initMediaWorkspace() {
     const { panel, root } = getMediaPanelElements();

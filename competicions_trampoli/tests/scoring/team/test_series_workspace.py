@@ -2,6 +2,218 @@
 
 
 class TeamSeriesWorkspaceTests(TeamContextScoringFlowTestBase):
+    def test_series_creation_strategy_preview_and_apply_create_balanced_series(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        equip3, _members3 = self._create_team_with_members("Parella 3", ["Jana", "Paula"], start_order=40)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        subject_3, _meta_3 = self._team_subject(equip3)
+        payload = {
+            "comp_aparell_id": self.comp_app.id,
+            "strategy": "count",
+            "series_count": 2,
+            "selected_ids": [subject_1.id, subject_2.id, subject_3.id],
+        }
+
+        preview_res = self._post_json("inscripcions_series_equips_creation_preview", payload)
+
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertTrue(preview["can_run"])
+        self.assertEqual(preview["counts"]["series"], 2)
+        self.assertEqual(
+            sorted(row["subjects_count"] for row in preview["planned_series"]),
+            [1, 2],
+        )
+
+        apply_res = self._post_json(
+            "inscripcions_series_equips_create_many",
+            {**payload, "plan_signature": preview["plan_signature"]},
+        )
+
+        self.assertEqual(apply_res.status_code, 200)
+        self.assertEqual(apply_res.json()["created"], 2)
+        self.assertEqual(SerieEquip.objects.filter(comp_aparell=self.comp_app, actiu=True).count(), 2)
+        self.assertEqual(SerieEquipItem.objects.filter(serie__comp_aparell=self.comp_app).count(), 3)
+
+    def test_series_creation_strategy_can_partition_selected_units_by_context(self):
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            context=self.other_ctx,
+        )
+        other_equip, _members = self._create_team_with_members(
+            "Parella alternativa",
+            ["Ivet", "Emma"],
+            context=self.other_ctx,
+            start_order=60,
+        )
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(other_equip)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_creation_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "strategy": "per_bucket",
+                "bucket_fields": ["context"],
+                "selected_ids": [subject_1.id, subject_2.id],
+            },
+        )
+
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertTrue(preview["can_run"])
+        self.assertEqual(preview["bucket_fields"], ["context"])
+        self.assertEqual(
+            sorted(row["label"] for row in preview["planned_series"]),
+            ["Altre", "Parelles"],
+        )
+
+    def test_series_creation_strategy_can_partition_selected_units_by_competition_group(self):
+        equip2, members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        for member in members2:
+            member.grup = 2
+            member.save(update_fields=["grup"])
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_creation_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "strategy": "per_bucket",
+                "bucket_fields": ["group"],
+                "selected_ids": [subject_1.id, subject_2.id],
+            },
+        )
+
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertTrue(preview["can_run"])
+        self.assertEqual(preview["bucket_fields"], ["group"])
+        self.assertEqual(
+            sorted(row["label"] for row in preview["planned_series"]),
+            ["Grup 1", "Grup 2"],
+        )
+
+    def test_series_creation_strategy_supports_all_partition_modes(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        equip3, _members3 = self._create_team_with_members("Parella 3", ["Jana", "Paula"], start_order=40)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        subject_3, _meta_3 = self._team_subject(equip3)
+        base_payload = {
+            "comp_aparell_id": self.comp_app.id,
+            "selected_ids": [subject_1.id, subject_2.id, subject_3.id],
+        }
+        strategies = [
+            {"strategy": "count", "series_count": 2},
+            {"strategy": "size_fixed", "series_size": 2},
+            {"strategy": "size_balanced", "series_size": 2},
+            {"strategy": "range_balanced", "min_size": 1, "max_size": 2},
+            {"strategy": "count_with_range", "series_count": 2, "min_size": 1, "max_size": 2},
+        ]
+
+        for strategy_payload in strategies:
+            with self.subTest(strategy=strategy_payload["strategy"]):
+                preview_res = self._post_json(
+                    "inscripcions_series_equips_creation_preview",
+                    {**base_payload, **strategy_payload},
+                )
+
+                self.assertEqual(preview_res.status_code, 200)
+                preview = preview_res.json()["preview"]
+                self.assertTrue(preview["can_run"])
+                self.assertEqual(
+                    sorted(row["subjects_count"] for row in preview["planned_series"]),
+                    [1, 2],
+                )
+
+    def test_series_creation_strategy_rejects_stale_preview(self):
+        subject, _meta = self._team_subject()
+        payload = {
+            "comp_aparell_id": self.comp_app.id,
+            "strategy": "count",
+            "series_count": 1,
+            "selected_ids": [subject.id],
+        }
+        preview = self._post_json("inscripcions_series_equips_creation_preview", payload).json()["preview"]
+        SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie concurrent",
+        )
+
+        apply_res = self._post_json(
+            "inscripcions_series_equips_create_many",
+            {**payload, "plan_signature": preview["plan_signature"]},
+        )
+
+        self.assertEqual(apply_res.status_code, 400)
+        self.assertEqual(SerieEquip.objects.filter(comp_aparell=self.comp_app, actiu=True).count(), 1)
+
+    def test_series_creation_strategy_excludes_invalid_team_units(self):
+        valid_subject, _valid_meta = self._team_subject()
+        invalid_equip, invalid_members = self._create_team_with_members(
+            "Parella invalida",
+            ["Ona", "Bruna"],
+            start_order=70,
+        )
+        InscripcioAparellExclusio.objects.create(
+            comp_aparell=self.comp_app,
+            inscripcio=invalid_members[0],
+        )
+        invalid_subject, _invalid_meta = self._team_subject(invalid_equip)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_creation_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "strategy": "count",
+                "series_count": 1,
+                "selected_ids": [valid_subject.id, invalid_subject.id],
+            },
+        )
+
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertTrue(preview["can_run"])
+        self.assertEqual(preview["counts"]["effective"], 1)
+        self.assertEqual(preview["counts"]["invalid_subjects"], 1)
+        self.assertEqual(preview["planned_series"][0]["subjects_count"], 1)
+        self.assertEqual(preview["planned_series"][0]["subjects"][0]["subject_id"], valid_subject.id)
+
+    def test_series_direct_create_blocks_selection_with_only_invalid_team_units(self):
+        invalid_equip, invalid_members = self._create_team_with_members(
+            "Parella invalida",
+            ["Ona", "Bruna"],
+            start_order=70,
+        )
+        InscripcioAparellExclusio.objects.create(
+            comp_aparell=self.comp_app,
+            inscripcio=invalid_members[0],
+        )
+        invalid_subject, _invalid_meta = self._team_subject(invalid_equip)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "create",
+                "selected_ids": [invalid_subject.id],
+            },
+        )
+
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertFalse(preview["can_run"])
+        self.assertTrue(preview["blocked"])
+        self.assertEqual(preview["reason"], "no_valid_selection")
+        self.assertEqual(preview["selection"]["count"], 0)
+        self.assertEqual(preview["planned_series"], [])
+
     def test_inscripcions_list_exposes_series_panel_navigation(self):
         response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
 
@@ -36,12 +248,20 @@ class TeamSeriesWorkspaceTests(TeamContextScoringFlowTestBase):
         self.assertEqual(response.status_code, 200)
         html = response.json()["fragments"]["panel"]["html"]
         self.assertIn('id="series-workspace-shell"', html)
-        self.assertIn("1. Filtra l'univers", html)
+        self.assertIn("1. Univers de candidates", html)
         self.assertIn("2. Aplica una operacio", html)
-        self.assertIn("3. Revisa l'impacte", html)
+        self.assertIn("3. Series creades", html)
         self.assertIn('id="series-right-pane-card"', html)
+        self.assertIn('groups-inspector-head series-inspector-head', html)
+        self.assertIn('groups-title-with-logo', html)
         self.assertIn('id="btn-series-right-tab-preview"', html)
-        self.assertIn('id="series-board-filters-panel"', html)
+        self.assertIn('id="series-detail-members-toolbar"', html)
+        self.assertIn('id="series-detail-filter-active-chips"', html)
+        self.assertIn('groups-preview-note groups-title-with-logo', html)
+        self.assertIn('id="series-board-filter-active-chips"', html)
+        self.assertIn('id="btn-series-board-export-start-list"', html)
+        self.assertNotIn('id="btn-series-board-filters-toggle"', html)
+        self.assertNotIn('Pots crear-la ara i omplir-la mes tard', html)
 
     def test_series_preview_signature_is_required_for_selection_actions(self):
         equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)

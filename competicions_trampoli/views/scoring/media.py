@@ -5,7 +5,12 @@ from django.views.decorators.http import require_GET
 from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoreEntry, ScoreEntryVideo, TeamScoreEntry, TeamScoreEntryVideo
-from ...services.scoring.scoring_subjects import resolve_scoring_subject, serialize_subject_payload
+from ...services.scoring.phase_eligibility import phase_subject_is_scoreable
+from ...services.scoring.scoring_subjects import (
+    resolve_scoring_phase,
+    resolve_scoring_subject,
+    serialize_subject_payload,
+)
 from ...services.scoring.team_scoring import is_team_context_app
 from .helpers import (
     _eligible_team_subject_map,
@@ -41,6 +46,7 @@ def scoring_media_context(request, pk):
     ins_id = _parse_positive_int(request.GET.get("inscripcio_id"))
     comp_aparell_id = _parse_positive_int(request.GET.get("comp_aparell_id"))
     exercici = _parse_positive_int(request.GET.get("exercici"))
+    phase_id = _parse_positive_int(request.GET.get("fase_id"))
 
     comp_aparell = None
     if comp_aparell_id:
@@ -52,6 +58,13 @@ def scoring_media_context(request, pk):
         )
     if comp_aparell_id and comp_aparell is None:
         return JsonResponse({"ok": False, "error": "comp_aparell_id invalid per aquesta competicio."}, status=400)
+    phase = None
+    if phase_id:
+        if comp_aparell is None:
+            return JsonResponse({"ok": False, "error": "comp_aparell_id requerit per consultar una fase."}, status=400)
+        phase, phase_error_response = resolve_scoring_phase(competicio, comp_aparell, phase_id)
+        if phase_error_response is not None:
+            return phase_error_response
 
     if comp_aparell and is_team_context_app(comp_aparell):
         eligible_subjects = _eligible_team_subject_map(competicio, comp_aparell)
@@ -67,22 +80,25 @@ def scoring_media_context(request, pk):
         )
         if error_response is not None:
             return error_response
+        if phase is not None and not phase_subject_is_scoreable(
+            phase,
+            comp_aparell=comp_aparell,
+            subject_kind=subject["subject_kind"],
+            subject_id=subject["subject_id"],
+        ):
+            return JsonResponse({"ok": False, "error": "Aquest subjecte no esta publicat per puntuar en aquesta fase."}, status=403)
         team_subject_obj = subject["team_subject"]
         equip = team_subject_obj.equip
         team_subject = eligible_subjects.get(int(team_subject_obj.id), {})
         judge_video_payload = None
         if exercici:
-            score = (
-                TeamScoreEntry.objects
-                .filter(
-                    competicio=competicio,
-                    team_subject=team_subject_obj,
-                    comp_aparell=comp_aparell,
-                    exercici=exercici,
-                    fase__isnull=True,
-                )
-                .first()
+            score_qs = TeamScoreEntry.objects.filter(
+                competicio=competicio,
+                team_subject=team_subject_obj,
+                comp_aparell=comp_aparell,
+                exercici=exercici,
             )
+            score = score_qs.filter(fase=phase).first() if phase is not None else score_qs.filter(fase__isnull=True).first()
             if score:
                 video_obj = TeamScoreEntryVideo.objects.filter(team_score_entry=score).first()
                 judge_video_payload = _serialize_judge_video_for_playback(video_obj, competicio.id)
@@ -104,6 +120,7 @@ def scoring_media_context(request, pk):
             "context": {
                 "comp_aparell_id": comp_aparell_id,
                 "exercici": exercici,
+                "fase_id": phase.id if phase is not None else None,
                 "serie_id": team_subject.get("serie_id"),
                 "serie_label": team_subject.get("serie_label"),
             },
@@ -118,6 +135,13 @@ def scoring_media_context(request, pk):
         return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id valid."}, status=400)
 
     inscripcio = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+    if phase is not None and not phase_subject_is_scoreable(
+        phase,
+        comp_aparell=comp_aparell,
+        subject_kind="inscripcio",
+        subject_id=inscripcio.id,
+    ):
+        return JsonResponse({"ok": False, "error": "Aquest subjecte no esta publicat per puntuar en aquesta fase."}, status=403)
 
     media_qs = (
         InscripcioMedia.objects
@@ -130,16 +154,14 @@ def scoring_media_context(request, pk):
     judge_video_payload = None
     if comp_aparell_id and exercici:
         score = (
-            ScoreEntry.objects
-            .filter(
+            ScoreEntry.objects.filter(
                 competicio=competicio,
                 inscripcio=inscripcio,
                 comp_aparell_id=comp_aparell_id,
                 exercici=exercici,
-                fase__isnull=True,
             )
-            .first()
         )
+        score = score.filter(fase=phase).first() if phase is not None else score.filter(fase__isnull=True).first()
         if score:
             video_obj = ScoreEntryVideo.objects.filter(score_entry=score).first()
             judge_video_payload = _serialize_judge_video_for_playback(video_obj, competicio.id)
@@ -164,6 +186,7 @@ def scoring_media_context(request, pk):
         "context": {
             "comp_aparell_id": comp_aparell_id,
             "exercici": exercici,
+            "fase_id": phase.id if phase is not None else None,
         },
         "media": media_payload,
         "judge_video": judge_video_payload,

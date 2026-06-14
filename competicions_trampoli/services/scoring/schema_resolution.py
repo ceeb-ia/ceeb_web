@@ -55,6 +55,36 @@ def ensure_local_scoring_schema_for_comp_aparell(comp_aparell: CompeticioAparell
     )
 
 
+def copy_global_scoring_schema_to_comp_aparell_if_missing(
+    comp_aparell: CompeticioAparell,
+) -> Optional[ScoringSchema]:
+    if comp_aparell is None or not getattr(comp_aparell, "id", None) or not getattr(comp_aparell, "aparell_id", None):
+        return None
+
+    existing = (
+        ScoringSchema.objects
+        .filter(comp_aparell=comp_aparell)
+        .select_related("aparell", "comp_aparell")
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    global_schema = (
+        ScoringSchema.objects
+        .filter(aparell_id=comp_aparell.aparell_id, comp_aparell__isnull=True)
+        .only("schema")
+        .first()
+    )
+    if global_schema is None:
+        return None
+
+    return ScoringSchema.objects.create(
+        comp_aparell=comp_aparell,
+        schema=copy.deepcopy(global_schema.schema if isinstance(global_schema.schema, dict) else {}),
+    )
+
+
 def schema_by_comp_aparell_id(comp_aparells: Iterable[CompeticioAparell]) -> dict[int, dict]:
     apps = [app for app in comp_aparells if app is not None and getattr(app, "id", None)]
     if not apps:

@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="container-fluid mt-4">
+  {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
   {% include "scoring/notes/_styles.html" %}
   {% include "scoring/notes/_panel.html" %}
   {% include "scoring/notes/_media_drawer.html" %}

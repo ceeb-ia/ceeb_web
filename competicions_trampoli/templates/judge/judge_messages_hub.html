@@ -1,79 +1,411 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Suport Jutges · {{ competicio.nom }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
+  {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
   <style>
-    .msg-card { border: 1px solid #e5e7eb; border-radius: .6rem; background: #fff; }
+    .judge-support-surface {
+      --notes-base: #a16207;
+      --notes-base-hover: #854d0e;
+      --notes-bg: #fffbeb;
+      --notes-border: #fde68a;
+      --notes-text: #78350f;
+      --notes-soft-border: #f8e2a5;
+      --notes-muted: #7c5b24;
+      --notes-neutral-border: #e2e8f0;
+      --notes-neutral-text: #0f172a;
+      --notes-neutral-muted: #64748b;
+    }
+    .judge-support-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding: 18px 12px 16px;
+      border-bottom: 1px solid var(--notes-neutral-border);
+    }
+    .judge-support-title-block { min-width: 0; flex: 1 1 460px; }
+    .judge-support-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      color: var(--notes-text);
+      font-size: clamp(1.9rem, 3vw, 2.45rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    .judge-support-title-icon,
+    .judge-support-section-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      border: 1px solid rgba(161, 98, 7, .18);
+      background: #fff;
+      box-shadow: 0 8px 18px rgba(161, 98, 7, .08);
+    }
+    .judge-support-title-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+    }
+    .judge-support-title-icon img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+    .judge-support-context-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px 10px;
+      margin-top: 10px;
+      color: var(--notes-neutral-muted);
+      font-size: .9rem;
+      line-height: 1.35;
+    }
+    .judge-support-context-line > span:not(:first-child)::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      margin-right: 10px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      vertical-align: middle;
+    }
+    .judge-support-context-main {
+      color: var(--notes-neutral-text);
+      font-weight: 650;
+    }
+    .judge-support-header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .judge-support-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: start;
+    }
+    .judge-support-stack { display: grid; gap: 1rem; }
+    .judge-support-panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--notes-neutral-border);
+      border-radius: 8px;
+      background: #fff;
+      padding: 1rem;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, .06);
+    }
+    .judge-support-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: var(--notes-base);
+    }
+    .judge-support-panel--instruction,
+    .judge-support-panel--chat {
+      background: linear-gradient(180deg, #ffffff 0%, #fffdf7 100%);
+    }
+    .judge-support-panel--chat { min-height: 520px; }
+    .judge-support-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .9rem;
+    }
+    .judge-support-section-kicker {
+      display: flex;
+      width: fit-content;
+      margin: 0 0 .16rem;
+      color: var(--notes-base);
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .judge-support-section-title {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      margin: 0;
+      color: var(--notes-neutral-text);
+      font-size: 1.02rem;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+    .judge-support-section-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+    }
+    .judge-support-section-icon img,
+    .judge-support-button-icon {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+    }
+    .judge-support-button-icon {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      margin-right: .32rem;
+      vertical-align: -2px;
+    }
+    .judge-support-section-copy {
+      margin: .22rem 0 0;
+      color: var(--notes-neutral-muted);
+      font-size: .82rem;
+      line-height: 1.35;
+    }
+    .judge-support-label {
+      color: var(--notes-text);
+      font-size: .82rem;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+    .judge-support-surface .form-control,
+    .judge-support-surface .form-select,
+    .judge-support-surface select,
+    .judge-support-surface textarea {
+      width: 100%;
+      min-height: 36px;
+      border-color: color-mix(in srgb, var(--notes-base) 34%, #cbd5e1) !important;
+      border-radius: 9px;
+      background-color: #fff;
+      color: var(--notes-neutral-text);
+      font-size: .88rem;
+      box-shadow: none;
+    }
+    .judge-support-surface .form-control:focus,
+    .judge-support-surface .form-select:focus,
+    .judge-support-surface select:focus,
+    .judge-support-surface textarea:focus {
+      border-color: var(--notes-base) !important;
+      box-shadow: 0 0 0 .14rem rgba(161, 98, 7, .13) !important;
+    }
+    .judge-support-surface select option:checked {
+      background: var(--notes-base);
+      color: #fff;
+    }
+    .judge-support-surface .btn.btn-primary,
+    .judge-support-surface .btn.btn-primary:not(:disabled):not(.disabled) {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-base) !important;
+      color: #fff !important;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(161, 98, 7, .16);
+    }
+    .judge-support-surface .btn.btn-primary:hover,
+    .judge-support-surface .btn.btn-primary:focus {
+      border-color: var(--notes-base-hover) !important;
+      background: var(--notes-base-hover) !important;
+      color: #fff !important;
+    }
+    .judge-support-surface .btn.btn-outline-primary {
+      border-color: var(--notes-base) !important;
+      color: var(--notes-base) !important;
+      font-weight: 650;
+    }
+    .judge-support-surface .btn.btn-outline-primary:hover,
+    .judge-support-surface .btn.btn-outline-primary:focus {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-bg) !important;
+      color: var(--notes-text) !important;
+      box-shadow: none;
+    }
+    .judge-support-surface .btn.btn-outline-secondary {
+      border-color: var(--notes-soft-border) !important;
+      background: #fff !important;
+      color: var(--notes-text) !important;
+      font-weight: 650;
+    }
+    .judge-support-surface .btn.btn-outline-secondary:hover,
+    .judge-support-surface .btn.btn-outline-secondary:focus {
+      border-color: var(--notes-base) !important;
+      background: var(--notes-bg) !important;
+      color: var(--notes-text) !important;
+      box-shadow: 0 0 0 .12rem rgba(161, 98, 7, .1);
+    }
+    .judge-support-surface .badge.bg-light,
+    .judge-support-surface .badge.badge-light {
+      border: 1px solid var(--notes-border);
+      background: #fffdf7 !important;
+      color: var(--notes-text) !important;
+    }
     .msg-list { max-height: 62vh; overflow: auto; }
-    .msg-item { border-bottom: 1px solid #eef2f7; padding: .55rem .7rem; cursor: pointer; }
-    .msg-item:last-child { border-bottom: 0; }
-    .msg-item.active { background: #eef6ff; }
-    .msg-item.requested { border-left: 4px solid #f59e0b; padding-left: .45rem; }
-    .msg-item .title { font-weight: 600; }
-    .msg-muted { color: #6b7280; font-size: .84rem; }
-    .msg-thread { max-height: 54vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: .6rem; background: #fcfdff; padding: .65rem; }
-    .bubble { max-width: 82%; border-radius: .6rem; padding: .48rem .62rem; margin-bottom: .45rem; white-space: pre-wrap; word-break: break-word; }
-    .bubble.judge { background: #fff7e6; margin-right: auto; }
-    .bubble.organization { background: #e9f7ef; margin-left: auto; }
-    .bubble.system { background: #f1f5f9; margin-left: auto; margin-right: auto; }
-    .bubble-meta { display: block; margin-top: .2rem; color: #6b7280; font-size: .73rem; }
+    .msg-item {
+      position: relative;
+      display: block;
+      border: 1px solid transparent;
+      border-bottom-color: #eef2f7;
+      padding: .72rem .78rem .72rem .9rem;
+      cursor: pointer;
+      transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .msg-item:last-child { border-bottom-color: transparent; }
+    .msg-item:hover {
+      background: #fffdf7;
+      border-color: var(--notes-soft-border);
+      transform: translateY(-1px);
+    }
+    .msg-item.active {
+      border-color: var(--notes-base);
+      background: var(--notes-bg);
+      box-shadow: 0 0 0 1px rgba(161, 98, 7, .16) inset, 0 10px 22px rgba(161, 98, 7, .1);
+    }
+    .msg-item.requested { box-shadow: inset 4px 0 0 #f59e0b; }
+    .msg-item.active.requested { box-shadow: inset 4px 0 0 #f59e0b, 0 0 0 1px rgba(161, 98, 7, .16) inset, 0 10px 22px rgba(161, 98, 7, .1); }
+    .msg-item .title { color: var(--notes-neutral-text); font-weight: 750; }
+    .msg-item.active .title { color: var(--notes-text); }
+    .msg-muted { color: var(--notes-neutral-muted); font-size: .84rem; }
+    .msg-thread {
+      max-height: 54vh;
+      overflow: auto;
+      border: 1px solid var(--notes-border);
+      border-radius: 10px;
+      background: #fff;
+      padding: .75rem;
+    }
+    .bubble {
+      max-width: 82%;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: .5rem .65rem;
+      margin-bottom: .45rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      box-shadow: 0 6px 14px rgba(15, 23, 42, .04);
+    }
+    .bubble.judge { border-color: var(--notes-border); background: var(--notes-bg); color: var(--notes-text); margin-right: auto; }
+    .bubble.organization { border-color: #bbf7d0; background: #f0fdf4; color: #14532d; margin-left: auto; }
+    .bubble.system { border-color: #e2e8f0; background: #f8fafc; color: #475569; margin-left: auto; margin-right: auto; }
+    .bubble-meta { display: block; margin-top: .2rem; color: var(--notes-neutral-muted); font-size: .73rem; }
+    @media (max-width: 991.98px) {
+      .judge-support-layout { grid-template-columns: 1fr; }
+      .judge-support-header,
+      .judge-support-header-actions,
+      .judge-support-header-actions .btn {
+        width: 100%;
+      }
+      .judge-support-header-actions .btn {
+        flex: 1 1 auto;
+      }
+    }
   </style>
 
-  <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-      <div>
-        <h2 class="mb-1">Suport Jutges</h2>
-        <div class="text-muted small">Competicio: <span class="fw-semibold">{{ competicio.nom }}</span></div>
+  <div class="card-surface judge-support-surface" data-avatar-anchor="judge-support-overview">
+    <div class="judge-support-header" data-avatar-anchor="judge-support-header">
+      <div class="judge-support-title-block">
+        <h1 class="judge-support-title">
+          <span class="judge-support-title-icon" aria-hidden="true">
+            <img src="{% static 'notes/QRs/jutge.png' %}" alt="">
+          </span>
+          <span>Suport Jutges</span>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-avatar-topic="judge_support_overview" aria-label="Ajuda sobre suport de jutges" title="Ajuda sobre suport de jutges">?</button>
+        </h1>
+        <div class="judge-support-context-line">
+          <span class="judge-support-context-main">{{ competicio.nom }}</span>
+          <span>Canal directe amb jutges</span>
+          <span>Seguiment d'incidencies i instruccions</span>
+        </div>
       </div>
-      <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_home' competicio.id %}">Jurat / QRs</a>
+      <div class="judge-support-header-actions">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}" data-avatar-action="judge-support-back-notes">Tornar a notes</a>
+        <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'qr_admin_home' competicio.id %}" data-avatar-action="judge-support-open-qr-admin">
+          <img class="judge-support-button-icon" src="{% static 'notes/QRs/administrador.png' %}" alt="">
+          Administrador QRs
+        </a>
       </div>
     </div>
 
-    <div class="row g-3">
-      <div class="col-12 col-lg-4">
-        <div class="msg-card p-2 mb-3">
-          <div class="fw-semibold mb-2">Instruccio puntual</div>
-          <label for="newTokenSelect" class="msg-muted d-block mb-1">Destinatari (token)</label>
+    <div class="judge-support-layout">
+      <div class="judge-support-stack">
+        <section class="judge-support-panel judge-support-panel--instruction" data-avatar-anchor="judge-support-sos">
+          <div class="judge-support-section-head">
+            <div>
+              <div class="judge-support-section-kicker">Instruccio</div>
+              <h2 class="judge-support-section-title">
+                <span class="judge-support-section-icon" aria-hidden="true">
+                  <img src="{% static 'notes/QRs/detall.png' %}" alt="">
+                </span>
+                <span>Instruccio puntual</span>
+              </h2>
+              <p class="judge-support-section-copy">Envia un missatge directe a un QR de jutge.</p>
+            </div>
+          </div>
+          <label for="newTokenSelect" class="judge-support-label d-block mb-1">Destinatari (QR dispositiu)</label>
           <select id="newTokenSelect" class="form-select form-select-sm mb-2"></select>
-          <label for="newInstructionInput" class="msg-muted d-block mb-1">Missatge</label>
+          <label for="newInstructionInput" class="judge-support-label d-block mb-1">Missatge</label>
           <textarea id="newInstructionInput" class="form-control form-control-sm mb-2" rows="3" maxlength="500" placeholder="Escriu una instruccio..."></textarea>
-          <button class="btn btn-sm btn-primary w-100" id="sendInstructionBtn" type="button">Enviar instruccio</button>
-        </div>
+          <button class="btn btn-sm btn-primary w-100" id="sendInstructionBtn" type="button">
+            <img class="judge-support-button-icon" src="{% static 'notes/QRs/afegir.png' %}" alt="">
+            Enviar instruccio
+          </button>
+        </section>
 
-        <div class="msg-card">
-          <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
-            <div class="fw-semibold">Converses</div>
+        <section class="judge-support-panel judge-support-panel--list" data-avatar-anchor="judge-support-judge-list">
+          <div class="judge-support-section-head">
+            <div>
+              <div class="judge-support-section-kicker">Llistat</div>
+              <h2 class="judge-support-section-title">
+                <span class="judge-support-section-icon" aria-hidden="true">
+                  <img src="{% static 'notes/QRs/llistat.png' %}" alt="">
+                </span>
+                <span>Converses</span>
+              </h2>
+              <p class="judge-support-section-copy">Les peticions pendents queden prioritzades.</p>
+            </div>
             <span id="convCounter" class="badge bg-light text-dark">0</span>
           </div>
           <div id="conversationList" class="msg-list"></div>
-        </div>
+        </section>
       </div>
 
-      <div class="col-12 col-lg-8">
-        <div class="msg-card p-2">
-          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+      <section class="judge-support-panel judge-support-panel--chat" data-avatar-anchor="judge-support-chat">
+        <div class="judge-support-section-head">
+          <div>
+            <div class="judge-support-section-kicker">Conversa</div>
+            <h2 class="judge-support-section-title">
+              <span class="judge-support-section-icon" aria-hidden="true">
+                <img src="{% static 'notes/QRs/configuracio.png' %}" alt="">
+              </span>
+              <span>Canal de suport</span>
+            </h2>
+            <p class="judge-support-section-copy">Respon, accepta o marca la conversa com a resolta.</p>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
             <div>
               <div class="fw-semibold" id="activeConvTitle">Selecciona una conversa</div>
               <div class="msg-muted" id="activeConvMeta"></div>
             </div>
             <div class="d-flex gap-2">
               <button id="statusAckBtn" type="button" class="btn btn-sm btn-outline-warning" disabled>Acceptar</button>
-              <button id="statusResolvedBtn" type="button" class="btn btn-sm btn-outline-success" disabled>Marcar resolta</button>
+              <button id="statusResolvedBtn" type="button" class="btn btn-sm btn-outline-success" disabled data-avatar-anchor="judge-support-resolve">Marcar resolta</button>
             </div>
           </div>
 
-          <div id="threadEmpty" class="msg-muted mb-2">No hi ha missatges per mostrar.</div>
-          <div id="threadWrap" class="msg-thread mb-2" style="display:none;"></div>
+        <div id="threadEmpty" class="msg-muted mb-2">No hi ha missatges per mostrar.</div>
+        <div id="threadWrap" class="msg-thread mb-2" style="display:none;"></div>
 
-          <div class="input-group input-group-sm">
-            <input id="replyInput" type="text" class="form-control" maxlength="500" placeholder="Resposta a la conversa seleccionada">
-            <button id="replyBtn" type="button" class="btn btn-primary" disabled>Enviar</button>
-          </div>
+        <div class="input-group input-group-sm">
+          <input id="replyInput" type="text" class="form-control" maxlength="500" placeholder="Resposta a la conversa seleccionada">
+          <button id="replyBtn" type="button" class="btn btn-primary" disabled>Enviar</button>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 </div>
@@ -147,7 +479,7 @@
     elTokenSelect.innerHTML = '<option value="">Selecciona token...</option>';
     TOKENS.forEach((t) => {
       const label = (t.label || "").trim() || String(t.id);
-      const app = (((t.comp_aparell || {}).aparell || {}).nom || "").trim();
+      const app = (t.assignment_summary || (((t.comp_aparell || {}).aparell || {}).nom || "")).trim();
       const option = document.createElement("option");
       option.value = String(t.id);
       option.textContent = app ? `${label} · ${app}` : label;

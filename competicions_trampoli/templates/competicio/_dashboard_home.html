@@ -1,0 +1,1098 @@
+{% load static competicio_extras %}
+
+<style>
+  .competition-home {
+    min-height: calc(100vh - 190px);
+    padding: 28px clamp(16px, 3vw, 42px) 36px;
+    color: #0f172a;
+  }
+
+  .competition-home-shell {
+    max-width: 1640px;
+    margin: 0 auto;
+  }
+
+  .competition-home-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 22px;
+    margin-bottom: 28px;
+  }
+
+  .competition-home-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .competition-home-logo {
+    display: block;
+    width: 150px;
+    height: 64px;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  .competition-home-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .competition-home-logout-form {
+    margin: 0;
+  }
+
+  .competition-home-action-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .competition-home-action {
+    --action-color: #1d4ed8;
+    --action-bg: #ffffff;
+    --action-border: #dbe4f0;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--action-border);
+    border-radius: 8px;
+    background: var(--action-bg);
+    color: var(--action-color);
+    font-weight: 750;
+    line-height: 1.15;
+    text-decoration: none;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .competition-home-action:hover,
+  .competition-home-action:focus {
+    color: var(--action-color);
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+  }
+
+  .competition-home-action--classificacions {
+    --action-color: #be123c;
+    --action-border: #fecdd3;
+  }
+
+  .competition-home-action--primary {
+    --action-color: #ffffff;
+    --action-bg: #0b5bd3;
+    --action-border: #0b5bd3;
+  }
+
+  .competition-home-action--logout {
+    --action-color: #334155;
+    --action-bg: rgba(255, 255, 255, 0.86);
+    --action-border: #cbd5e1;
+    cursor: pointer;
+  }
+
+  .competition-home-action img,
+  .competition-domain-button img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+
+  .competition-home-action--primary .competition-home-plus {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .competition-context-help {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #bfdbfe;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.07);
+  }
+
+  .competition-context-help:hover,
+  .competition-context-help:focus {
+    background: #ffffff;
+    color: #0b5bd3;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.14);
+  }
+
+  .competition-context-help--filters,
+  .competition-context-help--cards,
+  .competition-context-help--new-card {
+    position: absolute;
+    right: -8px;
+    top: -12px;
+    z-index: 2;
+  }
+
+  .competition-home-heading {
+    display: flow-root;
+    margin-bottom: 22px;
+  }
+
+  .competition-home-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .competition-home-heading h1 {
+    margin: 0;
+    color: #071633;
+    font-size: clamp(2.2rem, 4vw, 3.55rem);
+    font-weight: 850;
+    letter-spacing: 0;
+  }
+
+  .competition-home-heading p {
+    max-width: 760px;
+    margin: 7px 0 0;
+    color: #64748b;
+    font-size: 1.05rem;
+    line-height: 1.55;
+  }
+
+  .competition-home-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+
+  .competition-summary-item {
+    min-height: 78px;
+    padding: 14px 16px;
+    border: 1px solid rgba(219, 226, 239, 0.82);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(12px);
+  }
+
+  .competition-summary-value {
+    display: block;
+    color: #071633;
+    font-size: 1.6rem;
+    font-weight: 850;
+    line-height: 1;
+  }
+
+  .competition-summary-label {
+    display: block;
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .competition-home-filters {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(260px, 1.05fr) minmax(180px, 1fr) minmax(180px, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .competition-filter-control {
+    position: relative;
+    min-width: 0;
+  }
+
+  .competition-filter-control input,
+  .competition-filter-control select {
+    width: 100%;
+    min-height: 54px;
+    padding: 0 18px 0 48px;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #334155;
+    font-size: 0.96rem;
+    font-weight: 700;
+    outline: none;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+    appearance: none;
+  }
+
+  .competition-filter-control select {
+    padding-right: 46px;
+  }
+
+  .competition-filter-control input:focus,
+  .competition-filter-control select:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  }
+
+  .competition-filter-icon {
+    position: absolute;
+    left: 17px;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    transform: translateY(-50%);
+    color: #64748b;
+    pointer-events: none;
+  }
+
+  .competition-filter-chevron {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid #334155;
+    border-bottom: 2px solid #334155;
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
+  }
+
+  .competition-card-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(410px, 1fr));
+    gap: 18px;
+  }
+
+  .competition-home-card,
+  .competition-new-card {
+    position: relative;
+    min-width: 0;
+    min-height: 304px;
+    border: 1px solid rgba(219, 226, 239, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.09);
+    backdrop-filter: blur(12px);
+  }
+
+  .competition-new-card-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 304px;
+  }
+
+  .competition-home-card {
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+  }
+
+  .competition-new-card {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
+    border-style: dashed;
+    border-color: rgba(147, 197, 253, 0.9);
+    text-align: center;
+    color: #334155;
+    text-decoration: none;
+  }
+
+  .competition-new-card:hover,
+  .competition-new-card:focus {
+    color: #334155;
+    text-decoration: none;
+    border-color: #60a5fa;
+    box-shadow: 0 18px 38px rgba(37, 99, 235, 0.14);
+  }
+
+  .competition-new-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .competition-new-card .competition-new-plus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 92px;
+    height: 92px;
+    margin-bottom: 18px;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+  }
+
+  .competition-new-card .competition-new-plus img {
+    display: block;
+    width: 92px;
+    height: 92px;
+    object-fit: contain;
+  }
+
+  .competition-new-card strong {
+    display: block;
+    color: #071633;
+    font-size: 1.18rem;
+    font-weight: 850;
+  }
+
+  .competition-new-card .competition-new-description {
+    display: block;
+    max-width: 250px;
+    margin: 10px auto 0;
+    color: #64748b;
+    font-size: 0.93rem;
+    line-height: 1.45;
+  }
+
+  .competition-card-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: start;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .competition-avatar {
+    display: inline-grid;
+    place-items: center;
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    color: #334155;
+    font-size: 1.12rem;
+    font-weight: 850;
+    background: #f1f5f9;
+    overflow: hidden;
+  }
+
+  .competition-sport-logo {
+    display: block;
+    width: 58px;
+    height: 58px;
+    object-fit: contain;
+    border-radius: 50%;
+  }
+
+  .competition-avatar--trampoli {
+    background: #ccfbf1;
+    color: #0f766e;
+  }
+
+  .competition-avatar--artistica {
+    background: #f3e8ff;
+    color: #7e22ce;
+  }
+
+  .competition-avatar--ritmica {
+    background: #fce7f3;
+    color: #be185d;
+  }
+
+  .competition-avatar--patinatge {
+    background: #ffedd5;
+    color: #c2410c;
+  }
+
+  .competition-avatar--natacio {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .competition-card-title {
+    min-width: 0;
+  }
+
+  .competition-card-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .competition-card-title h2 {
+    flex: 0 1 auto;
+    margin: 4px 0 6px;
+    overflow-wrap: anywhere;
+    color: #0f172a;
+    font-size: 1.15rem;
+    font-weight: 850;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
+  .competition-config-link {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    margin-top: 1px;
+    border: 1px solid #dbe4f0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #64748b;
+    text-decoration: none;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+  }
+
+  .competition-config-link:hover,
+  .competition-config-link:focus {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+    text-decoration: none;
+    box-shadow: 0 9px 20px rgba(15, 23, 42, 0.1);
+  }
+
+  .competition-config-link img {
+    width: 17px;
+    height: 17px;
+    object-fit: contain;
+    opacity: 0.78;
+  }
+
+  .competition-config-link:hover img,
+  .competition-config-link:focus img {
+    opacity: 1;
+  }
+
+  .competition-card-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #64748b;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .competition-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 31px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+
+  .competition-status--active {
+    background: #dcfce7;
+    color: #15803d;
+  }
+
+  .competition-status--preparation {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .competition-status--finished {
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .competition-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 18px 0 16px;
+    color: #475569;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .competition-card-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .competition-inline-icon {
+    flex: 0 0 auto;
+    width: 17px;
+    height: 17px;
+    color: #64748b;
+  }
+
+  .competition-domain-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: auto;
+  }
+
+  .competition-domain-grid > * {
+    grid-column: span 2;
+  }
+
+  .competition-domain-grid > *:nth-child(n+4) {
+    grid-column: span 3;
+  }
+
+  .competition-domain-button {
+    --domain-color: #334155;
+    --domain-bg: #f8fafc;
+    --domain-border: #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 52px;
+    padding: 9px 12px;
+    border: 1px solid var(--domain-border);
+    border-radius: 8px;
+    background: var(--domain-bg);
+    color: var(--domain-color);
+    font-size: 0.82rem;
+    font-weight: 850;
+    line-height: 1.15;
+    text-align: center;
+    text-decoration: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .competition-domain-button span {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    hyphens: none;
+  }
+
+  .competition-domain-button:hover,
+  .competition-domain-button:focus {
+    border-color: var(--domain-border);
+    background: #ffffff;
+    color: var(--domain-color);
+    text-decoration: none;
+    box-shadow: 0 7px 18px rgba(15, 23, 42, 0.08);
+  }
+
+  .competition-domain-button.is-disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.2);
+    opacity: 0.45;
+  }
+
+  .competition-domain-button--inscripcions {
+    --domain-color: #0f766e;
+    --domain-bg: #ecfeff;
+    --domain-border: #99f6e4;
+  }
+
+  .competition-domain-button--fases {
+    --domain-color: #2563eb;
+    --domain-bg: #eff6ff;
+    --domain-border: #bfdbfe;
+  }
+
+  .competition-domain-button--rotacions {
+    --domain-color: #c2410c;
+    --domain-bg: #fff7ed;
+    --domain-border: #fed7aa;
+  }
+
+  .competition-domain-button--classificacions {
+    --domain-color: #be123c;
+    --domain-bg: #fff1f2;
+    --domain-border: #fecdd3;
+  }
+
+  .competition-domain-button--notes {
+    --domain-color: #a16207;
+    --domain-bg: #fffbeb;
+    --domain-border: #fde68a;
+  }
+
+  .competition-delete-link {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 18px;
+    color: #ef4444;
+    font-size: 0.78rem;
+    font-weight: 850;
+    text-decoration: none;
+  }
+
+  .competition-card-admin-actions {
+    align-self: flex-end;
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .competition-card-admin-actions .competition-delete-link {
+    align-self: auto;
+    margin-top: 0;
+  }
+
+  .competition-edit-link {
+    color: #2563eb;
+  }
+
+  .competition-edit-link:hover,
+  .competition-edit-link:focus {
+    color: #1d4ed8;
+  }
+
+  .competition-delete-link .competition-inline-icon {
+    width: 16px;
+    height: 16px;
+    color: currentColor;
+  }
+
+  .competition-delete-link:hover,
+  .competition-delete-link:focus {
+    color: #b91c1c;
+    text-decoration: none;
+  }
+
+  .competition-empty-state {
+    grid-column: 1 / -1;
+    padding: 44px 24px;
+    border: 1px solid rgba(219, 226, 239, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    color: #64748b;
+    text-align: center;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.07);
+  }
+
+  @media (max-width: 1280px) {
+    .competition-card-grid {
+      grid-template-columns: repeat(auto-fit, minmax(390px, 1fr));
+    }
+  }
+
+  @media (max-width: 900px) {
+    .competition-home-topbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .competition-home-actions {
+      justify-content: flex-start;
+      width: 100%;
+    }
+
+    .competition-home-action-group {
+      width: 100%;
+    }
+
+    .competition-home-action-group .competition-home-action {
+      flex: 1 1 auto;
+    }
+
+    .competition-home-summary,
+    .competition-home-filters,
+    .competition-card-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .competition-home-card,
+    .competition-new-card-shell,
+    .competition-new-card {
+      min-height: auto;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .competition-home {
+      padding-inline: 12px;
+    }
+
+    .competition-home-logo {
+      width: 126px;
+      height: 54px;
+    }
+
+    .competition-home-title-row {
+      align-items: flex-start;
+    }
+
+    .competition-home-action {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .competition-home-action-group .competition-home-action {
+      width: auto;
+    }
+
+    .competition-context-help--filters,
+    .competition-context-help--cards,
+    .competition-context-help--new-card {
+      right: 0;
+    }
+
+    .competition-card-header {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .competition-status {
+      grid-column: 1 / -1;
+      justify-self: start;
+    }
+
+    .competition-domain-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .competition-domain-grid > *,
+    .competition-domain-grid > *:nth-child(n+4) {
+      grid-column: span 1;
+    }
+
+    .competition-domain-button {
+      flex-direction: column;
+      gap: 5px;
+      min-height: 66px;
+      padding: 8px 7px;
+    }
+  }
+</style>
+
+<section class="competition-home">
+  <div class="competition-home-shell">
+    <div class="competition-home-topbar">
+      <div class="competition-home-brand">
+        <img class="competition-home-logo" src="{% static 'general/logo.png' %}" alt="IA Score">
+      </div>
+
+      {% if IS_PROD and user.is_authenticated %}
+      {% url 'logout' as logout_url %}
+      {% if logout_url %}
+      <div class="competition-home-actions">
+        <form method="post" action="{{ logout_url }}" class="competition-home-logout-form">
+          {% csrf_token %}
+          <button type="submit" class="competition-home-action competition-home-action--logout">Sortir</button>
+        </form>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="competition-home-heading">
+      {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}
+      <div class="competition-home-title-row">
+        <h1>Competicions</h1>
+        <button class="competition-context-help" type="button" data-avatar-topic="welcome" aria-label="Ajuda del home" title="Ajuda del home">?</button>
+      </div>
+      <p>Gestió intel·ligent de competicions</p>
+    </div>
+
+    <div class="competition-home-summary" aria-label="Resum de competicions">
+      <div class="competition-summary-item">
+        <span class="competition-summary-value">{{ competicions|length }}</span>
+        <span class="competition-summary-label">Competicions visibles</span>
+      </div>
+      <div class="competition-summary-item">
+        <span class="competition-summary-value">{{ competition_status_counts.preparation|default:0 }}</span>
+        <span class="competition-summary-label">En preparació</span>
+      </div>
+      <div class="competition-summary-item">
+        <span class="competition-summary-value">{{ competition_status_counts.active|default:0 }}</span>
+        <span class="competition-summary-label">Actives avui</span>
+      </div>
+      <div class="competition-summary-item">
+        <span class="competition-summary-value">{{ competition_total_participants|default:0 }}</span>
+        <span class="competition-summary-label">Participants</span>
+      </div>
+    </div>
+
+    <div class="competition-home-filters" aria-label="Filtres de competicions">
+      <button class="competition-context-help competition-context-help--filters" type="button" data-avatar-topic="filters" aria-label="Ajuda sobre filtres" title="Ajuda sobre filtres">?</button>
+      <label class="competition-filter-control">
+        <span class="sr-only">Buscar competició</span>
+        <svg class="competition-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.8-3.8"></path>
+        </svg>
+        <input id="competitionSearch" type="search" autocomplete="off" placeholder="Buscar competició...">
+      </label>
+
+      <label class="competition-filter-control">
+        <span class="sr-only">Filtrar per estat</span>
+        <svg class="competition-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 6h16"></path>
+          <path d="M7 12h10"></path>
+          <path d="M10 18h4"></path>
+        </svg>
+        <select id="competitionStatusFilter">
+          <option value="all">Totes</option>
+          <option value="preparation">En preparació</option>
+          <option value="active">Actives</option>
+          <option value="finished">Finalitzades</option>
+        </select>
+        <span class="competition-filter-chevron" aria-hidden="true"></span>
+      </label>
+
+      <label class="competition-filter-control">
+        <span class="sr-only">Ordenar competicions</span>
+        <svg class="competition-filter-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="17" rx="2"></rect>
+          <path d="M8 2v4"></path>
+          <path d="M16 2v4"></path>
+          <path d="M3 10h18"></path>
+        </svg>
+        <select id="competitionSort">
+          <option value="date">Ordenar per data</option>
+          <option value="created">Ordenar per creació</option>
+          <option value="name">Ordenar per nom</option>
+        </select>
+        <span class="competition-filter-chevron" aria-hidden="true"></span>
+      </label>
+    </div>
+
+    <div class="competition-card-grid" id="competitionCardGrid">
+      <button class="competition-context-help competition-context-help--cards" type="button" data-avatar-topic="competition_cards" aria-label="Ajuda sobre les competicions" title="Ajuda sobre les competicions">?</button>
+      {% if can_manage_global_competicions and not IS_PROD %}
+      <div class="competition-new-card-shell" data-static-card="true">
+        <button class="competition-context-help competition-context-help--new-card" type="button" data-avatar-topic="create_competition" aria-label="Ajuda per crear competició" title="Ajuda per crear competició">?</button>
+        <a class="competition-new-card" href="{% url 'create' %}" data-avatar-action="create_competition">
+          <span class="competition-new-content">
+            <span class="competition-new-plus" aria-hidden="true">
+              <img src="{% static 'general/new.png' %}" alt="">
+            </span>
+            <strong>Nova competició</strong>
+            <span class="competition-new-description">Crea una nova competició i configura'n les fases i mòduls.</span>
+          </span>
+        </a>
+      </div>
+      {% endif %}
+
+      {% for c in competicions %}
+      {% with a=comp_actions|get_item:c.id %}
+      <article
+        class="competition-home-card"
+        data-competition-card="true"
+        data-name="{{ c.nom|lower }}"
+        data-status="{{ c.home_status_key }}"
+        data-date="{% if c.data %}{{ c.data|date:'Y-m-d' }}{% endif %}"
+        data-created="{{ c.created_at|date:'U' }}">
+        <header class="competition-card-header">
+          <span class="competition-avatar competition-avatar--{{ c.tipus }}" aria-hidden="true">
+            {% if c.home_sport_logo_path %}
+            <img class="competition-sport-logo" src="{% static c.home_sport_logo_path %}" alt="">
+            {% else %}
+            {{ c.nom|initials }}
+            {% endif %}
+          </span>
+          <div class="competition-card-title">
+            <div class="competition-card-title-row">
+              <h2>{{ c.nom }}</h2>
+              <a class="competition-config-link" href="{% url 'trampoli_config' c.id %}" aria-label="Configuració de {{ c.nom }}" title="Configuració">
+                <img src="{% static 'dock/configuracio.png' %}" alt="">
+              </a>
+            </div>
+            <span class="competition-card-date">
+              <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="17" rx="2"></rect>
+                <path d="M8 2v4"></path>
+                <path d="M16 2v4"></path>
+                <path d="M3 10h18"></path>
+              </svg>
+              {% if c.data and c.data_fi %}
+                {{ c.data|date:"d/m/Y" }} - {{ c.data_fi|date:"d/m/Y" }}
+              {% elif c.data %}
+                {{ c.data|date:"d/m/Y" }}
+              {% elif c.data_fi %}
+                Fins {{ c.data_fi|date:"d/m/Y" }}
+              {% else %}
+                Sense data
+              {% endif %}
+            </span>
+          </div>
+          <span class="competition-status competition-status--{{ c.home_status_key }}">{{ c.home_status_label }}</span>
+        </header>
+
+        <div class="competition-card-meta">
+          <span>
+            <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            {{ c.participant_count|default:0 }} participants
+          </span>
+          <span>
+            <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 6v6l4 2"></path>
+            </svg>
+            Creada fa {{ c.created_at|timesince }}
+          </span>
+        </div>
+
+        <div class="competition-domain-grid" aria-label="Dominis de {{ c.nom }}">
+          {% if a and a.can_view_inscripcions %}
+          <a class="competition-domain-button competition-domain-button--inscripcions" href="{% url 'inscripcions_list' c.id %}" aria-label="Inscripcions" title="Inscripcions">
+            <img src="{% static 'dock/inscripcions.png' %}" alt="">
+            <span>Inscripcions</span>
+          </a>
+          {% else %}
+          <span class="competition-domain-button competition-domain-button--inscripcions is-disabled" aria-label="Inscripcions" title="Inscripcions">
+            <img src="{% static 'dock/inscripcions.png' %}" alt="">
+            <span>Inscripcions</span>
+          </span>
+          {% endif %}
+
+          {% if a and a.can_view_fases %}
+          <a class="competition-domain-button competition-domain-button--fases" href="{% url 'trampoli_fases' c.id %}" aria-label="Fases i aparells" title="Fases i aparells">
+            <img src="{% static 'dock/fases.png' %}" alt="">
+            <span>Fases</span>
+          </a>
+          {% else %}
+          <span class="competition-domain-button competition-domain-button--fases is-disabled" aria-label="Fases i aparells" title="Fases i aparells">
+            <img src="{% static 'dock/fases.png' %}" alt="">
+            <span>Fases</span>
+          </span>
+          {% endif %}
+
+          {% if a and a.can_view_rotacions %}
+          <a class="competition-domain-button competition-domain-button--rotacions" href="{% url 'rotacions_planner' c.id %}" aria-label="Rotacions" title="Rotacions">
+            <img src="{% static 'dock/rotacions.png' %}" alt="">
+            <span>Rotacions</span>
+          </a>
+          {% else %}
+          <span class="competition-domain-button competition-domain-button--rotacions is-disabled" aria-label="Rotacions" title="Rotacions">
+            <img src="{% static 'dock/rotacions.png' %}" alt="">
+            <span>Rotacions</span>
+          </span>
+          {% endif %}
+
+          {% if a and a.can_view_classificacions %}
+          <a class="competition-domain-button competition-domain-button--classificacions" href="{% url 'classificacions_home' c.id %}" aria-label="Classificacions" title="Classificacions">
+            <img src="{% static 'dock/classificacions.png' %}" alt="">
+            <span>Classificacions</span>
+          </a>
+          {% else %}
+          <span class="competition-domain-button competition-domain-button--classificacions is-disabled" aria-label="Classificacions" title="Classificacions">
+            <img src="{% static 'dock/classificacions.png' %}" alt="">
+            <span>Classificacions</span>
+          </span>
+          {% endif %}
+
+          {% if c.te_notes and a and a.can_view_notes %}
+          <a class="competition-domain-button competition-domain-button--notes" href="{% url 'scoring_notes_home' c.id %}" aria-label="Notes" title="Notes">
+            <img src="{% static 'dock/notes.png' %}" alt="">
+            <span>Notes</span>
+          </a>
+          {% else %}
+          <span class="competition-domain-button competition-domain-button--notes is-disabled" aria-label="Notes" title="Notes">
+            <img src="{% static 'dock/notes.png' %}" alt="">
+            <span>Notes</span>
+          </span>
+          {% endif %}
+        </div>
+
+        {% if a and a.can_edit_competicio or a and a.can_delete_competicio %}
+        <div class="competition-card-admin-actions">
+          {% if a and a.can_edit_competicio %}
+          <a class="competition-delete-link competition-edit-link" href="{% url 'competicio_update' c.id %}">
+            <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+            </svg>
+            <span>Editar</span>
+          </a>
+          {% endif %}
+          {% if a and a.can_delete_competicio %}
+          <a class="competition-delete-link" href="{% url 'delete' c.id %}">
+          <svg class="competition-inline-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4h8v2"></path>
+            <path d="M19 6l-1 14H6L5 6"></path>
+            <path d="M10 11v6"></path>
+            <path d="M14 11v6"></path>
+          </svg>
+          <span>Eliminar</span>
+          </a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </article>
+      {% endwith %}
+      {% empty %}
+      <div class="competition-empty-state">
+        Encara no hi ha competicions visibles.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var searchInput = document.getElementById("competitionSearch");
+    var statusFilter = document.getElementById("competitionStatusFilter");
+    var sortSelect = document.getElementById("competitionSort");
+    var grid = document.getElementById("competitionCardGrid");
+    if (!searchInput || !statusFilter || !sortSelect || !grid) {
+      return;
+    }
+
+    var cards = Array.prototype.slice.call(grid.querySelectorAll("[data-competition-card='true']"));
+
+    function normalize(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function compareCards(a, b) {
+      var sort = sortSelect.value;
+      if (sort === "name") {
+        return normalize(a.dataset.name).localeCompare(normalize(b.dataset.name));
+      }
+      if (sort === "created") {
+        return Number(b.dataset.created || 0) - Number(a.dataset.created || 0);
+      }
+      var dateA = a.dataset.date || "9999-12-31";
+      var dateB = b.dataset.date || "9999-12-31";
+      return dateA.localeCompare(dateB);
+    }
+
+    function updateCards() {
+      var query = normalize(searchInput.value);
+      var status = statusFilter.value;
+      cards.sort(compareCards).forEach(function (card) {
+        var matchesSearch = !query || normalize(card.dataset.name).indexOf(query) !== -1;
+        var matchesStatus = status === "all" || card.dataset.status === status;
+        card.hidden = !(matchesSearch && matchesStatus);
+        grid.appendChild(card);
+      });
+    }
+
+    searchInput.addEventListener("input", updateCards);
+    statusFilter.addEventListener("change", updateCards);
+    sortSelect.addEventListener("change", updateCards);
+    updateCards();
+  })();
+</script>

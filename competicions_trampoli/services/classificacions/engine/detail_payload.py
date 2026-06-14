@@ -350,6 +350,7 @@ def get_detail_display_config(schema_or_presentacio=None, *, tipus="individual",
     return {
         "enabled": bool(raw_detail.get("enabled", False)),
         "default_open": bool(raw_detail.get("default_open", False)),
+        "sections_layout": "stacked" if str(raw_detail.get("sections_layout") or "").strip().lower() == "stacked" else "tabs",
         "sections": [section for section in sections if section],
     }
 
@@ -1149,6 +1150,7 @@ class DetailPayloadRuntime:
             return None
         return {
             "default_open": bool(self.detail_config.get("default_open", False)),
+            "sections_layout": "stacked" if str(self.detail_config.get("sections_layout") or "").strip().lower() == "stacked" else "tabs",
             "sections": sections,
         }
 

@@ -1,3 +1,35 @@
+  {% load static %}
+  const CLASSIF_TYPE_ICON_URLS = {
+    individual: "{% static 'classificacions/individual.png' %}",
+    equips: "{% static 'classificacions/team.png' %}",
+  };
+  window.PUNTUACIO_ICON_URLS = window.PUNTUACIO_ICON_URLS || {
+    agregacio: "{% static 'classificacions/sections/puntuacio/agregacio.png' %}",
+    aparells: "{% static 'classificacions/sections/puntuacio/aparells.png' %}",
+    base: "{% static 'classificacions/sections/puntuacio/base.png' %}",
+    camps: "{% static 'classificacions/sections/puntuacio/camps.png' %}",
+    camps_exercici: "{% static 'classificacions/sections/puntuacio/camps_exercici.png' %}",
+    configuracio: "{% static 'classificacions/sections/puntuacio/configuracio.png' %}",
+    resum: "{% static 'classificacions/sections/puntuacio/resum.png' %}",
+    tractament: "{% static 'classificacions/sections/puntuacio/tractament.png' %}",
+  };
+
+  function puntuacioIconHTML(key) {
+    const src = (window.PUNTUACIO_ICON_URLS || {})[String(key || "").trim()];
+    if (!src) return "";
+    return `<span class="classif-panel-icon puntuacio-step-card__icon" aria-hidden="true"><img src="${esc(src)}" alt=""></span>`;
+  }
+
+  window.DESEMPAT_ICON_URLS = window.DESEMPAT_ICON_URLS || {
+    criteris: "{% static 'classificacions/sections/desempat/criteris.png' %}",
+  };
+
+  function desempatIconHTML(key) {
+    const src = (window.DESEMPAT_ICON_URLS || {})[String(key || "").trim()];
+    if (!src) return "";
+    return `<span class="classif-panel-icon puntuacio-step-card__icon" aria-hidden="true"><img src="${esc(src)}" alt=""></span>`;
+  }
+
   function normalizeContextCode(raw) {
     return String(raw || "native").trim() || "native";
   }
@@ -54,6 +86,7 @@
 
   function normalizeTieExerciseSelectionScope(raw) {
     const scope = String(raw || "").trim().toLowerCase();
+    if (scope === "team_pool_flat" || scope === "team_pool_per_exercici") return EXERCISE_SELECTION_SCOPE_TEAM_POOL;
     if ([EXERCISE_SELECTION_SCOPE_INHERIT, EXERCISE_SELECTION_SCOPE_PER_MEMBER, EXERCISE_SELECTION_SCOPE_TEAM_POOL].includes(scope)) return scope;
     return EXERCISE_SELECTION_SCOPE_INHERIT;
   }
@@ -148,6 +181,52 @@
         []
       ),
     };
+  }
+
+  function typeLabel(tipus) {
+    const value = String(tipus || "individual").trim();
+    if (value === "equips") return "Equips";
+    if (value === "entitat") return "Per entitat";
+    return "Individual";
+  }
+
+  function teamModeLabel(mode) {
+    const value = normalizeTeamMode(mode);
+    if (value === TEAM_MODE_NATIVE) return "Nativa d'equip";
+    if (value === TEAM_MODE_DERIVED) return "Derivada d'individual";
+    return "";
+  }
+
+  function contextLabelFromCode(code) {
+    const clean = normalizeContextCode(code);
+    const contexts = Array.isArray(EQUIP_CONTEXTS) ? EQUIP_CONTEXTS : [];
+    const ctx = contexts.find(item => normalizeContextCode(item.code || item.value || item.id) === clean);
+    return String(ctx?.label || ctx?.nom || ctx?.name || clean || "native");
+  }
+
+  function cfgListMeta(cfg, cfgStatus) {
+    const tipus = String(cfg?.tipus || "individual").trim() || "individual";
+    const schema = cfg && typeof cfg.schema === "object" && !Array.isArray(cfg.schema) ? cfg.schema : {};
+    const equips = schema.equips && typeof schema.equips === "object" && !Array.isArray(schema.equips) ? schema.equips : {};
+    const assignment = equips.assignment_source && typeof equips.assignment_source === "object" && !Array.isArray(equips.assignment_source)
+      ? equips.assignment_source
+      : {};
+    const bits = [];
+    if (tipus === "equips") {
+      bits.push(teamModeLabel(equips.team_mode || cfgStatus.effective_team_mode || "") || "Classificacio d'equips");
+      bits.push(`Context ${contextLabelFromCode(assignment.context_code || equips.context_code || "native")}`);
+    } else {
+      bits.push(typeLabel(tipus));
+    }
+    if (cfgStatus.legacy_inferred) bits.push("Legacy");
+    if (cfgStatus.is_stale) bits.push("Revisar");
+    return bits.filter(Boolean).join(" · ");
+  }
+
+  function cfgListState(cfg) {
+    if (!cfg?.activa) return { label: "Inactiva", cls: "builder-cfg-state--inactive" };
+    if (cfg.publicada !== false) return { label: "Publica", cls: "builder-cfg-state--public" };
+    return { label: "Interna", cls: "" };
   }
 
   function describeAppIds(appIds) {
@@ -285,6 +364,23 @@
     }).join("");
   }
 
+  function renderClassifMetaSummaryBadge(uiState, resolvedMode) {
+    const node = els.classifMetaSummaryBadge;
+    if (!node) return;
+    const cfg = currentCfg();
+    if (!cfg) {
+      node.style.display = "none";
+      node.textContent = "";
+      return;
+    }
+    const tip = currentTipus();
+    const text = tip === "equips"
+      ? `${teamModeLabel(resolvedMode || uiState?.effectiveTeamMode || TEAM_MODE_DERIVED) || "Classificacio d'equips"} · Context ${contextLabelFromCode(uiState?.contextCode || "native")}`
+      : typeLabel(tip);
+    node.textContent = text;
+    node.style.display = "";
+  }
+
   function getEquipsModeHintText(uiState) {
     const cap = uiState && uiState.contextCapability ? uiState.contextCapability : null;
     if (uiState && uiState.tipus !== "equips") {
@@ -390,9 +486,10 @@
       els.eqTeamModeHint.textContent = shouldShow ? getEquipsModeHintText({ ...uiState, tipus: tip }) : "";
     }
 
+    renderClassifMetaSummaryBadge(uiState, resolvedMode);
     const statusItems = [];
     const typeLabel = tip === "equips" ? "Equips" : "Individual";
-    if (cfg) {
+    if (false && cfg) {
       statusItems.push({
         variant: tip === "equips" ? "info" : "secondary",
         title: "Classificació",
@@ -408,14 +505,14 @@
         text: "Aquesta classificació s'ha inferit des del format antic i es desa ja en el contracte nou.",
       });
     }
-    if (uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
+    if (false && uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
       statusItems.push({
         variant: "secondary",
         title: "Resolució",
         text: `Mode resolt el ${uiState.cfgStatus.resolved_at}.`,
       });
     }
-    if (uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
+    if (false && uiState.cfgStatus && uiState.cfgStatus.resolved_at) {
       statusItems.push({
         variant: "secondary",
         title: "Snapshot",
@@ -513,6 +610,16 @@
     if (els.fTipus) {
       els.fTipus.value = normalized;
     }
+    syncTipusChoiceButtons(normalized);
+  }
+
+  function syncTipusChoiceButtons(value) {
+    const normalized = String(value || (els.fTipus && els.fTipus.value) || "individual").trim() || "individual";
+    document.querySelectorAll("[data-classif-type-choice]").forEach(btn => {
+      const isSelected = String(btn.getAttribute("data-classif-type-choice") || "") === normalized;
+      btn.classList.toggle("is-selected", isSelected);
+      btn.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
   }
 
   function selectedTemplateId() {
@@ -648,19 +755,31 @@
       if (cfgStatus.is_stale) metaBits.push("stale");
       const metaLine = metaBits.join(" · ");
       const stateLabel = !cfg.activa ? "Inactiva" : (cfg.publicada !== false ? "Pública" : "Interna");
+      const tipus = String(cfg.tipus || "individual").trim() || "individual";
+      const typeIcon = CLASSIF_TYPE_ICON_URLS[tipus === "equips" ? "equips" : "individual"] || CLASSIF_TYPE_ICON_URLS.individual;
+      const displayMetaLine = cfgListMeta(cfg, cfgStatus);
+      const stateInfo = cfgListState(cfg);
       const disableUp = !reorderEnabled || state.reorderBusy || idx === 0;
       const disableDown = !reorderEnabled || state.reorderBusy || idx === items.length - 1;
       const moveUpTitle = disableUp ? (idx === 0 ? "Ja es la primera classificacio." : reorderTitle) : "Pujar classificacio";
       const moveDownTitle = disableDown ? (idx === items.length - 1 ? "Ja es l'ultima classificacio." : reorderTitle) : "Baixar classificacio";
-      const controlsHtml = showReorderControls ? `<div class="builder-cfg-controls">
+      const reorderButtonsHtml = showReorderControls ? `
           <button type="button" class="builder-cfg-move" data-move-dir="-1" data-cfg-move="${esc(String(cfg.id))}" aria-label="Pujar classificacio" title="${esc(moveUpTitle)}" ${disableUp ? "disabled" : ""}>&uarr;</button>
           <button type="button" class="builder-cfg-move" data-move-dir="1" data-cfg-move="${esc(String(cfg.id))}" aria-label="Baixar classificacio" title="${esc(moveDownTitle)}" ${disableDown ? "disabled" : ""}>&darr;</button>
-        </div>` : "";
+        ` : "";
+      const controlsHtml = `<div class="builder-cfg-controls">
+          ${reorderButtonsHtml}
+          <button type="button" class="builder-cfg-move builder-cfg-delete" data-cfg-delete="${esc(String(cfg.id))}" aria-label="Eliminar classificacio" title="Eliminar classificacio">&times;</button>
+        </div>`;
       row.innerHTML = `<div class="builder-cfg-row">
         <button type="button" class="builder-cfg-main" data-cfg-select="${esc(String(cfg.id))}">
-          <div class="d-flex justify-content-between">
-            <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${metaLine}</div></div>
-            <div class="small">${esc(stateLabel)}</div>
+          <div class="builder-cfg-main-layout">
+            <img class="builder-cfg-type-logo" src="${esc(typeIcon)}" alt="">
+            <div class="builder-cfg-copy">
+              <div class="builder-cfg-title">${esc(cfg.nom)}</div>
+              <div class="builder-cfg-meta">${esc(displayMetaLine)}</div>
+            </div>
+            <div class="builder-cfg-state ${esc(stateInfo.cls)}">${esc(stateInfo.label)}</div>
           </div>
         </button>
         ${controlsHtml}
@@ -669,6 +788,7 @@
       row.querySelectorAll("[data-cfg-move]").forEach(btn => {
         btn.addEventListener("click", () => moveCfgByOffset(cfg.id, Number(btn.getAttribute("data-move-dir") || 0)));
       });
+      row.querySelector("[data-cfg-delete]")?.addEventListener("click", () => deleteCfgById(cfg.id));
       els.list.appendChild(row);
     });
   }
@@ -815,29 +935,36 @@
     const selectedApps = selectedAparellIdsFromUI();
     if (els.phaseScopeRows) {
       els.phaseScopeRows.innerHTML = "";
+      document.querySelectorAll("[data-app-phase-slot]").forEach(slot => {
+        slot.innerHTML = "";
+      });
       selectedApps.forEach(appId => {
         const app = getAparellById(appId);
         const appScope = phaseScopeForApp(scope, appId);
         const row = document.createElement("div");
-        row.className = "row align-items-center mb-2";
-        const labelCol = document.createElement("div");
-        labelCol.className = "col-12 col-md-4 small font-weight-bold";
-        labelCol.textContent = app?.nom || `Aparell ${appId}`;
-        const selectCol = document.createElement("div");
-        selectCol.className = "col-12 col-md-8";
+        row.className = "classif-app-phase-control";
         const select = document.createElement("select");
-        select.className = "form-control form-control-sm";
+        const appPhaseChoices = phaseChoicesForApp(appId);
+        const selectedPhase = appScope.fase_id ? getPhaseById(appScope.fase_id) : null;
+        const showStaticImplicit = !appPhaseChoices.length && !selectedPhase;
+        const useChoiceCards = appPhaseChoices.length > 0 && appPhaseChoices.length <= 4;
+        select.className = (useChoiceCards || showStaticImplicit)
+          ? "form-control form-control-sm classif-hidden-native-select"
+          : "form-control form-control-sm classif-phase-native-select";
+        if (useChoiceCards || showStaticImplicit) {
+          select.setAttribute("aria-hidden", "true");
+          select.setAttribute("tabindex", "-1");
+        }
         select.dataset.phaseScopeApp = String(appId);
         select.innerHTML = '<option value="">Preliminar implicita</option>';
         const seen = new Set();
-        phaseChoicesForApp(appId).forEach(phase => {
+        appPhaseChoices.forEach(phase => {
           seen.add(String(phase.id));
           const opt = document.createElement("option");
           opt.value = String(phase.id);
           opt.textContent = phase.nom || `Fase ${phase.id}`;
           select.appendChild(opt);
         });
-        const selectedPhase = appScope.fase_id ? getPhaseById(appScope.fase_id) : null;
         if (selectedPhase && !seen.has(String(selectedPhase.id))) {
           const opt = document.createElement("option");
           opt.value = String(selectedPhase.id);
@@ -845,10 +972,58 @@
           select.appendChild(opt);
         }
         select.value = appScope.fase_id ? String(appScope.fase_id) : "";
-        selectCol.appendChild(select);
-        row.appendChild(labelCol);
-        row.appendChild(selectCol);
-        els.phaseScopeRows.appendChild(row);
+        row.appendChild(select);
+        const title = document.createElement("div");
+        title.className = "classif-app-phase-title";
+        title.textContent = "Fase font";
+        row.appendChild(title);
+        if (showStaticImplicit) {
+          const implicit = document.createElement("div");
+          implicit.className = "classif-app-phase-static";
+          implicit.textContent = "Preliminar implicita";
+          row.appendChild(implicit);
+        } else if (useChoiceCards) {
+          const choiceGrid = document.createElement("div");
+          choiceGrid.className = "classif-phase-choice-grid";
+          choiceGrid.setAttribute("role", "group");
+          choiceGrid.setAttribute("aria-label", `Fase font de ${app?.nom || `Aparell ${appId}`}`);
+          const choiceItems = [
+            { value: "", title: "Preliminar", desc: "Implicita" },
+            ...appPhaseChoices.map(phase => ({
+              value: String(phase.id),
+              title: phase.nom || `Fase ${phase.id}`,
+              desc: phase.comp_aparell_nom || app?.nom || "",
+            })),
+          ];
+          choiceItems.forEach(item => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `classif-type-choice classif-type-choice--compact classif-phase-choice${String(select.value || "") === item.value ? " is-selected" : ""}`;
+            btn.setAttribute("aria-pressed", String(select.value || "") === item.value ? "true" : "false");
+            btn.dataset.phaseScopeChoice = String(appId);
+            btn.dataset.value = item.value;
+            btn.innerHTML = `
+              <span>
+                <strong>${esc(item.title)}</strong>
+                <small>${esc(item.desc || "Fase font")}</small>
+              </span>
+            `;
+            btn.addEventListener("click", () => {
+              select.value = item.value;
+              choiceGrid.querySelectorAll("[data-phase-scope-choice]").forEach(node => {
+                const selected = String(node.getAttribute("data-value") || "") === String(select.value || "");
+                node.classList.toggle("is-selected", selected);
+                node.setAttribute("aria-pressed", selected ? "true" : "false");
+              });
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+            choiceGrid.appendChild(btn);
+          });
+          row.appendChild(choiceGrid);
+        }
+        const slot = document.querySelector(`[data-app-phase-slot="${String(appId)}"]`);
+        if (slot) slot.appendChild(row);
+        else els.phaseScopeRows.appendChild(row);
       });
       if (!selectedApps.length) {
         els.phaseScopeRows.innerHTML = "<div class=\"small text-muted\">Selecciona un aparell per definir l'abast.</div>";
@@ -886,7 +1061,7 @@
   function readPhaseScopeFromUI() {
     if (els.phaseScopeRows) {
       const selectedApps = selectedAparellIdsFromUI();
-      const selects = Array.from(els.phaseScopeRows.querySelectorAll("select[data-phase-scope-app]"));
+      const selects = Array.from(document.querySelectorAll("select[data-phase-scope-app]"));
       if (selectedApps.length <= 1) {
         return normalizeSinglePhaseScope({ fase_id: selects[0]?.value || "" });
       }
@@ -1175,9 +1350,12 @@
       const col = document.createElement("div");
       col.className = "col-6 col-md-4 mb-1";
       col.innerHTML = `
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${esc(a.id)}">
-          <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}${a.stale ? ' <span class="text-muted">(no disponible)</span>' : ""}</label>
+        <div class="classif-app-phase-row">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${esc(a.id)}">
+            <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}${a.stale ? ' <span class="text-muted">(no disponible)</span>' : ""}</label>
+          </div>
+          <div class="classif-app-phase-slot" data-app-phase-slot="${esc(a.id)}"></div>
         </div>`;
       els.apChkList.appendChild(col);
     });
@@ -1245,7 +1423,7 @@
     return `
       <div class="puntuacio-step-card puntuacio-step-card--fields" data-app-fields-box="${esc(compAparellId)}">
         <div class="puntuacio-step-card__head">
-          <div class="puntuacio-step-card__label">1. Camps</div>
+          <div class="puntuacio-step-card__label">${puntuacioIconHTML("camps")}<span>1. Camps</span></div>
         </div>
         <div class="puntuacio-step-card__body">
           <select class="form-control form-control-sm"
@@ -1599,6 +1777,7 @@
   function refreshTipusUI(opts = {}) {
     const cfg = currentCfg();
     const tipus = (cfg && cfg.tipus) || (els.fTipus && els.fTipus.value) || "individual";
+    syncTipusChoiceButtons(tipus);
     const isEquips = (tipus === "equips");
     const isIndividual = (tipus === "individual");
     if (els.equipMetaBox) {
@@ -1634,6 +1813,7 @@
       pruneSchemaAppReferences(cfg.schema, selectedIds);
     }
     renderAppStaleWarningBanner(cfg && cfg.schema ? cfg.schema : {}, selectedIds);
+    renderPhaseScopeSelect(cfg && cfg.schema ? cfg.schema.scope : DEFAULT_SCHEMA.scope);
     renderDerivedPartitionConfigUI(readParticionsConfigUI(), selectedParticioCodesFromUI());
     renderPuntuacioSection(cfg && cfg.schema ? cfg.schema : DEFAULT_SCHEMA);
     return selectedIds;

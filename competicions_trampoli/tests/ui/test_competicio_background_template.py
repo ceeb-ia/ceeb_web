@@ -118,6 +118,7 @@ from ...services.teams.team_series import safe_deactivate_empty_serie
 from ...views.judge.admin import _member_slot_choices, _validate_permission_row
 from ...templatetags.competicio_extras import (
     DEFAULT_COMPETITION_BACKGROUND,
+    DEFAULT_COMPETITION_WALLPAPER,
     get_competicio_background_url_from_request,
 )
 
@@ -125,41 +126,85 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
-    def _request_with_kwargs(self, kwargs, path="/competicio/1/inscripcions/"):
+    def _request_with_kwargs(self, kwargs, path="/competicio/1/inscripcions/", url_name=""):
         request = self.factory.get(path)
-        request.resolver_match = SimpleNamespace(kwargs=kwargs)
+        request.resolver_match = SimpleNamespace(kwargs=kwargs, url_name=url_name)
         return request
 
-    def test_returns_mapped_background_for_existing_type_image(self):
+    def test_returns_section_wallpaper_for_competition_route(self):
         comp = Competicio.objects.create(
             nom="Comp fons natacio",
             tipus=Competicio.Tipus.NATACIO,
         )
 
         result = get_competicio_background_url_from_request(
-            self._request_with_kwargs({"pk": comp.id})
+            self._request_with_kwargs({"pk": comp.id}, url_name="inscripcions_list")
         )
 
-        self.assertTrue(result.endswith("/static/images/natacio.jpg"))
+        self.assertTrue(result.endswith("/static/general/wallpapers/inscripcions.png"))
 
-    def test_falls_back_to_default_when_mapped_image_file_is_missing(self):
+    def test_returns_section_wallpapers_for_competition_domains(self):
+        cases = (
+            ("inscripcions_list", "inscripcions"),
+            ("fases_planner", "fases"),
+            ("rotacions_planner", "rotacions"),
+            ("classificacions_home", "classificacions"),
+            ("scoring_notes_home", "notes"),
+            ("qr_admin_home", "notes"),
+            ("qr_admin_detail", "notes"),
+            ("judge_messages_hub", "notes"),
+            ("judges_qr_home", "notes"),
+            ("judges_qr_print", "notes"),
+            ("public_live_qr_home", "notes"),
+            ("public_live_qr_print", "notes"),
+        )
+
+        for url_name, wallpaper_name in cases:
+            with self.subTest(url_name=url_name):
+                result = get_competicio_background_url_from_request(
+                    self._request_with_kwargs({}, url_name=url_name)
+                )
+
+                self.assertTrue(
+                    result.endswith(f"/static/general/wallpapers/{wallpaper_name}.png")
+                )
+
+    def test_uses_general_wallpaper_when_section_is_not_specific(self):
         comp = Competicio.objects.create(
             nom="Comp fons artistica",
             tipus=Competicio.Tipus.ARTISTICA,
         )
 
         result = get_competicio_background_url_from_request(
-            self._request_with_kwargs({"pk": comp.id})
+            self._request_with_kwargs({"pk": comp.id}, path="/competicions/created/", url_name="created")
         )
 
-        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_BACKGROUND}"))
+        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_WALLPAPER}"))
 
-    def test_falls_back_to_default_when_no_active_competicio_exists(self):
+    def test_uses_general_wallpaper_for_live_and_judge_portal_routes(self):
+        cases = (
+            "classificacions_live",
+            "classificacions_loop_live",
+            "public_live_portal",
+            "public_live_loop",
+            "judge_portal",
+            "judge_portal_assignment",
+        )
+
+        for url_name in cases:
+            with self.subTest(url_name=url_name):
+                result = get_competicio_background_url_from_request(
+                    self._request_with_kwargs({}, url_name=url_name)
+                )
+
+                self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_WALLPAPER}"))
+
+    def test_uses_general_wallpaper_when_no_active_competicio_exists(self):
         result = get_competicio_background_url_from_request(
-            self._request_with_kwargs({}, path="/competicions/created/")
+            self._request_with_kwargs({}, path="/competicions/created/", url_name="created")
         )
 
-        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_BACKGROUND}"))
+        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_WALLPAPER}"))
 
     def test_falls_back_to_default_for_non_competition_route_even_with_pk(self):
         comp = Competicio.objects.create(
@@ -197,16 +242,18 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            "--ceeb-page-background-image: url('/static/images/natacio.jpg');",
+            "--ceeb-page-background-image: url('/static/general/wallpapers/inscripcions.png');",
         )
 
-    def test_base_template_uses_default_background_outside_competition_routes(self):
+    def test_base_template_uses_general_wallpaper_for_competition_home(self):
         User = get_user_model()
         user = User.objects.create_user(
             username="bg_default_user",
             password="testpass123",
             email="bg-default@example.com",
         )
+        group, _ = Group.objects.get_or_create(name="competicions_manager")
+        user.groups.add(group)
         self.client.force_login(user)
 
         response = self.client.get(reverse("created"))
@@ -214,7 +261,7 @@ class CompeticioBackgroundTemplateTagTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            f"--ceeb-page-background-image: url('/static/{DEFAULT_COMPETITION_BACKGROUND}');",
+            f"--ceeb-page-background-image: url('/static/{DEFAULT_COMPETITION_WALLPAPER}');",
         )
 
 

@@ -45,9 +45,12 @@ from ..views.inscripcions.groups import (
 )
 from ..views.inscripcions.listing import (
     InscripcionsListNewView,
+    inscripcions_baixes_export,
+    inscripcions_clear_baixa,
     inscripcions_save_birth_year_range_config,
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
     inscripcions_set_aparells as inscripcions_set_aparells_new,
+    inscripcions_set_baixa,
     inscripcions_set_group_name as inscripcions_set_group_name_new,
 )
 from ..views.inscripcions.media import (
@@ -86,6 +89,10 @@ from ..views.inscripcions.team_series import (
     series_unassign,
     series_work_sheet_export,
     series_workspace,
+)
+from ..views.inscripcions.team_series_creation import (
+    series_create_many,
+    series_creation_preview,
 )
 
 
@@ -311,6 +318,21 @@ urlpatterns = [
         name="inscripcions_set_aparells",
     ),
     path(
+        "competicio/<int:pk>/inscripcions/set-baixa/",
+        competition_view(inscripcions_set_baixa, "inscripcions.edit"),
+        name="inscripcions_set_baixa",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/clear-baixa/",
+        competition_view(inscripcions_clear_baixa, "inscripcions.edit"),
+        name="inscripcions_clear_baixa",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/baixes.xlsx",
+        competition_view(inscripcions_baixes_export, "inscripcions.view"),
+        name="inscripcions_baixes_export",
+    ),
+    path(
         "competicio/<int:pk>/inscripcions/media/upload/",
         competition_view(inscripcions_media_upload, "inscripcions.edit"),
         name="inscripcions_media_upload",
@@ -434,6 +456,16 @@ urlpatterns = [
         "competicio/<int:pk>/inscripcions/series-equips/preview/",
         competition_view(series_preview, "inscripcions.view"),
         name="inscripcions_series_equips_preview",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/series-equips/creation-preview/",
+        competition_view(series_creation_preview, "inscripcions.view"),
+        name="inscripcions_series_equips_creation_preview",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/series-equips/create-many/",
+        competition_view(series_create_many, "inscripcions.edit"),
+        name="inscripcions_series_equips_create_many",
     ),
     path(
         "competicio/<int:pk>/inscripcions/series-equips/create/",

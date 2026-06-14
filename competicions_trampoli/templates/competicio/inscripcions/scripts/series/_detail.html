@@ -1,0 +1,581 @@
+  function normalizeDetailSubjectFilters(raw) {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    return {
+      q: String(data.q || '').trim(),
+      contexts: uniqueSortedStrings(data.contexts),
+    };
+  }
+
+  function detailSubjectFiltersAreActive(filters = state.detailFilters) {
+    const current = normalizeDetailSubjectFilters(filters);
+    return !!(current.q || current.contexts.length);
+  }
+
+  function detailSubjectMatchesFilters(subject, filters = state.detailFilters) {
+    const current = normalizeDetailSubjectFilters(filters);
+    if (current.contexts.length && !current.contexts.includes(String(subject?.context_name || '').trim())) return false;
+    if (current.q) {
+      const haystack = normalizeSearchText([
+        subject?.name,
+        subject?.label,
+        subject?.team_label,
+        subject?.context_name,
+        subject?.members_preview,
+        subject?.members_text,
+        subject?.compact_meta,
+      ].filter(Boolean).join(' '));
+      if (!haystack.includes(normalizeSearchText(current.q))) return false;
+    }
+    return true;
+  }
+
+  function buildDetailFilterOptions(subjects) {
+    return {
+      contexts: uniqueSortedStrings((Array.isArray(subjects) ? subjects : []).map((subject) => subject?.context_name)),
+    };
+  }
+
+  function setDetailFiltersToDom(filters, options) {
+    const data = normalizeDetailSubjectFilters(filters);
+    const q = document.getElementById('series-detail-subject-q');
+    if (q) q.value = data.q;
+    fillSelect(document.getElementById('series-detail-filter-context'), options?.contexts || [], data.contexts || [], 'Tots');
+  }
+
+  function readDetailFilters() {
+    return normalizeDetailSubjectFilters({
+      q: document.getElementById('series-detail-subject-q')?.value || '',
+      contexts: selectedOptionValues(document.getElementById('series-detail-filter-context')),
+    });
+  }
+
+  function seriesDetailFilterSummaryLabel(selectEl) {
+    if (!selectEl) return 'Qualsevol';
+    const selected = Array.from(selectEl.selectedOptions || []).filter((option) => String(option.value || '').trim());
+    if (selected.length === 1) return String(selected[0].textContent || selected[0].value || '').trim();
+    if (selected.length > 1) return `${selected.length} seleccionats`;
+    return 'Qualsevol';
+  }
+
+  function renderSeriesDetailFilterActiveChips() {
+    const wrap = document.getElementById('series-detail-filter-active-chips');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    let activeCount = 0;
+
+    if (state.detailFilters.q) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-series-detail-filter-search-clear', '1');
+      chip.textContent = `Cerca: ${state.detailFilters.q} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    }
+
+    const selectEl = document.getElementById('series-detail-filter-context');
+    Array.from(selectEl?.selectedOptions || []).forEach((option) => {
+      const value = String(option.value || '').trim();
+      if (!value) return;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'groups-filter-chip';
+      chip.setAttribute('data-series-detail-filter-chip-select', 'series-detail-filter-context');
+      chip.setAttribute('data-series-detail-filter-chip-value', value);
+      chip.textContent = `Context: ${String(option.textContent || value).trim()} x`;
+      frag.appendChild(chip);
+      activeCount += 1;
+    });
+
+    wrap.classList.toggle('is-empty', activeCount === 0);
+    wrap.appendChild(frag);
+  }
+
+  function renderSeriesDetailFilterPopovers() {
+    document.querySelectorAll('[data-series-detail-filter-popover]').forEach((popover) => {
+      const selectId = String(popover.getAttribute('data-select-id') || '').trim();
+      const selectEl = document.getElementById(selectId);
+      if (!selectEl) return;
+      const summary = popover.querySelector('[data-filter-summary]');
+      if (summary) summary.textContent = seriesDetailFilterSummaryLabel(selectEl);
+      popover.classList.toggle('is-active', selectedOptionValues(selectEl).length > 0);
+      const optionsWrap = popover.querySelector(`[data-filter-options-for="${selectId}"]`);
+      if (!optionsWrap) return;
+      optionsWrap.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      Array.from(selectEl.options || []).forEach((option) => {
+        const value = String(option.value || '').trim();
+        if (!value) return;
+        const label = document.createElement('label');
+        label.className = 'groups-filter-option';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'js-series-detail-filter-choice';
+        input.name = `series-detail-filter-choice-${selectId}`;
+        input.value = value;
+        input.checked = !!option.selected;
+        input.setAttribute('data-select-id', selectId);
+        const text = document.createElement('span');
+        text.textContent = String(option.textContent || value).trim();
+        label.appendChild(input);
+        label.appendChild(text);
+        frag.appendChild(label);
+      });
+      if (!frag.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'groups-filter-empty';
+        empty.textContent = 'Sense opcions disponibles.';
+        frag.appendChild(empty);
+      }
+      optionsWrap.appendChild(frag);
+    });
+    renderSeriesDetailFilterActiveChips();
+  }
+
+  function setSeriesDetailFilterValue(selectId, value, checked) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    const cleanValue = String(value || '').trim();
+    Array.from(selectEl.options || []).forEach((option) => {
+      if (String(option.value || '').trim() === cleanValue) option.selected = !!checked;
+    });
+  }
+
+  function clearSeriesDetailFilter(selectId, value = null) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    const cleanValue = value === null ? null : String(value || '').trim();
+    Array.from(selectEl.options || []).forEach((option) => {
+      if (cleanValue === null || String(option.value || '').trim() === cleanValue) option.selected = false;
+    });
+  }
+
+  function clearAllSeriesDetailFilters() {
+    const q = document.getElementById('series-detail-subject-q');
+    if (q) q.value = '';
+    clearSeriesDetailFilter('series-detail-filter-context');
+    state.detailFilters = normalizeDetailSubjectFilters();
+    saveWorkspaceState();
+    renderDetailPane();
+  }
+
+  function detailMaintenanceLabel(serie) {
+    if (serie?.is_programmed) return 'Protegida';
+    if (serie?.is_empty) return 'Desactivable';
+    return 'Amb contingut';
+  }
+
+  function addSeriesDetailMetric(summary, label, value, options = {}) {
+    const item = document.createElement('div');
+    item.className = `groups-detail-metric${options.status ? ' groups-detail-metric-status' : ''}`;
+    const copy = document.createElement('div');
+    const valueNode = document.createElement('span');
+    valueNode.className = 'groups-detail-metric-value';
+    valueNode.textContent = String(value);
+    const labelNode = document.createElement('span');
+    labelNode.className = 'groups-detail-metric-label';
+    labelNode.textContent = label;
+    copy.appendChild(valueNode);
+    copy.appendChild(labelNode);
+    item.appendChild(copy);
+    summary.appendChild(item);
+  }
+
+  async function renameSerie(serieId, nextName) {
+    const cleanId = String(serieId || '').trim();
+    const cleanName = String(nextName || '').trim();
+    if (!cleanId || !cleanName) {
+      showAlertMessage('Indica un nom per a la serie.');
+      return;
+    }
+    await runAction(renameUrl, {
+      comp_aparell_id: state.compAparellId,
+      serie_id: cleanId,
+      name: cleanName,
+    }, 'Serie renombrada.');
+    state.editingSerieIds.delete(cleanId);
+    await selectSerie(cleanId, { forceReload: true, scroll: false, openEditor: false });
+  }
+
+  function setSeriesRenameEditor(serieId, open) {
+    const cleanId = String(serieId || '').trim();
+    if (!cleanId) return;
+    if (open) state.editingSerieIds = new Set([cleanId]);
+    else state.editingSerieIds.delete(cleanId);
+    saveWorkspaceState();
+    renderDetailPane();
+  }
+
+  async function reorderSerieSubject(serie, subjects, index, direction) {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= subjects.length) return;
+    const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
+    const moved = ids.splice(index, 1)[0];
+    ids.splice(targetIndex, 0, moved);
+    await runAction(reorderUrl, {
+      comp_aparell_id: state.compAparellId,
+      serie_id: serie.id,
+      subject_ids: ids,
+    }, 'Ordre actualitzat.');
+  }
+
+  async function unassignSingleSerieSubject(subject, serie) {
+    const id = Number(subject?.subject_id || subject?.id || 0);
+    if (!id || !serie?.id) return;
+    const subjectName = String(subject?.name || subject?.label || `Unitat ${id}`).trim();
+    const serieName = String(serie?.label || serie?.name || 'aquesta serie').trim();
+    const ok = await confirmMessage(`Vols treure ${subjectName} de la serie "${serieName}"? La unitat quedara sense serie.`);
+    if (!ok) return;
+    try {
+      const data = await postJson(previewUrl, {
+        comp_aparell_id: state.compAparellId,
+        action: 'unassign',
+        selected_ids: [id],
+      });
+      setHistory(data);
+      const signature = String(data?.preview?.plan_signature || '').trim();
+      if (!signature || data?.preview?.can_run === false) {
+        showAlertMessage(data?.preview?.message || "No s'ha pogut preparar la baixa de la serie.");
+        return;
+      }
+      await runAction(unassignUrl, {
+        comp_aparell_id: state.compAparellId,
+        selected_ids: [id],
+        plan_signature: signature,
+      }, 'Unitat treta de la serie.');
+    } catch (error) {
+      showAlertMessage(error?.message || String(error));
+    }
+  }
+
+  function subjectDetailRow(subject, index, subjects, serie) {
+    const id = Number(subject?.subject_id || subject?.id || 0);
+    const row = document.createElement('div');
+    row.className = 'team-context-member-row series-detail-unit-row';
+
+    const order = document.createElement('div');
+    order.className = 'series-detail-unit-order';
+    order.textContent = String(index + 1);
+    order.title = `Ordre real ${index + 1}`;
+    row.appendChild(order);
+
+    const main = document.createElement('div');
+    main.className = 'team-context-member-main';
+
+    const title = document.createElement('div');
+    title.className = 'team-context-member-title';
+    title.textContent = String(subject?.name || subject?.label || `Unitat ${id}`);
+    main.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-context-member-meta';
+    meta.textContent = compactCandidateMeta(subject);
+    main.appendChild(meta);
+
+    row.appendChild(main);
+
+    const tools = document.createElement('div');
+    tools.className = 'series-detail-unit-tools';
+
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.className = 'btn btn-sm btn-outline-secondary series-detail-icon-btn';
+    moveUp.textContent = '^';
+    moveUp.title = 'Pujar unitat';
+    moveUp.setAttribute('aria-label', 'Pujar unitat');
+    moveUp.disabled = !editable() || index <= 0;
+    moveUp.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await reorderSerieSubject(serie, subjects, index, 'up');
+    });
+    tools.appendChild(moveUp);
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.className = 'btn btn-sm btn-outline-secondary series-detail-icon-btn';
+    moveDown.textContent = 'v';
+    moveDown.title = 'Baixar unitat';
+    moveDown.setAttribute('aria-label', 'Baixar unitat');
+    moveDown.disabled = !editable() || index >= subjects.length - 1;
+    moveDown.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await reorderSerieSubject(serie, subjects, index, 'down');
+    });
+    tools.appendChild(moveDown);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-sm btn-outline-warning series-detail-icon-btn';
+    remove.textContent = 'x';
+    remove.title = 'Treure unitat de la serie';
+    remove.setAttribute('aria-label', 'Treure unitat de la serie');
+    remove.disabled = !editable();
+    remove.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await unassignSingleSerieSubject(subject, serie);
+    });
+    tools.appendChild(remove);
+
+    row.appendChild(tools);
+    return row;
+  }
+
+  function renderDetailPane() {
+    const empty = document.getElementById('series-detail-empty');
+    const panel = document.getElementById('series-detail-panel');
+    const title = document.getElementById('series-detail-title');
+    const meta = document.getElementById('series-detail-meta');
+    const summary = document.getElementById('series-detail-summary');
+    const actions = document.getElementById('series-detail-actions');
+    const editor = document.getElementById('series-detail-editor');
+    const nameNote = document.getElementById('series-detail-name-note');
+    const membersList = document.getElementById('series-detail-members-list');
+    const membersToolbar = document.getElementById('series-detail-members-toolbar');
+    const filterCount = document.getElementById('series-detail-filter-count');
+    if (!empty || !panel || !title || !meta || !summary || !actions || !editor || !nameNote || !membersList) return;
+
+    const summaryRow = getCurrentSelectedSerieSummary();
+    const serieId = String(summaryRow?.id || state.selectedSerieId || '').trim();
+    const detail = state.detailCache[serieId] || null;
+    const loading = !!(serieId && state.loadingSerieIds.has(serieId));
+    const serie = detail || summaryRow;
+
+    if (!serieId || !serie) {
+      empty.classList.remove('d-none');
+      panel.classList.add('d-none');
+      empty.textContent = "Selecciona una serie del board per veure'n el detall sense deformar la graella.";
+      membersList.innerHTML = '';
+      if (membersToolbar) membersToolbar.classList.add('d-none');
+      return;
+    }
+
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    const subjectsCount = Number(serie?.subjects_count || subjects.length || 0);
+    const detailFiltersActive = detailSubjectFiltersAreActive();
+    const filteredSubjects = subjects
+      .map((subject, index) => ({ subject, index }))
+      .filter((row) => detailSubjectMatchesFilters(row.subject));
+    const editing = state.editingSerieIds.has(serieId);
+
+    empty.classList.add('d-none');
+    panel.classList.remove('d-none');
+
+    title.textContent = String(serie?.label || `Serie ${serie?.display_num || ''}`);
+    meta.textContent = [
+      serie?.display_num ? `Serie ${serie.display_num}` : '',
+      `${subjectsCount} unitat${subjectsCount === 1 ? '' : 's'}`,
+      serie?.is_programmed ? 'Programada' : 'Fora de programa',
+      loading ? 'Carregant detall...' : '',
+    ].filter(Boolean).join(' | ') || 'Sense dades';
+
+    summary.innerHTML = '';
+    addSeriesDetailMetric(summary, 'unitats', subjectsCount);
+    addSeriesDetailMetric(summary, 'contingut', serie?.is_empty ? 'Buida' : 'Amb unitats', { status: true });
+    addSeriesDetailMetric(summary, 'programa', serie?.is_programmed ? 'Programada' : 'Fora de programa', { status: true });
+    addSeriesDetailMetric(summary, 'manteniment', detailMaintenanceLabel(serie), { status: true });
+
+    actions.innerHTML = '';
+
+    const refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.className = 'btn btn-sm btn-outline-dark';
+    refresh.textContent = loading ? 'Carregant...' : 'Refrescar detall';
+    refresh.addEventListener('click', async () => {
+      await selectSerie(serieId, { forceReload: true });
+    });
+    actions.appendChild(refresh);
+
+    const actionsMenu = document.createElement('details');
+    actionsMenu.className = 'groups-existing-actions-menu groups-detail-actions-menu series-detail-actions-menu';
+    const menuTrigger = document.createElement('summary');
+    menuTrigger.className = 'groups-existing-actions-trigger';
+    menuTrigger.setAttribute('aria-label', 'Accions de la serie');
+    menuTrigger.textContent = '...';
+    actionsMenu.appendChild(menuTrigger);
+    const popover = document.createElement('div');
+    popover.className = 'groups-existing-actions-popover groups-detail-actions-popover';
+    actionsMenu.appendChild(popover);
+    actions.appendChild(actionsMenu);
+
+    const assign = document.createElement('button');
+    assign.type = 'button';
+    assign.className = 'groups-existing-action-item';
+    assign.textContent = 'Assignar seleccio';
+    assign.disabled = !editable();
+    assign.addEventListener('click', async () => {
+      actionsMenu.removeAttribute('open');
+      await previewAssignSelection(serieId);
+    });
+    popover.appendChild(assign);
+
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'groups-existing-action-item';
+    rename.textContent = editing ? 'Renombrant...' : 'Renombrar';
+    rename.disabled = !editable();
+    rename.addEventListener('click', () => {
+      actionsMenu.removeAttribute('open');
+      setSeriesRenameEditor(serieId, true);
+      requestAnimationFrame(() => {
+        const input = document.querySelector(`[data-series-name-input="${CSS.escape(serieId)}"]`);
+        input?.focus();
+        input?.select?.();
+      });
+    });
+    popover.appendChild(rename);
+
+    const workSheet = document.createElement('button');
+    workSheet.type = 'button';
+    workSheet.className = 'groups-existing-action-item';
+    workSheet.textContent = 'Exportar full de treball';
+    workSheet.addEventListener('click', () => {
+      actionsMenu.removeAttribute('open');
+      window.location.href = exportUrl(workSheetExportUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
+      });
+    });
+    popover.appendChild(workSheet);
+
+    if (editable() && serie?.is_empty && !serie?.is_programmed) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'groups-existing-action-item groups-existing-action-danger';
+      remove.textContent = 'Previsualitzar baixa';
+      remove.addEventListener('click', async () => {
+        actionsMenu.removeAttribute('open');
+        await previewDeleteSerie(serie.id);
+      });
+      popover.appendChild(remove);
+    }
+
+    editor.innerHTML = '';
+    editor.classList.toggle('d-none', !editing);
+    if (editing) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-control form-control-sm';
+      input.value = String(serie?.name || '');
+      input.setAttribute('data-series-name-input', serieId);
+      input.placeholder = 'Nom de la serie';
+      editor.appendChild(input);
+
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn btn-sm btn-primary';
+      save.setAttribute('data-series-save-name', serieId);
+      save.textContent = 'Desar';
+      editor.appendChild(save);
+
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn-sm btn-light';
+      cancel.setAttribute('data-series-cancel-name', serieId);
+      cancel.textContent = 'Cancel.lar';
+      editor.appendChild(cancel);
+    }
+
+    nameNote.textContent = serie?.name ? `Nom actual: ${serie.name}` : 'Sense nom explicit';
+
+    if (membersToolbar) {
+      membersToolbar.classList.toggle('d-none', !subjects.length && !detailFiltersActive);
+      setDetailFiltersToDom(state.detailFilters, buildDetailFilterOptions(subjects));
+      state.detailFilters = readDetailFilters();
+      renderSeriesDetailFilterPopovers();
+    }
+    if (filterCount) {
+      filterCount.textContent = detailFiltersActive
+        ? `${filteredSubjects.length} de ${subjectsCount} unitats`
+        : `${subjectsCount} unitats`;
+    }
+
+    membersList.innerHTML = '';
+    if (loading && !detail) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'team-context-drop-placeholder';
+      placeholder.textContent = 'Carregant detall de la serie...';
+      membersList.appendChild(placeholder);
+      return;
+    }
+    if (!subjects.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'team-context-drop-placeholder';
+      placeholder.textContent = "Serie buida. Selecciona equips i assigna'ls a aquesta serie.";
+      membersList.appendChild(placeholder);
+      return;
+    }
+    if (!filteredSubjects.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'team-context-drop-placeholder';
+      placeholder.textContent = 'Cap unitat de la serie coincideix amb els filtres del detall.';
+      membersList.appendChild(placeholder);
+      return;
+    }
+
+    filteredSubjects.forEach((row) => {
+      membersList.appendChild(subjectDetailRow(row.subject, row.index, subjects, serie));
+    });
+  }
+
+  async function loadSerieDetail(serieId, options = {}) {
+    const cleanId = String(serieId || '').trim();
+    if (!cleanId) return null;
+    try {
+      const data = await postJson(detailUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: cleanId,
+      });
+      setHistory(data);
+      state.detailCache[cleanId] = data?.serie || data;
+      return state.detailCache[cleanId];
+    } catch (error) {
+      delete state.detailCache[cleanId];
+      if (options.showError !== false) showAlertMessage(error?.message || String(error));
+      return null;
+    } finally {
+      state.loadingSerieIds.delete(cleanId);
+    }
+  }
+
+  async function ensureSelectedSerieDetail() {
+    const cleanId = String(state.selectedSerieId || '').trim();
+    if (!cleanId || state.detailCache[cleanId] || state.loadingSerieIds.has(cleanId)) {
+      renderDetailPane();
+      return;
+    }
+    state.loadingSerieIds.add(cleanId);
+    renderCards(state.workspace);
+    renderDetailPane();
+    await loadSerieDetail(cleanId, { showError: true });
+    renderCards(state.workspace);
+    renderDetailPane();
+  }
+
+  async function selectSerie(serieId, options = {}) {
+    const cleanId = String(serieId || '').trim();
+    if (!cleanId) return null;
+    openWorkspaceCard();
+    if (cleanId !== String(state.selectedSerieId || '').trim()) {
+      state.detailFilters = normalizeDetailSubjectFilters();
+      state.editingSerieIds = new Set();
+    }
+    state.selectedSerieId = cleanId;
+    state.selectedRightPaneTab = 'detail';
+    if (options.openEditor === true) state.editingSerieIds = new Set([cleanId]);
+    else if (options.openEditor === false) state.editingSerieIds.delete(cleanId);
+    saveWorkspaceState();
+    updateRightPaneTabUi();
+    markPreviewDirty();
+    renderCards(state.workspace);
+    renderDetailPane();
+    if (options.forceReload || !state.detailCache[cleanId]) {
+      state.loadingSerieIds.add(cleanId);
+      renderCards(state.workspace);
+      renderDetailPane();
+      await loadSerieDetail(cleanId, { showError: true });
+      renderCards(state.workspace);
+      renderDetailPane();
+    }
+    return state.detailCache[cleanId] || getCurrentSelectedSerieSummary();
+  }
