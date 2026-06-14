@@ -159,14 +159,14 @@ capacitat estimada per seu/franja.
 La proposta inicial es:
 
 ```text
-N = max(nombre_equips_per_franja_horaria) / 2 - 1
+N = nombre_equips_per_franja_horaria / 2
 ```
 
 Aquesta formula s'ha de tractar com a heuristica inicial, no com a veritat de
 domini. Recomanacions d'implementacio:
 
 ```text
-N = max(1, floor(N))
+N = max(1, ceil(N))
 N ha de poder ser sobreescrit per configuracio
 N ha de quedar auditat en un JSON de recursos
 ```

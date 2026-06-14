@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from calendaritzacions.domain.phases import CalendarPhase
+from calendaritzacions.domain.phases import CalendarPhase, slot_count_for_numbers
 
 
 @dataclass(frozen=True)
@@ -76,6 +76,16 @@ class GroupSpec:
     target_size: int
     phase_name: str
     numbers: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
+
+    def __post_init__(self) -> None:
+        numbers = tuple(int(number) for number in self.numbers)
+        if numbers == (1, 2, 3, 4, 5, 6, 7, 8) and self.target_size > 8:
+            numbers = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+        object.__setattr__(self, "numbers", numbers)
+
+    @property
+    def slot_count(self) -> int:
+        return slot_count_for_numbers(self.numbers)
 
 
 @dataclass(frozen=True)

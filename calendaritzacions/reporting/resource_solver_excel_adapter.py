@@ -8,9 +8,11 @@ from typing import Any
 
 import pandas as pd
 
+from calendaritzacions.domain.phases import phase_calendar, slot_count_for_numbers
 from calendaritzacions.engine.variants.resource_solver.audit import build_linkage_audit
 from calendaritzacions.engine.variants.resource_solver.types import (
     Assignment,
+    GroupSpec,
     ResourceSolverResult,
     SolverContext,
     TeamRecord,
@@ -53,9 +55,11 @@ def _build_result_tables(
     grouped_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
     group_ids_by_sheet: dict[str, set[str]] = defaultdict(set)
 
+    group_by_id = {group.group_id: group for group in context.groups}
     empty_numbers_by_group: dict[str, list[int]] = {}
-    for group_id in sorted(assignment_by_group_number, key=_natural_group_key):
-        for number in range(1, 9):
+    for group_id in sorted(group_by_id, key=_natural_group_key):
+        group = group_by_id[group_id]
+        for number in group.numbers:
             assignment = assignment_by_group_number[group_id].get(number)
             if assignment is None:
                 empty_numbers_by_group.setdefault(group_id, []).append(number)
@@ -71,6 +75,7 @@ def _build_result_tables(
                     team=team,
                     assignment=assignment,
                     context=context,
+                    group=group,
                     assignment_by_group_number=assignment_by_group_number,
                     teams_by_id=teams_by_id,
                     sheet_key=sheet_key,
@@ -102,6 +107,7 @@ def _team_row(
     team: TeamRecord,
     assignment: Assignment,
     context: SolverContext,
+    group: GroupSpec | None,
     assignment_by_group_number: dict[str, dict[int, Assignment]],
     teams_by_id: dict[str, TeamRecord],
     sheet_key: str,
@@ -113,6 +119,7 @@ def _team_row(
         assigned_number=assignment.number,
         assignment=assignment,
         context=context,
+        group=group,
         assignment_by_group_number=assignment_by_group_number,
         teams_by_id=teams_by_id,
     )
@@ -179,6 +186,7 @@ def _round_differences(
     assigned_number: int,
     assignment: Assignment,
     context: SolverContext,
+    group: GroupSpec | None,
     assignment_by_group_number: dict[str, dict[int, Assignment]],
     teams_by_id: dict[str, TeamRecord],
 ) -> list[tuple[int, str, str]]:
@@ -187,7 +195,7 @@ def _round_differences(
 
     group_assignments = assignment_by_group_number.get(assignment.group_id, {})
     differences: list[tuple[int, str, str]] = []
-    for round_index, round_matches in enumerate(context.phase, start=1):
+    for round_index, round_matches in enumerate(_calendar_for_group(group, context), start=1):
         desired = _home_away_for_number(requested_number, round_matches)
         actual = _home_away_for_number(assigned_number, round_matches)
         if desired is None or actual is None or desired == actual:
@@ -209,7 +217,7 @@ def _build_info_totals(result_tables: list[pd.DataFrame]) -> list[dict[str, Any]
         real_rows = df[df["Entitat"].astype(str) != "Descans"] if "Entitat" in df.columns else df
         group_counts = real_rows.groupby("Grup").size().tolist() if "Grup" in real_rows.columns else []
         num_groups = int(real_rows["Grup"].nunique()) if "Grup" in real_rows.columns else 0
-        num_slots = num_groups * 8
+        num_slots = int(len(df))
         num_dummies = int((df["Entitat"].astype(str) == "Descans").sum()) if "Entitat" in df.columns else 0
         info.append(
             {
@@ -364,7 +372,7 @@ def _requested_number(value: Any) -> int | None:
         number = int(float(value))
     except (TypeError, ValueError):
         return None
-    return number if 1 <= number <= 8 else None
+    return number if 1 <= number <= 10 else None
 
 
 def _request_result(original: Any, requested_number: int | None, assigned_number: int) -> str:
@@ -399,6 +407,17 @@ def _opponent_name(assignment: Assignment | None, teams_by_id: dict[str, TeamRec
         return ""
     team = teams_by_id.get(assignment.team_id)
     return team.name if team is not None else assignment.team_id
+
+
+def _calendar_for_group(group: GroupSpec | None, context: SolverContext):
+    if group is None:
+        return context.phase
+    try:
+        return phase_calendar(group.phase_name, slot_count_for_numbers(group.numbers))
+    except ValueError:
+        if max(getattr(group, "numbers", ()) or (0,)) <= 8:
+            return context.phase
+        raise
 
 
 def _natural_group_key(group_id: str) -> tuple[str, int]:

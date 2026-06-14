@@ -43,6 +43,7 @@
           <dt class="col-sm-3">Motor</dt><dd class="col-sm-9">{{ run.engine_name }}</dd>
           <dt class="col-sm-3">Fase</dt><dd class="col-sm-9">{{ run.phase }}</dd>
           <dt class="col-sm-3">Linkage</dt><dd class="col-sm-9">{{ run.resource_solver_linkage_mode|default:"-" }}</dd>
+          <dt class="col-sm-3">Agrupacio</dt><dd class="col-sm-9">{{ run.resource_solver_competition_grouping|default:"auto" }}</dd>
           <dt class="col-sm-3">Components</dt><dd class="col-sm-9">{{ run.resource_solver_decomposition_mode|default:"-" }}</dd>
           <dt class="col-sm-3">Creat</dt><dd class="col-sm-9">{% if run.created_at %}{{ run.created_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>
           <dt class="col-sm-3">Inici</dt><dd class="col-sm-9">{% if run.started_at %}{{ run.started_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</dd>

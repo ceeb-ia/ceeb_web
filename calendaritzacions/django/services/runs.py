@@ -35,6 +35,7 @@ def execute_run(run: CalendarizationRun) -> CalendarizationRun:
             resource_solver_level_constraint_mode=run.resource_solver_level_constraint_mode,
             resource_solver_linkage_mode=run.resource_solver_linkage_mode,
             resource_solver_decomposition_mode=getattr(run, "resource_solver_decomposition_mode", "audit_only"),
+            resource_solver_competition_grouping=getattr(run, "resource_solver_competition_grouping", "auto"),
             progress_reporter=DjangoRunProgressReporter(task_id),
         )
         result_status = getattr(output, "status", None) if not isinstance(output, tuple) else None

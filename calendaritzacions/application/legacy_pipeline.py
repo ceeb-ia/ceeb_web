@@ -59,54 +59,6 @@ BASE_PATH = MEDIA_ROOT
 
 # De cada partit, obtenim l'equip local i visitant i mirem la seva posició a la classificació
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool=False):
     print(df.head())
     progress = progress_for_task(task_id)

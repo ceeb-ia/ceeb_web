@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import Any
 
 DECOMPOSITION_MODES = frozenset({"off", "audit_only", "persist_components", "solve_components"})
 
@@ -40,7 +41,7 @@ class ResourceSolverConfig:
     entity_excess_weight: int = 10_000
     empty_number_balance_mode: str = "hard"
     empty_number_imbalance_weight: int = 1_000
-    capacity_estimation_method: str = "floor_half_min_one"
+    capacity_estimation_method: str = "ceil_half_min_one"
     local_explanation_threshold: int = 50_000
     linkage_mode: str = "off"
     linkage_violation_weight: int = 100_000
@@ -52,6 +53,8 @@ class ResourceSolverConfig:
     phase_name: str = "primera_fase"
     max_group_size: int = 8
     min_group_size: int = 6
+    level_group_size_audit: tuple[dict[str, Any], ...] = ()
+    competition_grouping: str = "auto"
 
 
 def coerce_resource_solver_config(config: object | None = None) -> ResourceSolverConfig:
@@ -86,6 +89,13 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
             "Invalid resource_solver decomposition_mode "
             f"{decomposition_mode!r}; expected one of {sorted(DECOMPOSITION_MODES)}"
         )
+    competition_grouping = _normalize_competition_grouping(
+        getattr(
+            config,
+            "resource_solver_competition_grouping",
+            getattr(config, "competition_grouping", "auto"),
+        )
+    )
     return ResourceSolverConfig(
         phase_name=getattr(config, "phase_name", "primera_fase"),
         time_limit_seconds=float(
@@ -116,4 +126,30 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         level_a_mismatch_weight=int(getattr(config, "level_a_mismatch_weight", 1_000_000)),
         level_band_mismatch_weight=int(getattr(config, "level_band_mismatch_weight", 200_000)),
         decomposition_mode=decomposition_mode,
+        max_group_size=int(getattr(config, "max_group_size", 8)),
+        min_group_size=int(getattr(config, "min_group_size", 6)),
+        competition_grouping=competition_grouping,
     )
+
+
+def with_level_group_size_audit(config: object, audit: tuple[dict[str, Any], ...]) -> object:
+    """Return config carrying hard-level group planning audit rows."""
+
+    if isinstance(config, ResourceSolverConfig):
+        return replace(config, level_group_size_audit=audit)
+    try:
+        setattr(config, "level_group_size_audit", audit)
+    except Exception:
+        object.__setattr__(config, "level_group_size_audit", audit)
+    return config
+
+
+def _normalize_competition_grouping(value: object) -> str:
+    mode = str(value or "auto").strip().casefold()
+    if mode in {"", "auto", "default"}:
+        return "auto"
+    if mode in {"league", "lliga", "nom_lliga", "nom-lliga"}:
+        return "league"
+    if mode in {"fields", "camp", "camps", "modalitat", "modalitat_categoria_subcategoria"}:
+        return "fields"
+    return "auto"

@@ -357,6 +357,23 @@ def _finalize_run_if_components_complete(run_id: int) -> bool:
 
     write_resource_solver_workbook(str(output_path), result=result, context=context)
 
+    plot_logs: list[str] = []
+    try:
+        from calendaritzacions.reporting.resource_solver_plots import write_resource_solver_final_plots
+
+        final_plots = write_resource_solver_final_plots(
+            audit_root / "plots_final",
+            result=result,
+            context=context,
+            stem=f"resource_solver_{output_path.stem}",
+        )
+        manifest_path = final_plots.get("manifest")
+        if manifest_path:
+            standard_audit_paths["resource_solver_final_plots"] = manifest_path
+        plot_logs.append(f"resource_solver: plots finals generats={max(0, len(final_plots) - 1)}")
+    except Exception as exc:
+        plot_logs.append(f"resource_solver: plots finals no generats ({exc})")
+
     audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
     audit_paths.update(standard_audit_paths)
     merged_root = _merged_root_for_components(active_components)
@@ -370,6 +387,7 @@ def _finalize_run_if_components_complete(run_id: int) -> bool:
     )
     logs = list(run.logs or [])
     logs.extend(str(item) for item in result.logs)
+    logs.extend(plot_logs)
     logs.append(f"components: merge success components={len(active_components)} status={result.status}")
     run.mark_success(
         output_path=str(output_path),

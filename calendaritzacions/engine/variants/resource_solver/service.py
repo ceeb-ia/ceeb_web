@@ -590,7 +590,7 @@ def _competition_result_log_lines(result: Any, context: SolverContext) -> list[s
     if not summaries:
         return []
 
-    label_by_team = {team.team_id: _team_competition_label(team) for team in context.teams}
+    label_by_team = {team.team_id: _team_competition_label(team, context.config) for team in context.teams}
     label_by_group = _group_label_map(context)
     assigned_by_label = Counter()
     matches_by_label = Counter()
@@ -618,7 +618,7 @@ def _competition_result_log_lines(result: Any, context: SolverContext) -> list[s
 def _competition_summaries(context: SolverContext) -> list[dict[str, Any]]:
     teams_by_label: dict[str, list[Any]] = defaultdict(list)
     for team in context.teams:
-        teams_by_label[_team_competition_label(team)].append(team)
+        teams_by_label[_team_competition_label(team, context.config)].append(team)
 
     group_ids_by_team: dict[str, set[str]] = defaultdict(set)
     candidate_count_by_label = Counter()
@@ -627,7 +627,7 @@ def _competition_summaries(context: SolverContext) -> list[dict[str, Any]]:
         group_ids_by_team[candidate.team_id].add(candidate.group_id)
         team = team_by_id.get(candidate.team_id)
         if team is not None:
-            candidate_count_by_label[_team_competition_label(team)] += 1
+            candidate_count_by_label[_team_competition_label(team, context.config)] += 1
 
     group_by_id = {group.group_id: group for group in context.groups}
     summaries: list[dict[str, Any]] = []
@@ -667,19 +667,22 @@ def _group_label_map(context: SolverContext) -> dict[str, str]:
     for candidate in context.candidates:
         team = team_by_id.get(candidate.team_id)
         if team is not None:
-            label_by_group[candidate.group_id] = _team_competition_label(team)
+            label_by_group[candidate.group_id] = _team_competition_label(team, context.config)
     return label_by_group
 
 
-def _team_competition_label(team: Any) -> str:
+def _team_competition_label(team: Any, config: Any | None = None) -> str:
+    mode = str(getattr(config, "competition_grouping", "auto") if config is not None else "auto").strip().casefold()
+    league = str(getattr(team, "league_name", "") or "").strip()
+    if mode == "league":
+        return f"Nom Lliga: {league or 'Sense lliga'}"
     parts = [
         str(getattr(team, "modality", "") or "").strip(),
         str(getattr(team, "category", "") or "").strip(),
         str(getattr(team, "subcategory", "") or "").strip(),
     ]
-    if all(parts):
-        return " / ".join(parts)
-    league = str(getattr(team, "league_name", "") or "").strip()
+    if mode == "fields" or all(parts):
+        return " / ".join(part or "Sense valor" for part in parts)
     return f"Nom Lliga: {league or 'Sense lliga'}"
 
 
@@ -735,7 +738,7 @@ def _is_seed_number(value: str) -> bool:
         number = int(float(value))
     except (TypeError, ValueError):
         return False
-    return 1 <= number <= 8
+    return 1 <= number <= 10
 
 
 def _nunique_text(input_df: pd.DataFrame, column: str) -> int:

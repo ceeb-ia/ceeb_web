@@ -216,13 +216,73 @@ class ResourceSolverAuditTests(unittest.TestCase):
         level_band = build_level_band_audit(result, context)
 
         self.assertEqual(level_band["mode"], "aggregate")
-        self.assertEqual(level_band["summary"]["violations"], 2)
+        self.assertEqual(level_band["summary"]["violations"], 1)
+        self.assertEqual(level_band["violations"][0]["group_id"], "G1")
         self.assertEqual(
-            [violation["family"] for violation in level_band["violations"]],
+            level_band["violations"][0]["families"],
             ["level_a_mismatch", "level_band_mismatch"],
         )
-        self.assertEqual(level_band["violations"][0]["cost"], 1000)
-        self.assertEqual(level_band["violations"][1]["cost"], 100)
+        self.assertEqual(len(level_band["violations"][0]["violation_details"]), 2)
+        self.assertEqual(level_band["violations"][0]["cost"], 1100)
+        self.assertEqual(level_band["violations"][0]["dispersion"], "A -> C")
+
+    def test_solver_explanations_include_level_calendar_inevitability_check(self):
+        base = _context(
+            config=SimpleNamespace(
+                level_constraint_mode="aggregate",
+                level_a_mismatch_weight=1000,
+                level_band_mismatch_weight=100,
+                local_explanation_threshold=1000,
+            )
+        )
+        groups = (
+            GroupSpec("C1_G1", 2, 8, 2, "primera_fase"),
+            GroupSpec("C1_G2", 1, 8, 1, "primera_fase"),
+        )
+        teams = (
+            TeamRecord("T1", "Team 1", "Club A", "League", level="A"),
+            TeamRecord("T2", "Team 2", "Club B", "League", level="A"),
+            TeamRecord("T3", "Team 3", "Club C", "League", level="E"),
+        )
+        candidates = tuple(
+            Candidate(f"{team.team_id}-{group.group_id}-{number}", team.team_id, group.group_id, number, "", (), {}, ())
+            for team in teams
+            for group in groups
+            for number in (1, 2, 3)
+        )
+        context = SolverContext(
+            teams=teams,
+            phase=base.phase,
+            phase_name=base.phase_name,
+            base_resources=base.base_resources,
+            capacities=base.capacities,
+            pressure=base.pressure,
+            groups=groups,
+            candidates=candidates,
+            config=base.config,
+        )
+        result = build_solution(
+            SimpleNamespace(
+                status="FEASIBLE",
+                assignments=(
+                    Assignment("T1", "C1_G1", 1),
+                    Assignment("T3", "C1_G1", 2),
+                    Assignment("T2", "C1_G2", 1),
+                ),
+            ),
+            context,
+        )
+
+        payloads = build_audit_payloads(result=result, context=context)
+        explanations = payloads["solver_explanations"]["level_calendar_explanations"]
+
+        self.assertEqual(len(explanations), 1)
+        self.assertEqual(explanations[0]["group_id"], "C1_G1")
+        self.assertEqual(explanations[0]["dispersion"], "A -> C")
+        self.assertEqual(
+            explanations[0]["inevitability"]["status"],
+            "avoidable_in_relaxed_level_check",
+        )
 
 
 def _context(config: ResourceSolverConfig | None = None) -> SolverContext:

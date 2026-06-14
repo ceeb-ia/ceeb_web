@@ -14,3 +14,4 @@ class EngineConfig:
     resource_solver_level_constraint_mode: str = "off"
     resource_solver_linkage_mode: str = "default"
     resource_solver_decomposition_mode: str = "audit_only"
+    resource_solver_competition_grouping: str = "auto"

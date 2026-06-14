@@ -84,6 +84,7 @@ def _plot_group_sizes(result: ResourceSolverResult) -> Any | None:
     labels = [_display_group_id(summary.group_id) for summary in result.group_summary]
     sizes = [len(summary.assigned_numbers) for summary in result.group_summary]
     empty = [len(summary.empty_numbers) for summary in result.group_summary]
+    max_slots = max((size + rest for size, rest in zip(sizes, empty)), default=8)
 
     fig, ax = plt.subplots(figsize=(max(7, 0.45 * len(labels)), 4.8))
     ax.bar(labels, sizes, label="Equips", color="#4E79A7")
@@ -91,7 +92,7 @@ def _plot_group_sizes(result: ResourceSolverResult) -> Any | None:
     ax.set_title("Mida dels grups")
     ax.set_xlabel("Grup")
     ax.set_ylabel("Slots")
-    ax.set_ylim(0, 8)
+    ax.set_ylim(0, max(8, max_slots))
     ax.legend(loc="upper right")
     ax.tick_params(axis="x", rotation=45)
     return fig
@@ -230,7 +231,8 @@ def _plot_assigned_numbers_by_modality(result: ResourceSolverResult, context: So
     for ax, modality in zip(axes, modalities):
         labels = []
         values = []
-        for number in range(1, 9):
+        max_number = _max_draw_number(result, context)
+        for number in range(1, max_number + 1):
             count = counts.get((modality, number), 0)
             if count:
                 labels.append(str(number))
@@ -326,6 +328,12 @@ def _normalize_level_label(value: Any) -> str:
     if not match:
         return "Sense nivell"
     return {"A": "A", "B": "B", "C": "B-C", "D": "B-C", "E": "C"}[match.group(1)]
+
+
+def _max_draw_number(result: ResourceSolverResult, context: SolverContext) -> int:
+    from_groups = [max(getattr(group, "numbers", (8,)) or (8,)) for group in context.groups]
+    from_assignments = [int(assignment.number) for assignment in result.assignments]
+    return max([8, *from_groups, *from_assignments])
 
 
 def _group_sort_key(value: Any) -> tuple[int, str]:

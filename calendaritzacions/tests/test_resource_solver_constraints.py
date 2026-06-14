@@ -135,6 +135,32 @@ class ResourceSolverConstraintTests(unittest.TestCase):
         self.assertEqual(sum(result.entity_excess.values()), 1)
         self.assertTrue(all(key[0] == "ClubA" for key in result.entity_excess))
 
+    def test_entity_separation_relaxes_when_entity_teams_share_only_one_accessible_group(self):
+        teams = [
+            _team("A1", "ClubA"),
+            _team("A2", "ClubA"),
+            _team("B1", "ClubB"),
+            _team("C1", "ClubC"),
+        ]
+        groups = [
+            GroupSpec("G_B", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+            GroupSpec("G_C", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+        ]
+        candidates = [
+            *[_candidate(team_id, "G_C", number) for team_id in ("A1", "A2") for number in (1, 2)],
+            *[
+                _candidate(team_id, group_id, number)
+                for team_id in ("B1", "C1")
+                for group_id in ("G_B", "G_C")
+                for number in (1, 2)
+            ],
+        ]
+
+        result = solve_context(_context(teams, groups, candidates), use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        self.assertEqual(result.entity_excess, {("ClubA", "G_C"): 1})
+
     def test_capacity_ignores_rest_against_empty_number(self):
         teams = [_team("T1")]
         group = GroupSpec("G1", 1, 1, 1, "primera_fase")

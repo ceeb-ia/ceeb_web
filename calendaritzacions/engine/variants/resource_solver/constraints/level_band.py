@@ -42,7 +42,10 @@ def add_level_band_constraints(
     if not level_constraint_enabled(context):
         return
 
-    if level_constraint_mode(context) == "aggregate":
+    mode = level_constraint_mode(context)
+    if mode == "hard":
+        return
+    if mode == "aggregate":
         add_aggregate_level_band_constraints(model, variables, context, objective_terms, audit)
         return
 
@@ -154,7 +157,10 @@ def fallback_level_band_violations(
 
     if not level_constraint_enabled(context):
         return {}
-    if level_constraint_mode(context) == "aggregate":
+    mode = level_constraint_mode(context)
+    if mode == "hard":
+        return {}
+    if mode == "aggregate":
         return _fallback_aggregate_level_band_violations(context, combo)
 
     teams_by_id = {team.team_id: team for team in getattr(context, "teams", ())}

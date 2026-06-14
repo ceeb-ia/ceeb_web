@@ -5,9 +5,13 @@ from calendaritzacions.domain.normalization import normalize_seed_value, parse_i
 from calendaritzacions.domain.phases import (
     FIRST_PHASE,
     PRIMERA_FASE,
+    PRIMERA_FASE_10,
     SECOND_PHASE,
     SEGONA_FASE,
+    SEGONA_FASE_10,
     build_disposicions,
+    phase_calendar,
+    slot_count_for_numbers,
 )
 from calendaritzacions.domain.requests import (
     expected_seed,
@@ -25,6 +29,14 @@ class DomainPhaseRequestsTests(unittest.TestCase):
         self.assertTrue(all(len(jornada) == 4 for jornada in PRIMERA_FASE))
         self.assertTrue(all(len(jornada) == 4 for jornada in SEGONA_FASE))
 
+    def test_phase_calendar_resolves_supported_slot_counts(self):
+        self.assertIs(phase_calendar("primera_fase", 8), PRIMERA_FASE)
+        self.assertIs(phase_calendar("primera_fase", 10), PRIMERA_FASE_10)
+        self.assertIs(phase_calendar("segona_fase", 8), SEGONA_FASE)
+        self.assertIs(phase_calendar("segona_fase", 10), SEGONA_FASE_10)
+        self.assertEqual(slot_count_for_numbers((1, 2, 8)), 8)
+        self.assertEqual(slot_count_for_numbers(tuple(range(1, 11))), 10)
+
     def test_build_disposicions_first_phase_home_away_patterns(self):
         disposicions = build_disposicions(PRIMERA_FASE)
 
@@ -40,6 +52,14 @@ class DomainPhaseRequestsTests(unittest.TestCase):
         self.assertEqual(disposicions[0][:7], build_disposicions(PRIMERA_FASE)[0])
         self.assertEqual(disposicions[0][7:], ["fora", "casa", "fora", "casa", "fora", "casa", "fora"])
         self.assertTrue(all(len(pattern) == 14 for pattern in disposicions))
+
+    def test_build_disposicions_supports_ten_slots(self):
+        disposicions = build_disposicions(PRIMERA_FASE_10)
+
+        self.assertEqual(len(disposicions), 10)
+        self.assertTrue(all(len(pattern) == 9 for pattern in disposicions))
+        self.assertEqual(disposicions[8][0], "casa")
+        self.assertEqual(disposicions[9][0], "casa")
 
     def test_request_parsing_and_display_codes(self):
         cases = [

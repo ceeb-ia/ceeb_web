@@ -1,4 +1,5 @@
 {% extends "calendaritzacions/base.html" %}
+{% load static_extras %}
 
 {% block calendaritzacions_title %}Workspace run {{ run.id }}{% endblock %}
 
@@ -22,6 +23,9 @@
   <ul class="nav nav-tabs workspace-tabs" id="workspaceTabs" role="tablist">
     <li class="nav-item">
       <a class="nav-link active" id="workspace-summary-tab" data-toggle="tab" href="#workspace-summary" role="tab" aria-controls="workspace-summary" aria-selected="true">Resum</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="workspace-impact-tab" data-toggle="tab" href="#workspace-impact" role="tab" aria-controls="workspace-impact" aria-selected="false">Impacte <span class="badge badge-light">{{ impact_view.affected_rows|length }}</span></a>
     </li>
     <li class="nav-item">
       <a class="nav-link" id="workspace-assignments-tab" data-toggle="tab" href="#workspace-assignments" role="tab" aria-controls="workspace-assignments" aria-selected="false">Assignacions <span class="badge badge-light">{{ assignment_summaries|length }}</span></a>
@@ -143,6 +147,10 @@
         <span class="text-muted small">No hi ha artefactes d'auditoria registrats.</span>
         {% endfor %}
       </div>
+    </div>
+
+    <div class="tab-pane fade" id="workspace-impact" role="tabpanel" aria-labelledby="workspace-impact-tab">
+      {% include "calendaritzacions/partials/workspace_impact.html" %}
     </div>
 
     <div class="tab-pane fade" id="workspace-assignments" role="tabpanel" aria-labelledby="workspace-assignments-tab">
@@ -889,6 +897,7 @@
 
 {% block extra_scripts %}
 {{ block.super }}
+<script src="{% staticv 'calendaritzacions/workspace_impact.js' %}"></script>
 <script>
   (function(){
     var rows = Array.from(document.querySelectorAll('.workspace-assignment-row'));

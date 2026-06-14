@@ -57,7 +57,6 @@ def add_entity_separation_constraints(
         for team_id in competition_team_ids:
             competition_teams_by_entity[entity_by_team.get(team_id, "")].append(team_id)
 
-        num_competition_groups = len(competition_group_ids)
         for entity, team_ids in sorted(competition_teams_by_entity.items()):
             terms = [
                 variables.x[c.candidate_id]
@@ -66,7 +65,7 @@ def add_entity_separation_constraints(
                 if c.group_id == group.group_id
             ]
             count_expr = linear_sum(terms)
-            if len(team_ids) <= num_competition_groups:
+            if entity_can_be_separated(team_ids, groups_by_team, competition_group_ids):
                 model.Add(count_expr <= 1)
                 audit.count_constraint("hard_entity_separation")
                 continue
@@ -77,3 +76,50 @@ def add_entity_separation_constraints(
             objective_terms.append(("entity_excess", weight, excess))
             audit.count_constraint("soft_entity_excess")
             audit.count_objective_term("entity_excess")
+
+
+def entity_can_be_separated(
+    team_ids: list[str],
+    groups_by_team: dict[str, set[str]],
+    competition_group_ids: set[str],
+) -> bool:
+    """Return whether the entity teams can occupy distinct accessible groups."""
+
+    if len(team_ids) <= 1:
+        return True
+
+    available_by_team = {
+        team_id: sorted(groups_by_team.get(team_id, set()).intersection(competition_group_ids))
+        for team_id in team_ids
+    }
+    if any(not group_ids for group_ids in available_by_team.values()):
+        return False
+
+    match_by_group: dict[str, str] = {}
+    for team_id in sorted(team_ids, key=lambda item: len(available_by_team[item])):
+        seen: set[str] = set()
+        if not _assign_distinct_group(team_id, available_by_team, match_by_group, seen):
+            return False
+    return True
+
+
+def _assign_distinct_group(
+    team_id: str,
+    available_by_team: dict[str, list[str]],
+    match_by_group: dict[str, str],
+    seen: set[str],
+) -> bool:
+    for group_id in available_by_team.get(team_id, []):
+        if group_id in seen:
+            continue
+        seen.add(group_id)
+        matched_team_id = match_by_group.get(group_id)
+        if matched_team_id is None or _assign_distinct_group(
+            matched_team_id,
+            available_by_team,
+            match_by_group,
+            seen,
+        ):
+            match_by_group[group_id] = team_id
+            return True
+    return False
