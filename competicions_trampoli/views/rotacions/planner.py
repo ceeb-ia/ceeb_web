@@ -30,6 +30,7 @@ from ...services.rotacions.rotacions_ordering import (
     assignacio_program_units,
     get_rotacions_order_modes,
 )
+from ...services.fases.labels import program_unit_display_name
 from ...services.fases.logos import selected_logo_path_for_app
 from ...services.teams.team_series import get_programmed_series_ids, serie_label
 from ._shared import (
@@ -340,7 +341,8 @@ def rotacions_planner(request, pk):
         fase = unit.fase
         comp_aparell = fase.comp_aparell
         app_label = getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "")
-        label = f"{app_label} · {fase.nom} · {unit.nom}"
+        unit_label = program_unit_display_name(unit)
+        label = f"{app_label} · {fase.nom} · {unit_label}"
         program_item_labels[f"pu:{unit.id}"] = label
         facets = program_unit_filter_facets.get(int(unit.id), {})
         program_unit_sidebar.append({

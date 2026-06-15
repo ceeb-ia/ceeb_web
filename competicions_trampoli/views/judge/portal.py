@@ -36,6 +36,7 @@ from ...services.rotacions.rotacions_ordering import (
     rotation_unit_label,
     unique_ordered,
 )
+from ...services.fases.labels import program_unit_display_name
 from ...services.scoring.scoring_subjects import subject_entry_model
 from ...services.judging.assignments import (
     EffectiveJudgeAssignment,
@@ -45,7 +46,6 @@ from ...services.judging.assignments import (
 from ...services.scoring.notes_units import effective_exercise_count
 from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...services.scoring.phase_eligibility import (
-    is_phase_published,
     is_program_unit_scoreable,
     scoreable_slot_statuses,
     scoreable_slots_qs,
@@ -133,10 +133,7 @@ def _assignment_availability(assignment: EffectiveJudgeAssignment, phase: Compet
         unit__fase=phase,
         unit__fase__comp_aparell_id=assignment.comp_aparell_id,
     )
-    if is_phase_published(phase):
-        has_scoreable_slots = qs.exists()
-    else:
-        has_scoreable_slots = qs.filter(unit__status=ProgramUnit.Status.PUBLISHED).exists()
+    has_scoreable_slots = qs.filter(unit__status=ProgramUnit.Status.PUBLISHED).exists()
     if has_scoreable_slots:
         return {"state": "open", "label": "Obert", "is_open": True, "reason": ""}
     if phase.estat != CompeticioAparellFase.Estat.PUBLISHED:
@@ -270,7 +267,7 @@ def _phase_subjects_for_portal(competicio, comp_aparell, phase):
     for unit, slots in slots_by_unit.items():
         unit_key = f"phase:{phase.id}:unit:{unit.id}"
         unit_keys.append(unit_key)
-        unit_labels[unit_key] = unit.nom or f"Unitat {unit.ordre}"
+        unit_labels[unit_key] = program_unit_display_name(unit) or f"Unitat {unit.ordre}"
         for index, slot in enumerate(slots, start=1):
             subject = subjects_by_id.get(int(slot.subject_id))
             if subject is None:

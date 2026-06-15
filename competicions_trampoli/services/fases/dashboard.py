@@ -17,9 +17,9 @@ from ...models.rotacions import RotacioAssignacioProgramUnit
 from ..inscripcions.aparell_participation import participation_preview
 from .group_plan import structural_cut_signature
 from .logos import available_app_logos_for_competicio, selected_logo_path_for_app
+from .labels import format_partition_label, program_unit_display_name
 from .qualification import (
     QualificationError,
-    _format_partition_label,
     qualification_is_stale,
     qualification_source_changed,
 )
@@ -44,12 +44,7 @@ def _time_label(value) -> str:
 
 
 def _unit_display_name(unit: ProgramUnit) -> str:
-    name = str(getattr(unit, "nom", "") or "").strip()
-    partition_key = str(getattr(unit, "partition_key", "") or "").strip()
-    partition_label = _format_partition_label(partition_key)
-    if name and partition_key and partition_key != "global" and partition_key in name:
-        return name.replace(partition_key, partition_label)
-    return name
+    return program_unit_display_name(unit)
 
 
 def _rotacio_label(link: RotacioAssignacioProgramUnit) -> str:
@@ -100,6 +95,8 @@ def _phase_publish_blockers(phase: CompeticioAparellFase, phase_config: dict) ->
         blockers.append("revisa o regenera el pla de grups")
     if not getattr(phase, "ui_unit_count", 0):
         blockers.append("genera unitats de grups")
+    elif not getattr(phase, "ui_competitive_slot_count", 0):
+        blockers.append("omple almenys una unitat amb participants/equips")
     qualification = phase_config.get("qualification") if isinstance(phase_config.get("qualification"), dict) else {}
     if not qualification.get("run_id"):
         blockers.append("congela el snapshot")
@@ -209,7 +206,7 @@ def _decorate_slot_subjects(
         origin_parts = []
         partition = str(slot.source_particio_key or "").strip()
         if partition:
-            origin_parts.append(f"Partició: {_format_partition_label(partition)}")
+            origin_parts.append(f"Partició: {format_partition_label(partition)}")
         if slot.status != ProgramUnitSlot.Status.EMPTY:
             if seed_position and source_position and seed_position != source_position:
                 origin_parts.append(f"Posició classificació: #{source_position}")
@@ -373,6 +370,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_generated_partitions = [
             {
                 "key": state.partition_key,
+                "label": format_partition_label(state.partition_key),
                 "status": state.status,
                 "status_label": state.get_status_display(),
                 "confirmed_at": state.confirmed_at,
@@ -417,7 +415,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_display_name = _unit_display_name(unit)
             unit.ui_has_locked_slots = any(slot.locked for slot in slots)
             unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
-            unit.ui_partition_label = _format_partition_label(unit.partition_key)
+            unit.ui_partition_label = format_partition_label(unit.partition_key)
             unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
             unit.ui_formation_strategy_label = {
                 "classification_order": "Ordre de classificació",
@@ -426,8 +424,32 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
                 "random": "Aleatori",
             }.get(unit.ui_formation_strategy, "Ordre de classificació")
             unit.ui_group_plan_strategy = str(metadata.get("group_plan_strategy") or "")
+            unit.ui_status_label = {
+                ProgramUnit.Status.PLANNED: "Esborrany",
+                ProgramUnit.Status.GENERATED: "Planificada",
+                ProgramUnit.Status.CONFIRMED: "Confirmada",
+                ProgramUnit.Status.PUBLISHED: "Publicada al portal",
+            }.get(unit.status, unit.get_status_display())
+            unit.ui_status_badge_class = {
+                ProgramUnit.Status.PLANNED: "badge-light border",
+                ProgramUnit.Status.GENERATED: "badge-info",
+                ProgramUnit.Status.CONFIRMED: "badge-warning",
+                ProgramUnit.Status.PUBLISHED: "badge-success",
+            }.get(unit.status, "badge-light border")
+            unit.ui_is_confirmed = unit.status == ProgramUnit.Status.CONFIRMED
+            unit.ui_is_published = unit.status == ProgramUnit.Status.PUBLISHED
+            unit.ui_can_confirm = unit.status not in {ProgramUnit.Status.CONFIRMED, ProgramUnit.Status.PUBLISHED}
+            unit.ui_can_publish = (
+                phase.estat != CompeticioAparellFase.Estat.CLOSED
+                and not phase.ui_qualification_stale
+                and not any(state.status == FasePartitionState.Status.STALE for state in partition_states)
+                and unit.ui_competitive_slots_count > 0
+            )
         phase.ui_units = units
         phase.ui_unit_count = len(units)
+        phase.ui_generated_unit_count = sum(1 for unit in units if unit.status == ProgramUnit.Status.GENERATED)
+        phase.ui_confirmed_unit_count = sum(1 for unit in units if unit.status == ProgramUnit.Status.CONFIRMED)
+        phase.ui_published_unit_count = sum(1 for unit in units if unit.status == ProgramUnit.Status.PUBLISHED)
         phase.ui_programmed_unit_count = sum(1 for unit in units if unit.ui_is_programmed)
         phase.ui_pending_unit_count = max(0, phase.ui_unit_count - phase.ui_programmed_unit_count)
         phase.ui_filled_slot_count = sum(unit.ui_filled_slots_count for unit in units)

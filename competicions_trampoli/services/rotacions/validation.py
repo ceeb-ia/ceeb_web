@@ -5,6 +5,7 @@ from ...models.competicio import ProgramUnit, ProgramUnitSlot
 from ...models.inscripcions import GrupCompeticio
 from ...models.rotacions import RotacioAssignacio, RotacioFranja
 from ...models.scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
+from ..fases.labels import program_unit_display_name
 from .rotacions_ordering import assignacio_grups, assignacio_program_units, assignacio_series
 
 
@@ -46,7 +47,7 @@ def _labels(competicio):
         for serie in SerieEquip.objects.filter(competicio=competicio)
     }
     unit_labels = {
-        f"pu:{unit.id}": unit.nom
+        f"pu:{unit.id}": program_unit_display_name(unit)
         for unit in ProgramUnit.objects.filter(fase__competicio=competicio)
     }
     return {**group_labels, **series_labels, **unit_labels}

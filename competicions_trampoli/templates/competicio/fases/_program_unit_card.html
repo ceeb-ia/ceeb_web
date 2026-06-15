@@ -15,6 +15,7 @@
       {% else %}
         <span class="badge badge-warning">Pendent</span>
       {% endif %}
+      <span class="badge {{ unit.ui_status_badge_class|default:'badge-light border' }}">{{ unit.ui_status_label|default:unit.get_status_display }}</span>
     </div>
   </div>
 
@@ -23,6 +24,45 @@
     <span>{{ unit.ui_empty_slots_count }} buides</span>
     {% if unit.ui_programmed_labels %}
       <span>{{ unit.ui_programmed_labels|length }} franja/es</span>
+    {% endif %}
+    <span>{% if unit.ui_is_published %}Visible al portal{% else %}No visible al portal{% endif %}</span>
+    {% if unit.ui_can_confirm %}
+      <form method="post" class="phase-unit-add-slot-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="confirm_program_unit">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar</button>
+      </form>
+    {% endif %}
+    {% if unit.ui_is_published %}
+      <form
+        method="post"
+        class="phase-unit-add-slot-form"
+        data-phase-confirm-title="Retirar del portal"
+        data-phase-confirm-message="Retirar aquesta unitat del portal de jutges?"
+        data-phase-confirm-label="Retirar"
+        data-phase-confirm-tone="warning">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="unpublish_program_unit">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <button class="btn btn-sm btn-outline-warning" type="submit">Retirar</button>
+      </form>
+    {% elif unit.ui_can_publish %}
+      <form
+        method="post"
+        class="phase-unit-add-slot-form"
+        data-phase-confirm-title="Publicar unitat"
+        data-phase-confirm-message="Publicar aquesta unitat al portal de jutges?"
+        data-phase-confirm-label="Publicar"
+        data-phase-confirm-tone="warning">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="publish_program_unit">
+        <input type="hidden" name="fase_id" value="{{ phase.id }}">
+        <input type="hidden" name="unit_id" value="{{ unit.id }}">
+        <button class="btn btn-sm btn-primary" type="submit">Publicar</button>
+      </form>
     {% endif %}
     <form method="post" class="phase-unit-add-slot-form">
       {% csrf_token %}

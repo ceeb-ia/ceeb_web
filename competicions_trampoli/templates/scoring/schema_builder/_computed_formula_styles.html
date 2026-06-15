@@ -1,0 +1,102 @@
+    .formula-summary-row td {
+      cursor: pointer;
+      vertical-align: middle;
+    }
+
+    .formula-summary-row input:not([readonly]),
+    .formula-summary-row select,
+    .formula-summary-row button {
+      cursor: auto;
+    }
+
+    #computedTable tbody tr.formula-summary-row:not(.is-even),
+    #computedTable tbody tr.formula-detail-row:not(.is-even) {
+      --formula-row-bg: #ffffff;
+      --formula-row-hover-bg: #f8fafc;
+      --formula-card-bg: #ffffff;
+      --formula-card-border: #e2e8f0;
+      --formula-soft-bg: #f8fafc;
+      --formula-side-border: #e2e8f0;
+    }
+
+    #computedTable tbody tr.formula-summary-row.is-even,
+    #computedTable tbody tr.formula-detail-row.is-even {
+      --formula-row-bg: #f7f9fc;
+      --formula-row-hover-bg: #f3f6fa;
+      --formula-card-bg: #fbfcfe;
+      --formula-card-border: #dbe3ee;
+      --formula-soft-bg: #eef3f8;
+      --formula-side-border: #cbd5e1;
+    }
+
+    .formula-summary-row.is-open td {
+      border-bottom-color: transparent;
+      background: #f8fafc;
+    }
+
+    .formula-toggle-cell {
+      width: 44px;
+    }
+
+    .formula-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #334155;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .formula-summary-row.is-open .formula-toggle {
+      border-color: #93c5fd;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+
+    .formula-detail-row.d-none {
+      display: none !important;
+    }
+
+    .formula-detail-row > td {
+      padding: 0 !important;
+      border-top: 0;
+      background: var(--formula-row-bg, #f8fafc) !important;
+    }
+
+    .formula-detail-panel {
+      padding: 14px;
+      border-left: 4px solid var(--formula-side-border, #e2e8f0);
+      background: var(--formula-row-bg, #f8fafc);
+    }
+
+    .formula-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .formula-detail-grid .step-card {
+      margin-bottom: 0 !important;
+    }
+
+    .formula-single-card {
+      max-width: 980px;
+    }
+
+    .formula-preview {
+      min-width: 260px;
+      color: #334155;
+      background: #f8fafc;
+    }
+
+    @media (max-width: 1200px) {
+      .formula-detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }

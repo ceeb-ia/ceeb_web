@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Participacio - {{ comp_aparell.display_nom }}{% endblock %}
+{% block title %}Participació - {{ comp_aparell.display_nom }}{% endblock %}
 
 {% block content %}
 {% include "competicio/fases/_styles.html" %}
@@ -185,13 +185,13 @@
         <span class="phase-dashboard-title-logo" aria-hidden="true">
           <img src="{% static 'fases/aparells.png' %}" alt="">
         </span>
-        <h1>Participacio</h1>
+        <h1>Participació</h1>
       </div>
       <div class="text-muted small phase-dashboard-subtitle">
         <span class="phase-dashboard-context-main">{{ comp_aparell.display_nom }}</span>
         - {{ competicio.nom }} - {{ comp_aparell.display_codi }}
       </div>
-      <div class="phase-dashboard-stats" aria-label="Resum de participacio">
+      <div class="phase-dashboard-stats" aria-label="Resum de participació">
         <span class="phase-stat">
           <span class="phase-stat-value">{{ current_participation_preview.included_count }}</span>
           <span class="phase-stat-label">Competeixen</span>
@@ -223,7 +223,7 @@
 
     {% if is_team_app %}
       <div class="alert alert-warning">
-        Aquest panell nomes aplica a aparells individuals. Els aparells d'equip es configuren des del workspace d'equips.
+        Aquest panell només aplica a aparells individuals. Els aparells d'equip es configuren des del workspace d'equips.
       </div>
     {% endif %}
 
@@ -253,7 +253,7 @@
               <img src="{% static 'fases/status.png' %}" alt="">
               <span>Regla</span>
             </div>
-            <h6>Ultima regla aplicada</h6>
+            <h6>Última regla aplicada</h6>
           </div>
         </div>
         {% if comp_aparell.participation_config.last_applied_at %}
@@ -278,13 +278,13 @@
           <div>
             <div class="phase-summary-kicker">
               <img src="{% static 'fases/configuracio_fase.png' %}" alt="">
-              <span>Aplicacio</span>
+              <span>Aplicació</span>
             </div>
-            <h6>Aplicacio massiva</h6>
+            <h6>Aplicació massiva</h6>
           </div>
         </div>
         <div class="phase-summary-note">
-          Aplicar substitueix la participacio actual d'aquest aparell: primer elimina les exclusions existents i despres crea les noves.
+          Aplicar substitueix la participació actual d'aquest aparell: primer elimina les exclusions existents i després crea les noves.
         </div>
       </section>
     </div>
@@ -331,7 +331,7 @@
                   </select>
                 </div>
                 <div class="col-12 col-md-3">
-                  <label class="form-label small mb-1">Condicio</label>
+                  <label class="form-label small mb-1">Condició</label>
                   <select class="form-select form-select-sm" name="filter_operator">
                     {% for operator in participation_operator_choices %}
                       <option value="{{ operator.code }}" {% if row.operator == operator.code %}selected{% endif %}>{{ operator.label }}</option>
@@ -346,7 +346,7 @@
                     name="filter_values"
                     value="{{ row.values|join:', ' }}"
                     list="participation-value-list"
-                    placeholder="Un o mes valors, separats per comes">
+                    placeholder="Un o més valors, separats per comes">
                 </div>
                 <div class="col-12 col-md-1">
                   <button class="btn btn-sm btn-outline-secondary w-100 participation-clear-filter" type="button" data-participation-clear-filter title="Buida el filtre">x</button>
@@ -361,7 +361,7 @@
       {% if participation_preview %}
         <section class="phase-panel participation-preview-panel mt-3">
           <div class="phase-panel-title">
-            <h5>Previsualitzacio</h5>
+            <h5>Previsualització</h5>
             <span class="badge badge-light border">{{ participation_preview.total }} total</span>
           </div>
           <div class="phase-summary-note">
@@ -377,7 +377,7 @@
       <div class="participation-actions">
         <button class="btn btn-outline-primary" type="submit" name="intent" value="preview">Previsualitzar</button>
         <button class="btn btn-primary" type="submit" name="intent" value="apply" id="participation-apply-button" {% if is_team_app %}disabled{% endif %}>
-          Aplicar i substituir participacio
+          Aplicar i substituir participació
         </button>
       </div>
     </form>
@@ -395,8 +395,8 @@
   hidden>
   <div class="phase-confirm-head">
     <div>
-      <p class="phase-confirm-kicker">Confirmacio</p>
-      <h5 id="participation-confirm-title">Substituir participacio</h5>
+      <p class="phase-confirm-kicker">Confirmació</p>
+      <h5 id="participation-confirm-title">Substituir participació</h5>
     </div>
     <button class="btn btn-sm btn-outline-secondary" type="button" data-participation-confirm-cancel>Tancar</button>
   </div>
@@ -404,7 +404,7 @@
     <p>Aplicar aquesta regla refa totes les exclusions actuals de l'aparell. Vols continuar?</p>
   </div>
   <div class="phase-confirm-foot">
-    <button class="btn btn-sm btn-outline-secondary" type="button" data-participation-confirm-cancel>Cancel-lar</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-participation-confirm-cancel>Cancel·lar</button>
     <button class="btn btn-sm btn-warning" type="button" id="participation-confirm-accept">Aplicar regla</button>
   </div>
 </section>

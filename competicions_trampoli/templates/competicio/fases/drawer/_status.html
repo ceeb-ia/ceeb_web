@@ -6,6 +6,10 @@
   <div class="phase-panel-note mb-2">
     Controla el flux competitiu visible. La resta són avisos calculats pel sistema.
   </div>
+  <div class="phase-panel-note mb-2">
+    Portal: {{ selected_phase.ui_published_unit_count|default:0 }}/{{ selected_phase.ui_unit_count|default:0 }} unitats publicades.
+    {% if selected_phase.ui_confirmed_unit_count %} {{ selected_phase.ui_confirmed_unit_count }} confirmades pendents de publicar.{% endif %}
+  </div>
   <form method="post" class="phase-status-form">
     {% csrf_token %}
     <input type="hidden" name="action" value="update_phase_status">

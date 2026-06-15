@@ -154,10 +154,12 @@
   .classif-builder-pane {
     display: grid;
     gap: 12px;
+    min-height: 0;
     padding: 14px;
   }
 
   .classif-builder-pane--configs {
+    height: calc(100vh - 154px);
     max-height: calc(100vh - 154px);
     grid-template-rows: auto minmax(0, 1fr) auto auto;
     overflow: hidden;
@@ -190,7 +192,8 @@
   }
 
   .builder-config-list {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
     min-height: 0;
     overflow-y: auto;
@@ -199,11 +202,21 @@
   }
 
   #classif-builder-v2 .builder-config-list .list-group-item {
+    flex: 0 0 auto;
+    min-height: 84px;
     overflow: hidden;
     border: 1px solid var(--classif-neutral-border);
     border-radius: 8px;
     background: #fff;
     color: var(--classif-text-main);
+  }
+
+  #classif-builder-v2 .builder-config-list .builder-cfg-row {
+    min-height: 84px;
+  }
+
+  #classif-builder-v2 .builder-config-list .builder-cfg-main {
+    min-height: 84px;
   }
 
   #classif-builder-v2 .builder-config-list .list-group-item:hover {
@@ -577,6 +590,7 @@
     }
 
     .classif-builder-pane--configs {
+      height: auto;
       max-height: none;
       overflow: visible;
     }

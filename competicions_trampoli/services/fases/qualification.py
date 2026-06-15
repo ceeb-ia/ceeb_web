@@ -25,6 +25,7 @@ from ...services.classificacions.phase_scope import (
     PHASE_SCOPE_PER_APP,
     normalize_phase_scope_payload,
 )
+from .labels import format_partition_label
 from .program_units import SlotSubject, fill_program_unit_slots
 
 
@@ -423,19 +424,7 @@ def _rows_for_cut(result: dict, partition_mode: str) -> list[tuple[str, list[dic
 
 
 def _format_partition_label(partition_key: str) -> str:
-    key = str(partition_key or "").strip()
-    if not key or key == "global":
-        return "Global"
-    parts = []
-    for raw_part in key.split("|"):
-        part = str(raw_part or "").strip()
-        if not part:
-            continue
-        if ":" in part:
-            _field, value = part.split(":", 1)
-            part = value.strip()
-        parts.append(part)
-    return " | ".join(parts) or key
+    return format_partition_label(partition_key)
 
 
 def _format_unit_label(template: str, *, fase: CompeticioAparellFase, partition_key: str, index: int, total: int) -> str:

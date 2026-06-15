@@ -22,6 +22,7 @@
       {% endif %}
       <div class="phase-node-overview">
         <span>{{ phase.ui_unit_count }} unitats</span>
+        <span>{{ phase.ui_published_unit_count|default:0 }} publicades al portal</span>
         <span>{{ phase.ui_competitive_slot_count }}/{{ phase.ui_slot_count }} places assignades</span>
         {% if phase.ui_pending_unit_count %}
           <span>{{ phase.ui_pending_unit_count }} pendents de rotacions</span>
@@ -37,7 +38,7 @@
             method="post"
             class="phase-node-inline-form"
             data-phase-confirm-title="Publicar fase"
-            data-phase-confirm-message="Publicar la fase {{ phase.nom }}? Quedarà disponible al flux operatiu."
+            data-phase-confirm-message="Publicar la fase {{ phase.nom }} i les seves unitats preparades al portal de jutges?"
             data-phase-confirm-label="Publicar"
             data-phase-confirm-tone="warning">
             {% csrf_token %}
@@ -123,6 +124,7 @@
           </div>
           <div class="phase-summary-metrics">
             <span>{{ phase.ui_unit_count }} unitats</span>
+            <span>{{ phase.ui_published_unit_count|default:0 }} portal</span>
             <span>{{ phase.ui_competitive_slot_count }}/{{ phase.ui_slot_count }} places</span>
           </div>
         </div>
@@ -144,7 +146,7 @@
           <div class="phase-partition-strip">
             {% for partition in phase.ui_generated_partitions %}
               <div class="phase-partition-chip {% if partition.is_stale %}is-stale{% endif %}">
-                <strong>{{ partition.key }}</strong>
+                <strong>{{ partition.label|default:partition.key }}</strong>
                 <span>{{ partition.status_label }}</span>
                 {% if partition.warnings %}<span>{{ partition.warnings|length }} avisos</span>{% endif %}
               </div>

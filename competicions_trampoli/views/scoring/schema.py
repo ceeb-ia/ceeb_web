@@ -14,6 +14,7 @@ from ...models import Competicio
 from ...models.competicio import Aparell, CompeticioAparell
 from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
+from ...services.avatar.aparells.schema.messages import AVATAR_MESSAGES as SCORING_SCHEMA_AVATAR_MESSAGES
 from ...services.scoring.scoring_subjects import subject_entry_model
 from ...services.scoring.schema_resolution import (
     ensure_local_scoring_schema_for_comp_aparell,
@@ -365,6 +366,8 @@ class ScoringSchemaUpdate(UpdateView):
         ctx["schema_initial_source"] = schema_bootstrap.get("schema_initial_source") or "saved"
         ctx["schema_raw_invalid_json"] = schema_bootstrap.get("schema_raw_invalid_json") or ""
         ctx["schema_draft_storage_key"] = schema_bootstrap.get("schema_draft_storage_key") or ""
+        ctx["avatar_messages"] = SCORING_SCHEMA_AVATAR_MESSAGES
+        ctx["avatar_initial_topic"] = "welcome"
         ctx["aparell"] = self.aparell
 
         next_url = self.request.GET.get("next") or self.next_url or self.get_success_url()

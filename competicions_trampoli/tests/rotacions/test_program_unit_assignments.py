@@ -73,6 +73,20 @@ class RotacionsProgramUnitAssignmentTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(item["app_id"], self.comp_aparell.id)
         self.assertIn("Semifinal Grup A", item["label"])
 
+    def test_planner_sidebar_formats_program_unit_partition_labels(self):
+        self.unit.partition_key = "categoria:PREBENJAMÍ|subcategoria:MASCULÍ"
+        self.unit.nom = "Semifinal - categoria:PREBENJAMÍ|subcategoria:MASCULÍ"
+        self.unit.save(update_fields=["partition_key", "nom", "updated_at"])
+
+        response = self.client.get(reverse("rotacions_planner", kwargs={"pk": self.competicio.id}))
+
+        self.assertEqual(response.status_code, 200)
+        sidebar = json.loads(response.context["group_sidebar_json"])
+        item = next(entry for entry in sidebar if entry["key"] == f"pu:{self.unit.id}")
+        self.assertIn("PREBENJAMÍ | MASCULÍ", item["label"])
+        self.assertNotIn("categoria:", item["label"])
+        self.assertNotIn("subcategoria:", item["label"])
+
     def test_save_persists_program_unit_link(self):
         response = self._post_json(
             "rotacions_save",

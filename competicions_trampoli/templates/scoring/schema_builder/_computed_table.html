@@ -1,0 +1,35 @@
+        <div class="tab-pane fade" id="tab-formules" role="tabpanel">
+          <div class="schema-section-panel">
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <div class="font-weight-bold">
+                  Fórmules (camps calculats)
+                </div>
+                <div class="pill-help">
+                  Tria una <strong>funció guiada</strong> (Row/Column compute) o una <strong>fórmula manual</strong>.
+                  Les fórmules s'avaluen <strong>de dalt a baix</strong>.
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddComputed">Afegir fórmula</button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered" id="computedTable">
+                <thead class="thead-light">
+                  <tr>
+                    <th class="formula-toggle-cell"></th>
+                    <th>Etiqueta <button type="button" class="help-trigger help-trigger--inline" data-avatar-topic="formula_row_identity" aria-label="Ajuda etiqueta code i var de formula" title="Ajuda etiqueta code i var de formula">?</button></th>
+                    <th class="w-140">Code</th>
+                    <th class="w-120">Var</th>
+                    <th class="w-200">Funció</th>
+                    <th>Resum <button type="button" class="help-trigger help-trigger--inline" data-avatar-topic="formula_detail_panel" aria-label="Ajuda resum formula" title="Ajuda resum formula">?</button></th>
+                    <th class="w-120"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>

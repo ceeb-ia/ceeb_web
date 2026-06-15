@@ -152,6 +152,39 @@ class NotesPhaseEligibilityTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(table_payload["context"]["fase_id"], phase.id)
         self.assertEqual([row["subject_id"] for row in table_payload["subjects"]], [self.ins_1.id, self.ins_2.id])
 
+    def test_published_phase_does_not_expose_unpublished_unit(self):
+        phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
+        unit = self._create_unit(
+            phase,
+            [SlotSubject("inscripcio", self.ins_1.id)],
+            status=ProgramUnit.Status.CONFIRMED,
+        )
+
+        manifest = self.client.get(reverse("scoring_notes_manifest", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(manifest.status_code, 200)
+        manifest_payload = manifest.json()
+        unit_keys = {str(row["key"]) for row in manifest_payload["units"]}
+        self.assertNotIn(f"phase:{phase.id}:unit:{unit.id}", unit_keys)
+        self.assertNotIn(phase.id, [row["id"] for row in manifest_payload["phases_by_app"][str(self.comp_app.id)] if row["id"]])
+
+        response = self.client.post(
+            reverse("scoring_save_partial", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_1.id,
+                    "comp_aparell_id": self.comp_app.id,
+                    "fase_id": phase.id,
+                    "exercici": 1,
+                    "inputs_patch": {"E": 8.5},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(ScoreEntry.objects.filter(inscripcio=self.ins_1, fase=phase).exists())
+
     def test_published_team_phase_unit_loads_team_unit_subjects(self):
         comp_team_app, subject = self._create_team_app_subject()
         phase = CompeticioAparellFase.objects.create(

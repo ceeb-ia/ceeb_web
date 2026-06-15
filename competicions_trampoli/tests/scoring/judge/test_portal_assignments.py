@@ -252,14 +252,14 @@ class JudgePortalAssignmentPortalTests(_BaseTrampoliDataMixin, TestCase):
             estat=estat,
         )
 
-    def _add_phase_slot(self, phase):
+    def _add_phase_slot(self, phase, *, unit_status=ProgramUnit.Status.PUBLISHED):
         unit = ProgramUnit.objects.create(
             fase=phase,
             nom="Final unitat",
             tipus=ProgramUnit.Tipus.BLOCK,
             ordre=1,
             capacity=1,
-            status=ProgramUnit.Status.CONFIRMED,
+            status=unit_status,
         )
         ProgramUnitSlot.objects.create(
             unit=unit,
@@ -396,6 +396,34 @@ class JudgePortalAssignmentPortalTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn(f"assignment_id={assignment.id}", response.context["updates_url"])
         self.assertIn(f"assignment_id={assignment.id}", response.context["video_status_url"])
 
+    def test_phase_program_unit_group_label_formats_partition_values(self):
+        phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
+        unit = self._add_phase_slot(phase)
+        unit.partition_key = "categoria:PREBENJAMÍ|subcategoria:MASCULÍ"
+        unit.nom = "Final - categoria:PREBENJAMÍ|subcategoria:MASCULÍ"
+        unit.save(update_fields=["partition_key", "nom", "updated_at"])
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            fase=phase,
+            label="Final",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 2}],
+        )
+
+        response = self.client.get(
+            reverse(
+                "judge_portal_assignment",
+                kwargs={"token": self.token.id, "assignment_id": assignment.id},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        label = response.context["group_blocks"][0]["label"]
+        self.assertIn("PREBENJAMÍ | MASCULÍ", label)
+        self.assertNotIn("categoria:", label)
+        self.assertNotIn("subcategoria:", label)
+
     def test_pending_phase_assignment_is_blocked_on_home_and_direct_url(self):
         phase = self._create_phase(estat=CompeticioAparellFase.Estat.PLANNED)
         assignment = JudgePortalAssignment.objects.create(
@@ -418,6 +446,33 @@ class JudgePortalAssignmentPortalTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(home.status_code, 200)
         self.assertTemplateUsed(home, "judge/portal_home.html")
         self.assertContains(home, "Bloquejada")
+        self.assertNotContains(home, reverse("judge_portal_assignment", kwargs={"token": self.token.id, "assignment_id": assignment.id}))
+        self.assertEqual(direct.status_code, 403)
+        self.assertTemplateUsed(direct, "judge/portal_home.html")
+
+    def test_published_phase_assignment_waits_for_published_unit(self):
+        phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
+        self._add_phase_slot(phase, unit_status=ProgramUnit.Status.CONFIRMED)
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            fase=phase,
+            label="Final no publicada",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 2}],
+        )
+
+        home = self.client.get(reverse("judge_portal", kwargs={"token": self.token.id}))
+        direct = self.client.get(
+            reverse(
+                "judge_portal_assignment",
+                kwargs={"token": self.token.id, "assignment_id": assignment.id},
+            )
+        )
+
+        self.assertEqual(home.status_code, 200)
+        self.assertTemplateUsed(home, "judge/portal_home.html")
+        self.assertContains(home, "Pendent")
         self.assertNotContains(home, reverse("judge_portal_assignment", kwargs={"token": self.token.id, "assignment_id": assignment.id}))
         self.assertEqual(direct.status_code, 403)
         self.assertTemplateUsed(direct, "judge/portal_home.html")

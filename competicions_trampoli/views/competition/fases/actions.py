@@ -14,7 +14,7 @@ from ....forms import (
     ProgramUnitManualForm,
     ProgramUnitPartitionForm,
 )
-from ....models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit
+from ....models.competicio import CompeticioAparell, CompeticioAparellFase, ProgramUnit, ProgramUnitSlot
 from ....services.fases.group_plan import structural_cut_signature
 from ....services.fases.logos import logo_choice_paths
 from ....services.fases.planner import (
@@ -72,6 +72,12 @@ def _publish_blockers(phase) -> list[str]:
         blockers.append("revisa o regenera el pla de grups")
     if not phase.program_units.exists():
         blockers.append("genera unitats de grups")
+    elif not ProgramUnitSlot.objects.filter(
+        unit__fase=phase,
+        status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
+        subject_id__isnull=False,
+    ).exists():
+        blockers.append("omple almenys una unitat amb participants/equips")
     config = phase.config if isinstance(phase.config, dict) else {}
     qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
     if not qualification.get("run_id"):
@@ -81,6 +87,12 @@ def _publish_blockers(phase) -> list[str]:
     if phase.partition_states.filter(status="stale").exists():
         blockers.append("revisa les particions obsoletes")
     return blockers
+
+
+def _phase_snapshot_is_stale(phase) -> bool:
+    config = phase.config if isinstance(phase.config, dict) else {}
+    qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+    return bool(qualification.get("stale") or (qualification.get("run_id") and qualification_is_stale(phase)))
 
 
 def _phase_has_applied_snapshot(phase) -> bool:
@@ -94,6 +106,52 @@ def _phase_is_draft(phase) -> bool:
         CompeticioAparellFase.Estat.PUBLISHED,
         CompeticioAparellFase.Estat.CLOSED,
     }
+
+
+def _unit_has_scoreable_subjects(unit) -> bool:
+    return unit.slots.filter(
+        status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
+        subject_id__isnull=False,
+    ).exists()
+
+
+def _unit_publish_blockers(phase, unit) -> list[str]:
+    blockers = []
+    if phase.estat == CompeticioAparellFase.Estat.CLOSED:
+        blockers.append("la fase esta tancada")
+    if _phase_snapshot_is_stale(phase):
+        blockers.append("recalcula el snapshot")
+    if phase.partition_states.filter(status="stale").exists():
+        blockers.append("revisa les particions obsoletes")
+    if not _unit_has_scoreable_subjects(unit):
+        blockers.append("la unitat no te places amb participant/equip")
+    return blockers
+
+
+def _set_phase_status_after_unit_change(phase) -> None:
+    if phase.estat in {
+        CompeticioAparellFase.Estat.CLOSED,
+        CompeticioAparellFase.Estat.PUBLISHED,
+        CompeticioAparellFase.Estat.STALE,
+    }:
+        return
+    if phase.program_units.filter(status=ProgramUnit.Status.PUBLISHED).exists():
+        phase.estat = CompeticioAparellFase.Estat.PARTIALLY_CONFIRMED
+        phase.save(update_fields=["estat", "updated_at"])
+
+
+def _publish_units_for_phase(phase) -> int:
+    blockers = _publish_blockers(phase)
+    if blockers:
+        raise QualificationError("No es pot publicar encara: " + "; ".join(blockers) + ".")
+    unit_ids = [
+        unit.id
+        for unit in ProgramUnit.objects.filter(fase=phase).prefetch_related("slots").order_by("ordre", "id")
+        if _unit_has_scoreable_subjects(unit)
+    ]
+    if not unit_ids:
+        raise QualificationError("No hi ha cap unitat amb places puntuables per publicar.")
+    return ProgramUnit.objects.filter(fase=phase, id__in=unit_ids).update(status=ProgramUnit.Status.PUBLISHED)
 
 
 def phase_for_post(competicio, request):
@@ -259,14 +317,16 @@ def handle_phase_post(view, request):
                 messages.error(request, "Estat de fase no vàlid.")
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             if status == CompeticioAparellFase.Estat.PUBLISHED:
-                blockers = _publish_blockers(phase)
-                if blockers:
-                    messages.error(request, "No es pot publicar encara: " + "; ".join(blockers) + ".")
-                    return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+                published_count = _publish_units_for_phase(phase)
+            else:
+                published_count = 0
             phase.estat = status
             phase.full_clean()
             phase.save(update_fields=["estat", "updated_at"])
-            messages.success(request, f"Estat de '{phase.nom}' actualitzat.")
+            if status == CompeticioAparellFase.Estat.PUBLISHED:
+                messages.success(request, f"Fase '{phase.nom}' publicada amb {published_count} unitat/s visibles al portal.")
+            else:
+                messages.success(request, f"Estat de '{phase.nom}' actualitzat.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "configure_source_cut":
@@ -324,6 +384,37 @@ def handle_phase_post(view, request):
             unit_name = unit.nom
             unit.delete()
             messages.success(request, f"Unitat '{unit_name}' eliminada.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "confirm_program_unit":
+            unit_id = request.POST.get("unit_id")
+            unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
+            if unit.status != ProgramUnit.Status.PUBLISHED:
+                unit.status = ProgramUnit.Status.CONFIRMED
+                unit.save(update_fields=["status", "updated_at"])
+            messages.success(request, f"Unitat '{unit.nom}' confirmada. Encara no es mostra al portal.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "publish_program_unit":
+            unit_id = request.POST.get("unit_id")
+            unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
+            blockers = _unit_publish_blockers(phase, unit)
+            if blockers:
+                messages.error(request, "No es pot publicar la unitat encara: " + "; ".join(blockers) + ".")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            unit.status = ProgramUnit.Status.PUBLISHED
+            unit.save(update_fields=["status", "updated_at"])
+            _set_phase_status_after_unit_change(phase)
+            messages.success(request, f"Unitat '{unit.nom}' publicada al portal de jutges.")
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "unpublish_program_unit":
+            unit_id = request.POST.get("unit_id")
+            unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
+            if unit.status == ProgramUnit.Status.PUBLISHED:
+                unit.status = ProgramUnit.Status.CONFIRMED if _unit_has_scoreable_subjects(unit) else ProgramUnit.Status.GENERATED
+                unit.save(update_fields=["status", "updated_at"])
+            messages.success(request, f"Unitat '{unit.nom}' retirada del portal de jutges.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "add_extra_program_slot":

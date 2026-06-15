@@ -1,0 +1,137 @@
+  function computedMainRows(){
+    return document.querySelectorAll("#computedTable tbody tr[data-computed-main='1']");
+  }
+
+  function computedDetailRow(mainRow){
+    if(!mainRow) return null;
+    return mainRow._computedDetailRow || document.querySelector(`#computedTable tbody tr[data-computed-detail='1'][data-parent-id="${mainRow.dataset.id || ""}"]`);
+  }
+
+  function bindComputedRowQueries(mainRow, detailRow){
+    const nativeQuery = Element.prototype.querySelector;
+    const nativeQueryAll = Element.prototype.querySelectorAll;
+
+    mainRow.querySelector = function(selector){
+      return nativeQuery.call(mainRow, selector) || (detailRow ? nativeQuery.call(detailRow, selector) : null);
+    };
+    mainRow.querySelectorAll = function(selector){
+      const out = Array.from(nativeQueryAll.call(mainRow, selector));
+      if(detailRow) out.push(...Array.from(nativeQueryAll.call(detailRow, selector)));
+      return out;
+    };
+  }
+
+  function setComputedDetailOpen(mainRow, open){
+    const detailRow = computedDetailRow(mainRow);
+    if(!detailRow) return;
+
+    detailRow.classList.toggle("d-none", !open);
+    mainRow.classList.toggle("is-open", !!open);
+
+    const btn = mainRow.querySelector('[data-action="toggle-computed-detail"]');
+    if(btn){
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.textContent = open ? "v" : ">";
+      btn.title = open ? "Tancar configuracio" : "Obrir configuracio";
+    }
+  }
+
+  function toggleComputedDetail(mainRow){
+    const btn = mainRow?.querySelector('[data-action="toggle-computed-detail"]');
+    const isOpen = btn?.getAttribute("aria-expanded") === "true";
+    setComputedDetailOpen(mainRow, !isOpen);
+    scheduleUiStateSave();
+  }
+
+  function shouldIgnoreComputedRowToggle(target){
+    if(!target) return true;
+    const interactive = target.closest("button, select, textarea, a, label");
+    if(interactive) return true;
+    const input = target.closest("input");
+    return !!(input && input.getAttribute("data-k") !== "formula_preview");
+  }
+
+  function selectedText(mainRow, key){
+    const el = mainRow.querySelector(`[data-k="${key}"]`);
+    if(!el) return "";
+    if(el.tagName === "SELECT"){
+      return el.options[el.selectedIndex]?.textContent?.trim() || el.value || "";
+    }
+    return (el.value || "").trim();
+  }
+
+  function compactParts(parts){
+    return parts.map(part => String(part || "").trim()).filter(Boolean).join(" · ");
+  }
+
+  function shortFormulaSummary(mainRow, formula){
+    const preset = mainRow.querySelector('[data-k="preset"]')?.value || "manual";
+    if(preset === "manual"){
+      return "Manual";
+    }
+
+    if(preset === "exec_trampoli"){
+      return compactParts([selectedText(mainRow, "et_source"), "per jutge"]);
+    }
+
+    if(preset === "select_sum_guided"){
+      return compactParts([
+        selectedText(mainRow, "ss_source"),
+        selectedText(mainRow, "ss_select"),
+        selectedText(mainRow, "ss_agg"),
+      ]);
+    }
+
+    if(preset === "member_treatment_guided"){
+      return compactParts([
+        selectedText(mainRow, "mt_source"),
+        selectedText(mainRow, "mt_select"),
+        selectedText(mainRow, "mt_agg"),
+      ]);
+    }
+
+    if(preset === "row_compute" || preset === "row_agregation" || preset === "column_compute"){
+      const source = selectedText(mainRow, "rc_source");
+      const expr = selectedText(mainRow, "rc_item_expr");
+      const internalAgg = selectedText(mainRow, "rc_internal_agg");
+      const finalAgg = preset === "row_agregation" ? "" : selectedText(mainRow, "rc_final_agg");
+      return compactParts([source, expr && expr !== "x" ? expr : "", internalAgg, finalAgg]);
+    }
+
+    return formula;
+  }
+
+  function syncComputedSummary(mainRow){
+    const formula = (mainRow.querySelector('[data-k="formula"]')?.value || "").trim();
+    const preview = mainRow.querySelector('[data-k="formula_preview"]');
+    const generatedPreview = mainRow.querySelector('[data-k="formula_generated_preview"]');
+    if(preview) preview.value = shortFormulaSummary(mainRow, formula);
+    if(generatedPreview) generatedPreview.value = formula;
+  }
+
+  function syncComputedRowParity(){
+    computedMainRows().forEach((mainRow, index)=>{
+      const detailRow = computedDetailRow(mainRow);
+      const isEven = index % 2 === 1;
+      mainRow.classList.toggle("is-even", isEven);
+      if(detailRow) detailRow.classList.toggle("is-even", isEven);
+    });
+  }
+
+  function computedRowStorageKey(mainRow){
+    return (mainRow.querySelector('[data-k="code"]')?.value || "").trim() || mainRow.dataset.id || "";
+  }
+
+  function getOpenComputedCodes(){
+    return Array.from(computedMainRows())
+      .filter(row => row.classList.contains("is-open"))
+      .map(computedRowStorageKey)
+      .filter(Boolean);
+  }
+
+  function restoreComputedOpenState(openCodes){
+    const openSet = new Set((openCodes || []).map(String));
+    computedMainRows().forEach(row=>{
+      setComputedDetailOpen(row, openSet.has(computedRowStorageKey(row)));
+    });
+  }

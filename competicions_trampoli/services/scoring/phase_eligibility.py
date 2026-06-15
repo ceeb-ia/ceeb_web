@@ -20,8 +20,7 @@ def is_program_unit_published(unit: ProgramUnit) -> bool:
 
 
 def is_program_unit_scoreable(unit: ProgramUnit) -> bool:
-    fase = getattr(unit, "fase", None)
-    return is_phase_published(fase) or is_program_unit_published(unit)
+    return is_program_unit_published(unit)
 
 
 def scoreable_slot_statuses() -> set[str]:
@@ -64,8 +63,6 @@ def phase_subject_is_scoreable(
         subject_kind=kind,
         subject_id=clean_subject_id,
     )
-    if is_phase_published(fase):
-        return qs.exists()
     return qs.filter(unit__status=ProgramUnit.Status.PUBLISHED).exists()
 
 

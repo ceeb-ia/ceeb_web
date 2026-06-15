@@ -117,7 +117,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(CompeticioAparellFase.objects.filter(comp_aparell=self.comp_aparell).count(), 0)
-        self.assertContains(response, "La preliminar/default no es crea aqui")
+        self.assertContains(response, "La preliminar/default no es crea aquí")
 
     def test_aparell_list_links_to_phase_planner(self):
         response = self.client.get(reverse("trampoli_aparells_list", kwargs={"pk": self.competicio.id}))
@@ -466,7 +466,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         slot = unit.slots.get()
         self.assertEqual(slot.status, ProgramUnitSlot.Status.FILLED)
-        self.assertContains(response, "Nomes es poden buidar places mentre la fase esta en esborrany.")
+        self.assertContains(response, "Només es poden buidar places mentre la fase està en esborrany.")
 
     def test_group_plan_seeds_expected_classification_positions_on_empty_slots(self):
         phase = self._create_phase()
@@ -628,7 +628,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "#2")
         self.assertContains(response, "Reserves preview")
         self.assertContains(response, "Reserva Global")
-        self.assertContains(response, "Confirmar previsualitzacio")
+        self.assertContains(response, "Confirmar previsualització")
 
     def test_post_apply_qualification_calls_service_when_available(self):
         phase = self._create_phase()
@@ -670,7 +670,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         service.assert_called_once_with(phase, "global")
         messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("Particio 'global' confirmada per 'Semifinal'.", messages)
+        self.assertIn("Partició 'global' confirmada per 'Semifinal'.", messages)
 
     def test_planner_shows_generated_partition_confirmation_action(self):
         phase = self._create_phase()
@@ -684,7 +684,22 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="confirm_partition"')
-        self.assertContains(response, "Confirmar particio")
+        self.assertContains(response, "Confirmar partició")
+
+    def test_planner_formats_generated_partition_label(self):
+        phase = self._create_phase()
+        FasePartitionState.objects.create(
+            fase=phase,
+            partition_key="categoria:PREBENJAMÍ|subcategoria:MASCULÍ",
+            status=FasePartitionState.Status.GENERATED,
+        )
+
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "PREBENJAMÍ | MASCULÍ")
+        self.assertNotContains(response, "<strong>categoria:PREBENJAMÍ")
+        self.assertNotContains(response, "<strong>subcategoria:MASCULÍ")
 
     def test_post_apply_qualification_updates_existing_snapshot_without_checkbox(self):
         phase = self._create_phase()
@@ -770,7 +785,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(CompeticioAparellFase.objects.filter(pk=phase.id).exists())
         messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertTrue(any("Cal confirmar l'eliminacio" in message for message in messages))
+        self.assertTrue(any("Cal confirmar l'eliminació" in message for message in messages))
 
     def test_post_delete_phase_branch_blocks_programmed_descendant(self):
         phase = self._create_phase()
@@ -836,10 +851,11 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         phase.estat = CompeticioAparellFase.Estat.GENERATED
         phase.config = {"qualification": {"run_id": 123, "snapshot_hash": "stable"}}
         phase.save(update_fields=["estat", "config", "updated_at"])
-        create_program_unit_with_empty_slots(
+        inscripcio = self._create_inscripcio(self.competicio, "Semifinalista")
+        create_program_unit_from_subjects(
             fase=phase,
             nom="Semifinal Global",
-            capacity=2,
+            subjects=[SlotSubject("inscripcio", inscripcio.id)],
             tipus=ProgramUnit.Tipus.BLOCK,
         )
 
@@ -858,10 +874,11 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         phase.estat = CompeticioAparellFase.Estat.GENERATED
         phase.config = {"qualification": {"run_id": 123, "snapshot_hash": "stable"}}
         phase.save(update_fields=["estat", "config", "updated_at"])
-        create_program_unit_with_empty_slots(
+        inscripcio = self._create_inscripcio(self.competicio, "Semifinalista")
+        unit = create_program_unit_from_subjects(
             fase=phase,
             nom="Semifinal Global",
-            capacity=2,
+            subjects=[SlotSubject("inscripcio", inscripcio.id)],
             tipus=ProgramUnit.Tipus.BLOCK,
         )
 
@@ -877,7 +894,63 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 302)
         phase.refresh_from_db()
+        unit.refresh_from_db()
         self.assertEqual(phase.estat, CompeticioAparellFase.Estat.PUBLISHED)
+        self.assertEqual(unit.status, ProgramUnit.Status.PUBLISHED)
+
+    def test_post_confirm_publish_and_unpublish_program_unit(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.GENERATED
+        phase.config = {"qualification": {"run_id": 123, "snapshot_hash": "stable"}}
+        phase.save(update_fields=["estat", "config", "updated_at"])
+        inscripcio = self._create_inscripcio(self.competicio, "Finalista")
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Final unitat",
+            subjects=[SlotSubject("inscripcio", inscripcio.id)],
+            tipus=ProgramUnit.Tipus.BLOCK,
+            status=ProgramUnit.Status.GENERATED,
+        )
+
+        confirm = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "confirm_program_unit",
+                "fase_id": phase.id,
+                "unit_id": unit.id,
+            },
+        )
+
+        self.assertEqual(confirm.status_code, 302)
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, ProgramUnit.Status.CONFIRMED)
+
+        with patch("competicions_trampoli.views.competition.fases.actions.qualification_is_stale", Mock(return_value=False)):
+            publish = self.client.post(
+                self._common_planner_url(self.comp_aparell),
+                data={
+                    "action": "publish_program_unit",
+                    "fase_id": phase.id,
+                    "unit_id": unit.id,
+                },
+            )
+
+        self.assertEqual(publish.status_code, 302)
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, ProgramUnit.Status.PUBLISHED)
+
+        unpublish = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "unpublish_program_unit",
+                "fase_id": phase.id,
+                "unit_id": unit.id,
+            },
+        )
+
+        self.assertEqual(unpublish.status_code, 302)
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, ProgramUnit.Status.CONFIRMED)
 
     def test_post_update_phase_status_rejects_invalid_status(self):
         phase = self._create_phase()

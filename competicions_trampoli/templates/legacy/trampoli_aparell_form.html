@@ -547,7 +547,7 @@
           <h1 class="local-apparatus-title">{% if object %}Editar aparell{% else %}Afegir aparell{% endif %}</h1>
         </div>
         <div class="local-apparatus-subtitle">
-          <strong>{{ competicio.nom }}</strong> - Configuracio d'aparell dins la competicio.
+          <strong>{{ competicio.nom }}</strong> - Configuració d'aparell dins la competició.
         </div>
       </div>
 
@@ -567,10 +567,10 @@
 
         <div class="local-apparatus-kicker">
           <img src="{% static 'dock/fases.png' %}" alt="">
-          <span>Aparell de competicio</span>
+          <span>Aparell de competició</span>
         </div>
-        <h2 class="local-apparatus-heading">{% if object %}Actualitza la configuracio{% else %}Configura un aparell local{% endif %}</h2>
-        <p class="local-apparatus-copy">Tria l'aparell base i dona-li una identitat propia per aquesta competicio.</p>
+        <h2 class="local-apparatus-heading">{% if object %}Actualitza la configuració{% else %}Configura un aparell local{% endif %}</h2>
+        <p class="local-apparatus-copy">Tria l'aparell base i dona-li una identitat pròpia per aquesta competició.</p>
 
         {% if form.non_field_errors %}
           <div class="alert alert-danger">
@@ -613,7 +613,7 @@
         </section>
 
         <section class="local-apparatus-section">
-          <div class="local-apparatus-section-title">Format de competicio</div>
+          <div class="local-apparatus-section-title">Format de competició</div>
           <div class="local-apparatus-exercise-row">
             <div class="local-apparatus-field">
               <label for="{{ form.nombre_exercicis.id_for_label }}">{{ form.nombre_exercicis.label }}</label>
@@ -622,7 +622,7 @@
             </div>
 
             <div>
-              <label class="sr-only" id="exercise-choice-label">Nombre d'exercicis rapid</label>
+              <label class="sr-only" id="exercise-choice-label">Nombre d'exercicis ràpid</label>
               <div class="local-apparatus-exercise-options" aria-labelledby="exercise-choice-label">
                 <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="1">1</button>
                 <button class="local-apparatus-exercise-choice" type="button" data-exercise-choice="2">2</button>
@@ -644,25 +644,25 @@
         </section>
 
         <div class="local-apparatus-actions">
-          <a class="local-apparatus-btn" href="{{ request.GET.next|default:competicio_aparells_url }}">Cancel-lar</a>
+          <a class="local-apparatus-btn" href="{{ request.GET.next|default:competicio_aparells_url }}">Cancel·lar</a>
           {% if object and object.pk %}
           <a
             id="puntuacio-link"
             class="local-apparatus-btn local-apparatus-btn--warning"
             href="{% url 'scoring_schema_update' competicio.id object.id %}?next={{ request.get_full_path|urlencode }}"
-          >Puntuacio</a>
+          >Puntuació</a>
           {% else %}
           <span
             id="puntuacio-link"
             class="local-apparatus-btn local-apparatus-btn--warning is-disabled"
-            title="Desa primer l'aparell dins la competicio"
-          >Puntuacio</span>
+            title="Desa primer l'aparell dins la competició"
+          >Puntuació</span>
           {% endif %}
           <button class="local-apparatus-btn local-apparatus-btn--primary" type="submit">Desar aparell</button>
         </div>
       </form>
 
-      <aside class="local-apparatus-aside" aria-label="Previsualitzacio de l'aparell de competicio">
+      <aside class="local-apparatus-aside" aria-label="Previsualització de l'aparell de competició">
         <div class="local-apparatus-preview-card">
           <div class="local-apparatus-preview-header">
             <span class="local-apparatus-preview-code" id="localAppPreviewCode">CODI</span>
@@ -682,7 +682,7 @@
               <strong id="localAppPreviewExercises">1</strong>
             </div>
             <div class="local-apparatus-preview-chip">
-              <span>Competicio</span>
+              <span>Competició</span>
               <strong>{{ competicio.nom }}</strong>
             </div>
             <div class="local-apparatus-preview-chip">
@@ -691,7 +691,7 @@
             </div>
           </div>
         </div>
-        <p class="local-apparatus-aside-note">Despres podras ajustar puntuacio, participacio i fases des de les accions de l'aparell.</p>
+        <p class="local-apparatus-aside-note">Després podràs ajustar puntuació, participació i fases des de les accions de l'aparell.</p>
       </aside>
     </div>
   </div>
@@ -763,7 +763,7 @@
       }
       if (info.unit === "team") {
         unitLabel.textContent = "Aparell global d'equip";
-        unitHelp.textContent = "Els contexts que competeixen en aquest aparell es configuren des del workspace d'equips de la competicio.";
+        unitHelp.textContent = "Els contextos que competeixen en aquest aparell es configuren des del workspace d'equips de la competició.";
         unitIcon.textContent = "E";
         return;
       }

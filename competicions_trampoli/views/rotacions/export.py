@@ -33,6 +33,7 @@ from ...services.rotacions.rotacions_ordering import (
     rotation_unit_key,
     unique_ordered,
 )
+from ...services.fases.labels import program_unit_display_name
 from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
 from ...services.teams.team_series import serie_label
@@ -313,7 +314,7 @@ def franges_export_excel(request, pk):
         fase = getattr(unit, "fase", None)
         comp_aparell = getattr(fase, "comp_aparell", None)
         app_label = getattr(comp_aparell, "display_nom", "") or getattr(getattr(comp_aparell, "aparell", None), "nom", "")
-        return " Â· ".join(x for x in [app_label, getattr(fase, "nom", ""), getattr(unit, "nom", "")] if x)
+        return " Â· ".join(x for x in [app_label, getattr(fase, "nom", ""), program_unit_display_name(unit)] if x)
 
     def _program_cell_labels(items):
         labels = []

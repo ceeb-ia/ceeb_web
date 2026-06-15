@@ -10,7 +10,7 @@
       {% for partition in selected_phase.ui_generated_partitions %}
         <div class="phase-partition-item">
           <div>
-            <strong>{{ partition.key }}</strong>
+            <strong>{{ partition.label|default:partition.key }}</strong>
             <div class="phase-panel-note">
               {{ partition.status_label }}
               {% if partition.is_stale %} - {{ partition.stale_label }}{% endif %}
