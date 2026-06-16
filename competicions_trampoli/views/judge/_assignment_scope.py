@@ -6,6 +6,7 @@ from django.http import JsonResponse
 
 from ...models.competicio import CompeticioAparell, CompeticioAparellFase
 from ...services.judging.assignments import EffectiveJudgeAssignment, resolve_effective_assignment
+from ...services.judging.subject_scope import ensure_subject_allowed_by_scope
 from ...services.scoring.notes_units import effective_exercise_count
 from ...services.scoring.phase_eligibility import phase_subject_is_scoreable
 
@@ -24,6 +25,10 @@ class JudgeAssignmentScope:
     @property
     def permissions(self) -> list:
         return list(self.assignment.permissions or [])
+
+    @property
+    def subject_scope(self) -> dict:
+        return dict(self.assignment.subject_scope or {})
 
 
 def assignment_id_from_request(request, payload: dict | None = None):
@@ -112,6 +117,14 @@ def ensure_subject_scoreable_for_scope(scope: JudgeAssignmentScope, subject):
             "reason": "subject_not_scoreable_in_phase",
         },
         status=403,
+    )
+
+
+def ensure_subject_allowed_for_assignment(scope: JudgeAssignmentScope, subject):
+    return ensure_subject_allowed_by_scope(
+        subject,
+        scope.subject_scope,
+        competicio=scope.competicio,
     )
 
 

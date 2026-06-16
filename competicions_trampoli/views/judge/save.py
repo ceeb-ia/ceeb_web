@@ -29,6 +29,7 @@ from ...services.scoring.team_scoring import (
 from ._assignment_scope import (
     assignment_id_from_request,
     clamp_exercici_for_scope,
+    ensure_subject_allowed_for_assignment,
     ensure_subject_scoreable_for_scope,
     resolve_assignment_scope_for_request,
 )
@@ -95,6 +96,9 @@ def judge_save_partial(request, token):
     scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
     if scope_subject_error is not None:
         return scope_subject_error
+    assignment_subject_error = ensure_subject_allowed_for_assignment(scope, subject)
+    if assignment_subject_error is not None:
+        return assignment_subject_error
 
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
     team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None

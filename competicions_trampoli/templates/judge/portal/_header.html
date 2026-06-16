@@ -16,6 +16,10 @@
             <span class="judge-assignment-label">Camps puntuats</span>
             <span class="judge-assignment-values" data-perm-text></span>
           </div>
+          <div class="judge-assignment-summary mt-2">
+            <span class="judge-assignment-label">Participants</span>
+            <span class="judge-assignment-values">{{ judge_assignment_subject_scope_summary|default:"Tots els participants" }}</span>
+          </div>
         {% endif %}
 
       </div>

@@ -524,6 +524,7 @@
               <div>
                 <h2 class="judge-home-card-title">{{ card.label }}</h2>
                 <div class="judge-home-card-meta">{{ card.app_label }} · {{ card.phase_label }}</div>
+                <div class="judge-home-card-meta">{{ card.subject_scope_summary|default:"Tots els participants" }}</div>
               </div>
               <span class="judge-home-status judge-home-status--{{ card.availability.state }}">
                 {{ card.availability.label }}

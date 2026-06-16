@@ -43,6 +43,11 @@ from ...services.judging.assignments import (
     effective_assignments_for_token,
     resolve_effective_assignment,
 )
+from ...services.judging.subject_scope import (
+    filter_inscripcions_queryset_by_subject_scope,
+    filter_subject_dicts_by_subject_scope,
+    subject_scope_summary,
+)
 from ...services.scoring.notes_units import effective_exercise_count
 from ...services.inscripcions.admission import load_excluded_app_ids_by_inscripcio
 from ...services.scoring.phase_eligibility import (
@@ -185,6 +190,7 @@ def _assignment_cards(request, token_obj, assignments: list[EffectiveJudgeAssign
             "app_label": app_label,
             "phase_label": phase_label,
             "label": label,
+            "subject_scope_summary": subject_scope_summary(assignment.subject_scope, competicio=token_obj.competicio),
             "availability": availability,
             "url": _assignment_url(token_obj, assignment) if availability["is_open"] else "",
         })
@@ -219,7 +225,7 @@ def _render_judge_portal_home(request, token_obj, assignments, *, status=200, se
     )
 
 
-def _phase_subjects_for_portal(competicio, comp_aparell, phase):
+def _phase_subjects_for_portal(competicio, comp_aparell, phase, subject_scope=None):
     subject_kind = "team_unit" if is_team_context_app(comp_aparell) else "inscripcio"
     units = (
         ProgramUnit.objects
@@ -247,19 +253,23 @@ def _phase_subjects_for_portal(competicio, comp_aparell, phase):
 
     if subject_kind == "team_unit":
         registry = build_team_subject_registry(competicio, comp_aparell)
-        subjects_by_id = {int(item["subject_id"]): dict(item) for item in registry["subjects"]}
+        scoped_subjects = filter_subject_dicts_by_subject_scope(
+            [dict(item) for item in registry["subjects"]],
+            subject_scope,
+            competicio=competicio,
+        )
+        subjects_by_id = {int(item["subject_id"]): dict(item) for item in scoped_subjects}
     else:
         excluded_by_ins = load_excluded_app_ids_by_inscripcio(competicio, [comp_aparell.id])
         excluded_ins_ids = {ins_id for ins_id, app_ids in excluded_by_ins.items() if int(comp_aparell.id) in app_ids}
-        subjects_by_id = {
-            int(ins.id): ins
-            for ins in (
-                Inscripcio.objects
-                .filter(competicio=competicio, id__in=subject_ids)
-                .exclude(id__in=excluded_ins_ids)
-                .select_related("grup_competicio")
-            )
-        }
+        ins_qs = (
+            Inscripcio.objects
+            .filter(competicio=competicio, id__in=subject_ids)
+            .exclude(id__in=excluded_ins_ids)
+            .select_related("grup_competicio")
+        )
+        ins_qs = filter_inscripcions_queryset_by_subject_scope(ins_qs, subject_scope)
+        subjects_by_id = {int(ins.id): ins for ins in ins_qs}
 
     base_subjects = []
     unit_keys = []
@@ -292,6 +302,9 @@ def _phase_subjects_for_portal(competicio, comp_aparell, phase):
                     "ordre_sortida": getattr(subject, "ordre_sortida", None),
                     "group": unit_key,
                     "group_label": unit_labels[unit_key],
+                    "categoria": str(getattr(subject, "categoria", "") or "").strip(),
+                    "subcategoria": str(getattr(subject, "subcategoria", "") or "").strip(),
+                    "grup_competicio_id": int(subject.grup_competicio_id or 0),
                     "meta": "",
                 }
             base_subjects.append(item)
@@ -353,6 +366,10 @@ def judge_portal(request, token, assignment_id=None):
     _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
 
     permissions = _normalize_permissions(selected_assignment.permissions)
+    assignment_subject_scope_summary = subject_scope_summary(
+        selected_assignment.subject_scope,
+        competicio=competicio,
+    )
 
     franja_modes = get_rotacions_order_modes(competicio)
 
@@ -461,6 +478,7 @@ def judge_portal(request, token, assignment_id=None):
             competicio,
             comp_aparell,
             phase,
+            selected_assignment.subject_scope,
         )
         if team_subject_mode:
             schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, base_subjects)
@@ -470,9 +488,14 @@ def judge_portal(request, token, assignment_id=None):
         registry = build_team_subject_registry(competicio, comp_aparell)
         raw_subjects = list(registry["subjects"])
         schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, raw_subjects)
+        scoped_subjects = filter_subject_dicts_by_subject_scope(
+            raw_subjects,
+            selected_assignment.subject_scope,
+            competicio=competicio,
+        )
         base_subjects = [
             dict(item)
-            for item in raw_subjects
+            for item in scoped_subjects
             if int(comp_aparell.id) in (item.get("allowed_app_ids") or []) or item.get("invalid_reasons")
         ]
         app_name = str(getattr(comp_aparell, "display_nom", "") or getattr(comp_aparell.aparell, "nom", "") or "").strip()
@@ -492,6 +515,7 @@ def judge_portal(request, token, assignment_id=None):
             .select_related("grup_competicio")
             .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
         )
+        ins_base_qs = filter_inscripcions_queryset_by_subject_scope(ins_base_qs, selected_assignment.subject_scope)
         base_subjects = []
         for ins in ins_base_qs:
             base_subjects.append({
@@ -503,6 +527,9 @@ def judge_portal(request, token, assignment_id=None):
                 "order": get_inscripcio_competition_order(ins) or "",
                 "ordre_sortida": getattr(ins, "ordre_sortida", None),
                 "group": 0 if ins.grup_competicio_id in (None, 0) else int(ins.grup_competicio_id),
+                "categoria": str(getattr(ins, "categoria", "") or "").strip(),
+                "subcategoria": str(getattr(ins, "subcategoria", "") or "").strip(),
+                "grup_competicio_id": int(ins.grup_competicio_id or 0),
                 "meta": "",
             })
 
@@ -786,6 +813,7 @@ def judge_portal(request, token, assignment_id=None):
         "comp_aparell": comp_aparell,
         "judge_assignment": selected_assignment,
         "judge_assignment_id": selected_assignment.id,
+        "judge_assignment_subject_scope_summary": assignment_subject_scope_summary,
         "fase": phase,
         "fase_id": phase.id if phase is not None else None,
         "hide_base_chrome": True,

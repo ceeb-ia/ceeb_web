@@ -1,0 +1,79 @@
+<div class="judge-subject-scope mb-3" data-subject-scope-root>
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-3">
+      <label class="form-label small text-muted mb-1">Participants</label>
+      <select class="form-select form-select-sm" name="subject_scope_mode" data-subject-scope-mode>
+        <option value="all">Tots</option>
+        <option value="filters">Filtrar</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-9">
+      <div class="judge-subject-filterbar" data-subject-scope-filters hidden>
+        <div class="groups-filter-buttons" aria-label="Filtres de participants del QR">
+          <div class="groups-filter-popover" data-subject-scope-popover data-select-name="subject_scope_categoria" data-filter-label="Categories">
+            <select class="form-select form-select-sm groups-filter-native" name="subject_scope_categoria" multiple size="4">
+              {% for categoria in subject_scope_options.categories %}
+                <option value="{{ categoria }}">{{ categoria }}</option>
+              {% endfor %}
+            </select>
+            <details class="groups-filter-menu">
+              <summary class="groups-filter-trigger">
+                <span class="groups-filter-trigger-label">Categories</span>
+                <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+              </summary>
+              <div class="groups-filter-panel">
+                <div class="groups-filter-panel-head">
+                  <span>Categories</span>
+                  <button type="button" class="groups-filter-clear" data-subject-scope-clear>Netejar</button>
+                </div>
+                <div class="groups-filter-options" data-filter-options></div>
+              </div>
+            </details>
+          </div>
+
+          <div class="groups-filter-popover" data-subject-scope-popover data-select-name="subject_scope_subcategoria" data-filter-label="Subcategories">
+            <select class="form-select form-select-sm groups-filter-native" name="subject_scope_subcategoria" multiple size="4">
+              {% for subcategoria in subject_scope_options.subcategories %}
+                <option value="{{ subcategoria }}">{{ subcategoria }}</option>
+              {% endfor %}
+            </select>
+            <details class="groups-filter-menu">
+              <summary class="groups-filter-trigger">
+                <span class="groups-filter-trigger-label">Subcategories</span>
+                <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+              </summary>
+              <div class="groups-filter-panel">
+                <div class="groups-filter-panel-head">
+                  <span>Subcategories</span>
+                  <button type="button" class="groups-filter-clear" data-subject-scope-clear>Netejar</button>
+                </div>
+                <div class="groups-filter-options" data-filter-options></div>
+              </div>
+            </details>
+          </div>
+
+          <div class="groups-filter-popover" data-subject-scope-popover data-select-name="subject_scope_group_ids" data-filter-label="Grups">
+            <select class="form-select form-select-sm groups-filter-native" name="subject_scope_group_ids" multiple size="4">
+              {% for group in subject_scope_options.groups %}
+                <option value="{{ group.id }}">{{ group.label }}</option>
+              {% endfor %}
+            </select>
+            <details class="groups-filter-menu">
+              <summary class="groups-filter-trigger">
+                <span class="groups-filter-trigger-label">Grups</span>
+                <span class="groups-filter-trigger-summary" data-filter-summary>Qualsevol</span>
+              </summary>
+              <div class="groups-filter-panel groups-filter-panel-wide">
+                <div class="groups-filter-panel-head">
+                  <span>Grups</span>
+                  <button type="button" class="groups-filter-clear" data-subject-scope-clear>Netejar</button>
+                </div>
+                <div class="groups-filter-options" data-filter-options></div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

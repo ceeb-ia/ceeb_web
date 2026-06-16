@@ -22,6 +22,7 @@ from ...services.scoring.team_subject_contract import build_team_subject_registr
 from ._assignment_scope import (
     assignment_id_from_request,
     clamp_exercici_for_scope,
+    ensure_subject_allowed_for_assignment,
     ensure_subject_scoreable_for_scope,
     entry_phase_filter,
     resolve_assignment_scope_for_request,
@@ -122,6 +123,9 @@ def judge_video_status(request, token):
     scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
     if scope_subject_error is not None:
         return scope_subject_error
+    assignment_subject_error = ensure_subject_allowed_for_assignment(scope, subject)
+    if assignment_subject_error is not None:
+        return assignment_subject_error
 
     entry_filters = {
         "competicio": competicio,
@@ -333,6 +337,9 @@ def judge_video_upload(request, token):
     scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
     if scope_subject_error is not None:
         return scope_subject_error
+    assignment_subject_error = ensure_subject_allowed_for_assignment(scope, subject)
+    if assignment_subject_error is not None:
+        return assignment_subject_error
 
     def _reject(message, status_code, reason, score_entry=None, payload=None):
         _log_video_event(
@@ -602,6 +609,9 @@ def judge_video_delete(request, token):
     scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
     if scope_subject_error is not None:
         return scope_subject_error
+    assignment_subject_error = ensure_subject_allowed_for_assignment(scope, subject)
+    if assignment_subject_error is not None:
+        return assignment_subject_error
 
     entry = (
         subject_entry_model(comp_aparell).objects
@@ -753,6 +763,9 @@ def judge_video_file(request, token, subject_kind, subject_id, exercici):
         raise Http404("Subject invalid")
     scope_subject_error = ensure_subject_scoreable_for_scope(scope, subject)
     if scope_subject_error is not None:
+        raise Http404("Subject invalid")
+    assignment_subject_error = ensure_subject_allowed_for_assignment(scope, subject)
+    if assignment_subject_error is not None:
         raise Http404("Subject invalid")
 
     entry_filters = {

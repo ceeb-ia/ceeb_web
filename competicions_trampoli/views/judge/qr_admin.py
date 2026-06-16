@@ -15,6 +15,7 @@ from ...models import Competicio
 from ...models.competicio import CompeticioAparell, CompeticioAparellFase
 from ...models.judging import JudgeDeviceToken, JudgePortalAssignment, PublicLiveToken
 from ...services.avatar.notes.qrs import AVATAR_MESSAGES as QR_ADMIN_AVATAR_MESSAGES
+from ...services.judging.subject_scope import subject_scope_from_post, subject_scope_options_for_competicio
 from .admin import (
     MAX_TOKEN_PERMISSIONS,
     _app_catalog_for_template,
@@ -303,6 +304,7 @@ def qr_admin_home(request, competicio_id, token_id=None):
                         label=str(request.POST.get("assignment_label") or "").strip(),
                         ordre=ordre,
                         permissions=permissions,
+                        subject_scope=subject_scope_from_post(request.POST),
                         is_active=True,
                     )
                     messages.success(request, "Assignacio afegida al QR.")
@@ -381,6 +383,7 @@ def qr_admin_home(request, competicio_id, token_id=None):
             "create_form": create_form,
             "assignment_formset": assignment_formset,
             "app_catalog": _app_catalog_for_template(competicio, comp_aparells),
+            "subject_scope_options": subject_scope_options_for_competicio(competicio),
             "phase_choices": selected_app_context["phase_choices"],
             "schema_field_catalog": selected_app_context["field_catalog"],
             "max_permissions": MAX_TOKEN_PERMISSIONS,

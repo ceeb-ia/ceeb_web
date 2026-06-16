@@ -18,6 +18,10 @@ from ...services.scoring.team_subject_contract import (
     filter_team_subject_ids_for_serie,
 )
 from ...services.scoring.update_payloads import build_score_update_payload
+from ...services.judging.subject_scope import (
+    filter_score_entries_queryset_by_subject_scope,
+    filter_team_subject_ids_by_subject_scope,
+)
 from ._assignment_scope import (
     assignment_id_from_request,
     clamp_exercici_for_scope,
@@ -78,6 +82,14 @@ def judge_updates(request, token):
         registry = build_team_subject_registry(competicio, comp_aparell)
         subject_map = registry["all_by_id"]
         allowed_team_ids = filter_team_subject_ids_for_serie(subject_map, serie_id)
+        scope_team_ids = set(
+            filter_team_subject_ids_by_subject_scope(
+                {int(subject_id): subject_map[int(subject_id)] for subject_id in allowed_team_ids if int(subject_id) in subject_map},
+                scope.subject_scope,
+                competicio=competicio,
+            )
+        )
+        allowed_team_ids = [team_id for team_id in allowed_team_ids if int(team_id) in scope_team_ids]
         qs = (
             TeamScoreEntry.objects
             .filter(
@@ -105,6 +117,7 @@ def judge_updates(request, token):
             .exclude(inscripcio_id__in=excluded_ins_ids)
             .order_by("updated_at", "id")
         )
+        qs = filter_score_entries_queryset_by_subject_scope(qs, scope.subject_scope)
 
     qs = apply_single_model_cursor(qs, cursor)
     updates = []

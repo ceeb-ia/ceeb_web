@@ -13,6 +13,7 @@ class EffectiveJudgeAssignment:
     comp_aparell_id: int
     fase_id: int | None
     permissions: list
+    subject_scope: dict
     label: str
     ordre: int
     is_active: bool
@@ -35,6 +36,7 @@ def _legacy_assignment_for_token(token: JudgeDeviceToken) -> EffectiveJudgeAssig
         comp_aparell_id=int(token.comp_aparell_id),
         fase_id=None,
         permissions=list(token.permissions or []),
+        subject_scope={},
         label=str(token.label or "").strip(),
         ordre=1,
         is_active=bool(token.is_valid()),
@@ -51,6 +53,7 @@ def _assignment_from_model(assignment: JudgePortalAssignment) -> EffectiveJudgeA
         comp_aparell_id=int(assignment.comp_aparell_id),
         fase_id=int(assignment.fase_id) if assignment.fase_id else None,
         permissions=list(assignment.permissions or []),
+        subject_scope=dict(assignment.subject_scope or {}),
         label=str(assignment.label or "").strip(),
         ordre=int(assignment.ordre or 1),
         is_active=bool(assignment.is_active and token_is_valid),

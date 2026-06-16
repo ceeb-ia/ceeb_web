@@ -14,6 +14,7 @@ from ....services.judging.assignments import (
     effective_assignments_for_token,
     resolve_effective_assignment,
 )
+from ....services.judging.subject_scope import filter_subject_dicts_by_subject_scope
 
 
 class JudgePortalAssignmentModelTests(_BaseTrampoliDataMixin, TestCase):
@@ -48,6 +49,39 @@ class JudgePortalAssignmentModelTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(assignment.competicio_id, self.competicio.id)
         self.assertIsNone(assignment.fase_id)
+
+    def test_subject_scope_filters_team_subjects_by_all_member_categories(self):
+        inside = self._create_inscripcio(self.competicio, "Infantil dins", ordre=1)
+        inside.categoria = "Infantil"
+        inside.save(update_fields=["categoria"])
+        outside = self._create_inscripcio(self.competicio, "Cadet fora", ordre=2)
+        outside.categoria = "Cadet"
+        outside.save(update_fields=["categoria"])
+        subjects = [
+            {
+                "subject_kind": "team_unit",
+                "subject_id": 1,
+                "members": [{"id": inside.id}],
+            },
+            {
+                "subject_kind": "team_unit",
+                "subject_id": 2,
+                "members": [{"id": outside.id}],
+            },
+            {
+                "subject_kind": "team_unit",
+                "subject_id": 3,
+                "members": [{"id": inside.id}, {"id": outside.id}],
+            },
+        ]
+
+        filtered = filter_subject_dicts_by_subject_scope(
+            subjects,
+            {"mode": "filters", "categoria": ["Infantil"]},
+            competicio=self.competicio,
+        )
+
+        self.assertEqual([item["subject_id"] for item in filtered], [1])
 
     def test_validates_phase_belongs_to_same_competicio_and_app(self):
         other_app = self._create_comp_aparell(self.competicio, self.aparell, ordre=2)
@@ -618,6 +652,148 @@ class JudgePortalAssignmentPortalTests(_BaseTrampoliDataMixin, TestCase):
         legacy_updates = legacy_response.json()["updates"]
         self.assertEqual([item["fase_id"] for item in legacy_updates], [None])
 
+    def test_assignment_subject_scope_filters_preliminary_portal_by_category(self):
+        self.inscripcio.categoria = "Infantil"
+        self.inscripcio.subcategoria = "F"
+        self.inscripcio.save(update_fields=["categoria", "subcategoria"])
+        outside = self._create_inscripcio(self.competicio, "Cadet fora", ordre=2, grup=2)
+        outside.categoria = "Cadet"
+        outside.subcategoria = "F"
+        outside.save(update_fields=["categoria", "subcategoria"])
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            label="Infantil",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 1}],
+            subject_scope={"mode": "filters", "categoria": ["Infantil"], "subcategoria": ["F"]},
+        )
+
+        response = self.client.get(
+            reverse(
+                "judge_portal_assignment",
+                kwargs={"token": self.token.id, "assignment_id": assignment.id},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual([item["subject_id"] for item in response.context["inscripcions"]], [self.inscripcio.id])
+        self.assertContains(response, "Categories: Infantil")
+
+    def test_assignment_subject_scope_filters_phase_slots_by_group(self):
+        phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
+        unit = self._add_phase_slot(phase)
+        outside = self._create_inscripcio(self.competicio, "Grup fora", ordre=2, grup=2)
+        ProgramUnitSlot.objects.create(
+            unit=unit,
+            slot_index=2,
+            ordre=2,
+            status=ProgramUnitSlot.Status.FILLED,
+            subject_kind="inscripcio",
+            subject_id=outside.id,
+        )
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            fase=phase,
+            label="Grup concret",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 1}],
+            subject_scope={"mode": "filters", "group_ids": [self.inscripcio.grup_competicio_id]},
+        )
+
+        response = self.client.get(
+            reverse(
+                "judge_portal_assignment",
+                kwargs={"token": self.token.id, "assignment_id": assignment.id},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual([item["subject_id"] for item in response.context["inscripcions"]], [self.inscripcio.id])
+
+    def test_assignment_save_rejects_subject_outside_subject_scope(self):
+        self.inscripcio.categoria = "Infantil"
+        self.inscripcio.save(update_fields=["categoria"])
+        outside = self._create_inscripcio(self.competicio, "Cadet fora", ordre=2)
+        outside.categoria = "Cadet"
+        outside.save(update_fields=["categoria"])
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            label="Infantil",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 1}],
+            subject_scope={"mode": "filters", "categoria": ["Infantil"]},
+        )
+
+        response = self.client.post(
+            reverse("judge_save_partial", kwargs={"token": self.token.id}),
+            data=json.dumps(
+                {
+                    "assignment_id": assignment.id,
+                    "inscripcio_id": outside.id,
+                    "subject_kind": "inscripcio",
+                    "subject_id": outside.id,
+                    "exercici": 1,
+                    "inputs_patch": {"D": 1.2},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["reason"], "subject_outside_assignment_scope")
+        self.assertFalse(ScoreEntry.objects.filter(inscripcio=outside).exists())
+
+    def test_updates_respect_assignment_subject_scope(self):
+        self.inscripcio.categoria = "Infantil"
+        self.inscripcio.save(update_fields=["categoria"])
+        outside = self._create_inscripcio(self.competicio, "Cadet fora", ordre=2)
+        outside.categoria = "Cadet"
+        outside.save(update_fields=["categoria"])
+        assignment = JudgePortalAssignment.objects.create(
+            judge_token=self.token,
+            comp_aparell=self.comp_aparell,
+            label="Infantil",
+            ordre=1,
+            permissions=[{"field_code": "D", "judge_index": 1}],
+            subject_scope={"mode": "filters", "categoria": ["Infantil"]},
+        )
+        ScoreEntry.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            inscripcio=self.inscripcio,
+            exercici=1,
+            fase=None,
+            inputs={"D": 1.0},
+            outputs={},
+            total=1,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            inscripcio=outside,
+            exercici=1,
+            fase=None,
+            inputs={"D": 2.0},
+            outputs={},
+            total=2,
+        )
+
+        response = self.client.get(
+            reverse("judge_updates", kwargs={"token": self.token.id}),
+            {
+                "assignment_id": assignment.id,
+                "since": "2000-01-01T00:00:00Z",
+                "exercici": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        updates = response.json()["updates"]
+        self.assertEqual([item["subject_id"] for item in updates], [self.inscripcio.id])
+
     def test_video_status_uses_phase_scoped_score_for_assignment(self):
         phase = self._create_phase(estat=CompeticioAparellFase.Estat.PUBLISHED)
         self._add_phase_slot(phase)
@@ -986,6 +1162,9 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
             label="Jutge QR admin",
             permissions=[],
         )
+        inscripcio = self._create_inscripcio(self.competicio, "Infantil admin")
+        inscripcio.categoria = "Infantil"
+        inscripcio.save(update_fields=["categoria"])
         phase = CompeticioAparellFase.objects.create(
             competicio=self.competicio,
             comp_aparell=self.comp_aparell,
@@ -1003,6 +1182,9 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
                 "assignment_label": "Final QR admin",
                 "fase_id": str(phase.id),
                 "ordre": "1",
+                "subject_scope_mode": "filters",
+                "subject_scope_categoria": ["Infantil"],
+                "subject_scope_group_ids": [str(inscripcio.grup_competicio_id)],
                 "form-TOTAL_FORMS": "1",
                 "form-INITIAL_FORMS": "0",
                 "form-MIN_NUM_FORMS": "0",
@@ -1023,6 +1205,8 @@ class JudgePortalAssignmentAdminUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(assignment.comp_aparell_id, self.comp_aparell.id)
         self.assertEqual(assignment.fase_id, phase.id)
         self.assertEqual(assignment.permissions[0]["item_count"], 4)
+        self.assertEqual(assignment.subject_scope["categoria"], ["Infantil"])
+        self.assertEqual(assignment.subject_scope["group_ids"], [inscripcio.grup_competicio_id])
 
     def test_qr_admin_revokes_whole_qr_and_deactivates_single_assignment(self):
         token = JudgeDeviceToken.objects.create(

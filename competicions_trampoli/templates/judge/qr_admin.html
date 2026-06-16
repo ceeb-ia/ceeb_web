@@ -63,6 +63,7 @@
       height: 28px;
       object-fit: contain;
     }
+{% include "judge/_subject_scope_filters_style.html" %}
     .qr-admin-context-line {
       display: flex;
       flex-wrap: wrap;
@@ -823,6 +824,7 @@
                       <div class="qr-assignment-card__meta">
                         <span class="qr-assignment-meta-pill">Aparell: {{ row.app_label }}</span>
                         <span class="qr-assignment-meta-pill">Fase: {{ row.phase_label }}</span>
+                        <span class="qr-assignment-meta-pill">Participants: {{ row.subject_scope_summary }}</span>
                       </div>
                     </div>
                     {% if row.assignment.is_active %}
@@ -908,8 +910,9 @@
                       <label class="form-label small text-muted mb-1">Etiqueta d'acces</label>
                       <input class="form-control form-control-sm" name="assignment_label" placeholder="Ex: Final E1">
                     </div>
-
                   </div>
+
+                  {% include "judge/_subject_scope_filters.html" %}
 
                   <div class="d-flex justify-content-between align-items-center mb-1">
                     <div class="text-muted small">Permisos</div>
@@ -1216,6 +1219,8 @@
       document.body.appendChild(itemLabelsModalEl);
     }
     const itemLabelsModal = (window.jQuery && itemLabelsModalEl) ? window.jQuery(itemLabelsModalEl) : null;
+
+{% include "judge/_subject_scope_filters_script.html" %}
 
     function currentApp() {
       return appCatalog[String(appSelect.value || "")] || { fields: [], phases: [], member_slots: [], team_context: false };

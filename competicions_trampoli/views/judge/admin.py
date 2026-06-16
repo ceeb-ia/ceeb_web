@@ -23,6 +23,11 @@ from ...services.scoring.team_scoring import (
     permission_runtime_code,
     runtime_schema_for_comp_aparell,
 )
+from ...services.judging.subject_scope import (
+    subject_scope_from_post,
+    subject_scope_options_for_competicio,
+    subject_scope_summary,
+)
 from ._shared import _judge_item_labels_map_for_comp_aparell
 
 MAX_TOKEN_PERMISSIONS = 15
@@ -166,6 +171,10 @@ def _assignment_summary_rows(assignments):
             "assignment": assignment,
             "app_label": getattr(comp_aparell, "display_nom", None) or str(comp_aparell or ""),
             "phase_label": getattr(phase, "nom", None) or "Preliminar",
+            "subject_scope_summary": subject_scope_summary(
+                getattr(assignment, "subject_scope", None),
+                competicio=getattr(assignment, "competicio", None),
+            ),
             "permission_summaries": _permission_summary_rows(assignment.permissions),
         })
     return rows
@@ -526,6 +535,7 @@ def qr_admin_home(request, competicio_id, token_id=None):
                         label=str(request.POST.get("assignment_label") or "").strip(),
                         ordre=ordre,
                         permissions=perms,
+                        subject_scope=subject_scope_from_post(request.POST),
                         is_active=True,
                     )
                     messages.success(request, "Assignacio afegida al QR.")
@@ -588,6 +598,7 @@ def qr_admin_home(request, competicio_id, token_id=None):
                         label=label or getattr(comp_aparell, "display_nom", ""),
                         ordre=1,
                         permissions=perms,
+                        subject_scope={},
                         is_active=True,
                     )
                 return redirect(_qr_admin_url(competicio, selected_judge=token_obj))
@@ -671,6 +682,7 @@ def qr_admin_home(request, competicio_id, token_id=None):
         "member_slot_choices": member_slot_choices,
         "schema_field_catalog": field_catalog,
         "app_catalog": app_catalog,
+        "subject_scope_options": subject_scope_options_for_competicio(competicio),
         "can_manage_public_live": user_has_competicio_capability(request.user, competicio, "public_live.manage"),
         "can_manage_judge_tokens": True,
     }

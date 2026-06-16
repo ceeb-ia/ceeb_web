@@ -78,6 +78,7 @@ class JudgePortalAssignment(models.Model):
     label = models.CharField(max_length=160, blank=True, default="")
     ordre = models.PositiveSmallIntegerField(default=1)
     permissions = models.JSONField(default=list, blank=True)
+    subject_scope = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -111,6 +112,27 @@ class JudgePortalAssignment(models.Model):
                 errors["fase"] = "La fase no pertany a aquest aparell local."
         if not isinstance(self.permissions, list):
             errors["permissions"] = "Els permisos de l'assignacio han de ser una llista JSON."
+        if not isinstance(self.subject_scope, dict):
+            errors["subject_scope"] = "L'abast de participants ha de ser un objecte JSON."
+        elif self.competicio_id:
+            raw_group_ids = self.subject_scope.get("group_ids") or []
+            if raw_group_ids and not isinstance(raw_group_ids, list):
+                errors["subject_scope"] = "Els grups de l'abast han de ser una llista."
+            else:
+                try:
+                    group_ids = {int(value) for value in raw_group_ids if int(value) > 0}
+                except (TypeError, ValueError):
+                    errors["subject_scope"] = "Els identificadors de grup de l'abast no son valids."
+                else:
+                    if group_ids:
+                        from .inscripcions import GrupCompeticio
+
+                        valid_count = GrupCompeticio.objects.filter(
+                            competicio_id=self.competicio_id,
+                            id__in=group_ids,
+                        ).count()
+                        if valid_count != len(group_ids):
+                            errors["subject_scope"] = "Algun grup de l'abast no pertany a la competicio."
         if errors:
             raise ValidationError(errors)
 
