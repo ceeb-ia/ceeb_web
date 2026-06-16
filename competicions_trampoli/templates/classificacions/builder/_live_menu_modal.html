@@ -1,0 +1,32 @@
+<div class="modal fade" id="liveMenuModal" tabindex="-1" role="dialog" aria-labelledby="liveMenuModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+    <div class="modal-content classif-live-menu-modal">
+      <div class="modal-header">
+        <div class="classif-live-menu-modal-title-group">
+          <div class="classif-live-menu-modal-kicker">Classificacions live</div>
+          <h5 class="modal-title" id="liveMenuModalTitle">Organització del menú</h5>
+          <div class="classif-live-menu-modal-copy">Afegeix títols i separadors per ordenar el menú lateral del live.</div>
+        </div>
+        <button type="button" class="close classif-live-menu-close" data-dismiss="modal" aria-label="Tancar">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="classif-live-menu-toolbar">
+          <button type="button" class="btn btn-sm classif-live-menu-command classif-live-menu-command--primary" id="liveMenuAddHeading">+ Títol</button>
+          <button type="button" class="btn btn-sm classif-live-menu-command classif-live-menu-command--primary" id="liveMenuAddDivider">+ Separador</button>
+          <button type="button" class="btn btn-sm classif-live-menu-command classif-live-menu-command--secondary" id="liveMenuReset">Restaurar ordre actual</button>
+        </div>
+        <div class="classif-live-menu-note">
+          Les classificacions actives que no estiguin al menú s'afegiran automàticament al final.
+        </div>
+        <div class="classif-live-menu-list" id="liveMenuList"></div>
+        <div class="alert alert-danger py-2 px-3 mt-3 mb-0" id="liveMenuError" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm classif-live-menu-command classif-live-menu-command--secondary" data-dismiss="modal">Cancel·lar</button>
+        <button type="button" class="btn btn-sm classif-live-menu-command classif-live-menu-command--save" id="liveMenuSave">Desar organització</button>
+      </div>
+    </div>
+  </div>
+</div>

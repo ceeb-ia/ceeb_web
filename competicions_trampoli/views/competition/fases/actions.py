@@ -280,7 +280,7 @@ def handle_phase_post(view, request):
             phase_name = phase.nom
             phase.delete()
             messages.success(request, f"Fase '{phase_name}' eliminada.")
-            return view.redirect_to_selected_app(view.comp_aparell), {}
+            return view.redirect_to_selected_app(view.comp_aparell, phase="base"), {}
 
         if action == "delete_phase_branch":
             if request.POST.get("confirm_branch_delete") != "1":
@@ -309,7 +309,7 @@ def handle_phase_post(view, request):
                 )
                 return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             messages.success(request, f"Branca '{phase_name}' eliminada ({phase_count} fase/s).")
-            return view.redirect_to_selected_app(view.comp_aparell), {}
+            return view.redirect_to_selected_app(view.comp_aparell, phase="base"), {}
 
         if action == "update_phase_status":
             status = str(request.POST.get("estat") or "").strip()

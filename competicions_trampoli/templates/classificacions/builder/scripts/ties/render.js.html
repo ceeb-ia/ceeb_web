@@ -307,7 +307,7 @@
 
   function getTieCandidateSourceModeLabel(mode) {
     const value = normalizeTieCandidateSourceUiMode(mode);
-    if (value === "hereta") return "Mateix que puntuacio";
+    if (value === "hereta") return "Mateix que puntuació";
     if (value === "raw_exercise") return "Exercicis originals";
     if (value === "team_aggregate") return "Agrega per equip";
     return "Agrega per participant";
@@ -992,8 +992,8 @@
       <option value="sum" ${value === "sum" ? "selected" : ""}>${label}: Suma</option>
       <option value="avg" ${value === "avg" ? "selected" : ""}>${label}: Mitjana</option>
       <option value="median" ${value === "median" ? "selected" : ""}>${label}: Mediana</option>
-      <option value="max" ${value === "max" ? "selected" : ""}>${label}: Maxim</option>
-      <option value="min" ${value === "min" ? "selected" : ""}>${label}: Minim</option>
+      <option value="max" ${value === "max" ? "selected" : ""}>${label}: Màxim</option>
+      <option value="min" ${value === "min" ? "selected" : ""}>${label}: Mínim</option>
     `;
   }
 
@@ -1006,7 +1006,7 @@
       <option value="pitjor_1" ${mode === "pitjor_1" ? "selected" : ""}>Pitjor 1</option>
       <option value="pitjor_n" ${mode === "pitjor_n" ? "selected" : ""}>Pitjors N</option>
       <option value="primer" ${mode === "primer" ? "selected" : ""}>Primer existent</option>
-      <option value="ultim" ${mode === "ultim" ? "selected" : ""}>Ultim existent</option>
+      <option value="ultim" ${mode === "ultim" ? "selected" : ""}>Últim existent</option>
       <option value="index" ${mode === "index" ? "selected" : ""}>Exercici concret</option>
       <option value="llista" ${mode === "llista" ? "selected" : ""}>Llista</option>
     `;
@@ -1194,7 +1194,7 @@
     return `
       <div class="classif-tie-mini-section classif-tie-mini-section--team-pool-exercise" data-k="tie_team_pool_exercise_box" data-app-id="${esc(appId)}" style="${show ? "" : "display:none;"}">
         <label class="classif-tie-mini-label">Bosses per exercici</label>
-        <div class="small text-muted mb-2">Dins de cada numero d'exercici, selecciona membres i agrega'ls abans que els subtotals entrin al tractament d'exercicis.</div>
+        <div class="small text-muted mb-2">Dins de cada número d'exercici, selecciona membres i agrega'ls abans que els subtotals entrin al tractament d'exercicis.</div>
         ${rows.join("")}
       </div>
     `;
@@ -1300,8 +1300,8 @@
               <option value="sum">Suma</option>
               <option value="avg">Mitjana</option>
               <option value="median">Mediana</option>
-              <option value="max">Maxim</option>
-              <option value="min">Minim</option>
+              <option value="max">Màxim</option>
+              <option value="min">Mínim</option>
             </select>
           </div>
         </div>
@@ -1335,7 +1335,7 @@
     if (!items.length) {
       els.tieBody.innerHTML = `
         <div class="classif-desempat-empty">
-          Encara no hi ha criteris de desempat. Afegeix-ne un o crea'l des de la puntuacio actual.
+          Encara no hi ha criteris de desempat. Afegeix-ne un o crea'l des de la puntuació actual.
         </div>
       `;
       return;
@@ -1501,7 +1501,7 @@
                       <label class="classif-tie-mini-label">Entrada <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_tiebreakers_input" aria-label="Ajuda sobre entrada del desempat" title="Ajuda sobre entrada del desempat">?</button></label>
                       <select class="form-control form-control-sm" data-k="input_source_mode">
                         <option value="raw_exercises">Tots els exercicis disponibles</option>
-                        <option value="main_selected_contributors">Nomes exercicis que han contribuit</option>
+                        <option value="main_selected_contributors">Només exercicis que han contribuït</option>
                       </select>
                       <div class="small text-muted mt-1" data-k="input_source_hint"></div>
                     </div>
@@ -1575,7 +1575,7 @@
                       <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="${esc(directGlobalEx.best_n || 1)}">
                     </div>
                     <div>
-                      <label class="classif-tie-mini-label">Index</label>
+                      <label class="classif-tie-mini-label">Índex</label>
                       <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="${esc(directGlobalEx.index || 1)}">
                     </div>
                     <div>
@@ -1645,7 +1645,7 @@
           const mode = normalizeTieInputSourceMode(inputSourceSel?.value || "raw_exercises");
           if (inputSourceHint) {
             inputSourceHint.textContent = mode === "main_selected_contributors"
-              ? "Reutilitza nomes les notes que ja han comptat a la puntuacio principal."
+              ? "Reutilitza només les notes que ja han comptat a la puntuació principal."
               : "";
           }
         }
@@ -1663,7 +1663,7 @@
           }
           if (exHint) {
             exHint.style.display = mode === "index" || mode === "llista" ? "" : "none";
-            exHint.textContent = mode === "index" ? "Agafa l'exercici amb aquest index." : (mode === "llista" ? "Indexs separats per comes." : "");
+            exHint.textContent = mode === "index" ? "Agafa l'exercici amb aquest índex." : (mode === "llista" ? "Índexs separats per comes." : "");
           }
         }
 
@@ -1918,7 +1918,7 @@
                       <label class="classif-tie-mini-label">Membres</label>
                       <select class="form-control form-control-sm" data-k="tie_member_source_mode">
                         <option value="all_members">Tots els membres</option>
-                        <option value="main_selected_contributors">Nomes contributors</option>
+                        <option value="main_selected_contributors">Només contributors</option>
                       </select>
                       <div class="small text-muted mt-1" data-k="member_source_hint"></div>
                     </div>
@@ -1926,7 +1926,7 @@
                       <label class="classif-tie-mini-label">Entrada <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_tiebreakers_input" aria-label="Ajuda sobre entrada del desempat" title="Ajuda sobre entrada del desempat">?</button></label>
                       <select class="form-control form-control-sm" data-k="input_source_mode">
                         <option value="raw_exercises">Tots els exercicis dels membres</option>
-                        <option value="main_selected_contributors">Nomes exercicis contributors</option>
+                        <option value="main_selected_contributors">Només exercicis contributors</option>
                       </select>
                       <div class="small text-muted mt-1" data-k="input_source_hint"></div>
                     </div>
@@ -1939,7 +1939,7 @@
                     </div>
                   </div>
                   <select data-k="tie_candidate_source_mode" style="display:none;">
-                    <option value="hereta">Mateix que puntuacio</option>
+                    <option value="hereta">Mateix que puntuació</option>
                     <option value="raw_exercise">Exercicis originals</option>
                     <option value="participant_aggregate">Agrega per participant</option>
                     <option value="team_aggregate">Agrega per equip</option>
@@ -2015,7 +2015,7 @@
                       <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="${esc(derivedGlobalEx.best_n || 1)}">
                     </div>
                     <div>
-                      <label class="classif-tie-mini-label">Index</label>
+                      <label class="classif-tie-mini-label">Índex</label>
                       <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="${esc(derivedGlobalEx.index || 1)}">
                     </div>
                     <div data-k="ex_max_pp_wrap">
@@ -2122,12 +2122,12 @@
           const memberMode = String(memberSourceSel?.value || "all_members").trim().toLowerCase();
           if (inputSourceHint) {
             inputSourceHint.textContent = inputMode === "main_selected_contributors"
-              ? "Reutilitza nomes els exercicis que ja han comptat."
+              ? "Reutilitza només els exercicis que ja han comptat."
               : "";
           }
           if (memberSourceHint) {
             memberSourceHint.textContent = memberMode === "main_selected_contributors"
-              ? "La vista conserva aquesta seleccio com a configuracio de UI; el tall efectiu el fa l'entrada d'exercicis."
+              ? "La vista conserva aquesta selecció com a configuració de UI; el tall efectiu el fa l'entrada d'exercicis."
               : "";
           }
         }
@@ -2156,7 +2156,7 @@
           }
           if (exHint) {
             exHint.style.display = mode === "index" || mode === "llista" ? "" : "none";
-            exHint.textContent = mode === "index" ? "Agafa l'exercici amb aquest index." : (mode === "llista" ? "Indexs separats per comes." : "");
+            exHint.textContent = mode === "index" ? "Agafa l'exercici amb aquest índex." : (mode === "llista" ? "Índexs separats per comes." : "");
           }
         }
 
@@ -2254,7 +2254,7 @@
               ? (treatmentValue === TIE_MEMBER_TREATMENT_TEAM_POOL_PER_EXERCISE
                 ? "Els exercicis es tracten en bosses separades per numero d'exercici."
                 : "Els exercicis es seleccionen en una bossa comuna de l'equip.")
-              : "Cada membre es calcula primer i despres es seleccionen/agreguen membres.";
+              : "Cada membre es calcula primer i després se seleccionen/agreguen membres.";
           }
           if (selectedIds.length) {
             const tieKey = String(tr.dataset.tieId || "");
@@ -2388,12 +2388,12 @@
           <input class="form-control form-control-sm mb-1" data-k="tie_nom" type="text" value="${esc(tieNom)}" placeholder="Nom del criteri">
           <select class="form-control form-control-sm mb-1" data-k="input_source_mode">
             <option value="raw_exercises">Tots els exercicis disponibles</option>
-            <option value="main_selected_contributors">Nomes contributors de puntuacio</option>
+            <option value="main_selected_contributors">Només contributors de puntuació</option>
           </select>
           <div class="small text-muted mb-1" data-k="input_source_hint"></div>
           <div class="small text-muted mb-1"><strong>2. Pretractament</strong></div>
           <select class="form-control form-control-sm mb-1" data-k="tie_candidate_source_mode">
-            <option value="hereta">Mateix que puntuacio</option>
+            <option value="hereta">Mateix que puntuació</option>
             <option value="raw_exercise">Exercicis originals</option>
             <option value="participant_aggregate">Agrega per participant</option>
             <option value="team_aggregate">Agrega per equip</option>
@@ -2407,21 +2407,21 @@
               <option value="pitjor_1">Pitjor 1</option>
               <option value="pitjor_n">Pitjors N</option>
               <option value="primer">Primer existent</option>
-              <option value="ultim">Ultim existent</option>
+              <option value="ultim">Últim existent</option>
               <option value="index">Exercici #</option>
               <option value="llista">Exercicis (llista)</option>
             </select>
             <div class="d-flex gap-1">
               <input class="form-control form-control-sm" data-k="tie_candidate_source_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
-              <input class="form-control form-control-sm" data-k="tie_candidate_source_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
+              <input class="form-control form-control-sm" data-k="tie_candidate_source_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
             </div>
             <input class="form-control form-control-sm" data-k="tie_candidate_source_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
             <select class="form-control form-control-sm" data-k="tie_candidate_source_agg">
-              <option value="sum">Agregacio previa: Suma</option>
-              <option value="avg">Agregacio previa: Mitjana</option>
-              <option value="median">Agregacio previa: Mediana</option>
-              <option value="max">Agregacio previa: Maxim</option>
-              <option value="min">Agregacio previa: Minim</option>
+              <option value="sum">Agregació prèvia: Suma</option>
+              <option value="avg">Agregació prèvia: Mitjana</option>
+              <option value="median">Agregació prèvia: Mediana</option>
+              <option value="max">Agregació prèvia: Màxim</option>
+              <option value="min">Agregació prèvia: Mínim</option>
             </select>
           </div>
           <div class="small text-muted mb-1" data-k="tie_candidate_source_hint"></div>
@@ -2443,33 +2443,33 @@
             <div class="small text-muted" data-k="ex_scope_label" style="${showSelectionScope ? "" : "display:none;"}">5. Base</div>
             <div class="small text-muted" data-k="ex_scope_hint"></div>
             <select class="form-control form-control-sm" data-k="ex_scope" style="${showSelectionScope ? "" : "display:none;"}">
-              <option value="hereta">Base: Mateixa que puntuacio</option>
+              <option value="hereta">Base: Mateixa que puntuació</option>
               <option value="per_member">Base: Per membre</option>
               <option value="team_pool">Base: Pool d'equip</option>
             </select>
             <div class="small text-muted" data-k="ex_selection_label">5. Seleccio</div>
             <select class="form-control form-control-sm" data-k="ex_sel_mode">
-              <option value="hereta">Seleccio ex: Mateixa que puntuacio</option>
-              <option value="per_aparell_global">Seleccio ex: Per aparell (global)</option>
-              <option value="per_aparell_override">Seleccio ex: Per aparell (override)</option>
-              <option value="global_pool">Seleccio ex: Sac global</option>
+              <option value="hereta">Selecció ex: Mateixa que puntuació</option>
+              <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Selecció ex: Per aparell (override)</option>
+              <option value="global_pool">Selecció ex: Sac global</option>
             </select>
             <select class="form-control form-control-sm" data-k="ex_mode">
-              <option value="hereta">Tractament: Mateix que puntuacio</option>
+              <option value="hereta">Tractament: Mateix que puntuació</option>
               <option value="tots">Tots</option>
               <option value="millor_1">Millor 1</option>
               <option value="millor_n">Millors N</option>
               <option value="pitjor_1">Pitjor 1</option>
               <option value="pitjor_n">Pitjors N</option>
               <option value="primer">Primer existent</option>
-              <option value="ultim">Ultim existent</option>
+              <option value="ultim">Últim existent</option>
               <option value="index">Exercici #</option>
               <option value="llista">Exercicis (llista)</option>
             </select>
 
             <div class="d-flex gap-1">
               <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
-              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
             </div>
             <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
 
@@ -2633,7 +2633,7 @@
         inputSourceSel,
         inputSourceMode,
         value => value === "main_selected_contributors"
-          ? "Nomes contributors de puntuacio"
+          ? "Només contributors de puntuació"
           : "Tots els exercicis disponibles"
       );
       inputSourceSel.value = inputSourceMode;
@@ -2730,7 +2730,7 @@
 
         if (exSummary) {
           if (fixedTeamPool) {
-            exSummary.textContent = "Pool final de puntuacio.";
+            exSummary.textContent = "Pool final de puntuació.";
           } else if (isOverride) {
             exSummary.textContent = "Override per aparell.";
           } else {
@@ -2744,7 +2744,7 @@
         let hintBase = "";
         if (isOverride) hintBase = "";
         else if (m === "index") hintBase = "Exercici # dins el conjunt.";
-        else if (m === "llista") hintBase = "Indexs separats per comes.";
+        else if (m === "llista") hintBase = "Índexs separats per comes.";
 
         if (exHint) {
           exHint.style.display = hintBase ? "" : "none";

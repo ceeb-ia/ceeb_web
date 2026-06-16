@@ -27,9 +27,9 @@
     </div>
     <div class="phase-tree-root">
       <div class="phase-tree-base-shell">
-        <div class="phase-tree-base {% if not selected_phase %}is-selected{% endif %}" data-avatar-anchor="phase-base-node">
+        <div class="phase-tree-base {% if selected_base_phase %}is-selected{% endif %}" data-avatar-anchor="phase-base-node">
           <a class="phase-tree-base-link"
-             href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}">
+             href="{% url 'trampoli_fases' competicio.id %}?app={{ comp_aparell.id }}&phase=base">
             <span class="phase-tree-node-main">
               <span class="phase-tree-title-line">
                 <img class="phase-tree-phase-logo" src="{% static 'fases/preliminar.png' %}" alt="">
@@ -84,7 +84,16 @@
       </div>
       {% include "competicio/fases/_phase_node.html" with phase=selected_phase %}
     </section>
-  {% else %}
+  {% elif selected_base_phase %}
     {% include "competicio/fases/_base_phase_detail.html" %}
+  {% else %}
+    <section class="phase-detail-panel phase-base-detail-panel" aria-label="Cap fase seleccionada">
+      <div class="phase-detail-heading">
+        <h5>Selecciona una fase</h5>
+      </div>
+      <div class="phase-empty">
+        Tria la Preliminar implícita o una fase avançada de l'arbre per veure'n el detall.
+      </div>
+    </section>
   {% endif %}
 </section>

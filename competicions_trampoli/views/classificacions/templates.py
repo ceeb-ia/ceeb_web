@@ -50,7 +50,7 @@ def classificacio_template_save(request, pk):
 
     cfg = get_object_or_404(ClassificacioConfig, pk=cfg_id, competicio=competicio)
     template_id = payload.get("template_id")
-    nom = str(payload.get("nom") or cfg.nom or "Plantilla classificacio").strip() or "Plantilla classificacio"
+    nom = str(payload.get("nom") or cfg.nom or "Plantilla classificació").strip() or "Plantilla classificació"
     descripcio = str(payload.get("descripcio") or "").strip()
     activa = bool(payload.get("activa", True))
     payload_obj, requirements, export_warnings = build_template_save_payload(competicio, cfg)
@@ -166,7 +166,7 @@ def classificacio_template_apply(request, pk):
         return JsonResponse(
             {
                 "ok": False,
-                "error": "La plantilla no es compatible amb la competicio actual.",
+                "error": "La plantilla no és compatible amb la competició actual.",
                 **validation,
             },
             status=400,

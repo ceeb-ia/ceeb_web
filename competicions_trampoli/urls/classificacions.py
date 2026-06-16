@@ -4,6 +4,7 @@ from .base import competition_view
 from ..views.classificacions.builder import (
     ClassificacionsHome,
     classificacio_delete,
+    classificacio_live_menu_save,
     classificacio_preview,
     classificacio_reorder,
     classificacio_save,
@@ -45,6 +46,11 @@ urlpatterns = [
         "competicio/<int:pk>/classificacions/reorder/",
         competition_view(classificacio_reorder, "classificacions.edit"),
         name="classificacio_reorder",
+    ),
+    path(
+        "competicio/<int:pk>/classificacions/live-menu/save/",
+        competition_view(classificacio_live_menu_save, "classificacions.edit"),
+        name="classificacio_live_menu_save",
     ),
     path(
         "competicio/<int:pk>/classificacions/preview/<int:cid>/",

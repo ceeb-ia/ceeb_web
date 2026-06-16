@@ -16,6 +16,15 @@
       {% include "competicio/fases/drawer/_status.html" %}
     </section>
   </div>
-{% else %}
+{% elif selected_base_phase %}
   {% include "competicio/fases/drawer/_base_phase.html" %}
+{% else %}
+  <section class="phase-panel">
+    <div class="phase-panel-title">
+      <h5>Selecciona una fase</h5>
+    </div>
+    <div class="phase-panel-note">
+      Tria la Preliminar implícita o una fase avançada de l'arbre per veure les accions disponibles.
+    </div>
+  </section>
 {% endif %}

@@ -113,9 +113,12 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn("team_scores", response.context)
 
     def test_planner_does_not_create_default_phase_on_get(self):
-        response = self.client.get(self._planner_url())
+        response = self.client.get(self._planner_url(), follow=True)
 
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.redirect_chain)
+        self.assertIn(f"app={self.comp_aparell.id}", response.redirect_chain[0][0])
+        self.assertIn("phase=base", response.redirect_chain[0][0])
         self.assertEqual(CompeticioAparellFase.objects.filter(comp_aparell=self.comp_aparell).count(), 0)
         self.assertContains(response, "La preliminar/default no es crea aquí")
 
@@ -133,9 +136,12 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         second_app.save(update_fields=["nom_local", "codi_local"])
         self._create_phase(nom="Final", codi="FIN", ordre=3)
 
-        response = self.client.get(self._common_planner_url(second_app))
+        response = self.client.get(self._common_planner_url(second_app), follow=True)
 
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.redirect_chain)
+        self.assertIn(f"app={second_app.id}", response.redirect_chain[0][0])
+        self.assertIn("phase=base", response.redirect_chain[0][0])
         self.assertEqual(response.context["comp_aparell"], second_app)
         body = response.content.decode("utf-8")
         self.assertIn(self.comp_aparell.display_nom, body)

@@ -26,7 +26,7 @@
       </button>
     </div>
 
-    <div class="phase-drawer-body {% if not selected_phase %}phase-drawer-body--base{% endif %}">
+    <div class="phase-drawer-body {% if selected_base_phase %}phase-drawer-body--base{% endif %}">
       {% if selected_phase %}
         <nav class="phase-drawer-nav" id="phase-drawer-nav" aria-label="Eines de fase">
           <button type="button" class="phase-drawer-nav-btn is-active" data-phase-panel-target="origin" data-avatar-anchor="phase-nav-origin">

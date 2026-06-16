@@ -205,7 +205,7 @@ function previewRowHtml(item){
     <div class="reorder-preview-item">
       <strong>${title}</strong>
       <div class="mini text-muted">Abans: ${oldRange}</div>
-      <div class="mini">Despres: ${newRange}</div>
+      <div class="mini">Després: ${newRange}</div>
       <div class="mini text-muted">Durada preservada: ${duration} min</div>
     </div>
   `;
@@ -223,10 +223,10 @@ function showFranjaReorderModal(preview){
       const oldRange = origin.old_start && origin.old_end ? `${escapeHtml(origin.old_start)}-${escapeHtml(origin.old_end)}` : "nou";
       const newRange = `${escapeHtml(origin.new_start || "")}-${escapeHtml(origin.new_end || "")}`;
       originEl.innerHTML = `
-        <strong>${escapeHtml(preview?.action_label || "Reordenacio horaria")}</strong>
+        <strong>${escapeHtml(preview?.action_label || "Reordenació horària")}</strong>
         <div class="mini text-muted mt-1">${escapeHtml(origin.title || "Franja")}</div>
         <div class="mini">Abans: ${oldRange}</div>
-        <div class="mini">Despres: ${newRange}</div>
+        <div class="mini">Després: ${newRange}</div>
       `;
     }
     if (listEl) {
@@ -257,7 +257,7 @@ function showFranjaReorderModal(preview){
       });
       $modal.modal("show");
     } else {
-      if (typeof showAlert === "function") showAlert("No s'ha pogut obrir el modal de confirmacio.");
+      if (typeof showAlert === "function") showAlert("No s'ha pogut obrir el modal de confirmació.");
       resolve(false);
     }
   });
@@ -559,7 +559,7 @@ function collectAssignedGroupIds(){
 }
 
 function groupChipHtml(item){
-  const label = escapeHtml(item?.label || `${item?.kind === "series" ? "Serie" : "Grup"} ${item?.id || "?"}`);
+  const label = escapeHtml(item?.label || `${item?.kind === "series" ? "Sèrie" : "Grup"} ${item?.id || "?"}`);
   const members = Number(item?.members_count || 0);
   return `
     <div class="chip group-chip" draggable="true" data-key="${escapeHtml(item?.key || "")}" title="${label}">
@@ -605,7 +605,7 @@ function renderGroupBuckets(){
   if (summary) summary.classList.toggle("is-quiet", outGroupCount <= 0);
   if (summaryText) {
     summaryText.textContent = outGroupCount
-      ? "Hi ha grups, series o blocs de fase que existeixen pero encara no formen part de l'horari actual."
+      ? "Hi ha grups, sèries o blocs de fase que existeixen però encara no formen part de l'horari actual."
       : "Tots els elements programables actuals estan situats dins el programa de rotacions.";
   }
 
@@ -1237,7 +1237,7 @@ function initOutOfProgramVisibilityToggle(){
     const value = !!input.checked;
     input.disabled = true;
     if (status) {
-      status.textContent = "Desant configuracio...";
+      status.textContent = "Desant configuració...";
     }
     try {
       const resp = await postJSON(OUT_OF_PROGRAM_VISIBILITY_SAVE_URL, {value});
@@ -1623,7 +1623,7 @@ function renderPlannerSummary(){
   if (summary) summary.classList.toggle("is-quiet", outGroupCount <= 0);
   if (summaryText) {
     summaryText.textContent = outGroupCount
-      ? "Hi ha grups, series o blocs de fase que existeixen pero encara no formen part de l'horari actual."
+      ? "Hi ha grups, sèries o blocs de fase que existeixen però encara no formen part de l'horari actual."
       : "Tots els elements programables actuals estan situats dins el programa de rotacions.";
   }
   if (outGroupsBadge) outGroupsBadge.textContent = `${outGroupCount} elements`;
@@ -1901,7 +1901,7 @@ function renderProgramables(){
   if (programmedUnitWrap) {
     programmedUnitWrap.innerHTML = programmedSplit.units.length
       ? programmedSplit.units.map(groupChipHtml).join("")
-      : '<div class="group-bucket-empty">Encara no hi ha blocs de fase col.locats al programa.</div>';
+      : '<div class="group-bucket-empty">Encara no hi ha blocs de fase col·locats al programa.</div>';
   }
   if (outWrap) {
     outWrap.innerHTML = outSplit.groups.length

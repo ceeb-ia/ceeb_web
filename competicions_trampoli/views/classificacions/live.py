@@ -13,6 +13,11 @@ from ...services.classificacions.live import (
     live_data_payload as service_live_data_payload,
     public_live_payload,
 )
+from ...services.classificacions.live_menu import (
+    classificacions_view_config,
+    first_menu_cfg_id,
+    live_menu_from_view_config,
+)
 
 
 def build_live_cfg_payload_row(competicio, cfg):
@@ -45,10 +50,14 @@ class ClassificacionsLive(TemplateView):
         data_url = ""
         if is_public:
             data_url = f"{reverse('classificacions_live_data', kwargs={'pk': self.competicio.id})}?public=1"
+        cfgs = active_cfg_values(self.competicio, only_public=is_public)
+        live_menu = live_menu_from_view_config(classificacions_view_config(self.competicio), cfgs)
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio, only_public=is_public),
+                "cfgs": cfgs,
+                "live_menu": live_menu,
+                "live_initial_cfg_id": first_menu_cfg_id(live_menu),
                 "is_public": is_public,
                 "hide_base_chrome": is_public,
                 "poll_ms": 4000,
@@ -86,10 +95,11 @@ class ClassificacionsLoopLive(TemplateView):
         transition = (self.request.GET.get("transition") or "fade").strip().lower()
         if transition not in {"fade", "none"}:
             transition = "fade"
+        cfgs = active_cfg_values(self.competicio, only_public=is_public)
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio, only_public=is_public),
+                "cfgs": cfgs,
                 "is_public": is_public,
                 "hide_base_chrome": is_public,
                 "poll_ms": poll_ms,
@@ -115,10 +125,14 @@ class PublicClassificacionsLive(TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        cfgs = active_cfg_values(self.competicio, only_public=True)
+        live_menu = live_menu_from_view_config(classificacions_view_config(self.competicio), cfgs)
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio, only_public=True),
+                "cfgs": cfgs,
+                "live_menu": live_menu,
+                "live_initial_cfg_id": first_menu_cfg_id(live_menu),
                 "is_public": True,
                 "hide_base_chrome": True,
                 "poll_ms": 4000,
@@ -158,10 +172,11 @@ class PublicClassificacionsLoopLive(TemplateView):
         transition = (self.request.GET.get("transition") or "fade").strip().lower()
         if transition not in {"fade", "none"}:
             transition = "fade"
+        cfgs = active_cfg_values(self.competicio, only_public=True)
         ctx.update(
             {
                 "competicio": self.competicio,
-                "cfgs": active_cfg_values(self.competicio, only_public=True),
+                "cfgs": cfgs,
                 "is_public": True,
                 "hide_base_chrome": True,
                 "poll_ms": poll_ms,

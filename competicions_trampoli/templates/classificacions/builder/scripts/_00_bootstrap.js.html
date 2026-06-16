@@ -25,6 +25,13 @@
   const DELETE_URL_PATTERN = parseJsonScript("builder-delete-url-pattern", "");
   const PREVIEW_URL_PATTERN = parseJsonScript("builder-preview-url-pattern", "");
   const REORDER_URL = parseJsonScript("builder-reorder-url", "");
+  const LIVE_MENU_SAVE_URL = parseJsonScript("builder-live-menu-save-url", "");
+  const CLASSIFICACIONS_VIEW_RAW = parseJsonScript("classificacions-view-data-v2", {});
+  const CLASSIFICACIONS_VIEW = (
+    CLASSIFICACIONS_VIEW_RAW &&
+    typeof CLASSIFICACIONS_VIEW_RAW === "object" &&
+    !Array.isArray(CLASSIFICACIONS_VIEW_RAW)
+  ) ? CLASSIFICACIONS_VIEW_RAW : {};
   const TEMPLATE_LIBRARY_ENABLED = parseJsonScript("builder-enable-template-library", true);
   const CAN_PREVIEW = parseJsonScript("builder-can-preview", true);
   const INITIAL_SELECTED_ID = parseJsonScript("builder-selected-id", null);

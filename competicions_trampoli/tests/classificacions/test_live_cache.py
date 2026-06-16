@@ -91,6 +91,7 @@ from ...services.classificacions.builder import (
 )
 from ...services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
 from ...services.classificacions.export import _normalize_excel_cell
+from ...services.classificacions.live_menu import normalize_live_menu_items
 from ...services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
 from ...services.classificacions.validation import (
     build_metric_meta_for_comp_aparell as _build_metric_meta_for_comp_aparell,
@@ -238,6 +239,9 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
     def _reorder_url(self):
         return reverse("classificacio_reorder", kwargs={"pk": self.comp.id})
 
+    def _live_menu_url(self):
+        return reverse("classificacio_live_menu_save", kwargs={"pk": self.comp.id})
+
     def _snapshot_payload(self):
         return {
             "ok": True,
@@ -383,7 +387,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn("permissions", internal_res.json())
 
     def test_public_live_filters_unpublished_active_classificacions(self):
-        ClassificacioConfig.objects.create(
+        internal_cfg = ClassificacioConfig.objects.create(
             competicio=self.comp,
             nom="Control intern",
             activa=True,
@@ -392,6 +396,16 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             tipus="individual",
             schema=self._schema(),
         )
+        self.comp.classificacions_view = {
+            "live_menu": [
+                {"type": "heading", "id": "h-internal", "label": "Internes"},
+                {"type": "classificacio", "cfg_id": internal_cfg.id},
+                {"type": "divider", "id": "d1"},
+                {"type": "heading", "id": "h-public", "label": "Publiques"},
+                {"type": "classificacio", "cfg_id": self.cfg.id},
+            ]
+        }
+        self.comp.save(update_fields=["classificacions_view"])
         fake_redis = self.FakeRedis()
         compute_result = {
             "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
@@ -408,6 +422,14 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(
             [cfg["nom"] for cfg in internal_res.json().get("cfgs", [])],
             ["General", "Control intern"],
+        )
+        self.assertEqual(
+            [item.get("label") for item in public_res.json().get("live_menu", []) if item.get("type") == "heading"],
+            ["Publiques"],
+        )
+        self.assertEqual(
+            [item.get("cfg_id") for item in public_res.json().get("live_menu", []) if item.get("type") == "classificacio"],
+            [self.cfg.id],
         )
 
     def test_since_is_served_from_cached_stamp_without_recompute(self):
@@ -684,3 +706,73 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(res.status_code, 200)
         self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+
+    def test_classificacio_live_menu_save_persists_normalized_menu_and_marks_dirty(self):
+        fake_redis = self.FakeRedis()
+        cfg_2 = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Segona",
+            activa=True,
+            ordre=2,
+            tipus="individual",
+            schema=self._schema(),
+        )
+        other_comp = self._create_competicio("Altres")
+        other_cfg = ClassificacioConfig.objects.create(
+            competicio=other_comp,
+            nom="Alien",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=self._schema(),
+        )
+        self.client.force_login(self.editor_user)
+        payload = {
+            "live_menu": [
+                {"type": "heading", "id": "h1", "label": "Trampoli"},
+                {"type": "classificacio", "cfg_id": cfg_2.id},
+                {"type": "classificacio", "cfg_id": cfg_2.id},
+                {"type": "classificacio", "cfg_id": other_cfg.id},
+                {"type": "divider", "id": "d1"},
+                {"type": "classificacio", "cfg_id": self.cfg.id},
+            ]
+        }
+
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with self.captureOnCommitCallbacks(execute=True):
+                res = self.client.post(
+                    self._live_menu_url(),
+                    data=json.dumps(payload),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(res.status_code, 200)
+        self.comp.refresh_from_db()
+        self.assertEqual(
+            self.comp.classificacions_view["live_menu"],
+            [
+                {"type": "heading", "id": "h1", "label": "Trampoli"},
+                {"type": "classificacio", "cfg_id": cfg_2.id},
+                {"type": "divider", "id": "d1"},
+                {"type": "classificacio", "cfg_id": self.cfg.id},
+            ],
+        )
+        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+
+    def test_live_menu_normalization_respects_empty_valid_cfg_set(self):
+        items = [
+            {"type": "heading", "id": "h1", "label": "Bloc"},
+            {"type": "classificacio", "cfg_id": self.cfg.id},
+        ]
+
+        self.assertEqual(
+            normalize_live_menu_items(items, valid_cfg_ids=[]),
+            [{"type": "heading", "id": "h1", "label": "Bloc"}],
+        )
+        self.assertEqual(
+            normalize_live_menu_items(items, valid_cfg_ids=None),
+            [
+                {"type": "heading", "id": "h1", "label": "Bloc"},
+                {"type": "classificacio", "cfg_id": self.cfg.id},
+            ],
+        )

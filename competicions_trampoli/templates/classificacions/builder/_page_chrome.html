@@ -25,6 +25,7 @@
         {% if global_templates_url %}
           <a class="btn btn-sm btn-outline-secondary" href="{{ global_templates_url }}">Plantilles globals</a>
         {% endif %}
+        <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_live' competicio.id %}">Veure live</a>
         <button type="button" class="btn btn-sm btn-primary" id="btnSave">Guardar</button>
       </div>
     </header>
@@ -39,18 +40,23 @@
       <aside class="classif-builder-pane classif-builder-pane--configs" aria-label="Classificacions" data-avatar-anchor="classifications-config-list">
         <div class="classif-pane-head">
           <div>
-            <div class="classif-pane-kicker">Classificacio</div>
+            <div class="classif-pane-kicker">Classificació</div>
             <h4 class="classif-pane-title">Configuracions</h4>
           </div>
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd" data-avatar-anchor="classifications-add-button">+ Afegir</button>
+          <div class="classif-config-actions">
+            {% if builder_mode|default:"competition" == "competition" %}
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLiveMenuOrganization">Organització</button>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd" data-avatar-anchor="classifications-add-button">+ Afegir</button>
+          </div>
         </div>
         <div class="list-group list-group-flush builder-config-list" id="cfgList"></div>
         <div class="classif-pane-note">
-          Crea una classificacio per "General", una per "Categoria", etc.
+          Crea una classificació per "General", una per "Categoria", etc.
         </div>
 
         {% if builder_enable_template_library|default:True %}
-        <section class="classif-template-panel" aria-label="Plantilles de classificacio">
+        <section class="classif-template-panel" aria-label="Plantilles de classificació">
           <div class="classif-pane-kicker">Plantilles</div>
           <select id="templateSelect" class="form-control form-control-sm">
             <option value="">Les meves plantilles...</option>
@@ -68,14 +74,14 @@
       </aside>
 
       <div id="editorEmpty" class="classif-builder-empty">
-        <div class="classif-builder-empty-title">Selecciona una configuracio</div>
-        <div class="classif-builder-empty-copy">Tria una classificacio de l'esquerra per editar-ne seccions, calculs i presentacio.</div>
+        <div class="classif-builder-empty-title">Selecciona una configuració</div>
+        <div class="classif-builder-empty-copy">Tria una classificació de l'esquerra per editar-ne seccions, càlculs i presentació.</div>
       </div>
 
       <div id="editorBody" class="classif-builder-editor-grid" style="display:none;">
-        <aside class="builder-nav" aria-label="Navegacio interna del builder" data-avatar-anchor="classifications-section-nav">
+        <aside class="builder-nav" aria-label="Navegació interna del builder" data-avatar-anchor="classifications-section-nav">
           <div class="builder-nav-card">
-            <div class="builder-nav-eyebrow">Seccio</div>
+            <div class="builder-nav-eyebrow">Secció</div>
             <div class="builder-nav-title">Configura per ordre</div>
             <div class="builder-nav-links">
               <a class="builder-nav-link" data-builder-nav-link href="#section-meta">
@@ -96,7 +102,7 @@
                 <span class="builder-nav-index">03</span>
                 <span class="builder-nav-media">
                   <img src="{% static 'classificacions/sections/puntuacio.png' %}" alt="">
-                  <span class="builder-nav-copy"><span>Puntuacio</span><small>Calcul central</small></span>
+                  <span class="builder-nav-copy"><span>Puntuació</span><small>Càlcul central</small></span>
                 </span>
               </a>
               <a class="builder-nav-link" data-builder-nav-link href="#section-desempat">
@@ -117,18 +123,18 @@
                 <span class="builder-nav-index">06</span>
                 <span class="builder-nav-media">
                   <img src="{% static 'classificacions/sections/presentacio.png' %}" alt="">
-                  <span class="builder-nav-copy"><span>Presentacio</span><small>Sortida i preview</small></span>
+                  <span class="builder-nav-copy"><span>Presentació</span><small>Sortida i preview</small></span>
                 </span>
               </a>
             </div>
           </div>
         </aside>
 
-        <section class="classif-builder-detail-pane" id="builderDetailPane" aria-label="Detall de la seccio" data-avatar-anchor="classifications-detail-pane">
+        <section class="classif-builder-detail-pane" id="builderDetailPane" aria-label="Detall de la secció" data-avatar-anchor="classifications-detail-pane">
           <div class="builder-detail-toolbar">
             <div>
               <div class="builder-detail-kicker">Detall</div>
-              <div class="builder-detail-title">Editor de classificacio</div>
+              <div class="builder-detail-title">Editor de classificació</div>
             </div>
           </div>
           <div class="builder-main">

@@ -5,9 +5,9 @@
     <div>
       <div class="builder-section__eyebrow">Ordre</div>
       <h4 class="builder-section__title">Desempat <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_tiebreakers" aria-label="Ajuda sobre desempat" title="Ajuda sobre desempat">?</button></h4>
-      <p class="builder-section__desc">Criteris addicionals per resoldre empats a la classificacio final, en l'ordre exacte en que s'han d'aplicar.</p>
+      <p class="builder-section__desc">Criteris addicionals per resoldre empats a la classificació final, en l'ordre exacte en què s'han d'aplicar.</p>
     </div>
-    <div class="builder-help-badge">Despres de punts</div>
+    <div class="builder-help-badge">Després de punts</div>
   </div>
 
   <div class="builder-section__body">
@@ -22,7 +22,7 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Cadena de criteris <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_tiebreakers_chain" aria-label="Ajuda sobre cadena de criteris" title="Ajuda sobre cadena de criteris">?</button></p>
-                <p class="builder-subsection__desc">Cada criteri defineix una puntuacio secundaria per resoldre empats. En classificacions derivades es mantenen les opcions avancades de membres i pool.</p>
+                <p class="builder-subsection__desc">Cada criteri defineix una puntuació secundària per resoldre empats. En classificacions derivades es mantenen les opcions avançades de membres i pool.</p>
               </div>
             </div>
           </div>
@@ -31,7 +31,7 @@
 
         <div class="classif-desempat-actions" data-avatar-anchor="classifications-tiebreakers-actions">
           <button type="button" class="btn btn-sm btn-outline-primary" id="btnTieAdd">+ Afegir criteri buit</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTieCloneFromPuntuacio">+ Crear des de puntuacio actual</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTieCloneFromPuntuacio">+ Crear des de puntuació actual</button>
           <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_tiebreakers_priority" aria-label="Ajuda sobre prioritat dels desempats" title="Ajuda sobre prioritat dels desempats">?</button>
         </div>
 
@@ -52,8 +52,8 @@
                 <img src="{% static 'classificacions/sections/desempat/criteris.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Edicio avancada</p>
-                <p class="builder-subsection__desc">Acces directe al JSON dels desempats per manteniment o compatibilitat.</p>
+                <p class="builder-subsection__title">Edició avançada</p>
+                <p class="builder-subsection__desc">Accés directe al JSON dels desempats per manteniment o compatibilitat.</p>
               </div>
             </div>
           </div>
@@ -61,11 +61,11 @@
         </div>
 
         <details class="builder-advanced classif-desempat-advanced">
-          <summary class="small text-muted">Opcions avancades</summary>
+          <summary class="small text-muted">Opcions avançades</summary>
           <div class="mt-2">
             <textarea class="form-control" id="tDesempat" rows="3"></textarea>
             <div class="form-text text-muted">
-              Exemple: [{"id":"tie_1","nom":"Millor execucio","ordre":"desc","pipeline_version":1,"pipeline":{...}}]
+              Exemple: [{"id":"tie_1","nom":"Millor execució","ordre":"desc","pipeline_version":1,"pipeline":{...}}]
             </div>
           </div>
         </details>

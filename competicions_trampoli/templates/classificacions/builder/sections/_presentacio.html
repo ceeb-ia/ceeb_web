@@ -4,10 +4,10 @@
   <div class="builder-section__header">
     <div>
       <div class="builder-section__eyebrow">Sortida</div>
-      <h4 class="builder-section__title">Presentacio <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation" aria-label="Ajuda sobre presentacio" title="Ajuda sobre presentacio">?</button></h4>
-      <p class="builder-section__desc">Configura el top visible, els empats, la taula principal, el detall desplegable i la previsualitzacio final.</p>
+      <h4 class="builder-section__title">Presentació <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation" aria-label="Ajuda sobre presentació" title="Ajuda sobre presentació">?</button></h4>
+      <p class="builder-section__desc">Configura el top visible, els empats, la taula principal, el detall desplegable i la previsualització final.</p>
     </div>
-    <div class="builder-help-badge">Visualitzacio</div>
+    <div class="builder-help-badge">Visualització</div>
   </div>
   <div class="builder-section__body">
     <div class="builder-section__stack classif-presentacio-flow">
@@ -36,7 +36,7 @@
             <label class="font-weight-bold d-block">Mostrar empats <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_ties" aria-label="Ajuda sobre mostrar empats" title="Ajuda sobre mostrar empats">?</button></label>
             <div class="form-check mt-2">
               <input class="form-check-input" type="checkbox" id="cEmpats" checked>
-              <label class="form-check-label" for="cEmpats">Si</label>
+              <label class="form-check-label" for="cEmpats">Sí</label>
             </div>
           </div>
         </div>
@@ -52,7 +52,7 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Taula principal <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_main_table" aria-label="Ajuda sobre taula principal" title="Ajuda sobre taula principal">?</button></p>
-                <p class="builder-subsection__desc">Defineix les columnes visibles de la classificacio: camps base, punts i camps raw.</p>
+                <p class="builder-subsection__desc">Defineix les columnes visibles de la classificació: camps base, punts i camps raw.</p>
               </div>
             </div>
           </div>
@@ -77,7 +77,7 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Detall desplegable <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_detail" aria-label="Ajuda sobre detall desplegable" title="Ajuda sobre detall desplegable">?</button></p>
-                <p class="builder-subsection__desc">Configura el segon nivell sota cada fila. Cada seccio del detall es treballa com una pestanya.</p>
+                <p class="builder-subsection__desc">Configura el segon nivell sota cada fila. Cada secció del detall es treballa com una pestanya.</p>
               </div>
             </div>
           </div>
@@ -85,7 +85,7 @@
         </div>
 
         <div id="detailScopeHint" class="alert alert-secondary py-2 px-3 small mb-3 classif-filter-context-note">
-          Configura seccions desplegables sota cada fila, limitades al tipus de classificacio actual.
+          Configura seccions desplegables sota cada fila, limitades al tipus de classificació actual.
         </div>
 
         <div class="classif-detail-toggle-grid">
@@ -108,7 +108,7 @@
         </div>
 
         <div class="classif-detail-layout-row">
-          <label class="small text-muted mb-1" for="detailSectionsLayout">Disposicio de seccions <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_detail_sections" aria-label="Ajuda sobre disposició del detall" title="Ajuda sobre disposició del detall">?</button></label>
+          <label class="small text-muted mb-1" for="detailSectionsLayout">Disposició de seccions <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_detail_sections" aria-label="Ajuda sobre disposició del detall" title="Ajuda sobre disposició del detall">?</button></label>
           <select class="form-control form-control-sm w-auto" id="detailSectionsLayout">
             <option value="tabs">Pestanyes</option>
             <option value="stacked">Vertical</option>
@@ -117,7 +117,7 @@
 
         <div class="classif-detail-add-row">
           <select class="form-control form-control-sm w-auto" id="detailSectionType"></select>
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnDetailSectionAdd">+ Seccio</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnDetailSectionAdd">+ Secció</button>
           <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_detail_sections" aria-label="Ajuda sobre seccions del detall" title="Ajuda sobre seccions del detall">?</button>
         </div>
         <div id="detailConfigAlert" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;"></div>
@@ -134,16 +134,16 @@
               </span>
               <div class="classif-panel-title-copy">
                 <p class="builder-subsection__title">Estil de particions <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_styles" aria-label="Ajuda sobre estil visual" title="Ajuda sobre estil visual">?</button></p>
-                <p class="builder-subsection__desc">Ordena visualment els blocs del live i assigna'ls un color de fons tematic.</p>
+                <p class="builder-subsection__desc">Ordena visualment els blocs del live i assigna'ls un color de fons temàtic.</p>
               </div>
             </div>
           </div>
         </div>
         <div class="d-flex flex-wrap gap-2 mb-2">
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnPartitionPresentationAdd">+ Particio</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnPartitionPresentationAdd">+ Partició</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPartitionPresentationSuggest">Suggerir valors</button>
         </div>
-        <div class="small text-muted mb-2">La clau pot ser el titol que veus al live o la clau interna completa de la particio.</div>
+        <div class="small text-muted mb-2">La clau pot ser el títol que veus al live o la clau interna completa de la partició.</div>
         <div id="partitionPresentationBox" class="classif-partition-presentation-box"></div>
 
         <div class="classif-live-row-style-head">
@@ -152,7 +152,7 @@
             <p class="builder-subsection__desc mb-0">Aplica colors de fons a posicions concretes: 1r, 2n, 3r o qualsevol altra.</p>
           </div>
           <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnRankStyleAdd">+ Posicio</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnRankStyleAdd">+ Posició</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRankStyleDefaults">Podis</button>
           </div>
         </div>
@@ -168,7 +168,7 @@
                 <img src="{% static 'classificacions/sections/presentacio.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Previsualitzacio</p>
+                <p class="builder-subsection__title">Previsualització</p>
                 <p class="builder-subsection__desc">Valida la sortida final de la taula principal i del detall configurat.</p>
               </div>
             </div>
@@ -176,12 +176,12 @@
           {% if builder_can_preview|default:True %}
           <div class="d-flex align-items-center gap-2">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
-            <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_preview" aria-label="Ajuda sobre previsualitzacio" title="Ajuda sobre previsualitzacio">?</button>
+            <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_presentation_preview" aria-label="Ajuda sobre previsualització" title="Ajuda sobre previsualització">?</button>
           </div>
           {% endif %}
         </div>
         <details class="builder-preview-shell builder-preview-panel" open>
-          <summary>Previsualitzacio</summary>
+          <summary>Previsualització</summary>
           <div class="border rounded p-2 mt-2" id="previewBox">
             <div class="text-muted small">Fes clic a "Previsualitzar".</div>
           </div>

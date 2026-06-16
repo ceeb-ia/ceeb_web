@@ -215,7 +215,7 @@ class ClassificacioTemplateGlobalBuilder(TemplateView):
         ctx.update(
             {
                 "builder_mode": "global",
-                "builder_title": "Plantilles de classificacio",
+                "builder_title": "Plantilles de classificació",
                 "builder_subtitle": "Gestio global per usuari",
                 "builder_home_label": "Plantilles",
                 "builder_home_url": reverse("classificacio_template_global_list"),
@@ -266,7 +266,7 @@ def classificacio_template_global_save(request):
         return HttpResponseBadRequest("JSON invalid")
 
     tpl_id = payload.get("id")
-    nom = str(payload.get("nom") or "Plantilla classificacio").strip() or "Plantilla classificacio"
+    nom = str(payload.get("nom") or "Plantilla classificació").strip() or "Plantilla classificació"
     slug_raw = str(payload.get("slug") or "").strip()
     activa = bool(payload.get("activa", True))
     tipus = str(payload.get("tipus") or "individual").strip().lower()
@@ -333,7 +333,7 @@ def classificacio_template_global_save(request):
         return JsonResponse(
             {
                 "ok": False,
-                "error": "Plantilla global invalida.",
+                "error": "Plantilla global invàlida.",
                 "errors": validation_errors,
                 "error_details": _build_validation_error_details(validation_details or validation_errors),
             },

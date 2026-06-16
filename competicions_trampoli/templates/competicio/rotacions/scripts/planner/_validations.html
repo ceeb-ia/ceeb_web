@@ -72,7 +72,7 @@
     if (summary) summary.textContent = `${errors.length} errors · ${warnings.length} avisos`;
     if (!results) return;
     if (!errors.length && !warnings.length && !info.length) {
-      results.innerHTML = '<div class="validation-empty">No hi ha resultats de validacio.</div>';
+      results.innerHTML = '<div class="validation-empty">No hi ha resultats de validació.</div>';
       return;
     }
     results.innerHTML = [
@@ -92,7 +92,7 @@
           const data = await postJSON(VALIDATE_URL, {});
           renderValidation(data || {});
         } catch (e) {
-          if (summary) summary.textContent = "Error de validacio";
+          if (summary) summary.textContent = "Error de validació";
           if (typeof showAlert === "function") showAlert(e.message || e);
           else window.alert(e.message || e);
         }

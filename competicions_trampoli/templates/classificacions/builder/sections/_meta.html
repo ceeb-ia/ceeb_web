@@ -5,7 +5,7 @@
     <div>
       <div class="builder-section__eyebrow">Base</div>
       <h4 class="builder-section__title">Metadades <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata" aria-label="Ajuda sobre metadades" title="Ajuda sobre metadades">?</button></h4>
-      <p class="builder-section__desc">Nom, tipus i estat general de la classificacio abans d'entrar en la logica.</p>
+      <p class="builder-section__desc">Nom, tipus i estat general de la classificació abans d'entrar en la lògica.</p>
     </div>
     <div class="classif-section-badges">
       <div class="builder-help-badge">Primer pas</div>
@@ -23,8 +23,8 @@
               <img src="{% static 'classificacions/sections/metadades/identitat.png' %}" alt="">
             </span>
             <div class="classif-panel-title-copy">
-              <p class="builder-subsection__title">Identitat de la classificacio</p>
-              <p class="builder-subsection__desc">Nom visible i tipus de classificacio sobre el qual es calcularan resultats.</p>
+              <p class="builder-subsection__title">Identitat de la classificació</p>
+              <p class="builder-subsection__desc">Nom visible i tipus de classificació sobre el qual es calcularan resultats.</p>
             </div>
           </div>
         </div>
@@ -41,12 +41,12 @@
           </div>
           {% endif %}
           <div class="col-12 {% if is_global_builder %}col-xl-4{% else %}col-xl-7{% endif %} mb-3" data-avatar-anchor="classifications-metadata-type">
-            <label class="font-weight-bold">Tipus <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_type" aria-label="Ajuda sobre tipus de classificacio" title="Ajuda sobre tipus de classificacio">?</button></label>
+            <label class="font-weight-bold">Tipus <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_type" aria-label="Ajuda sobre tipus de classificació" title="Ajuda sobre tipus de classificació">?</button></label>
             <select class="form-control classif-hidden-native-select" id="fTipus" aria-hidden="true" tabindex="-1">
               <option value="individual">Individual</option>
               <option value="equips">Equips</option>
             </select>
-            <div class="classif-type-choice-grid" role="group" aria-label="Tipus de classificacio">
+            <div class="classif-type-choice-grid" role="group" aria-label="Tipus de classificació">
               <button type="button" class="classif-type-choice" data-classif-type-choice="individual">
                 <img src="{% static 'classificacions/individual.png' %}" alt="">
                 <span>
@@ -69,7 +69,7 @@
           <div class="builder-subsection__head">
             <div>
               <p class="builder-subsection__title">Context d'equips <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_team_context" aria-label="Ajuda sobre context d'equips" title="Ajuda sobre context d'equips">?</button></p>
-              <p class="builder-subsection__desc">Defineix si la classificacio d'equips deriva de notes individuals o treballa amb equips natius.</p>
+              <p class="builder-subsection__desc">Defineix si la classificació d'equips deriva de notes individuals o treballa amb equips natius.</p>
             </div>
             <div class="builder-inline-note">Equips</div>
           </div>
@@ -99,8 +99,8 @@
               <img src="{% static 'classificacions/sections/metadades/estat.png' %}" alt="">
             </span>
             <div class="classif-panel-title-copy">
-              <p class="builder-subsection__title">Estat i visualitzacio <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_status" aria-label="Ajuda sobre estat" title="Ajuda sobre estat">?</button></p>
-              <p class="builder-subsection__desc">Controla si aquesta classificacio participa en el programa i si es pot veure al live public.</p>
+              <p class="builder-subsection__title">Estat i visualització <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_metadata_status" aria-label="Ajuda sobre estat" title="Ajuda sobre estat">?</button></p>
+              <p class="builder-subsection__desc">Controla si aquesta classificació participa en el programa i si es pot veure al live públic.</p>
             </div>
           </div>
         </div>
@@ -118,8 +118,8 @@
             <input class="form-check-input" type="checkbox" id="fPublicada">
             <span class="classif-switch-control" aria-hidden="true"></span>
             <span class="classif-switch-copy">
-              <strong>Publicacio live</strong>
-              <small>Visible a la sortida publica quan estigui activa.</small>
+              <strong>Publicació live</strong>
+              <small>Visible a la sortida pública quan estigui activa.</small>
             </span>
           </label>
           {% endif %}

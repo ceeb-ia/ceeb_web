@@ -598,6 +598,10 @@ def _positive_int_or_none(value):
     return clean if clean > 0 else None
 
 
+def _is_base_phase_token(value) -> bool:
+    return str(value or "").strip().lower() == "base"
+
+
 def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_id=None) -> dict:
     comp_aparells = list(
         CompeticioAparell.objects
@@ -621,11 +625,14 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         app_summaries.append(_app_summary(comp_aparell, phases, app_logo_choices))
 
     selected_phases = phases_by_app.get(int(selected.id), []) if selected else []
+    selected_base_phase = _is_base_phase_token(selected_phase_id)
     requested_phase_id = _positive_int_or_none(selected_phase_id)
     selected_phase = next(
         (phase for phase in selected_phases if requested_phase_id and int(phase.id) == requested_phase_id),
         None,
     )
+    if selected_phase is not None:
+        selected_base_phase = False
     selected_phase_id = int(selected_phase.id) if selected_phase is not None else None
     if selected_phase is not None:
         selected_phase.ui_manual_inscripcio_options = manual_inscripcio_options_for_phase(selected_phase)
@@ -650,6 +657,7 @@ def phase_dashboard_context(competicio, *, selected_app_id=None, selected_phase_
         "root_phases": root_phases,
         "selected_phase": selected_phase,
         "selected_phase_id": selected_phase_id,
+        "selected_base_phase": selected_base_phase,
         "phase_count": len(selected_phases),
         "unit_count": len(selected_units),
         "base_participation_preview": base_participation_preview,

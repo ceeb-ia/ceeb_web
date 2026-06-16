@@ -46,6 +46,155 @@
   .table-responsive {
     -webkit-overflow-scrolling: touch;
   }
+  .live-classif-layout {
+    display: block;
+  }
+  .live-classif-toggle {
+    position: fixed;
+    left: 0.75rem;
+    top: 9.25rem;
+    z-index: 1035;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #1e3a5f;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+    font-size: 0.82rem;
+    font-weight: 800;
+    line-height: 1.1;
+    padding: 0.44rem 0.68rem;
+  }
+  .live-classif-toggle:hover,
+  .live-classif-toggle:focus {
+    border-color: #2f80ed;
+    background: #edf5ff;
+    outline: none;
+  }
+  .live-classif-toggle-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .live-classif-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1040;
+    display: none;
+    background: rgba(15, 23, 42, 0.36);
+  }
+  .live-classif-backdrop.show {
+    display: block;
+  }
+  .live-classif-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+    width: min(88vw, 360px);
+    height: 100vh;
+    border-right: 1px solid #dde4ef;
+    background: #f8fafc;
+    box-shadow: 18px 0 42px rgba(15, 23, 42, 0.18);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+  .live-classif-menu.show {
+    transform: translateX(0);
+  }
+  .live-classif-menu-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid #dde4ef;
+    background: #ffffff;
+    padding: 0.75rem;
+  }
+  .live-classif-menu-body {
+    overflow: auto;
+    padding: 0.55rem;
+  }
+  .live-classif-menu-title {
+    color: #0f172a;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  #cfgTabs {
+    border-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  #cfgTabs .nav-item {
+    width: 100%;
+  }
+  #cfgTabs .nav-link {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.55rem;
+    width: 100%;
+    border: 1px solid #d8e3f2;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #334155;
+    padding: 0.5rem 0.55rem;
+    text-align: left;
+    white-space: normal;
+  }
+  #cfgTabs .nav-link:hover,
+  #cfgTabs .nav-link:focus {
+    border-color: #93b5e1;
+    background: #f8fbff;
+  }
+  #cfgTabs .nav-link.active {
+    border-color: #2f80ed;
+    background: #edf5ff;
+    color: #1e3a5f;
+    box-shadow: inset 3px 0 0 #2f80ed;
+  }
+  .live-cfg-link-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .live-cfg-name {
+    display: block;
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .live-cfg-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .live-cfg-count {
+    flex: 0 0 auto;
+    margin-top: 0.05rem;
+  }
+  .live-menu-heading {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 820;
+    letter-spacing: 0.06em;
+    padding: 0.55rem 0.35rem 0.18rem;
+    text-transform: uppercase;
+  }
+  .live-menu-divider {
+    border-top: 1px solid #dbe4f0;
+    margin: 0.45rem 0.2rem;
+  }
+  .live-classif-content {
+    min-width: 0;
+  }
   .judge-row {
     display: flex;
     gap: 0.4rem;
@@ -349,16 +498,25 @@
       font-size: 1.15rem;
       line-height: 1.2;
     }
+    .live-classif-layout {
+      display: block;
+    }
+    .live-classif-toggle {
+      left: .55rem;
+      padding: .48rem .62rem;
+    }
+    .live-classif-menu {
+      width: min(92vw, 340px);
+    }
     #cfgTabs {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      overflow-y: hidden;
-      white-space: nowrap;
-      -webkit-overflow-scrolling: touch;
+      flex-direction: column;
     }
     #cfgTabs .nav-link {
-      padding: .38rem .55rem;
+      padding: .42rem .5rem;
       font-size: .82rem;
+    }
+    .live-cfg-name {
+      font-size: .8rem;
     }
     .partition-card {
       margin-bottom: .65rem;
@@ -477,7 +635,7 @@
             Excel (tot)
           </a>
           <button type="button" class="btn btn-sm btn-outline-success" id="btnExportActiveCfg">
-            Excel (pestanya)
+            Excel (activa)
           </button>
           <a class="btn btn-sm section-btn section-btn--notes" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
           <a class="btn btn-sm section-btn section-btn--classificacions" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
@@ -487,8 +645,55 @@
     </div>
 
     {% if cfgs %}
-      <!-- Tabs de classificacions -->
-      <ul class="nav nav-tabs" role="tablist" id="cfgTabs">
+      <div class="live-classif-layout">
+        <button
+          type="button"
+          class="live-classif-toggle"
+          id="liveClassifToggle"
+          aria-label="Obrir menu de classificacions"
+          aria-controls="liveClassifDrawer"
+          aria-expanded="false"
+          title="Classificacions">
+          <span class="live-classif-toggle-icon" aria-hidden="true">&#9776;</span>
+          <span>Obrir</span>
+        </button>
+        <div class="live-classif-backdrop" id="liveClassifBackdrop"></div>
+        <aside class="live-classif-menu" id="liveClassifDrawer" aria-label="Classificacions" aria-hidden="true">
+          <div class="live-classif-menu-head">
+            <div class="live-classif-menu-title">Classificacions</div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="liveClassifClose">Tancar</button>
+          </div>
+          <div class="live-classif-menu-body">
+            <ul class="nav nav-tabs" role="tablist" id="cfgTabs">
+              {% for item in live_menu %}
+                {% if item.type == "heading" %}
+                  <li class="live-menu-heading" role="presentation">{{ item.label }}</li>
+                {% elif item.type == "divider" %}
+                  <li class="live-menu-divider" role="presentation" aria-hidden="true"></li>
+                {% elif item.type == "classificacio" %}
+                  {% with c=item.cfg %}
+                    <li class="nav-item" role="presentation">
+                      <a class="nav-link {% if item.cfg_id == live_initial_cfg_id %}active{% endif %}"
+                         data-toggle="tab"
+                         href="#cfg-{{ c.id }}"
+                         role="tab"
+                         aria-controls="cfg-{{ c.id }}"
+                         aria-selected="{% if item.cfg_id == live_initial_cfg_id %}true{% else %}false{% endif %}">
+                        <span class="live-cfg-link-main">
+                          <span class="live-cfg-name">{{ c.nom }}</span>
+                          {% if not is_public and not c.publicada %}
+                            <span class="live-cfg-meta">
+                              <span class="badge badge-secondary">Interna</span>
+                            </span>
+                          {% endif %}
+                        </span>
+                        <span class="badge badge-light live-cfg-count" id="badge-{{ c.id }}">â€”</span>
+                      </a>
+                    </li>
+                  {% endwith %}
+                {% endif %}
+              {% endfor %}
+              {% comment %}
         {% for c in cfgs %}
           <li class="nav-item" role="presentation">
             <a class="nav-link {% if forloop.first %}active{% endif %}"
@@ -497,24 +702,32 @@
                role="tab"
                aria-controls="cfg-{{ c.id }}"
                aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-              {{ c.nom }}
+              <span class="live-cfg-link-main">
+                <span class="live-cfg-name">{{ c.nom }}</span>
               {% if not is_public and not c.publicada %}
-                <span class="badge badge-secondary ml-1">Interna</span>
-              {% endif %}
-              <span class="badge badge-light ml-1" id="badge-{{ c.id }}">—</span>
+                  <span class="live-cfg-meta">
+                    <span class="badge badge-secondary">Interna</span>
+                  </span>
+                {% endif %}
+              </span>
+              <span class="badge badge-light live-cfg-count" id="badge-{{ c.id }}">—</span>
             </a>
           </li>
         {% endfor %}
-      </ul>
+              {% endcomment %}
+            </ul>
+          </div>
+        </aside>
 
-      <div class="tab-content pt-3" id="cfgContent">
+        <div class="tab-content live-classif-content" id="cfgContent">
         {% for c in cfgs %}
-          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+          <div class="tab-pane fade {% if c.id == live_initial_cfg_id %}show active{% endif %}"
                id="cfg-{{ c.id }}"
                role="tabpanel">
             <div class="text-muted small">Carregant…</div>
           </div>
         {% endfor %}
+        </div>
       </div>
     {% else %}
       <div class="alert alert-warning">
@@ -881,6 +1094,62 @@
     };
   }
 
+  function firstCfgIdFromLiveMenu(menu){
+    for (const item of Array.isArray(menu) ? menu : []) {
+      if (item && item.type === "classificacio" && item.cfg_id) return String(item.cfg_id);
+    }
+    return "";
+  }
+
+  function renderLiveMenu(menu){
+    const host = document.getElementById("cfgTabs");
+    if (!host || !Array.isArray(menu)) return;
+    const activeHref = activeTabHref();
+    const activeHrefId = (activeHref.match(/^#cfg-(\d+)$/) || [])[1] || "";
+    const menuCfgIds = new Set(
+      menu
+        .filter(item => item && item.type === "classificacio" && item.cfg_id)
+        .map(item => String(item.cfg_id))
+    );
+    const activeId = menuCfgIds.has(activeHrefId) ? activeHrefId : firstCfgIdFromLiveMenu(menu);
+    let html = "";
+    menu.forEach(item => {
+      if (!item || typeof item !== "object") return;
+      if (item.type === "heading") {
+        html += '<li class="live-menu-heading" role="presentation">' + esc(item.label || "") + '</li>';
+        return;
+      }
+      if (item.type === "divider") {
+        html += '<li class="live-menu-divider" role="presentation" aria-hidden="true"></li>';
+        return;
+      }
+      if (item.type !== "classificacio") return;
+      const cfg = item.cfg || {};
+      const cfgId = String(item.cfg_id || cfg.id || "").trim();
+      if (!cfgId) return;
+      const isActive = cfgId === String(activeId || "");
+      html += '<li class="nav-item" role="presentation">';
+      html += '<a class="nav-link' + (isActive ? ' active' : '') + '" data-toggle="tab" href="#cfg-' + esc(cfgId) + '" role="tab" aria-controls="cfg-' + esc(cfgId) + '" aria-selected="' + (isActive ? 'true' : 'false') + '">';
+      html += '<span class="live-cfg-link-main"><span class="live-cfg-name">' + esc(cfg.nom || "") + '</span>';
+      if (!{{ is_public|yesno:"true,false" }} && cfg.publicada === false) {
+        html += '<span class="live-cfg-meta"><span class="badge badge-secondary">Interna</span></span>';
+      }
+      html += '</span><span class="badge badge-light live-cfg-count" id="badge-' + esc(cfgId) + '">—</span></a></li>';
+    });
+    host.innerHTML = html;
+    if (activeId) {
+      document.querySelectorAll("#cfgContent .tab-pane").forEach(pane => {
+        const isActive = pane.id === "cfg-" + activeId;
+        pane.classList.toggle("show", isActive);
+        pane.classList.toggle("active", isActive);
+      });
+    }
+    if (!document.querySelector("#cfgContent .tab-pane.active") && activeId) {
+      const pane = document.getElementById("cfg-" + activeId);
+      if (pane) pane.classList.add("show", "active");
+    }
+  }
+
   function activeTabHref(){
     const active = document.querySelector("#cfgTabs .nav-link.active");
     return active ? String(active.getAttribute("href") || "") : "";
@@ -992,7 +1261,6 @@
       html += '<section class="partition-card part-idx-' + esc(String(pIdx % 5)) + '"' + visual.style + '>';
       html +=   '<div class="partition-head">';
       html +=     '<div class="partition-title-wrap">';
-      html +=       '<div class="partition-sub">Particio</div>';
       html +=       '<div class="partition-title">' + esc(particioNom) + '</div>';
       html +=     '</div>';
       html +=     '<span class="partition-badge">' + esc(String(rowCount)) + '</span>';
@@ -1118,6 +1386,7 @@
       }
 
       const viewportState = captureLiveViewportState();
+      renderLiveMenu(data.live_menu || []);
       (data.cfgs || []).forEach(renderCfg);
       requestAnimationFrame(() => restoreLiveViewportState(viewportState));
       els.status.textContent = "al dia";
@@ -1126,7 +1395,43 @@
     }
   }
 
+  function setLiveClassifDrawerOpen(open){
+    const drawer = document.getElementById("liveClassifDrawer");
+    const backdrop = document.getElementById("liveClassifBackdrop");
+    const toggle = document.getElementById("liveClassifToggle");
+    if (!drawer || !backdrop) return;
+    drawer.classList.toggle("show", !!open);
+    backdrop.classList.toggle("show", !!open);
+    drawer.setAttribute("aria-hidden", open ? "false" : "true");
+    if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function initLiveClassifDrawer(){
+    const toggle = document.getElementById("liveClassifToggle");
+    const close = document.getElementById("liveClassifClose");
+    const backdrop = document.getElementById("liveClassifBackdrop");
+    const tabs = document.getElementById("cfgTabs");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        const expanded = String(toggle.getAttribute("aria-expanded") || "false") === "true";
+        setLiveClassifDrawerOpen(!expanded);
+      });
+    }
+    if (close) close.addEventListener("click", () => setLiveClassifDrawerOpen(false));
+    if (backdrop) backdrop.addEventListener("click", () => setLiveClassifDrawerOpen(false));
+    if (tabs) {
+      tabs.addEventListener("click", (ev) => {
+        if (ev.target.closest(".nav-link")) setLiveClassifDrawerOpen(false);
+      });
+    }
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") setLiveClassifDrawerOpen(false);
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
+    initLiveClassifDrawer();
+
     document.addEventListener("click", (ev) => {
       const tabBtn = ev.target.closest(".js-live-detail-tab");
       if (tabBtn) {
@@ -1208,7 +1513,7 @@
     await tick();
     timer = setInterval(tick, POLL_MS);
 
-    // si l’usuari canvia de pestanya, no cal fer res: renderitzem totes les cfgs quan arriben dades
+    // si l'usuari canvia de classificacio, no cal fer res: renderitzem totes les cfgs quan arriben dades
   });
 </script>
 {% endblock %}

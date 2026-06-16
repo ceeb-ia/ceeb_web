@@ -10,7 +10,7 @@
   id="phase-page-shell"
   data-competicio-id="{{ competicio.id }}"
   data-selected-app-id="{{ selected_app_id|default:'' }}"
-  data-selected-phase-id="{% if selected_phase %}{{ selected_phase.id }}{% endif %}"
+  data-selected-phase-id="{% if selected_phase %}{{ selected_phase.id }}{% elif selected_base_phase %}base{% endif %}"
 >
     {% include "competicio/fases/_header.html" %}
     {% include "components/avatar_helper.html" with avatar_messages=avatar_messages avatar_initial_topic=avatar_initial_topic position="left" state="closed" %}

@@ -27,6 +27,10 @@ from ...services.classificacions.builder import (
     prepare_schema_for_builder_hydration,
 )
 from ...services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
+from ...services.classificacions.live_menu import (
+    classificacions_view_config,
+    save_live_menu_to_competicio,
+)
 from ...services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
 from ...services.classificacions.runtime import (
     execute_classificacio_runtime,
@@ -55,7 +59,7 @@ class ClassificacionsHome(TemplateView):
         ):
             messages.warning(
                 request,
-                "No pots crear classificacions sense aparells de competicio.",
+                "No pots crear classificacions sense aparells de competició.",
             )
             create_url = reverse("trampoli_aparell_create", kwargs={"pk": self.competicio.id})
             next_query = urlencode({"next": request.get_full_path()})
@@ -308,12 +312,14 @@ class ClassificacionsHome(TemplateView):
                 "builder_mode": "competition",
                 "builder_title": "Classificacions",
                 "builder_subtitle": competicio.nom,
-                "builder_home_label": "Configuracio",
+                "builder_home_label": "Configuració",
                 "builder_home_url": reverse("trampoli_config", kwargs={"pk": competicio.id}),
                 "builder_save_url": reverse("classificacio_save", kwargs={"pk": competicio.id}),
                 "builder_delete_url_pattern": reverse("classificacio_delete", kwargs={"pk": competicio.id, "cid": 0}),
                 "builder_preview_url_pattern": reverse("classificacio_preview", kwargs={"pk": competicio.id, "cid": 0}),
                 "builder_reorder_url": reverse("classificacio_reorder", kwargs={"pk": competicio.id}),
+                "builder_live_menu_save_url": reverse("classificacio_live_menu_save", kwargs={"pk": competicio.id}),
+                "classificacions_view": classificacions_view_config(competicio),
                 "builder_enable_template_library": True,
                 "builder_can_preview": True,
                 "builder_selected_id": None,
@@ -337,7 +343,7 @@ def classificacio_save(request, pk):
         return HttpResponseBadRequest("JSON invalid")
 
     cid = payload.get("id")
-    nom = (payload.get("nom") or "Classificacio").strip()
+    nom = (payload.get("nom") or "Classificació").strip()
     activa = bool(payload.get("activa", True))
     publicada = bool(payload.get("publicada", activa))
     if not activa:
@@ -358,7 +364,7 @@ def classificacio_save(request, pk):
         return JsonResponse(
             {
                 "ok": False,
-                "error": "Configuracio de classificacio invalida.",
+                "error": "Configuració de classificació invàlida.",
                 "errors": prepared["errors"],
                 "error_details": prepared["error_details"],
             },
@@ -430,6 +436,34 @@ def classificacio_reorder(request, pk):
 
 
 @require_POST
+@transaction.atomic
+def classificacio_live_menu_save(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    raw_items = payload.get("live_menu")
+    if not isinstance(raw_items, list):
+        return JsonResponse(
+            {"ok": False, "error": "La configuració del menú live ha de ser una llista."},
+            status=400,
+        )
+
+    valid_cfg_ids = ClassificacioConfig.objects.filter(
+        competicio=competicio,
+    ).values_list("id", flat=True)
+    view_cfg = save_live_menu_to_competicio(
+        competicio,
+        raw_items,
+        valid_cfg_ids=valid_cfg_ids,
+    )
+    transaction.on_commit(lambda comp_id=competicio.id: mark_live_dirty(comp_id))
+    return JsonResponse({"ok": True, "classificacions_view": view_cfg})
+
+
+@require_POST
 def classificacio_preview(request, pk, cid):
     competicio = get_object_or_404(Competicio, pk=pk)
     cfg = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)
@@ -439,8 +473,8 @@ def classificacio_preview(request, pk, cid):
         schema_local=cfg.schema or {},
         tipus=cfg.tipus,
         compute_fn=compute_classificacio,
-        invalid_message="Configuracio de classificacio invalida per previsualitzar.",
-        runtime_message="No s'ha pogut previsualitzar la classificacio.",
+        invalid_message="Configuració de classificació invàlida per previsualitzar.",
+        runtime_message="No s'ha pogut previsualitzar la classificació.",
     )
     if runtime["error"]:
         return JsonResponse(
@@ -465,6 +499,7 @@ def classificacio_preview(request, pk, cid):
 __all__ = [
     "ClassificacionsHome",
     "classificacio_delete",
+    "classificacio_live_menu_save",
     "classificacio_preview",
     "classificacio_reorder",
     "classificacio_save",

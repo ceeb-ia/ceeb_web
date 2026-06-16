@@ -1,0 +1,306 @@
+  const LIVE_MENU_TYPE_CLASSIFICACIO = "classificacio";
+  const LIVE_MENU_TYPE_HEADING = "heading";
+  const LIVE_MENU_TYPE_DIVIDER = "divider";
+
+  let liveMenuState = {
+    items: [],
+    nextId: 1,
+    busy: false,
+    sortable: null,
+  };
+
+  function liveMenuPersistedCfgs() {
+    return sortedCfgItems().filter(cfg => isPersistedCfgId(cfg.id));
+  }
+
+  function liveMenuNormalizeItems(rawItems) {
+    const validIds = new Set(liveMenuPersistedCfgs().map(cfg => String(cfg.id)));
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(rawItems) ? rawItems : []).forEach((raw) => {
+      if (!raw || typeof raw !== "object") return;
+      const type = String(raw.type || "").trim();
+      if (type === LIVE_MENU_TYPE_CLASSIFICACIO) {
+        const cfgId = String(raw.cfg_id || "").trim();
+        if (!cfgId || !validIds.has(cfgId) || seen.has(cfgId)) return;
+        seen.add(cfgId);
+        out.push({ type, cfg_id: Number(cfgId) });
+        return;
+      }
+      if (type === LIVE_MENU_TYPE_HEADING) {
+        const label = String(raw.label || "").trim();
+        if (!label) return;
+        out.push({ type, id: String(raw.id || `heading_${liveMenuState.nextId++}`), label });
+        return;
+      }
+      if (type === LIVE_MENU_TYPE_DIVIDER) {
+        out.push({ type, id: String(raw.id || `divider_${liveMenuState.nextId++}`) });
+      }
+    });
+    liveMenuPersistedCfgs().forEach(cfg => {
+      const cfgId = String(cfg.id);
+      if (seen.has(cfgId)) return;
+      out.push({ type: LIVE_MENU_TYPE_CLASSIFICACIO, cfg_id: Number(cfgId) });
+      seen.add(cfgId);
+    });
+    return out;
+  }
+
+  function liveMenuCfgById(cfgId) {
+    return state.cfgs.find(cfg => String(cfg.id) === String(cfgId)) || null;
+  }
+
+  function liveMenuShowError(message) {
+    const box = document.getElementById("liveMenuError");
+    if (!box) return;
+    const text = String(message || "").trim();
+    box.textContent = text;
+    box.style.display = text ? "" : "none";
+  }
+
+  function liveMenuMoveItem(index, offset) {
+    const target = index + offset;
+    if (target < 0 || target >= liveMenuState.items.length) return;
+    const items = liveMenuState.items.slice();
+    const [moved] = items.splice(index, 1);
+    items.splice(target, 0, moved);
+    liveMenuState.items = items;
+    renderLiveMenuModalList();
+  }
+
+  function liveMenuRemoveItem(index) {
+    const item = liveMenuState.items[index];
+    if (!item) return;
+    if (item.type === LIVE_MENU_TYPE_CLASSIFICACIO) return;
+    liveMenuState.items.splice(index, 1);
+    renderLiveMenuModalList();
+  }
+
+  function liveMenuAddHeading() {
+    const label = window.prompt("Títol del bloc:", "Nou bloc");
+    const clean = String(label || "").trim();
+    if (!clean) return;
+    liveMenuState.items.push({
+      type: LIVE_MENU_TYPE_HEADING,
+      id: `heading_${Date.now()}_${liveMenuState.nextId++}`,
+      label: clean,
+    });
+    renderLiveMenuModalList();
+  }
+
+  function liveMenuAddDivider() {
+    liveMenuState.items.push({
+      type: LIVE_MENU_TYPE_DIVIDER,
+      id: `divider_${Date.now()}_${liveMenuState.nextId++}`,
+    });
+    renderLiveMenuModalList();
+  }
+
+  function liveMenuResetToCurrentOrder() {
+    liveMenuState.items = liveMenuPersistedCfgs().map(cfg => ({
+      type: LIVE_MENU_TYPE_CLASSIFICACIO,
+      cfg_id: Number(cfg.id),
+    }));
+    renderLiveMenuModalList();
+  }
+
+  function renderLiveMenuModalList() {
+    const host = document.getElementById("liveMenuList");
+    if (!host) return;
+    if (!liveMenuState.items.length) {
+      host.innerHTML = '<div class="classif-live-menu-empty">No hi ha classificacions guardades per organitzar.</div>';
+      return;
+    }
+    let html = "";
+    liveMenuState.items.forEach((item, idx) => {
+      const type = String(item.type || "");
+      const isFirst = idx === 0;
+      const isLast = idx === liveMenuState.items.length - 1;
+      let label = "";
+      let meta = "";
+      let typeClass = "";
+      if (type === LIVE_MENU_TYPE_CLASSIFICACIO) {
+        const cfg = liveMenuCfgById(item.cfg_id);
+        label = cfg ? String(cfg.nom || `Classificació ${item.cfg_id}`) : `Classificació ${item.cfg_id}`;
+        meta = cfg ? `${cfg.tipus || "individual"} · ${cfg.activa ? (cfg.publicada !== false ? "Pública" : "Interna") : "Inactiva"}` : "No trobada";
+      } else if (type === LIVE_MENU_TYPE_HEADING) {
+        label = item.label || "Títol";
+        meta = "Títol de bloc";
+        typeClass = " classif-live-menu-item--heading";
+      } else {
+        label = "Separador";
+        meta = "Linia visual";
+        typeClass = " classif-live-menu-item--divider";
+      }
+
+      html += `<div class="classif-live-menu-item${typeClass}" data-live-menu-index="${idx}">`;
+      html += '<span class="classif-live-menu-drag" aria-hidden="true" title="Arrossegar">⋮</span>';
+      html += '<div>';
+      if (type === LIVE_MENU_TYPE_HEADING) {
+        html += `<input type="text" class="form-control form-control-sm classif-live-menu-heading-input" data-live-menu-label="${idx}" value="${esc(label)}">`;
+      } else {
+        html += `<div class="classif-live-menu-item__label">${esc(label)}</div>`;
+      }
+      html += `<div class="classif-live-menu-item__meta">${esc(meta)}</div>`;
+      html += '</div>';
+      html += '<div class="classif-live-menu-actions">';
+      html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-live-menu-move="${idx}" data-live-menu-offset="-1" ${isFirst ? "disabled" : ""}>Pujar</button>`;
+      html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-live-menu-move="${idx}" data-live-menu-offset="1" ${isLast ? "disabled" : ""}>Baixar</button>`;
+      if (type !== LIVE_MENU_TYPE_CLASSIFICACIO) {
+        html += `<button type="button" class="btn btn-sm btn-outline-danger" data-live-menu-remove="${idx}">Eliminar</button>`;
+      }
+      html += '</div></div>';
+    });
+    host.innerHTML = html;
+    initLiveMenuSortable();
+  }
+
+  function initLiveMenuSortable() {
+    const host = document.getElementById("liveMenuList");
+    if (!host || typeof Sortable === "undefined") return;
+    if (liveMenuState.sortable) {
+      liveMenuState.sortable.destroy();
+      liveMenuState.sortable = null;
+    }
+    liveMenuState.sortable = Sortable.create(host, {
+      animation: 150,
+      handle: ".classif-live-menu-drag",
+      onEnd: () => {
+        const previous = liveMenuState.items.slice();
+        liveMenuState.items = Array.from(host.querySelectorAll("[data-live-menu-index]"))
+          .map(node => previous[Number(node.getAttribute("data-live-menu-index"))])
+          .filter(Boolean);
+        renderLiveMenuModalList();
+      },
+    });
+  }
+
+  function syncLiveMenuLabelsFromUI() {
+    document.querySelectorAll("[data-live-menu-label]").forEach(input => {
+      const idx = Number(input.getAttribute("data-live-menu-label"));
+      if (!Number.isInteger(idx) || !liveMenuState.items[idx]) return;
+      liveMenuState.items[idx].label = String(input.value || "").trim();
+    });
+    liveMenuState.items = liveMenuNormalizeItems(liveMenuState.items);
+  }
+
+  function liveMenuModalEl() {
+    const modal = document.getElementById("liveMenuModal");
+    if (modal && modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+    return modal;
+  }
+
+  function liveMenuRaiseBackdrop() {
+    const backdrops = document.querySelectorAll(".modal-backdrop");
+    const backdrop = backdrops.length ? backdrops[backdrops.length - 1] : null;
+    if (backdrop) {
+      backdrop.style.zIndex = "100240";
+    }
+  }
+
+  function liveMenuSetModalLayer(open) {
+    document.body.classList.toggle("classif-live-menu-modal-open", !!open);
+    const modal = document.getElementById("liveMenuModal");
+    if (modal) {
+      modal.style.zIndex = open ? "100250" : "";
+    }
+    if (open) {
+      window.setTimeout(liveMenuRaiseBackdrop, 0);
+    }
+  }
+
+  function bindLiveMenuModalLayerEvents(modal) {
+    if (!modal || modal.dataset.liveMenuLayerBound === "1") return;
+    if (!window.jQuery || typeof window.jQuery(modal).on !== "function") return;
+    window.jQuery(modal)
+      .on("show.bs.modal", () => liveMenuSetModalLayer(true))
+      .on("shown.bs.modal", liveMenuRaiseBackdrop)
+      .on("hidden.bs.modal", () => liveMenuSetModalLayer(false));
+    modal.dataset.liveMenuLayerBound = "1";
+  }
+
+  function openLiveMenuModal() {
+    if (!LIVE_MENU_SAVE_URL || BUILDER_MODE !== "competition") {
+      liveMenuShowError("L'organització del live només està disponible al builder de competició.");
+      return;
+    }
+    if (state.cfgs.some(cfg => !isPersistedCfgId(cfg.id))) {
+      showAlert("Guarda primer les classificacions noves abans d'organitzar el live.");
+      return;
+    }
+    liveMenuShowError("");
+    const viewCfg = CLASSIFICACIONS_VIEW && typeof CLASSIFICACIONS_VIEW === "object" ? CLASSIFICACIONS_VIEW : {};
+    liveMenuState.items = liveMenuNormalizeItems(viewCfg.live_menu || []);
+    renderLiveMenuModalList();
+    const modal = liveMenuModalEl();
+    if (modal && window.jQuery && typeof window.jQuery(modal).modal === "function") {
+      bindLiveMenuModalLayerEvents(modal);
+      liveMenuSetModalLayer(true);
+      window.jQuery(modal).modal("show");
+    } else {
+      showAlert("No s'ha pogut obrir el modal d'organització.");
+    }
+  }
+
+  async function saveLiveMenuOrganization() {
+    if (liveMenuState.busy) return;
+    syncLiveMenuLabelsFromUI();
+    const btn = document.getElementById("liveMenuSave");
+    liveMenuState.busy = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Desant...";
+    }
+    try {
+      const out = await postJson(LIVE_MENU_SAVE_URL, { live_menu: liveMenuState.items });
+      if (out && out.classificacions_view) {
+        CLASSIFICACIONS_VIEW.live_menu = out.classificacions_view.live_menu || [];
+      }
+      const modal = liveMenuModalEl();
+      if (modal && window.jQuery && typeof window.jQuery(modal).modal === "function") {
+        window.jQuery(modal).modal("hide");
+      }
+      showBuilderSaveSuccessFeedback("Organització del live guardada");
+    } catch (err) {
+      liveMenuShowError(err.message || "No s'ha pogut desar l'organització.");
+    } finally {
+      liveMenuState.busy = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Desar organització";
+      }
+    }
+  }
+
+  function initLiveMenuModal() {
+    const modal = liveMenuModalEl();
+    bindLiveMenuModalLayerEvents(modal);
+    document.getElementById("btnLiveMenuOrganization")?.addEventListener("click", openLiveMenuModal);
+    document.getElementById("liveMenuAddHeading")?.addEventListener("click", liveMenuAddHeading);
+    document.getElementById("liveMenuAddDivider")?.addEventListener("click", liveMenuAddDivider);
+    document.getElementById("liveMenuReset")?.addEventListener("click", liveMenuResetToCurrentOrder);
+    document.getElementById("liveMenuSave")?.addEventListener("click", saveLiveMenuOrganization);
+    document.getElementById("liveMenuList")?.addEventListener("click", (event) => {
+      const move = event.target.closest("[data-live-menu-move]");
+      if (move) {
+        liveMenuMoveItem(
+          Number(move.getAttribute("data-live-menu-move")),
+          Number(move.getAttribute("data-live-menu-offset") || 0),
+        );
+        return;
+      }
+      const remove = event.target.closest("[data-live-menu-remove]");
+      if (remove) {
+        liveMenuRemoveItem(Number(remove.getAttribute("data-live-menu-remove")));
+      }
+    });
+    document.getElementById("liveMenuList")?.addEventListener("input", (event) => {
+      if (!event.target.matches("[data-live-menu-label]")) return;
+      const idx = Number(event.target.getAttribute("data-live-menu-label"));
+      if (Number.isInteger(idx) && liveMenuState.items[idx]) {
+        liveMenuState.items[idx].label = String(event.target.value || "");
+      }
+    });
+  }

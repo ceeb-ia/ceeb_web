@@ -3,9 +3,9 @@
 <section id="section-puntuacio" class="builder-section builder-section--puntuacio" data-builder-section data-avatar-anchor="classifications-scoring-section">
   <div class="builder-section__header">
     <div>
-      <div class="builder-section__eyebrow">Logica</div>
-      <h4 class="builder-section__title">Puntuacio <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_general" aria-label="Ajuda sobre puntuacio" title="Ajuda sobre puntuacio">?</button></h4>
-      <p class="builder-section__desc">Defineix quines notes entren al calcul, en quin conjunt es seleccionen i com s'agreguen fins al resultat numeric final.</p>
+      <div class="builder-section__eyebrow">Lògica</div>
+      <h4 class="builder-section__title">Puntuació <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_general" aria-label="Ajuda sobre puntuació" title="Ajuda sobre puntuació">?</button></h4>
+      <p class="builder-section__desc">Defineix quines notes entren al càlcul, en quin conjunt es seleccionen i com s'agreguen fins al resultat numèric final.</p>
     </div>
     <div class="builder-help-badge">Bloc central</div>
   </div>
@@ -20,7 +20,7 @@
                 <img src="{% static 'classificacions/sections/puntuacio/base.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Context del calcul <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_base_order" aria-label="Ajuda sobre context del calcul" title="Ajuda sobre context del calcul">?</button></p>
+                <p class="builder-subsection__title">Context del càlcul <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_base_order" aria-label="Ajuda sobre context del càlcul" title="Ajuda sobre context del càlcul">?</button></p>
                 <p class="builder-subsection__desc">Defineix la base, els aparells, la fase font i si les notes es resolen per aparell, en un sac compartit o per membres.</p>
               </div>
             </div>
@@ -51,13 +51,13 @@
                   <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sModeResultatAparells" data-value="score">
                     <span>
                       <strong>Score</strong>
-                      <small>Puntuacio normal.</small>
+                      <small>Puntuació normal.</small>
                     </span>
                   </button>
                   <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sModeResultatAparells" data-value="victories">
                     <span>
                       <strong>Victories</strong>
-                      <small>Comparacio per aparell.</small>
+                      <small>Comparació per aparell.</small>
                     </span>
                   </button>
                 </div>
@@ -65,13 +65,13 @@
               <div>
                 <label class="font-weight-bold">Ordre <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_base_order" aria-label="Ajuda sobre ordre principal" title="Ajuda sobre ordre principal">?</button></label>
                 <select class="form-control classif-hidden-native-select" id="sOrdre" aria-hidden="true" tabindex="-1">
-                  <option value="desc">Desc (mes es millor)</option>
+                  <option value="desc">Desc (més és millor)</option>
                   <option value="asc">Asc (menys es millor)</option>
                 </select>
                 <div class="classif-inline-choice-grid" role="group" aria-label="Ordre principal">
                   <button type="button" class="classif-type-choice classif-type-choice--compact" data-puntuacio-select-choice="sOrdre" data-value="desc">
                     <span>
-                      <strong>Mes es millor</strong>
+                      <strong>Més és millor</strong>
                       <small>Ordre descendent.</small>
                     </span>
                   </button>
@@ -116,20 +116,20 @@
                 <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
               </span>
               <span>
-                <span class="classif-puntuacio-context-card__title">Flux del calcul <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_flow" aria-label="Ajuda sobre flux del calcul" title="Ajuda sobre flux del calcul">?</button></span>
-                <span class="classif-puntuacio-context-card__desc">Relacio entre aparells i, si cal, entre membres.</span>
+                <span class="classif-puntuacio-context-card__title">Flux del càlcul <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_flow" aria-label="Ajuda sobre flux del càlcul" title="Ajuda sobre flux del càlcul">?</button></span>
+                <span class="classif-puntuacio-context-card__desc">Relació entre aparells i, si cal, entre membres.</span>
               </span>
             </div>
             <div class="classif-puntuacio-context-card__stack">
               <div>
-                <label class="font-weight-bold">Relacio entre aparells <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_flow" aria-label="Ajuda sobre relacio entre aparells" title="Ajuda sobre relacio entre aparells">?</button></label>
+                <label class="font-weight-bold">Relació entre aparells <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_flow" aria-label="Ajuda sobre relació entre aparells" title="Ajuda sobre relació entre aparells">?</button></label>
                 <select class="form-control" id="sModeSeleccioExercicis">
                   <option value="per_aparell_override">Cada aparell es calcula per separat</option>
                   <option value="global_pool">Un sol sac compartit amb tots els aparells</option>
                 </select>
               </div>
               <div id="exerciseSelectionScopeWrap" style="display:none;">
-                <label class="font-weight-bold">Relacio entre membres <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_team_member_treatment" aria-label="Ajuda sobre relacio entre membres" title="Ajuda sobre relacio entre membres">?</button></label>
+                <label class="font-weight-bold">Relació entre membres <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_team_member_treatment" aria-label="Ajuda sobre relació entre membres" title="Ajuda sobre relació entre membres">?</button></label>
                 <select class="form-control" id="sExerciseSelectionScope">
                   <option value="per_member">Cada membre es calcula per separat</option>
                   <option value="team_pool_flat">Una bossa d'equip amb totes les notes</option>
@@ -151,15 +151,15 @@
                 <img src="{% static 'classificacions/sections/puntuacio/configuracio.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Configuracio dels aparells <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_apparatus_config" aria-label="Ajuda sobre configuracio per aparell" title="Ajuda sobre configuracio per aparell">?</button></p>
-                <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatoria, i pot afegir una configuracio extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
+                <p class="builder-subsection__title">Configuració dels aparells <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_apparatus_config" aria-label="Ajuda sobre configuració per aparell" title="Ajuda sobre configuració per aparell">?</button></p>
+                <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra la base comuna de camps, que continua sent obligatòria, i pot afegir una configuració extra per exercici si cal. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
               </div>
             </div>
           </div>
         </div>
         <div id="perAppBox" class="mb-0 puntuacio-app-list"></div>
         <div class="alert alert-warning py-2 px-3 small mt-3 mb-3 classif-puntuacio-warning">
-          Per al calcul de <strong>Punts</strong>, els camps d'entrada nomes es tracten com a escalar si son escalar o matriu <strong>1x1</strong>. Matrius mes grans no son puntuables directament.
+          Per al càlcul de <strong>Punts</strong>, els camps d'entrada només es tracten com a escalar si són escalar o matriu <strong>1x1</strong>. Matrius més grans no són puntuables directament.
         </div>
       </div>
 
@@ -172,8 +172,8 @@
                 <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Seleccio dins del sac compartit <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_shared_pool" aria-label="Ajuda sobre criteri de seleccio" title="Ajuda sobre criteri de seleccio">?</button></p>
-                <p class="builder-subsection__desc">Aquest pas nomes apareix quan diversos aparells comparteixen un sol sac. La seleccio s'aplica sobre les notes o subtotals que arriben d'aquests aparells.</p>
+                <p class="builder-subsection__title">Selecció dins del sac compartit <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_shared_pool" aria-label="Ajuda sobre criteri de selecció" title="Ajuda sobre criteri de selecció">?</button></p>
+                <p class="builder-subsection__desc">Aquest pas només apareix quan diversos aparells comparteixen un sol sac. La selecció s'aplica sobre les notes o subtotals que arriben d'aquests aparells.</p>
               </div>
             </div>
           </div>
@@ -188,7 +188,7 @@
             <option value="pitjor_1">Pitjor 1</option>
             <option value="pitjor_n">Pitjors N</option>
             <option value="primer">Primer existent</option>
-            <option value="ultim">Ultim existent</option>
+            <option value="ultim">Últim existent</option>
             <option value="index">Exercici concret</option>
             <option value="llista">Llista</option>
           </select>
@@ -198,21 +198,21 @@
               <input class="form-control" id="iExBestN" type="number" min="1" value="1">
             </div>
             <div class="col-12 col-md-3 mb-2" id="exIndexBox" style="display:none;">
-              <label class="small text-muted">Index d'exercici</label>
+              <label class="small text-muted">Índex d'exercici</label>
               <input class="form-control" id="iExIndex" type="number" min="1" value="1">
             </div>
             <div class="col-12 col-md-6 mb-2" id="exIdsBox" style="display:none;">
-              <label class="small text-muted">Llista d'indexs</label>
+              <label class="small text-muted">Llista d'índexs</label>
               <input class="form-control" id="tExIds" type="text" placeholder="1,3,4">
             </div>
             <div class="col-12 col-md-6 mb-2">
-              <label class="small text-muted">Agregacio del conjunt seleccionat <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_shared_pool" aria-label="Ajuda sobre agregacio d'exercicis" title="Ajuda sobre agregacio d'exercicis">?</button></label>
+              <label class="small text-muted">Agregació del conjunt seleccionat <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_shared_pool" aria-label="Ajuda sobre agregació d'exercicis" title="Ajuda sobre agregació d'exercicis">?</button></label>
               <select class="form-control" id="sAggExercicis">
                 <option value="sum">Suma</option>
                 <option value="avg">Mitjana</option>
                 <option value="median">Mediana</option>
-                <option value="max">Maxim</option>
-                <option value="min">Minim</option>
+                <option value="max">Màxim</option>
+                <option value="min">Mínim</option>
               </select>
             </div>
           </div>
@@ -228,8 +228,8 @@
                 <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Seleccio i agregacio entre membres <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_team_member_treatment" aria-label="Ajuda sobre seleccio de membres" title="Ajuda sobre seleccio de membres">?</button></p>
-                <p class="builder-subsection__desc">Aquest pas nomes apareix quan cada membre es calcula per separat en un sac compartit d'aparells. Primer es calcula una nota global per membre; despres aquest bloc decideix quins membres compten per a l'equip.</p>
+                <p class="builder-subsection__title">Selecció i agregació entre membres <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_team_member_treatment" aria-label="Ajuda sobre selecció de membres" title="Ajuda sobre selecció de membres">?</button></p>
+                <p class="builder-subsection__desc">Aquest pas només apareix quan cada membre es calcula per separat en un sac compartit d'aparells. Primer es calcula una nota global per membre; després aquest bloc decideix quins membres compten per a l'equip.</p>
               </div>
             </div>
           </div>
@@ -245,22 +245,22 @@
               <option value="pitjor_1">Pitjor 1</option>
               <option value="pitjor_n">Pitjors N</option>
             </select>
-            <div class="small text-muted mt-1" id="participantsGlobalHint">La seleccio es fa sobre la nota global ja calculada de cada membre.</div>
+            <div class="small text-muted mt-1" id="participantsGlobalHint">La selecció es fa sobre la nota global ja calculada de cada membre.</div>
           </div>
           <div class="col-12 col-md-2 mb-2" id="participantsGlobalNBox" style="display:none;">
             <label class="small text-muted">N</label>
             <input class="form-control" id="iParticipantsGlobalN" type="number" min="1" value="1">
           </div>
           <div class="col-12 col-md-5 mb-2">
-            <label class="font-weight-bold">Agregacio dels membres seleccionats</label>
+            <label class="font-weight-bold">Agregació dels membres seleccionats</label>
             <select class="form-control" id="sAggParticipantsGlobal">
               <option value="sum">Suma</option>
               <option value="avg">Mitjana</option>
               <option value="median">Mediana</option>
-              <option value="max">Maxim</option>
-              <option value="min">Minim</option>
+              <option value="max">Màxim</option>
+              <option value="min">Mínim</option>
             </select>
-            <div class="small text-muted mt-1">Transforma els membres seleccionats en la puntuacio final de l'equip.</div>
+            <div class="small text-muted mt-1">Transforma els membres seleccionats en la puntuació final de l'equip.</div>
           </div>
         </div>
       </div>
@@ -274,17 +274,17 @@
                 <img src="{% static 'classificacions/sections/puntuacio/tractament.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Limits i restriccions</p>
-                <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten quantes notes pot aportar cada participant dins d'una bossa plana.</p>
+                <p class="builder-subsection__title">Límits i restriccions</p>
+                <p class="builder-subsection__desc">Les restriccions no canvien el criteri de selecció. Només limiten quantes notes pot aportar cada participant dins d'una bossa plana.</p>
               </div>
             </div>
           </div>
         </div>
         <div class="row">
           <div class="col-12 col-md-4 mb-2" id="exMaxPerParticipantBox" style="display:none;">
-            <label class="font-weight-bold">Quota per participant <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_team_pool" aria-label="Ajuda sobre aportacio maxima per participant" title="Ajuda sobre aportacio maxima per participant">?</button></label>
+            <label class="font-weight-bold">Quota per participant <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_team_pool" aria-label="Ajuda sobre aportació màxima per participant" title="Ajuda sobre aportació màxima per participant">?</button></label>
             <input class="form-control" id="iExMaxPerParticipant" type="number" min="0" value="0">
-            <div class="small text-muted mt-1">Cap participant no pot aportar mes de N notes dins de la bossa plana. `0` vol dir sense limit.</div>
+            <div class="small text-muted mt-1">Cap participant no pot aportar més de N notes dins de la bossa plana. `0` vol dir sense límit.</div>
           </div>
           <div class="col-12 col-md-8 mb-2">
             <div id="restrictionsHint" class="small text-muted pt-2"></div>
@@ -301,21 +301,21 @@
                 <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Combinacio final entre aparells <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_multiple_apparatus" aria-label="Ajuda sobre agregacio entre aparells" title="Ajuda sobre agregacio entre aparells">?</button></p>
-                <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
+                <p class="builder-subsection__title">Combinació final entre aparells <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_multiple_apparatus" aria-label="Ajuda sobre agregació entre aparells" title="Ajuda sobre agregació entre aparells">?</button></p>
+                <p class="builder-subsection__desc">Aquest és l'últim pas del càlcul i només s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinació final entre aparells.</p>
               </div>
             </div>
           </div>
         </div>
         <div class="row">
           <div class="col-12 col-md-6 mb-0">
-            <label class="font-weight-bold">Agregacio entre aparells</label>
+            <label class="font-weight-bold">Agregació entre aparells</label>
             <select class="form-control" id="sAggAparells">
               <option value="sum">Suma</option>
               <option value="avg">Mitjana</option>
               <option value="median">Mediana</option>
-              <option value="max">Maxim</option>
-              <option value="min">Minim</option>
+              <option value="max">Màxim</option>
+              <option value="min">Mínim</option>
             </select>
             <div class="small text-muted mt-1">Defineix com es combinen els subtotals finals dels aparells seleccionats.</div>
           </div>
@@ -331,14 +331,14 @@
                 <img src="{% static 'classificacions/sections/puntuacio/resum.png' %}" alt="">
               </span>
               <div class="classif-panel-title-copy">
-                <p class="builder-subsection__title">Resum del calcul <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_summary" aria-label="Ajuda sobre resum del calcul" title="Ajuda sobre resum del calcul">?</button></p>
-                <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>
+                <p class="builder-subsection__title">Resum del càlcul <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_summary" aria-label="Ajuda sobre resum del càlcul" title="Ajuda sobre resum del càlcul">?</button></p>
+                <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calcularà la puntuació de la classificació actual.</p>
               </div>
             </div>
           </div>
         </div>
         <div class="builder-summary-box">
-          <div id="puntuacioSummaryText" class="builder-summary-box__text">Encara no hi ha prou informacio per resumir la puntuacio.</div>
+          <div id="puntuacioSummaryText" class="builder-summary-box__text">Encara no hi ha prou informació per resumir la puntuació.</div>
           <div id="exModeHint" class="small text-muted mt-2"></div>
         </div>
       </div>
@@ -350,22 +350,22 @@
               <img src="{% static 'classificacions/sections/puntuacio/base.png' %}" alt="">
             </span>
             <div class="classif-panel-title-copy">
-              <p class="builder-subsection__title">Configuracio de victories <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre configuracio de victories" title="Ajuda sobre configuracio de victories">?</button></p>
-              <p class="builder-subsection__desc">Nomes s'aplica quan la base de puntuacio es `Victories`. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
+              <p class="builder-subsection__title">Configuració de victòries <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre configuració de victòries" title="Ajuda sobre configuració de victòries">?</button></p>
+              <p class="builder-subsection__desc">Només s'aplica quan la base de puntuació és `Victòries`. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
             </div>
           </div>
-          <div class="builder-inline-note">Nomes Victories</div>
+          <div class="builder-inline-note">Només Victòries</div>
         </div>
         <div class="row">
           <div class="col-12 col-md-6 mb-3">
-            <label class="font-weight-bold">Calcul sobre camps <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre calcul sobre camps" title="Ajuda sobre calcul sobre camps">?</button></label>
+            <label class="font-weight-bold">Càlcul sobre camps <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre càlcul sobre camps" title="Ajuda sobre càlcul sobre camps">?</button></label>
             <select class="form-control" id="sVictoryModeCamps">
               <option value="agregat">Agregant camps</option>
               <option value="separat">Per camps separats</option>
             </select>
           </div>
           <div class="col-12 col-md-6 mb-3">
-            <label class="font-weight-bold">Calcul sobre exercicis <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre calcul sobre exercicis" title="Ajuda sobre calcul sobre exercicis">?</button></label>
+            <label class="font-weight-bold">Càlcul sobre exercicis <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre càlcul sobre exercicis" title="Ajuda sobre càlcul sobre exercicis">?</button></label>
             <select class="form-control" id="sVictoryModeExercicis">
               <option value="agregat">Agregant exercicis</option>
               <option value="separat">Per exercicis separats</option>
@@ -374,30 +374,30 @@
         </div>
         <div class="row">
           <div class="col-12 col-md-6 mb-3" id="victoryFieldSelectionModeWrap" style="display:none;">
-            <label class="font-weight-bold">Seleccio d'exercicis amb camps separats <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre seleccio d'exercicis amb camps separats" title="Ajuda sobre seleccio d'exercicis amb camps separats">?</button></label>
+            <label class="font-weight-bold">Selecció d'exercicis amb camps separats <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre selecció d'exercicis amb camps separats" title="Ajuda sobre selecció d'exercicis amb camps separats">?</button></label>
             <select class="form-control" id="sVictoryFieldSelectionMode">
-              <option value="per_camp">Seleccio independent per camp</option>
-              <option value="global">Seleccio global agregada</option>
+              <option value="per_camp">Selecció independent per camp</option>
+              <option value="global">Selecció global agregada</option>
             </select>
           </div>
           <div class="col-12 col-md-6 mb-3" id="victoryAggCampsWrap" style="display:none;">
-            <label class="font-weight-bold">Agregacio de victories entre camps <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre agregacio de victories entre camps" title="Ajuda sobre agregacio de victories entre camps">?</button></label>
+            <label class="font-weight-bold">Agregació de victòries entre camps <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre agregació de victòries entre camps" title="Ajuda sobre agregació de victòries entre camps">?</button></label>
             <select class="form-control" id="sVictoryAggCamps">
               <option value="sum">Suma</option>
               <option value="avg">Mitjana</option>
               <option value="median">Mediana</option>
-              <option value="max">Maxim</option>
-              <option value="min">Minim</option>
+              <option value="max">Màxim</option>
+              <option value="min">Mínim</option>
             </select>
           </div>
           <div class="col-12 col-md-6 mb-3" id="victoryAggExercicisWrap" style="display:none;">
-            <label class="font-weight-bold">Agregacio de victories entre exercicis <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre agregacio de victories entre exercicis" title="Ajuda sobre agregacio de victories entre exercicis">?</button></label>
+            <label class="font-weight-bold">Agregació de victòries entre exercicis <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre agregació de victòries entre exercicis" title="Ajuda sobre agregació de victòries entre exercicis">?</button></label>
             <select class="form-control" id="sVictoryAggExercicis">
               <option value="sum">Suma</option>
               <option value="avg">Mitjana</option>
               <option value="median">Mediana</option>
-              <option value="max">Maxim</option>
-              <option value="min">Minim</option>
+              <option value="max">Màxim</option>
+              <option value="min">Mínim</option>
             </select>
           </div>
         </div>
@@ -410,11 +410,11 @@
               <img src="{% static 'classificacions/sections/puntuacio/agregacio.png' %}" alt="">
             </span>
             <div class="classif-panel-title-copy">
-              <p class="builder-subsection__title">Desempat intern de comparacio <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre desempat intern de victories" title="Ajuda sobre desempat intern de victories">?</button></p>
-              <p class="builder-subsection__desc">Nomes s'aplica en mode <strong>Victories</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
+              <p class="builder-subsection__title">Desempat intern de comparació <button type="button" class="classif-context-help classif-context-help--inline" data-avatar-topic="classifications_scoring_victories" aria-label="Ajuda sobre desempat intern de victòries" title="Ajuda sobre desempat intern de victòries">?</button></p>
+              <p class="builder-subsection__desc">Només s'aplica en mode <strong>Victòries</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
             </div>
           </div>
-          <div class="builder-inline-note">Depen de Victories</div>
+          <div class="builder-inline-note">Depèn de Victòries</div>
         </div>
         <div class="builder-table-shell table-responsive mb-2">
           <table class="table table-sm mb-0">

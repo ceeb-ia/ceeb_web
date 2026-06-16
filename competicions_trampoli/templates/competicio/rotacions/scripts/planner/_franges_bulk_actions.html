@@ -45,12 +45,12 @@
     return new Promise((resolve) => {
       const parts = modalParts();
       if (!parts.modal || !parts.body || !parts.confirm || !window.jQuery) {
-        alertBox("No s'ha pogut obrir el modal d'accio.");
+        alertBox("No s'ha pogut obrir el modal d'acció.");
         resolve(null);
         return;
       }
       if (parts.modal.parentElement !== document.body) document.body.appendChild(parts.modal);
-      if (parts.title) parts.title.textContent = options.title || "Accio sobre franges";
+      if (parts.title) parts.title.textContent = options.title || "Acció sobre franges";
       parts.body.innerHTML = options.bodyHtml || "";
       setBulkModalError("");
       parts.confirm.textContent = options.confirmText || "Aplicar";
@@ -202,21 +202,21 @@
       title: "Duplicar franges",
       confirmText: "Duplicar",
       bodyHtml: `
-        ${modalIntro(count, "Les copies es crearan com un bloc compacte, despres de l'ultima franja seleccionada.")}
+        ${modalIntro(count, "Les còpies es crearan com un bloc compacte, després de l'última franja seleccionada.")}
         <label class="franja-bulk-field mt-3">
-          <span>Espai abans de la copia (min)</span>
+          <span>Espai abans de la còpia (min)</span>
           <input type="number" class="form-control form-control-sm" id="bulkDuplicateOffset" value="0" step="1" data-bulk-autofocus>
         </label>
-        <div class="mini mt-1">0 enganxa la primera copia just despres de l'ultima franja seleccionada.</div>
+        <div class="mini mt-1">0 enganxa la primera còpia just després de l'última franja seleccionada.</div>
         <label class="rotation-checkbox-row mt-2">
           <input type="checkbox" id="bulkDuplicateCopyAssignments">
-          Copiar tambe les assignacions
+          Copiar també les assignacions
         </label>
       `,
       collect(){
         const offset = parseInt(document.getElementById("bulkDuplicateOffset")?.value || "", 10);
         if (!Number.isFinite(offset)) {
-          setBulkModalError("Introdueix una separacio valida.");
+          setBulkModalError("Introdueix una separació vàlida.");
           return false;
         }
         return {
@@ -240,14 +240,14 @@
   async function handleBulkAction(action){
     const franjaIds = selectedIds();
     if (!franjaIds.length) {
-      alertBox("Selecciona com a minim una franja.");
+      alertBox("Selecciona com a mínim una franja.");
       return;
     }
     try {
       if (action === "clear") {
         const accepted = await confirmBulkAction({
           title: "Buidar franges",
-          message: "S'eliminaran les assignacions, pero les franges es conservaran.",
+          message: "S'eliminaran les assignacions, però les franges es conservaran.",
           confirmText: "Buidar",
           count: franjaIds.length,
         });
@@ -260,7 +260,7 @@
       if (action === "delete") {
         const accepted = await confirmBulkAction({
           title: "Eliminar franges",
-          message: "Aquesta accio no es pot desfer.",
+          message: "Aquesta acció no es pot desfer.",
           confirmText: "Eliminar",
           danger: true,
           count: franjaIds.length,
@@ -321,7 +321,7 @@
 
   function contextMenuHtml(){
     return `
-      <div class="franja-bulk-context-title">Accions seleccio</div>
+      <div class="franja-bulk-context-title">Accions selecció</div>
       <button type="button" class="dropdown-item" data-bulk-context-action="clear">
         <span class="franja-action-icon" aria-hidden="true">&#9003;</span>
         <span>Buidar</span>

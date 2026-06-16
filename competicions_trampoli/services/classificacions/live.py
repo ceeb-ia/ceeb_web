@@ -3,6 +3,11 @@ from django.utils import timezone
 from ...models.classificacions import ClassificacioConfig
 from .compute import compute_classificacio
 from .display import get_display_columns
+from .live_menu import (
+    classificacions_view_config,
+    live_menu_from_view_config,
+    prune_empty_visual_items,
+)
 from .runtime import execute_classificacio_runtime
 
 
@@ -139,6 +144,19 @@ def live_data_payload(competicio, since_raw=None, *, build_row_fn=build_live_cfg
         .order_by("ordre", "id")
     )
     payload_cfgs = [build_row_fn(competicio, cfg) for cfg in cfgs]
+    live_menu = live_menu_from_view_config(
+        classificacions_view_config(competicio),
+        [
+            {
+                "id": cfg.id,
+                "nom": cfg.nom,
+                "tipus": cfg.tipus,
+                "ordre": cfg.ordre,
+                "publicada": bool(getattr(cfg, "publicada", True)),
+            }
+            for cfg in cfgs
+        ],
+    )
     stamp = timezone.now().isoformat()
     return {
         "ok": True,
@@ -146,6 +164,7 @@ def live_data_payload(competicio, since_raw=None, *, build_row_fn=build_live_cfg
         "stamp": stamp,
         "competicio": {"id": competicio.id, "nom": competicio.nom},
         "cfgs": payload_cfgs,
+        "live_menu": live_menu,
     }
 
 
@@ -159,6 +178,16 @@ def public_live_payload(payload):
             cfg for cfg in cfgs
             if not isinstance(cfg, dict) or bool(cfg.get("publicada", True))
         ]
+        public_cfg_by_id = {
+            int(cfg["id"]): cfg
+            for cfg in response["cfgs"]
+            if isinstance(cfg, dict) and cfg.get("id") is not None
+        }
+        if isinstance(response.get("live_menu"), list):
+            response["live_menu"] = prune_empty_visual_items(
+                response["live_menu"],
+                public_cfg_by_id,
+            )
     return response
 
 

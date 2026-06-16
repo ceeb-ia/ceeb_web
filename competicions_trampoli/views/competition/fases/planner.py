@@ -18,6 +18,8 @@ from ....services.fases.dashboard import _source_row_text, phase_dashboard_conte
 from .actions import handle_phase_post
 
 
+BASE_PHASE_QUERY_VALUE = "base"
+
 USER_PHASE_STATUS_CHOICES = (
     (CompeticioAparellFase.Estat.PLANNED, "Esborrany"),
     (CompeticioAparellFase.Estat.PUBLISHED, "Publicada"),
@@ -129,6 +131,14 @@ class CompeticioFasesPlanner(View):
         )
 
     def get(self, request, *args, **kwargs):
+        if "phase" not in request.GET:
+            dashboard = phase_dashboard_context(
+                self.competicio,
+                selected_app_id=getattr(self.comp_aparell, "id", None),
+            )
+            selected_app = dashboard.get("comp_aparell")
+            if selected_app is not None:
+                return self.redirect_to_selected_app(selected_app, phase=BASE_PHASE_QUERY_VALUE)
         return render(request, self.template_name, self.get_context())
 
     def post(self, request, *args, **kwargs):
@@ -143,7 +153,12 @@ class CompeticioFasesPlanner(View):
         url = reverse("trampoli_fases", kwargs={"pk": self.competicio.id})
         if app is not None:
             url = f"{url}?app={app.id}"
-            phase_id = getattr(phase, "id", None) or self.request.POST.get("fase_id") or self.selected_phase_id
+            phase_id = (
+                phase
+                if isinstance(phase, str)
+                else getattr(phase, "id", None)
+            )
+            phase_id = phase_id or self.request.POST.get("fase_id") or self.selected_phase_id or BASE_PHASE_QUERY_VALUE
             if phase_id:
                 url = f"{url}&phase={phase_id}"
         return redirect(url)

@@ -337,7 +337,7 @@
         html += `<section class="partition-card part-idx-${esc(String(pIdx % 5))}">`;
         html += `<div class="partition-head">`;
         html += `<div class="partition-title-wrap">`;
-        html += `<div class="partition-sub">Particio</div>`;
+        html += `<div class="partition-sub">Partició</div>`;
         html += `<div class="partition-title">${esc(particioNom)}</div>`;
         html += `</div>`;
         html += `<span class="partition-badge">${esc(String(rowCount))}</span>`;
@@ -373,6 +373,7 @@
 
   // init
   initBuilderSectionNav();
+  initLiveMenuModal();
   registerStaticErrorPaths();
   relocateDetailConfigBox();
   buildAparellChecks();

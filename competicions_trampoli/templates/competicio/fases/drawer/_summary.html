@@ -3,7 +3,7 @@
     <h5>Accions de fase</h5>
     {% if selected_phase %}
       <span class="badge badge-light border">{{ selected_phase.codi }}</span>
-    {% else %}
+    {% elif selected_base_phase %}
       <span class="badge badge-light border">Preliminar</span>
     {% endif %}
   </div>
@@ -30,11 +30,18 @@
         {% if selected_phase.ui_group_plan_stale %}<span class="badge badge-danger">Revisar grups</span>{% endif %}
       </div>
     </div>
-  {% else %}
+  {% elif selected_base_phase %}
     <div class="phase-selected-summary">
       <div class="phase-selected-title">Preliminar implícita</div>
       <div class="phase-panel-note">
         Arrel visual de l'arbre. No es desa com a fase i representa el flux inicial existent.
+      </div>
+    </div>
+  {% else %}
+    <div class="phase-selected-summary">
+      <div class="phase-selected-title">Cap fase seleccionada</div>
+      <div class="phase-panel-note">
+        Tria un node de l'arbre per continuar.
       </div>
     </div>
   {% endif %}
