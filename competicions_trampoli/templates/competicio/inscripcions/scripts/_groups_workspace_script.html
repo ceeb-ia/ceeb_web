@@ -1237,9 +1237,7 @@ window.initGroupsWorkspace = async function () {
 
   function groupMemberRow(member, groupId) {
     const id = String(member?.id || '').trim();
-    const sourceGroup = getGroupDetail(groupId)
-      || (Array.isArray(state.workspace?.groups) ? state.workspace.groups : []).find((group) => String(group?.id || '').trim() === String(groupId || '').trim());
-    const sourceBlocked = !!sourceGroup?.is_programmed;
+    const sourceBlocked = !editable();
     const row = document.createElement('div');
     row.className = `team-context-member-row${dndEnabled() && !sourceBlocked ? ' can-drag' : ''}`;
     row.dataset.inscripcioId = id;
@@ -1288,7 +1286,7 @@ window.initGroupsWorkspace = async function () {
       remove.dataset.inscripcioId = id;
       remove.dataset.groupId = String(groupId || '');
       remove.textContent = 'Treure';
-      remove.disabled = !editable() || sourceBlocked;
+      remove.disabled = sourceBlocked;
       remove.addEventListener('click', async (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1803,7 +1801,7 @@ window.initGroupsWorkspace = async function () {
     popover.className = 'groups-existing-actions-popover groups-detail-actions-popover';
     actionsMenu.appendChild(popover);
     actions.appendChild(actionsMenu);
-    const actionDisabled = !editable() || !!detailGroup?.is_programmed;
+    const actionDisabled = !editable();
 
     const assign = document.createElement('button');
     assign.type = 'button';
@@ -1834,7 +1832,7 @@ window.initGroupsWorkspace = async function () {
     remove.className = 'groups-existing-action-item groups-existing-action-danger';
     remove.setAttribute('data-group-delete', groupId);
     remove.textContent = 'Eliminar grup';
-    remove.disabled = actionDisabled || !canDelete;
+    remove.disabled = actionDisabled || !!detailGroup?.is_programmed || !canDelete;
     popover.appendChild(remove);
 
     editor.innerHTML = '';
@@ -1867,7 +1865,7 @@ window.initGroupsWorkspace = async function () {
     }
 
     nameNote.textContent = detailGroup?.is_programmed
-      ? 'Aquest grup esta programat i les accions de modificacio queden bloquejades.'
+      ? 'Aquest grup esta programat: pots modificar-ne el nom, els participants i l ordre de competicio, pero no eliminar-lo.'
       : 'Grup editable: pots revisar participants, filtrar la llista i preparar accions.';
     renderGroupTransformQuickActions(detailGroup, groupId);
 
@@ -1951,7 +1949,7 @@ window.initGroupsWorkspace = async function () {
     const loading = state.loadingGroupIds.has(groupId);
     const canDelete = detail ? !!detail.can_delete : !Number(group?.members_count || 0);
     const isCurrent = String(state.selectedGroupId || '') === groupId;
-    const actionDisabled = !editable() || !!group?.is_programmed;
+    const actionDisabled = !editable();
 
     const wrap = document.createElement('div');
     wrap.className = `team-context-team-card team-context-drop-target${groupBandClass(group)}${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${isCurrent ? ' is-current' : ''}${group?.is_programmed ? ' is-programmed' : ''}${group?.is_out_of_program ? ' is-out-of-program' : ''}`;
@@ -2032,24 +2030,24 @@ window.initGroupsWorkspace = async function () {
       remove.className = 'btn btn-sm btn-outline-danger';
       remove.setAttribute('data-group-delete', groupId);
       remove.textContent = 'Desactivar';
-      remove.disabled = actionDisabled || !canDelete;
+      remove.disabled = actionDisabled || !!group?.is_programmed || !canDelete;
       actions.appendChild(remove);
     }
     head.appendChild(actions);
     wrap.appendChild(head);
 
     const dropSurface = document.createElement('div');
-    dropSurface.className = `team-context-team-drop-surface${group?.is_programmed ? ' is-drop-disabled' : ''}`;
+    dropSurface.className = `team-context-team-drop-surface${!editable() ? ' is-drop-disabled' : ''}`;
     dropSurface.dataset.groupId = groupId;
-    dropSurface.dataset.dropKind = group?.is_programmed ? 'blocked' : 'group';
-    if (group?.is_programmed) dropSurface.dataset.dropDisabled = '1';
+    dropSurface.dataset.dropKind = editable() ? 'group' : 'blocked';
+    if (!editable()) dropSurface.dataset.dropDisabled = '1';
     const dropHint = document.createElement('div');
     dropHint.className = 'team-context-team-drop-hint';
-    dropHint.textContent = group?.is_programmed
-      ? 'Grup programat: modificacions bloquejades.'
-      : (editable()
-      ? "Deixa aqui una inscripcio per afegir-la a aquest grup."
-      : 'Aquest grup es mostra en mode lectura.');
+    dropHint.textContent = editable()
+      ? (group?.is_programmed
+        ? "Grup programat: pots modificar participants mentre el grup no quedi buit."
+        : "Deixa aqui una inscripcio per afegir-la a aquest grup.")
+      : 'Aquest grup es mostra en mode lectura.';
     dropSurface.appendChild(dropHint);
     wrap.appendChild(dropSurface);
     return wrap;

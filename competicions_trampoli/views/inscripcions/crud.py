@@ -237,6 +237,42 @@ class InscripcionsImportExcelView(FormView):
             messages.warning(self.request, f"Importació parcial amb incidències. {summary}")
         else:
             messages.success(self.request, f"Importació OK. {summary}")
+        ignored_details = result.get("ignored_details") or []
+        if ignored_details:
+            preview = ignored_details[:10]
+            parts = []
+            for detail in preview:
+                row = detail.get("row")
+                reason = str(detail.get("reason") or "Fila ignorada.").strip()
+                reference = str(detail.get("reference") or "").strip()
+                label = f"Fila {row}" if row else "Fila"
+                if reference:
+                    label += f" ({reference})"
+                parts.append(f"{label}: {reason}")
+            remaining = len(ignored_details) - len(preview)
+            suffix = f" I {remaining} fila/es més." if remaining > 0 else ""
+            messages.warning(
+                self.request,
+                "Detall de files ignorades: " + " ".join(parts) + suffix,
+            )
+        ambiguous_details = result.get("ambiguous_details") or []
+        if ambiguous_details:
+            preview = ambiguous_details[:10]
+            parts = []
+            for detail in preview:
+                row = detail.get("row")
+                reason = str(detail.get("reason") or "Coincidència ambigua.").strip()
+                reference = str(detail.get("reference") or "").strip()
+                label = f"Fila {row}" if row else "Fila"
+                if reference:
+                    label += f" ({reference})"
+                parts.append(f"{label}: {reason}")
+            remaining = len(ambiguous_details) - len(preview)
+            suffix = f" I {remaining} fila/es més." if remaining > 0 else ""
+            messages.warning(
+                self.request,
+                "Detall de files ambigües: " + " ".join(parts) + suffix,
+            )
         warnings = result.get("warnings") or []
         if warnings:
             parts = []

@@ -186,12 +186,46 @@ BUILTIN = {
     # per si ve separat:
     "nom": {
         "label": "Nom",
-        "syn": ["nom", "nombre", "name","nom_inscripcio", "nom_inscripció", "nombre_inscripcion", "nombre_inscripción", "nom_federat", "nombre_federado", "nom_participant", "nombre_participante"],
+        "syn": [
+            "nom",
+            "nombre",
+            "name",
+            "nom_inscripcio",
+            "nom_inscripció",
+            "nombre_inscripcion",
+            "nombre_inscripción",
+            "nom_federat",
+            "federat_nom",
+            "nombre_federado",
+            "federado_nombre",
+            "nom_participant",
+            "nombre_participante",
+        ],
         "setter": None,  # es tracta a banda
     },
     "cognoms": {
         "label": "Cognoms",
-        "syn": ["cognoms", "apellidos", "surname", "llinatges", "cognoms_inscripcio", "cognoms_inscripció", "cognoms_federat","apellidos_inscripcion", "apellidos_inscripción", "llinatges_inscripcio", "llinatges_inscripció", "apellido_federado", "llinatges_federat", "cognoms_participant", "apellidos_participante"],
+        "syn": [
+            "cognoms",
+            "apellidos",
+            "surname",
+            "llinatges",
+            "cognoms_inscripcio",
+            "cognoms_inscripció",
+            "cognoms_federat",
+            "federat_cognoms",
+            "apellidos_inscripcion",
+            "apellidos_inscripción",
+            "llinatges_inscripcio",
+            "llinatges_inscripció",
+            "apellido_federado",
+            "apellidos_federado",
+            "federado_apellidos",
+            "llinatges_federat",
+            "federat_llinatges",
+            "cognoms_participant",
+            "apellidos_participante",
+        ],
         "setter": None,  # es tracta a banda
     },
     "entitat": {
@@ -201,7 +235,15 @@ BUILTIN = {
     },
     "categoria": {
         "label": "Categoria",
-        "syn": ["categoria", "category", "cat"],
+        "syn": [
+            "categoria",
+            "categoria_inscripcio",
+            "categoria_inscripción",
+            "inscripcio_categoria",
+            "inscripción_categoria",
+            "category",
+            "cat",
+        ],
         "setter": lambda defaults, v: defaults.__setitem__("categoria", str(v).strip() if _to_none(v) is not None else None),
     },
     "subcategoria": {
@@ -609,6 +651,29 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
     ambiguos = 0
     errors = 0
     noms_competicio_excel: Set[str] = set()
+    ignored_details: List[Dict[str, Any]] = []
+    ambiguous_details: List[Dict[str, Any]] = []
+
+    def row_reference(row_number: int) -> str:
+        values = []
+        for code in ("nom_i_cognoms", "nom", "cognoms", "document"):
+            header_norm = detected_builtin_col.get(code)
+            if not header_norm:
+                continue
+            value = _clean_text(cell_value(row_number, header_norm))
+            if value and value not in values:
+                values.append(value)
+        return " ".join(values[:3]).strip()
+
+    def add_detail(target: List[Dict[str, Any]], row_number: int, code: str, reason: str):
+        target.append(
+            {
+                "row": int(row_number),
+                "code": str(code or "").strip(),
+                "reason": str(reason or "").strip(),
+                "reference": row_reference(row_number),
+            }
+        )
 
     for r in range(2, ws.max_row + 1):
         try:
@@ -657,6 +722,12 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
             # sense nom no importem
             if not defaults.get("nom_i_cognoms"):
                 ignorats += 1
+                add_detail(
+                    ignored_details,
+                    r,
+                    "missing_name",
+                    "No s'ha pogut obtenir el nom de la inscripció.",
+                )
                 continue
 
             # 6.3 extras
@@ -720,6 +791,12 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
                         target_id = dedupe_candidates[0]
                     else:
                         ambiguos += 1
+                        add_detail(
+                            ambiguous_details,
+                            r,
+                            "multiple_matches",
+                            "La fila coincideix amb més d'una inscripció existent i no s'ha actualitzat.",
+                        )
                         continue
                 else:
                     # Sense match "humà", usem dedupe tècnic per garantir idempotència
@@ -727,6 +804,12 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
                         target_id = dedupe_candidates[0]
                     elif len(dedupe_candidates) > 1:
                         ambiguos += 1
+                        add_detail(
+                            ambiguous_details,
+                            r,
+                            "multiple_dedupe_matches",
+                            "La fila té més d'una coincidència tècnica i no s'ha actualitzat.",
+                        )
                         continue
 
                 if target_id is not None:
@@ -777,5 +860,7 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
         "ambiguos": ambiguos,
         "errors": errors,
         "warnings": collision_warnings,
+        "ignored_details": ignored_details,
+        "ambiguous_details": ambiguous_details,
         "noms_competicio_excel": sorted(noms_competicio_excel),
     }

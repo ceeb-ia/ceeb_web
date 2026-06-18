@@ -228,6 +228,7 @@ def _assignacio_program_keys(assignacio):
 
 ROTACIONS_EXPORT_BUILTIN_FIELDS = [
     {"code": "nom_i_cognoms", "label": "Nom i cognoms", "kind": "builtin"},
+    {"code": "membres_equip", "label": "Membres de l'equip", "kind": "builtin"},
     {"code": "document", "label": "DNI/Document", "kind": "builtin"},
     {"code": "sexe", "label": "Sexe", "kind": "builtin"},
     {"code": "data_naixement", "label": "Data naixement", "kind": "builtin"},

@@ -604,6 +604,47 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("function applyGroupTransformTargetSearch()", source)
         self.assertNotIn("const opts = options || {};\n    openWorkspaceCard();", source)
 
+    def test_groups_workspace_only_blocks_deleting_programmed_groups(self):
+        package_root = Path(__file__).resolve().parents[2]
+        source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups_workspace_script.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("const actionDisabled = !editable();", source)
+        self.assertIn(
+            "remove.disabled = actionDisabled || !!detailGroup?.is_programmed || !canDelete;",
+            source,
+        )
+        self.assertIn(
+            "remove.disabled = actionDisabled || !!group?.is_programmed || !canDelete;",
+            source,
+        )
+        self.assertNotIn(
+            "const actionDisabled = !editable() || !!detailGroup?.is_programmed;",
+            source,
+        )
+        self.assertNotIn(
+            "const actionDisabled = !editable() || !!group?.is_programmed;",
+            source,
+        )
+
+    def test_group_competition_modals_use_compact_inscripcions_titles(self):
+        package_root = Path(__file__).resolve().parents[2]
+        source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "_modals.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '<p class="group-competition-modal-title mb-1" id="group-competition-modal-title">',
+            source,
+        )
+        self.assertIn(
+            '<p class="group-competition-modal-title mb-1" id="bulk-group-order-modal-title">',
+            source,
+        )
+        self.assertNotIn('<h3 class="mb-1" id="group-competition-modal-title">', source)
+        self.assertNotIn('<h3 class="mb-1" id="bulk-group-order-modal-title">', source)
+
     def test_group_rename_and_series_panel_scripts_use_selective_refresh_helpers(self):
         package_root = Path(__file__).resolve().parents[2]
         table_source = (

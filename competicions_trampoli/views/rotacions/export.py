@@ -304,6 +304,36 @@ def franges_export_excel(request, pk):
                 serie_id = int(subject.get("serie_id") or 0)
                 if serie_id > 0:
                     team_subjects_by_serie.setdefault(serie_id, []).append(subject)
+    team_member_ids = sorted({
+        int(member.get("id") or 0)
+        for subjects in team_subjects_by_serie.values()
+        for subject in subjects
+        for member in list(subject.get("members") or [])
+        if int(member.get("id") or 0) > 0
+    })
+    team_members_by_id = {
+        int(ins.id): ins
+        for ins in (
+            Inscripcio.objects
+            .filter(competicio=competicio, id__in=team_member_ids)
+            .select_related("grup_competicio")
+            .only(
+                "id",
+                "grup",
+                "grup_competicio",
+                "ordre_competicio",
+                "ordre_sortida",
+                "nom_i_cognoms",
+                "document",
+                "sexe",
+                "data_naixement",
+                "entitat",
+                "categoria",
+                "subcategoria",
+                "extra",
+            )
+        )
+    }
 
     def _group_label(g):
         return group_labels_by_id.get(g) or group_label(groups_by_id.get(g))
@@ -378,6 +408,30 @@ def franges_export_excel(request, pk):
         if isinstance(value, (dict, list)):
             return json.dumps(value, ensure_ascii=False)
         return str(value)
+
+    def _team_field_value(subject, code: str):
+        if code == "nom_i_cognoms":
+            return str(subject.get("name") or subject.get("label") or "")
+        if code == "membres_equip":
+            return str(subject.get("members_text") or "")
+        if code == "grup":
+            return str(subject.get("serie_label") or "")
+        if code == "ordre_sortida":
+            return str(subject.get("order") or "")
+
+        values = []
+        seen = set()
+        for member in list(subject.get("members") or []):
+            member_id = int(member.get("id") or 0)
+            inscripcio = team_members_by_id.get(member_id)
+            if inscripcio is None:
+                continue
+            formatted = _format_field_value(_inscripcio_field_value(inscripcio, code))
+            if formatted == "-" or formatted in seen:
+                continue
+            seen.add(formatted)
+            values.append(formatted)
+        return " / ".join(values) if values else "-"
 
     def _ordered_inscripcions_for_cell(franja, estacio, items):
         if not items:
@@ -561,6 +615,7 @@ def franges_export_excel(request, pk):
 
         field_width_map = {
             "nom_i_cognoms": 24,
+            "membres_equip": 28,
             "sexe": 10,
             "entitat": 20,
             "categoria": 14,
@@ -657,14 +712,9 @@ def franges_export_excel(request, pk):
                         value = ""
                         if current_ins is not None:
                             if estacio_is_team.get(e.id):
-                                if code == "nom_i_cognoms":
-                                    value = str(current_ins.get("name") or current_ins.get("label") or "")
-                                elif code == "grup":
-                                    value = str(current_ins.get("serie_label") or "")
-                                elif code == "ordre_sortida":
-                                    value = str(current_ins.get("order") or "")
-                                else:
-                                    value = str(current_ins.get("members_text") or current_ins.get("meta") or "")
+                                value = _team_field_value(current_ins, code)
+                            elif code == "membres_equip":
+                                value = ""
                             else:
                                 value = _format_field_value(_inscripcio_field_value(current_ins, code))
                         cell = ws.cell(row=rr, column=start_col + idx, value=value)

@@ -80,4 +80,61 @@ class InscripcionsExcelImportServiceTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(inscripcio.extra["modalitat"], "Individual")
         self.assertEqual(inscripcio.extra["excel__grup"], "A")
 
+    def test_import_accepts_federat_prefix_and_categoria_inscripcio_headers(self):
+        comp = self._create_competicio("Comp Import Federats")
+        fitxer = self._build_workbook_file(
+            [
+                "Federat Nom",
+                "Federat Cognoms",
+                "Sexe",
+                "Categoria inscripció",
+                "Club",
+                "Trampolí",
+            ],
+            [
+                "ROBERT",
+                "VILARASAU POVEDA",
+                "H",
+                "Sènior (17 - 75) Individual",
+                "CG EGIBA",
+                "X",
+            ],
+        )
+
+        result = importar_inscripcions_excel(fitxer, comp)
+
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["ignorats"], 0)
+        self.assertEqual(result["creats"], 1)
+
+        inscripcio = Inscripcio.objects.get(competicio=comp)
+        self.assertEqual(inscripcio.nom_i_cognoms, "ROBERT VILARASAU POVEDA")
+        self.assertEqual(inscripcio.sexe, "H")
+        self.assertEqual(inscripcio.categoria, "Sènior (17 - 75) Individual")
+        self.assertEqual(inscripcio.entitat, "CG EGIBA")
+        self.assertEqual(inscripcio.extra["trampoli"], "X")
+
+    def test_import_reports_ignored_row_reason_and_number(self):
+        comp = self._create_competicio("Comp Import Ignorats")
+        fitxer = self._build_workbook_file(
+            ["Club", "Categoria"],
+            ["CG EGIBA", "Sènior"],
+        )
+
+        result = importar_inscripcions_excel(fitxer, comp)
+
+        self.assertEqual(result["creats"], 0)
+        self.assertEqual(result["ignorats"], 1)
+        self.assertEqual(
+            result["ignored_details"],
+            [
+                {
+                    "row": 2,
+                    "code": "missing_name",
+                    "reason": "No s'ha pogut obtenir el nom de la inscripció.",
+                    "reference": "",
+                }
+            ],
+        )
+
 

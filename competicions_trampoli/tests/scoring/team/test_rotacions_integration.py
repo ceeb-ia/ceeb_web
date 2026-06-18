@@ -2,6 +2,105 @@
 
 
 class TeamContextRotacionsIntegrationTests(TeamContextScoringFlowTestBase):
+    def test_rotacions_export_resolves_team_members_and_member_fields(self):
+        self.ins1.entitat = "Club A"
+        self.ins1.extra = {"excel__nivell": "Base"}
+        self.ins1.save(update_fields=["entitat", "extra"])
+        self.ins2.entitat = "Club A"
+        self.ins2.extra = {"excel__nivell": "Avancat"}
+        self.ins2.save(update_fields=["entitat", "extra"])
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "excel__nivell", "label": "Nivell", "kind": "extra"},
+            ],
+        }
+        self.comp.inscripcions_view = {
+            "rotacions_export_meta": {
+                "participant_fields": [
+                    "nom_i_cognoms",
+                    "membres_equip",
+                    "entitat",
+                    "excel__nivell",
+                ],
+            },
+        }
+        self.comp.save(update_fields=["inscripcions_schema", "inscripcions_view"])
+
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja export",
+        )
+        team_estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        individual_app = self._create_aparell("IND_EXPORT", "Individual export")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        individual_estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=individual_comp_app,
+            ordre=2,
+        )
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie export",
+        )
+        subject_obj, _subject = self._team_subject()
+        SerieEquipItem.objects.create(serie=serie, team_subject=subject_obj, ordre=1)
+
+        team_assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=team_estacio,
+        )
+        RotacioAssignacioSerieEquip.objects.create(
+            assignacio=team_assignacio,
+            serie=serie,
+            ordre=1,
+        )
+        individual_assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=individual_estacio,
+        )
+        RotacioAssignacioGrup.objects.create(
+            assignacio=individual_assignacio,
+            grup=self.ins1.grup_competicio,
+            ordre=1,
+        )
+
+        response = self.client.get(
+            reverse("rotacions_franges_export_excel", kwargs={"pk": self.comp.id}),
+            {"mode": "participants"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        ws = load_workbook(filename=BytesIO(response.content)).active
+        header_row = next(
+            row
+            for row in range(1, ws.max_row + 1)
+            if ws.cell(row=row, column=2).value == "Nom i cognoms"
+        )
+        data_row = header_row + 1
+
+        self.assertEqual(ws.cell(row=data_row, column=2).value, "Parella 1")
+        self.assertEqual(ws.cell(row=data_row, column=3).value, "Maria + Laia")
+        self.assertEqual(ws.cell(row=data_row, column=4).value, "Club A")
+        self.assertEqual(ws.cell(row=data_row, column=5).value, "Base / Avancat")
+
+        self.assertEqual(ws.cell(row=data_row, column=6).value, "Maria")
+        self.assertIsNone(ws.cell(row=data_row, column=7).value)
+        self.assertEqual(ws.cell(row=data_row, column=8).value, "Club A")
+        self.assertEqual(ws.cell(row=data_row, column=9).value, "Base")
+
     def test_rotacions_save_ignores_mixed_program_keys_by_station_mode(self):
         franja = RotacioFranja.objects.create(
             competicio=self.comp,
