@@ -278,6 +278,49 @@
     padding: 0;
     cursor: pointer;
   }
+  .live-name-with-tiebreak {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.28rem 0.4rem;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .live-name-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .live-tiebreak-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    max-width: 18rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1e3a5f;
+    font-size: 0.68rem;
+    font-weight: 750;
+    line-height: 1.15;
+    padding: 0.16rem 0.4rem;
+    text-decoration: none;
+    vertical-align: middle;
+  }
+  .live-tiebreak-badge__criterion {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .live-tiebreak-badge__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .live-tiebreak-badge--definitive {
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    color: #475569;
+  }
   .live-detail-name:hover,
   .live-detail-name:focus {
     text-decoration: underline;
@@ -550,6 +593,23 @@
     .live-col-participant {
       min-width: 7.25rem;
       max-width: 10rem;
+    }
+    .live-name-with-tiebreak {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: .2rem;
+    }
+    .live-tiebreak-badge {
+      max-width: 100%;
+      border-radius: 5px;
+      font-size: .6rem;
+      line-height: 1.18;
+      padding: .13rem .3rem;
+    }
+    .live-tiebreak-badge__label {
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
     }
     .live-col-raw {
       min-width: 5.75rem;
@@ -875,6 +935,47 @@
       return renderTeamRawDetailCell(v, col);
     }
     return esc(formatCellText(v, col));
+  }
+
+  function formatTiebreakValue(value){
+    const number = Number(value);
+    if (!Number.isFinite(number)) return String(value ?? "");
+    return number.toLocaleString("ca-ES", { maximumFractionDigits: 3 });
+  }
+
+  function renderTiebreakBadge(row){
+    if (row?.definitive_tie === true) {
+      return '<span class="live-tiebreak-badge live-tiebreak-badge--definitive"'
+        + ' title="La puntuacio i tots els criteris de desempat son iguals."'
+        + ' aria-label="Empat definitiu. La puntuacio i tots els criteris de desempat son iguals.">'
+        + '<span class="live-tiebreak-badge__criterion">Empat definitiu</span></span>';
+    }
+    const reason = row?.tiebreak_reason;
+    if (!reason || typeof reason !== "object") return "";
+    const criterionNumber = Number(reason.criterion_number);
+    if (!Number.isFinite(criterionNumber) || criterionNumber < 1) return "";
+    const label = String(reason.label || "").trim();
+    const comparison = String(reason.order || "desc").toLowerCase() === "asc" ? "<" : ">";
+    const title = "Desempat amb la posicio seguent: "
+      + formatTiebreakValue(reason.winner_value)
+      + " " + comparison + " "
+      + formatTiebreakValue(reason.loser_value);
+    const accessibleLabel = "Criteri " + Math.trunc(criterionNumber)
+      + (label ? ", " + label : "") + ". " + title;
+    let html = '<span class="live-tiebreak-badge" title="' + esc(title) + '" aria-label="' + esc(accessibleLabel) + '">';
+    html += '<span class="live-tiebreak-badge__criterion">Criteri ' + esc(String(Math.trunc(criterionNumber))) + '</span>';
+    if (label) {
+      html += '<span aria-hidden="true">&middot;</span><span class="live-tiebreak-badge__label">' + esc(label) + '</span>';
+    }
+    html += '</span>';
+    return html;
+  }
+
+  function renderNameWithTiebreak(cellHtml, row){
+    const badge = renderTiebreakBadge(row);
+    if (!badge) return cellHtml;
+    return '<span class="live-name-with-tiebreak"><span class="live-name-value">'
+      + cellHtml + '</span>' + badge + '</span>';
   }
 
   function detailStateKey(cfgId, partKey, row){
@@ -1258,6 +1359,11 @@
       const particioNom = visual.title;
 
       const rowCount = (p.rows || []).length;
+      const tiebreakColKey = columns.some(col => String(col?.key || "") === "participant")
+        ? "participant"
+        : (columns.some(col => String(col?.key || "") === "nom")
+          ? "nom"
+          : (columns.some(col => String(col?.key || "") === "entitat_nom") ? "entitat_nom" : ""));
       html += '<section class="partition-card part-idx-' + esc(String(pIdx % 5)) + '"' + visual.style + '>';
       html +=   '<div class="partition-head">';
       html +=     '<div class="partition-title-wrap">';
@@ -1292,6 +1398,9 @@
             ? cells[col.key]
             : fallbackCellValue(r, col.key);
           let cellHtml = renderCellHTML(raw, col);
+          if (tiebreakColKey && String(col?.key || "") === tiebreakColKey) {
+            cellHtml = renderNameWithTiebreak(cellHtml, r);
+          }
           if (detail && !toggleInjected && String(col?.key || "") === toggleColKey) {
             toggleInjected = true;
             cellHtml = '' +

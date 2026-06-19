@@ -229,6 +229,47 @@ def _rank_v2(rows, desempat, presentacio, ordre_principal="desc", entity_mode=Fa
                     continue
             break
 
+    for row in ranked:
+        row.pop("tiebreak_reason", None)
+        row.pop("definitive_tie", None)
+
+    for idx in range(len(ranked) - 1):
+        winner = ranked[idx]
+        loser = ranked[idx + 1]
+        if _to_float(winner.get("score")) != _to_float(loser.get("score")):
+            continue
+
+        for criterion_index, tie in enumerate(desempat or [], start=1):
+            key = _tie_key(tie)
+            if not key:
+                continue
+            winner_value = _to_float((winner.get("tie") or {}).get(key, 0.0))
+            loser_value = _to_float((loser.get("tie") or {}).get(key, 0.0))
+            if winner_value == loser_value:
+                continue
+
+            label = str((tie or {}).get("nom") or (tie or {}).get("label") or "").strip()
+            winner["tiebreak_reason"] = {
+                "criterion_number": criterion_index,
+                "criterion_id": str((tie or {}).get("id") or key).strip(),
+                "label": label,
+                "order": "asc" if str((tie or {}).get("ordre") or "desc").strip().lower() == "asc" else "desc",
+                "winner_value": winner_value,
+                "loser_value": loser_value,
+            }
+            break
+
+    idx = 0
+    while idx < len(ranked):
+        current_key = keyfunc(ranked[idx])
+        end = idx + 1
+        while end < len(ranked) and keyfunc(ranked[end]) == current_key:
+            end += 1
+        if end - idx > 1:
+            for row in ranked[idx:end]:
+                row["definitive_tie"] = True
+        idx = end
+
     return ranked
 
 

@@ -1,7 +1,29 @@
 ﻿from ._shared import *  # noqa: F401,F403
 
+from ....services.classificacions.engine.detail_payload import DetailPayloadRuntime
+
 
 class TeamContextClassificacioDetailSectionsTests(TeamContextScoringFlowTestBase):
+    def test_native_team_metric_compaction_preserves_judge_detail(self):
+        payload = {
+            "_kind": "team_raw_detail",
+            "summary": "",
+            "rows": [
+                {
+                    "label": "Parella 1",
+                    "judge_rows": {
+                        "_kind": "judge_rows",
+                        "rows": [{"judge": 1, "items": [7.4, 7.6]}],
+                    },
+                }
+            ],
+        }
+
+        compacted = DetailPayloadRuntime._collapse_redundant_native_team_metric_detail(payload)
+
+        self.assertIs(compacted, payload)
+        self.assertEqual(compacted["rows"][0]["judge_rows"]["rows"][0]["items"], [7.4, 7.6])
+
     def test_compute_classificacio_derived_team_raw_column_returns_team_detail_payload(self):
         ind_app = self._create_aparell("TR_RAW", "Tramp raw")
         comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
@@ -825,6 +847,7 @@ class TeamContextClassificacioDetailSectionsTests(TeamContextScoringFlowTestBase
         metric_cell = metrics_section["rows"][0]["cells"]["team_total"]
         self.assertEqual(metric_cell["_kind"], "team_raw_detail")
         self.assertEqual(metric_cell["summary"], 31.0)
+        self.assertEqual(metric_cell["rows"], [])
 
     def test_compute_classificacio_native_team_team_metrics_honors_fixed_exercise_per_section(self):
         self.comp_app.nombre_exercicis = 2
@@ -931,6 +954,8 @@ class TeamContextClassificacioDetailSectionsTests(TeamContextScoringFlowTestBase
         self.assertEqual(ex2_cell["_kind"], "team_raw_detail")
         self.assertEqual(ex1_cell["summary"], 6.5)
         self.assertEqual(ex2_cell["summary"], 7.4)
+        self.assertEqual(ex1_cell["rows"], [])
+        self.assertEqual(ex2_cell["rows"], [])
 
     def test_compute_classificacio_native_team_team_members_table_uses_fixed_exercise_when_configured(self):
         self.comp_app.nombre_exercicis = 2
@@ -1732,5 +1757,17 @@ class TeamContextClassificacioDetailSectionsTests(TeamContextScoringFlowTestBase
 
         self.assertEqual(value, "23.75\nMaria: 12.50\nLaia:\n  J1: 7.40 | 7.60")
         self.assertTrue(wrap)
+
+        compact_value, _compact_fmt, compact_wrap = _normalize_excel_cell(
+            {
+                "_kind": "team_raw_detail",
+                "summary": 31.0,
+                "rows": [],
+            },
+            {"decimals": 2},
+        )
+
+        self.assertEqual(compact_value, "31.00")
+        self.assertTrue(compact_wrap)
 
 

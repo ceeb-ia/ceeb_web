@@ -504,6 +504,23 @@ class DetailPayloadRuntime:
             summary = float(sum(numeric_values))
         return {"_kind": "team_raw_detail", "summary": summary, "rows": detail_rows}
 
+    @staticmethod
+    def _collapse_redundant_native_team_metric_detail(value):
+        if not isinstance(value, dict) or value.get("_kind") != "team_raw_detail":
+            return value
+        rows = value.get("rows")
+        if not isinstance(rows, list) or len(rows) != 1:
+            return value
+        only = rows[0]
+        if not isinstance(only, dict) or "judge_rows" in only:
+            return value
+        summary = value.get("summary")
+        if summary in (None, "") or only.get("value") != summary:
+            return value
+        compact = dict(value)
+        compact["rows"] = []
+        return compact
+
     def _merge_judge_rows_payloads(self, payloads):
         merged = {}
         order = []
@@ -926,6 +943,7 @@ class DetailPayloadRuntime:
                 continue
             if ctype == "raw":
                 value = self._raw_col_value_for_team_row(row, col, honor_fixed_exercise=True)
+                value = self._collapse_redundant_native_team_metric_detail(value)
                 if not (isinstance(value, dict) and value.get("_kind") == "team_raw_detail"):
                     value = self._apply_decimals_if_numeric(value, col.get("decimals"))
             else:
