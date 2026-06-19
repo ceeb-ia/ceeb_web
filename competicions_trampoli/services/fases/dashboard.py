@@ -82,11 +82,28 @@ def _to_int(value) -> int | None:
         return None
 
 
+def _partition_key(value) -> str:
+    return str(value or "").strip() or "global"
+
+
 def _group_plan_is_stale_from_config(phase_config: dict) -> bool:
     group_plan = phase_config.get("group_plan") if isinstance(phase_config.get("group_plan"), dict) else {}
     cut = phase_config.get("cut") if isinstance(phase_config.get("cut"), dict) else {}
     stored = str(group_plan.get("cut_signature") or "").strip()
     return bool(group_plan.get("stale") or (stored and stored != structural_cut_signature(cut)))
+
+
+def _partition_state_is_stale(
+    state: FasePartitionState | None,
+    *,
+    phase_qualification_stale: bool,
+    has_partition_states: bool,
+) -> bool:
+    if state is not None:
+        return str(state.status or "") == FasePartitionState.Status.STALE
+    if has_partition_states:
+        return False
+    return bool(phase_qualification_stale)
 
 
 def _phase_publish_blockers(phase: CompeticioAparellFase, phase_config: dict) -> list[str]:
@@ -98,9 +115,12 @@ def _phase_publish_blockers(phase: CompeticioAparellFase, phase_config: dict) ->
     elif not getattr(phase, "ui_competitive_slot_count", 0):
         blockers.append("omple almenys una unitat amb participants/equips")
     qualification = phase_config.get("qualification") if isinstance(phase_config.get("qualification"), dict) else {}
-    if not qualification.get("run_id"):
+    has_partition_runs = bool(getattr(phase, "ui_partition_qualification_run_ids", []))
+    if not qualification.get("run_id") and not has_partition_runs:
         blockers.append("congela el snapshot")
-    elif qualification.get("stale") or getattr(phase, "ui_qualification_stale", False):
+    elif not getattr(phase, "ui_has_partition_state_scope", False) and (
+        qualification.get("stale") or getattr(phase, "ui_qualification_stale", False)
+    ):
         blockers.append("recalcula el snapshot")
     stale_partitions = [
         state
@@ -355,6 +375,18 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             except QualificationError:
                 phase.ui_qualification_stale = True
                 phase.ui_qualification_source_changed = True
+        partition_states = list(phase.partition_states.all())
+        partition_states_by_key = {
+            _partition_key(state.partition_key): state
+            for state in partition_states
+        }
+        phase.ui_partition_states = partition_states
+        phase.ui_has_partition_state_scope = bool(partition_states)
+        phase.ui_partition_qualification_run_ids = sorted({
+            int(state.qualification_run_id)
+            for state in partition_states
+            if state.qualification_run_id
+        })
         phase_reserve_options = reserve_options_for_phase(phase)
         phase_recoverable_options = recoverable_snapshot_options_for_phase(phase)
         phase_active_subject_refs = active_subject_refs_for_phase(phase)
@@ -365,25 +397,34 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_available_reserve_count = sum(
             1 for option in phase_reserve_options if option.subject_ref not in phase_active_subject_refs
         )
-        partition_states = list(phase.partition_states.all())
-        phase.ui_partition_states = partition_states
         phase.ui_generated_partitions = [
             {
                 "key": state.partition_key,
                 "label": format_partition_label(state.partition_key),
                 "status": state.status,
                 "status_label": state.get_status_display(),
+                "qualification_run_id": state.qualification_run_id,
+                "source_snapshot_hash": state.source_snapshot_hash,
                 "confirmed_at": state.confirmed_at,
                 "warnings": list(state.warnings or []),
-                "is_stale": phase.ui_qualification_stale or state.status == FasePartitionState.Status.STALE,
-                "stale_label": "Font canviada" if phase.ui_qualification_source_changed else "Snapshot pendent",
+                "is_stale": _partition_state_is_stale(
+                    state,
+                    phase_qualification_stale=phase.ui_qualification_stale,
+                    has_partition_states=phase.ui_has_partition_state_scope,
+                ),
+                "stale_label": "Particio obsoleta",
                 "can_confirm": (
-                    not phase.ui_qualification_stale
+                    not _partition_state_is_stale(
+                        state,
+                        phase_qualification_stale=phase.ui_qualification_stale,
+                        has_partition_states=phase.ui_has_partition_state_scope,
+                    )
                     and state.status == FasePartitionState.Status.GENERATED
                 ),
             }
             for state in partition_states
         ]
+        phase.ui_any_partition_stale = any(partition["is_stale"] for partition in phase.ui_generated_partitions)
         for unit in units:
             slots = list(unit.slots.all())
             for slot in slots:
@@ -415,7 +456,27 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_display_name = _unit_display_name(unit)
             unit.ui_has_locked_slots = any(slot.locked for slot in slots)
             unit.ui_has_generated_slots = any(slot.source_classificacio_id for slot in slots)
-            unit.ui_partition_label = format_partition_label(unit.partition_key)
+            unit_partition_key = _partition_key(unit.partition_key)
+            unit_partition_state = partition_states_by_key.get(unit_partition_key)
+            unit.ui_partition_key = unit_partition_key
+            unit.ui_partition_state = unit_partition_state
+            unit.ui_partition_status = str(getattr(unit_partition_state, "status", "") or "")
+            unit.ui_partition_status_label = (
+                unit_partition_state.get_status_display()
+                if unit_partition_state is not None
+                else ""
+            )
+            unit.ui_partition_qualification_run_id = (
+                unit_partition_state.qualification_run_id
+                if unit_partition_state is not None
+                else None
+            )
+            unit.ui_partition_is_stale = _partition_state_is_stale(
+                unit_partition_state,
+                phase_qualification_stale=phase.ui_qualification_stale,
+                has_partition_states=phase.ui_has_partition_state_scope,
+            )
+            unit.ui_partition_label = format_partition_label(unit_partition_key)
             unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
             unit.ui_formation_strategy_label = {
                 "classification_order": "Ordre de classificació",
@@ -441,8 +502,7 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_can_confirm = unit.status not in {ProgramUnit.Status.CONFIRMED, ProgramUnit.Status.PUBLISHED}
             unit.ui_can_publish = (
                 phase.estat != CompeticioAparellFase.Estat.CLOSED
-                and not phase.ui_qualification_stale
-                and not any(state.status == FasePartitionState.Status.STALE for state in partition_states)
+                and not unit.ui_partition_is_stale
                 and unit.ui_competitive_slots_count > 0
             )
         phase.ui_units = units
@@ -466,9 +526,11 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_phase_alerts = []
         if phase.ui_group_plan_stale:
             phase.ui_phase_alerts.append("Grups pendents de revisar")
-        if phase.ui_qualification_source_changed:
+        if phase.ui_any_partition_stale:
+            phase.ui_phase_alerts.append("Particions obsoletes")
+        if not phase.ui_has_partition_state_scope and phase.ui_qualification_source_changed:
             phase.ui_phase_alerts.append("Font canviada")
-        elif phase.ui_qualification_manual_pending:
+        elif not phase.ui_has_partition_state_scope and phase.ui_qualification_manual_pending:
             phase.ui_phase_alerts.append("Snapshot pendent de validar")
         if phase.ui_unit_count and not phase.ui_has_generated_slots:
             phase.ui_phase_alerts.append("Snapshot pendent")

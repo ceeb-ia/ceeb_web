@@ -196,17 +196,52 @@ def _programmed_units_in_branch(phase_ids: list[int]):
     )
 
 
-def _apply_qualification(phase, *, replace_existing=False, allow_replace_protected=False):
+def _unit_for_partial_action(phase, request) -> ProgramUnit:
+    unit_id = request.POST.get("unit_id")
+    return get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
+
+
+def _partition_keys_for_unit(unit: ProgramUnit) -> list[str]:
+    partition_key = str(unit.partition_key or "").strip() or "global"
+    return [partition_key]
+
+
+def _record_qualification_preview(phase, *, partition_keys=None):
+    try:
+        return record_qualification_preview(phase, partition_keys=partition_keys)
+    except TypeError as exc:
+        if partition_keys:
+            raise QualificationError("El servei encara no permet previsualitzar només una partició.") from exc
+        return record_qualification_preview(phase)
+
+
+def _apply_qualification(
+    phase,
+    *,
+    partition_keys=None,
+    replace_existing=False,
+    allow_replace_protected=False,
+):
     try:
         return apply_qualification(
             phase,
+            partition_keys=partition_keys,
             replace_existing=replace_existing,
             allow_replace_protected=allow_replace_protected,
         )
     except TypeError as exc:
-        if replace_existing:
-            raise QualificationError("El servei encara no permet regenerar substituint unitats existents.") from exc
-        raise
+        if partition_keys:
+            raise QualificationError("El servei encara no permet congelar només una partició.") from exc
+        try:
+            return apply_qualification(
+                phase,
+                replace_existing=replace_existing,
+                allow_replace_protected=allow_replace_protected,
+            )
+        except TypeError as fallback_exc:
+            if replace_existing:
+                raise QualificationError("El servei encara no permet regenerar substituint unitats existents.") from fallback_exc
+            raise
 
 
 def handle_phase_post(view, request):
@@ -532,7 +567,7 @@ def handle_phase_post(view, request):
             return view.redirect_to_selected_app(phase.comp_aparell), {}
 
         if action == "preview_qualification":
-            preview = record_qualification_preview(phase)
+            preview = _record_qualification_preview(phase, partition_keys=None)
             summary = preview.summary()
             messages.info(
                 request,
@@ -543,9 +578,24 @@ def handle_phase_post(view, request):
             )
             return None, {"qualification_preview": preview_as_dict(preview)}
 
+        if action == "preview_qualification_unit":
+            unit = _unit_for_partial_action(phase, request)
+            partition_keys = _partition_keys_for_unit(unit)
+            preview = _record_qualification_preview(phase, partition_keys=partition_keys)
+            summary = preview.summary()
+            messages.info(
+                request,
+                (
+                    f"Snapshot previst de '{phase.nom}' per '{unit.nom}': "
+                    f"{summary['candidates']} participants/reserves per omplir "
+                    f"{summary['slots']} places de la partició {partition_keys[0]}."
+                ),
+            )
+            return None, {"qualification_preview": preview_as_dict(preview)}
+
         if action == "apply_qualification":
             has_snapshot = _phase_has_applied_snapshot(phase)
-            preview = _apply_qualification(phase, replace_existing=has_snapshot)
+            preview = _apply_qualification(phase, partition_keys=None, replace_existing=has_snapshot)
             summary = preview.summary()
             action_label = "actualitzat" if has_snapshot else "congelat"
             messages.success(
@@ -555,10 +605,31 @@ def handle_phase_post(view, request):
                     f"assignats als slots existents. Fase planificada i llesta per publicar."
                 ),
             )
-            return view.redirect_to_selected_app(phase.comp_aparell), {}
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
+        if action == "apply_qualification_unit":
+            unit = _unit_for_partial_action(phase, request)
+            partition_keys = _partition_keys_for_unit(unit)
+            has_snapshot = _phase_has_applied_snapshot(phase)
+            preview = _apply_qualification(
+                phase,
+                partition_keys=partition_keys,
+                replace_existing=has_snapshot,
+            )
+            summary = preview.summary()
+            action_label = "actualitzat" if has_snapshot else "congelat"
+            messages.success(
+                request,
+                (
+                    f"Snapshot {action_label} per '{unit.nom}': {summary['candidates']} participants/reserves "
+                    f"assignats als slots de la partició {partition_keys[0]}."
+                ),
+            )
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "confirm_partition":
-            partition_key = request.POST.get("partition_key") or ""
+            unit = _unit_for_partial_action(phase, request)
+            partition_key = _partition_keys_for_unit(unit)[0]
             state = confirm_qualification_partition(phase, partition_key)
             messages.success(request, f"Partició '{state.partition_key}' confirmada per '{phase.nom}'.")
             return view.redirect_to_selected_app(phase.comp_aparell), {}

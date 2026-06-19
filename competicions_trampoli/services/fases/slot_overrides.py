@@ -10,6 +10,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from ...models.competicio import (
     CompeticioAparellFase,
+    FasePartitionState,
     Inscripcio,
     ProgramUnit,
     ProgramUnitSlot,
@@ -114,7 +115,11 @@ def _to_int(value) -> int | None:
         return None
 
 
-def applied_qualification_run(fase: CompeticioAparellFase) -> QualificationRun | None:
+def _clean_partition_key(value: object) -> str:
+    return str(value or "").strip() or "global"
+
+
+def _legacy_applied_qualification_run(fase: CompeticioAparellFase) -> QualificationRun | None:
     config = fase.config if isinstance(fase.config, dict) else {}
     qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
     run_id = _to_int(qualification.get("run_id"))
@@ -127,15 +132,97 @@ def applied_qualification_run(fase: CompeticioAparellFase) -> QualificationRun |
     )
 
 
-def reserve_options_for_phase(fase: CompeticioAparellFase) -> list[ReserveOption]:
-    run = applied_qualification_run(fase)
+def applied_qualification_run(fase: CompeticioAparellFase) -> QualificationRun | None:
+    """Legacy phase-level resolver kept for callers that are not partition-aware."""
+
+    return _legacy_applied_qualification_run(fase)
+
+
+def _run_is_usable_for_phase(run: QualificationRun | None, fase: CompeticioAparellFase) -> bool:
+    return bool(
+        run is not None
+        and int(run.fase_id) == int(fase.id)
+        and run.status == QualificationRun.Status.APPLIED
+    )
+
+
+def _payload_partition_keys(run: QualificationRun | None) -> list[str]:
     if run is None:
         return []
     payload = run.payload if isinstance(run.payload, dict) else {}
+    keys: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw_key: object) -> None:
+        key = _clean_partition_key(raw_key)
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
+
     reserves = payload.get("reserves") if isinstance(payload.get("reserves"), dict) else {}
+    for key in reserves.keys():
+        add(key)
+    for unit in payload.get("units") or []:
+        if isinstance(unit, dict):
+            add(unit.get("partition_key"))
+    scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
+    for key in scope.get("partition_keys") or []:
+        add(key)
+    return keys
+
+
+def _applied_qualification_runs_by_partition(fase: CompeticioAparellFase) -> dict[str, QualificationRun]:
+    """
+    Resolve the effective applied run per partition.
+
+    FasePartitionState.qualification_run is the canonical source for partial
+    snapshots. phase.config["qualification"]["run_id"] remains a legacy
+    fallback for old global snapshots and for partitions that do not yet have a
+    state row.
+    """
+
+    legacy_run = _legacy_applied_qualification_run(fase)
+    runs_by_partition: dict[str, QualificationRun] = {}
+
+    states = (
+        FasePartitionState.objects
+        .filter(fase=fase)
+        .select_related("qualification_run")
+        .order_by("partition_key", "id")
+    )
+    for state in states:
+        key = _clean_partition_key(state.partition_key)
+        state_run = state.qualification_run
+        if _run_is_usable_for_phase(state_run, fase):
+            runs_by_partition[key] = state_run
+        elif legacy_run is not None:
+            runs_by_partition[key] = legacy_run
+
+    if legacy_run is not None:
+        legacy_keys = _payload_partition_keys(legacy_run) or ["global"]
+        for key in legacy_keys:
+            runs_by_partition.setdefault(key, legacy_run)
+
+    return runs_by_partition
+
+
+def applied_qualification_run_for_partition(
+    fase: CompeticioAparellFase,
+    partition_key: str,
+) -> QualificationRun | None:
+    return _applied_qualification_runs_by_partition(fase).get(_clean_partition_key(partition_key))
+
+
+def reserve_options_for_phase(fase: CompeticioAparellFase) -> list[ReserveOption]:
+    runs_by_partition = _applied_qualification_runs_by_partition(fase)
+    if not runs_by_partition:
+        return []
     options: list[ReserveOption] = []
     index = 0
-    for partition_key, items in reserves.items():
+    for partition_key, run in runs_by_partition.items():
+        payload = run.payload if isinstance(run.payload, dict) else {}
+        reserves = payload.get("reserves") if isinstance(payload.get("reserves"), dict) else {}
+        items = reserves.get(partition_key) or []
         for item in items or []:
             if not isinstance(item, dict):
                 continue
@@ -243,7 +330,7 @@ def _snapshot_option_from_item(
     if not label:
         label = f"{subject_kind}:{subject_id}"
     meta = _source_row_text(source_row, "entitat_nom", "entitat", "club", "categoria", "subcategoria")
-    clean_partition = str(item.get("source_particio_key") or partition_key or "global").strip() or "global"
+    clean_partition = _clean_partition_key(item.get("source_particio_key") or partition_key)
     return SnapshotOption(
         key=f"{index}:{clean_partition}:{subject_kind}:{subject_id}",
         partition_key=clean_partition,
@@ -260,29 +347,32 @@ def _snapshot_option_from_item(
 
 
 def recoverable_snapshot_options_for_phase(fase: CompeticioAparellFase) -> list[SnapshotOption]:
-    run = applied_qualification_run(fase)
-    if run is None:
+    runs_by_partition = _applied_qualification_runs_by_partition(fase)
+    if not runs_by_partition:
         return []
-    payload = run.payload if isinstance(run.payload, dict) else {}
     options: list[SnapshotOption] = []
     seen: set[tuple[str, int]] = set()
     index = 0
-    for unit in payload.get("units") or []:
-        if not isinstance(unit, dict):
-            continue
-        partition_key = str(unit.get("partition_key") or "global").strip() or "global"
-        for item in unit.get("candidates") or []:
-            index += 1
-            option = _snapshot_option_from_item(
-                index=index,
-                partition_key=partition_key,
-                item=item,
-                source_classificacio_id=run.source_classificacio_id,
-            )
-            if option is None or option.subject_ref in seen:
+    for partition_key, run in runs_by_partition.items():
+        payload = run.payload if isinstance(run.payload, dict) else {}
+        for unit in payload.get("units") or []:
+            if not isinstance(unit, dict):
                 continue
-            seen.add(option.subject_ref)
-            options.append(option)
+            unit_partition_key = _clean_partition_key(unit.get("partition_key"))
+            if unit_partition_key != partition_key:
+                continue
+            for item in unit.get("candidates") or []:
+                index += 1
+                option = _snapshot_option_from_item(
+                    index=index,
+                    partition_key=partition_key,
+                    item=item,
+                    source_classificacio_id=run.source_classificacio_id,
+                )
+                if option is None or option.subject_ref in seen:
+                    continue
+                seen.add(option.subject_ref)
+                options.append(option)
     return options
 
 

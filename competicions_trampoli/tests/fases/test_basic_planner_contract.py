@@ -657,19 +657,118 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        service.assert_called_once_with(phase, replace_existing=False, allow_replace_protected=False)
+        service.assert_called_once_with(
+            phase,
+            partition_keys=None,
+            replace_existing=False,
+            allow_replace_protected=False,
+        )
         self.assertContains(response, "Snapshot congelat per")
         self.assertContains(response, "slots existents")
 
+    def test_post_preview_qualification_unit_resolves_partition_from_unit(self):
+        phase = self._create_phase()
+        unit = create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Infantil F",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="categoria=Infantil|subcategoria=F",
+        )
+        preview = SimpleNamespace(
+            summary=Mock(
+                return_value={
+                    "candidates": 2,
+                    "slots": 2,
+                    "units": 1,
+                }
+            )
+        )
+        service = Mock(return_value=preview)
+        serializer = Mock(return_value={"summary": {"candidates": 2, "slots": 2, "units": 1}, "warnings": [], "units": []})
+
+        with patch("competicions_trampoli.views.competition.fases.actions.record_qualification_preview", service):
+            with patch("competicions_trampoli.views.competition.fases.actions.preview_as_dict", serializer):
+                response = self.client.post(
+                    self._planner_url(),
+                    data={
+                        "action": "preview_qualification_unit",
+                        "fase_id": phase.id,
+                        "unit_id": unit.id,
+                        "partition_key": "malicious-client-value",
+                    },
+                    follow=True,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with(phase, partition_keys=["categoria=Infantil|subcategoria=F"])
+        serializer.assert_called_once_with(preview)
+        self.assertContains(response, "Snapshot previst de")
+        self.assertContains(response, "Semifinal Infantil F")
+
+    def test_post_apply_qualification_unit_resolves_partition_from_unit(self):
+        phase = self._create_phase()
+        unit = create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Infantil F",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="categoria=Infantil|subcategoria=F",
+        )
+        preview = SimpleNamespace(
+            summary=Mock(
+                return_value={
+                    "candidates": 2,
+                    "slots": 2,
+                    "units": 1,
+                }
+            )
+        )
+        service = Mock(return_value=preview)
+
+        with patch("competicions_trampoli.views.competition.fases.actions.apply_qualification", service):
+            response = self.client.post(
+                self._planner_url(),
+                data={
+                    "action": "apply_qualification_unit",
+                    "fase_id": phase.id,
+                    "unit_id": unit.id,
+                    "partition_key": "malicious-client-value",
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with(
+            phase,
+            partition_keys=["categoria=Infantil|subcategoria=F"],
+            replace_existing=False,
+            allow_replace_protected=False,
+        )
+        self.assertContains(response, "Snapshot congelat per")
+        self.assertContains(response, "Semifinal Infantil F")
+
     def test_post_confirm_partition_calls_service_when_available(self):
         phase = self._create_phase()
+        unit = create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Global",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="global",
+        )
         state = SimpleNamespace(partition_key="global")
         service = Mock(return_value=state)
 
         with patch("competicions_trampoli.views.competition.fases.actions.confirm_qualification_partition", service):
             response = self.client.post(
                 self._planner_url(),
-                data={"action": "confirm_partition", "fase_id": phase.id, "partition_key": "global"},
+                data={
+                    "action": "confirm_partition",
+                    "fase_id": phase.id,
+                    "unit_id": unit.id,
+                    "partition_key": "malicious-client-value",
+                },
                 follow=True,
             )
 
@@ -680,6 +779,13 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
     def test_planner_shows_generated_partition_confirmation_action(self):
         phase = self._create_phase()
+        unit = create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Global",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+            partition_key="global",
+        )
         FasePartitionState.objects.create(
             fase=phase,
             partition_key="global",
@@ -690,6 +796,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="confirm_partition"')
+        self.assertContains(response, f'value="{unit.id}"')
         self.assertContains(response, "Confirmar partició")
 
     def test_planner_formats_generated_partition_label(self):
@@ -735,7 +842,12 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        service.assert_called_once_with(phase, replace_existing=True, allow_replace_protected=False)
+        service.assert_called_once_with(
+            phase,
+            partition_keys=None,
+            replace_existing=True,
+            allow_replace_protected=False,
+        )
         self.assertContains(response, "Snapshot actualitzat per")
         self.assertContains(response, "slots existents")
 

@@ -86,6 +86,8 @@ class QualificationPreview:
     warnings: list[str] = field(default_factory=list)
     partition_warnings: dict[str, list[str]] = field(default_factory=dict)
     reserves: dict[str, list[QualificationCandidate]] = field(default_factory=dict)
+    partition_hashes: dict[str, str] = field(default_factory=dict)
+    scope: dict = field(default_factory=dict)
 
     @property
     def candidate_count(self) -> int:
@@ -161,6 +163,8 @@ class QualificationPreview:
                 for key, items in self.reserves.items()
             },
             "partition_warnings": self.partition_warnings,
+            "partition_hashes": dict(self.partition_hashes),
+            "scope": dict(self.scope or {"kind": "global"}),
         }
 
 
@@ -446,6 +450,109 @@ def _snapshot_hash(payload: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _normalize_partition_key(value) -> str:
+    return str(value or "").strip() or "global"
+
+
+def _normalize_partition_keys(partition_keys=None) -> list[str] | None:
+    if partition_keys is None:
+        return None
+    if isinstance(partition_keys, str):
+        raw_items = [partition_keys]
+    else:
+        raw_items = list(partition_keys or [])
+    keys: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        key = _normalize_partition_key(raw)
+        if key not in seen:
+            keys.append(key)
+            seen.add(key)
+    return keys
+
+
+def _scope_payload(partition_keys=None) -> dict:
+    keys = _normalize_partition_keys(partition_keys)
+    if keys is None:
+        return {"kind": "global"}
+    return {"kind": "partition", "partition_keys": keys}
+
+
+def _candidate_payload(candidate: QualificationCandidate) -> dict:
+    return {
+        "subject_kind": candidate.subject_kind,
+        "subject_id": candidate.subject_id,
+        "status": candidate.status,
+        "source_particio_key": candidate.source_particio_key,
+        "source_position": candidate.source_position,
+        "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
+        "source_row": candidate.source_row,
+    }
+
+
+def _unit_payload(unit: QualificationUnitPreview) -> dict:
+    return {
+        "unit_id": unit.unit_id,
+        "label": unit.label,
+        "partition_key": unit.partition_key,
+        "capacity": unit.capacity,
+        "candidates": [_candidate_payload(candidate) for candidate in unit.candidates],
+    }
+
+
+def _preview_partition_payload(
+    *,
+    classificacio: ClassificacioConfig,
+    source_phase: CompeticioAparellFase | None,
+    cut: dict,
+    partition_key: str,
+    units: list[QualificationUnitPreview],
+    reserves: list[QualificationCandidate],
+    warnings: list[str],
+) -> dict:
+    return {
+        "classificacio_id": classificacio.id,
+        "classificacio_updated_at": classificacio.updated_at.isoformat() if classificacio.updated_at else "",
+        "source_phase_id": source_phase.id if source_phase else None,
+        "cut": cut,
+        "partition_key": _normalize_partition_key(partition_key),
+        "units": [_unit_payload(unit) for unit in units],
+        "reserves": [_candidate_payload(candidate) for candidate in reserves],
+        "warnings": list(warnings or []),
+    }
+
+
+def _aggregate_snapshot_hash(scope: dict, partition_hashes: dict[str, str]) -> str:
+    return _snapshot_hash({
+        "scope": scope or {"kind": "global"},
+        "partition_hashes": {
+            key: partition_hashes[key]
+            for key in sorted(partition_hashes)
+        },
+    })
+
+
+def _legacy_global_preview_snapshot_hash(preview: QualificationPreview) -> str:
+    """
+    Hash compatible with the pre-partition-scope global snapshot payload.
+
+    New snapshots store per-partition hashes and an aggregate hash, but existing
+    global snapshots in phase.config only know this legacy digest. Accepting it
+    avoids marking old valid snapshots stale solely because the hash format was
+    upgraded.
+    """
+
+    payload = preview.payload()
+    return _snapshot_hash({
+        "classificacio_id": preview.classificacio.id,
+        "classificacio_updated_at": preview.classificacio.updated_at.isoformat() if preview.classificacio.updated_at else "",
+        "source_phase_id": preview.source_phase.id if preview.source_phase else None,
+        "cut": _phase_config(preview.fase)[1],
+        "units": payload.get("units") or [],
+        "reserves": payload.get("reserves") or {},
+    })
+
+
 def _add_partition_warning(warnings: list[str], partition_warnings: dict[str, list[str]], partition_key: str, message: str) -> None:
     text = f"{partition_key}: {message}"
     warnings.append(text)
@@ -541,6 +648,21 @@ def _build_units_for_partition(
         competitive,
         capacities,
         strategy=str(strategy or "classification_order"),
+        seed_material={
+            "phase_id": fase.id,
+            "partition_key": partition_key,
+            "strategy": str(strategy or "classification_order"),
+            "capacities": capacities,
+            "subjects": [
+                {
+                    "kind": candidate.subject_kind,
+                    "id": candidate.subject_id,
+                    "status": candidate.status,
+                    "source_position": candidate.source_position,
+                }
+                for candidate in competitive
+            ],
+        },
     )
     units = []
     for index, (capacity, chunk) in enumerate(zip(capacities, chunks), start=1):
@@ -691,6 +813,7 @@ def _chunks_by_strategy(
     capacities: list[int],
     *,
     strategy: str,
+    seed_material: dict | None = None,
 ) -> tuple[list[list[QualificationCandidate]], int]:
     chunks = [[] for _ in capacities]
     if not selected or not capacities:
@@ -744,7 +867,21 @@ def _chunks_by_strategy(
 
     if strategy == "random":
         shuffled = list(selected)
-        random.shuffle(shuffled)
+        seed = _snapshot_hash(seed_material or {
+            "strategy": strategy,
+            "capacities": capacities,
+            "subjects": [
+                {
+                    "kind": candidate.subject_kind,
+                    "id": candidate.subject_id,
+                    "status": candidate.status,
+                    "source_particio_key": candidate.source_particio_key,
+                    "source_position": candidate.source_position,
+                }
+                for candidate in shuffled
+            ],
+        })
+        random.Random(seed).shuffle(shuffled)
         offset = 0
         for index, capacity in enumerate(capacities):
             chunks[index] = shuffled[offset:offset + capacity]
@@ -805,6 +942,22 @@ def _build_existing_unit_previews(
         selected,
         capacities,
         strategy=strategy,
+        seed_material={
+            "phase_id": fase.id,
+            "partition_key": partition_key,
+            "strategy": strategy,
+            "capacities": capacities,
+            "unit_ids": [unit.id for unit in units],
+            "subjects": [
+                {
+                    "kind": candidate.subject_kind,
+                    "id": candidate.subject_id,
+                    "status": candidate.status,
+                    "source_position": candidate.source_position,
+                }
+                for candidate in selected
+            ],
+        },
     )
     for unit, capacity, chunk in zip(units, capacities, chunks):
         previews.append(
@@ -826,7 +979,10 @@ def _build_existing_unit_previews(
     return previews
 
 
-def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
+def preview_qualification(
+    fase: CompeticioAparellFase,
+    partition_keys=None,
+) -> QualificationPreview:
     classificacio = _source_classificacio(fase)
     source_phase = _source_phase_for_classificacio(classificacio, comp_aparell_id=fase.comp_aparell_id)
     validate_classificacio_not_circular_source(fase, classificacio, source_phase=source_phase)
@@ -858,7 +1014,17 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
     result = compute_classificacio(fase.competicio, classificacio)
     units = []
     reserves = {}
-    for partition_key, rows in _rows_for_cut(result, partition_mode):
+    requested_keys = _normalize_partition_keys(partition_keys)
+    rows_by_key = {
+        _normalize_partition_key(partition_key): list(rows or [])
+        for partition_key, rows in _rows_for_cut(result, partition_mode)
+    }
+    if requested_keys is None:
+        partition_items = list(rows_by_key.items())
+    else:
+        partition_items = [(key, rows_by_key.get(key, [])) for key in requested_keys]
+    partition_hashes: dict[str, str] = {}
+    for partition_key, rows in partition_items:
         selected = _select_candidates_for_partition(
             fase=fase,
             partition_key=partition_key,
@@ -872,58 +1038,40 @@ def preview_qualification(fase: CompeticioAparellFase) -> QualificationPreview:
         competitive, reserve_candidates = _split_reserve_candidates(selected)
         if reserve_candidates:
             reserves[partition_key] = reserve_candidates
-        units.extend(
-            _build_existing_unit_previews(
-                fase=fase,
-                existing_units=existing_units,
-                partition_mode=partition_mode,
+        partition_units = _build_existing_unit_previews(
+            fase=fase,
+            existing_units=existing_units,
+            partition_mode=partition_mode,
+            partition_key=partition_key,
+            selected=competitive,
+            warnings=warnings,
+            partition_warnings=partition_warnings,
+        )
+        units.extend(partition_units)
+        partition_hashes[partition_key] = _snapshot_hash(
+            _preview_partition_payload(
+                classificacio=classificacio,
+                source_phase=source_phase,
+                cut=cut,
                 partition_key=partition_key,
-                selected=competitive,
-                warnings=warnings,
-                partition_warnings=partition_warnings,
+                units=partition_units,
+                reserves=reserve_candidates,
+                warnings=partition_warnings.get(partition_key, []),
             )
         )
 
-    snapshot_payload = {
-        "classificacio_id": classificacio.id,
-        "classificacio_updated_at": classificacio.updated_at.isoformat() if classificacio.updated_at else "",
-        "source_phase_id": source_phase.id if source_phase else None,
-        "cut": cut,
-        "units": QualificationPreview(
-            fase=fase,
-            classificacio=classificacio,
-            source_phase=source_phase,
-            snapshot_hash="",
-            units=units,
-            warnings=warnings,
-            partition_warnings=partition_warnings,
-            reserves=reserves,
-        ).payload()["units"],
-        "reserves": {
-            key: [
-                {
-                    "subject_kind": candidate.subject_kind,
-                    "subject_id": candidate.subject_id,
-                    "status": candidate.status,
-                    "source_particio_key": candidate.source_particio_key,
-                    "source_position": candidate.source_position,
-                    "source_score": str(candidate.source_score) if candidate.source_score is not None else None,
-                    "source_row": candidate.source_row,
-                }
-                for candidate in items
-            ]
-            for key, items in reserves.items()
-        },
-    }
+    scope = _scope_payload(requested_keys)
     return QualificationPreview(
         fase=fase,
         classificacio=classificacio,
         source_phase=source_phase,
-        snapshot_hash=_snapshot_hash(snapshot_payload),
+        snapshot_hash=_aggregate_snapshot_hash(scope, partition_hashes),
         units=units,
         warnings=warnings,
         partition_warnings=partition_warnings,
         reserves=reserves,
+        partition_hashes=partition_hashes,
+        scope=scope,
     )
 
 
@@ -941,8 +1089,11 @@ def _create_run(preview: QualificationPreview, *, status: str, applied_at=None) 
     )
 
 
-def record_qualification_preview(fase: CompeticioAparellFase) -> QualificationPreview:
-    preview = preview_qualification(fase)
+def record_qualification_preview(
+    fase: CompeticioAparellFase,
+    partition_keys=None,
+) -> QualificationPreview:
+    preview = preview_qualification(fase, partition_keys=partition_keys)
     _create_run(preview, status=QualificationRun.Status.PREVIEWED)
     return preview
 
@@ -950,30 +1101,46 @@ def record_qualification_preview(fase: CompeticioAparellFase) -> QualificationPr
 def _partition_keys_for_preview(preview: QualificationPreview) -> list[str]:
     keys = []
     seen = set()
-    for unit in preview.units:
-        key = str(unit.partition_key or "global").strip() or "global"
+    for raw_key in (getattr(preview, "partition_hashes", None) or {}).keys():
+        key = _normalize_partition_key(raw_key)
+        if key not in seen:
+            keys.append(key)
+            seen.add(key)
+    for unit in getattr(preview, "units", []) or []:
+        key = _normalize_partition_key(unit.partition_key)
+        if key not in seen:
+            keys.append(key)
+            seen.add(key)
+    for raw_key in (getattr(preview, "reserves", None) or {}).keys():
+        key = _normalize_partition_key(raw_key)
         if key not in seen:
             keys.append(key)
             seen.add(key)
     return keys
 
 
-def _sync_partition_states(preview: QualificationPreview, run: QualificationRun) -> None:
+def _sync_partition_states(
+    preview: QualificationPreview,
+    run: QualificationRun,
+    *,
+    mark_missing_stale: bool = False,
+) -> None:
     keys = _partition_keys_for_preview(preview)
     for partition_key in keys:
+        partition_hash = (preview.partition_hashes or {}).get(partition_key, preview.snapshot_hash)
         state, _created = FasePartitionState.objects.get_or_create(
             fase=preview.fase,
             partition_key=partition_key,
             defaults={
                 "status": FasePartitionState.Status.GENERATED,
                 "qualification_run": run,
-                "source_snapshot_hash": preview.snapshot_hash,
+                "source_snapshot_hash": partition_hash,
                 "warnings": list(preview.partition_warnings.get(partition_key, [])),
             },
         )
         state.status = FasePartitionState.Status.GENERATED
         state.qualification_run = run
-        state.source_snapshot_hash = preview.snapshot_hash
+        state.source_snapshot_hash = partition_hash
         state.warnings = list(preview.partition_warnings.get(partition_key, []))
         state.confirmed_at = None
         state.save(update_fields=[
@@ -984,26 +1151,46 @@ def _sync_partition_states(preview: QualificationPreview, run: QualificationRun)
             "confirmed_at",
             "updated_at",
         ])
-    FasePartitionState.objects.filter(fase=preview.fase).exclude(partition_key__in=keys).update(
-        status=FasePartitionState.Status.STALE,
-        qualification_run=run,
-        source_snapshot_hash=preview.snapshot_hash,
-    )
+    if mark_missing_stale:
+        FasePartitionState.objects.filter(fase=preview.fase).exclude(partition_key__in=keys).update(
+            status=FasePartitionState.Status.STALE,
+        )
 
 
-def _protected_slots_exist(fase: CompeticioAparellFase) -> bool:
-    return ProgramUnitSlot.objects.filter(unit__fase=fase, locked=True).exists() or ProgramUnitSlot.objects.filter(
+def _unit_ids_for_preview(preview: QualificationPreview) -> list[int]:
+    ids: list[int] = []
+    seen: set[int] = set()
+    for unit_preview in preview.units:
+        if not unit_preview.unit_id:
+            continue
+        unit_id = int(unit_preview.unit_id)
+        if unit_id not in seen:
+            ids.append(unit_id)
+            seen.add(unit_id)
+    return ids
+
+
+def _slots_qs_for_scope(fase: CompeticioAparellFase, *, unit_ids: list[int] | None = None):
+    qs = ProgramUnitSlot.objects.filter(unit__fase=fase)
+    if unit_ids is not None:
+        qs = qs.filter(unit_id__in=unit_ids)
+    return qs
+
+
+def _protected_slots_exist(fase: CompeticioAparellFase, *, unit_ids: list[int] | None = None) -> bool:
+    qs = _slots_qs_for_scope(fase, unit_ids=unit_ids)
+    return qs.filter(locked=True).exists() or qs.filter(
         unit__fase=fase,
         status=ProgramUnitSlot.Status.MANUAL,
     ).exists()
 
 
-def _assigned_slots_exist(fase: CompeticioAparellFase) -> bool:
-    return ProgramUnitSlot.objects.filter(unit__fase=fase).exclude(status=ProgramUnitSlot.Status.EMPTY).exists()
+def _assigned_slots_exist(fase: CompeticioAparellFase, *, unit_ids: list[int] | None = None) -> bool:
+    return _slots_qs_for_scope(fase, unit_ids=unit_ids).exclude(status=ProgramUnitSlot.Status.EMPTY).exists()
 
 
-def _clear_qualification_slots(fase: CompeticioAparellFase) -> None:
-    ProgramUnitSlot.objects.filter(unit__fase=fase).update(
+def _clear_qualification_slots(fase: CompeticioAparellFase, *, unit_ids: list[int] | None = None) -> None:
+    _slots_qs_for_scope(fase, unit_ids=unit_ids).update(
         subject_kind="",
         subject_id=None,
         status=ProgramUnitSlot.Status.EMPTY,
@@ -1015,38 +1202,94 @@ def _clear_qualification_slots(fase: CompeticioAparellFase) -> None:
     )
 
 
+def _state_partition_hashes(fase: CompeticioAparellFase) -> dict[str, str]:
+    return {
+        _normalize_partition_key(row["partition_key"]): str(row["source_snapshot_hash"] or "").strip()
+        for row in FasePartitionState.objects.filter(fase=fase).values("partition_key", "source_snapshot_hash")
+    }
+
+
+def _aggregate_phase_status(fase: CompeticioAparellFase) -> str:
+    states = list(FasePartitionState.objects.filter(fase=fase).values_list("status", flat=True))
+    if not states:
+        return CompeticioAparellFase.Estat.GENERATED
+    if any(status == FasePartitionState.Status.STALE for status in states):
+        return CompeticioAparellFase.Estat.STALE
+    if all(status == FasePartitionState.Status.CONFIRMED for status in states):
+        return CompeticioAparellFase.Estat.CONFIRMED
+    if any(status == FasePartitionState.Status.CONFIRMED for status in states):
+        return CompeticioAparellFase.Estat.PARTIALLY_CONFIRMED
+    return CompeticioAparellFase.Estat.GENERATED
+
+
+def _update_phase_qualification_config(
+    fase: CompeticioAparellFase,
+    *,
+    preview: QualificationPreview,
+    run: QualificationRun,
+    now,
+) -> None:
+    config = fase.config if isinstance(fase.config, dict) else {}
+    old_qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+    partition_hashes = _state_partition_hashes(fase)
+    stale = FasePartitionState.objects.filter(fase=fase, status=FasePartitionState.Status.STALE).exists()
+    config["qualification"] = {
+        **old_qualification,
+        "run_id": run.id,
+        "last_run_id": run.id,
+        "source_classificacio_id": preview.classificacio.id,
+        "source_phase_id": preview.source_phase.id if preview.source_phase else None,
+        "snapshot_hash": preview.snapshot_hash,
+        "generated_at": now.isoformat(),
+        "summary": preview.summary(),
+        "warnings": list(preview.warnings),
+        "partitions": sorted(partition_hashes.keys()),
+        "partition_hashes": partition_hashes,
+        "scope": dict(preview.scope or {"kind": "global"}),
+        "stale": stale,
+    }
+    fase.config = config
+    fase.estat = _aggregate_phase_status(fase)
+    fase.save(update_fields=["config", "estat", "updated_at"])
+
+
 def apply_qualification(
     fase: CompeticioAparellFase,
     *,
+    partition_keys=None,
     replace_existing: bool = False,
     allow_replace_protected: bool = False,
 ) -> QualificationPreview:
-    preview = preview_qualification(fase)
+    preview = preview_qualification(fase, partition_keys=partition_keys)
     source_warning = _source_phase_warning(preview.source_phase)
     if source_warning:
         raise QualificationError(source_warning)
-    if _assigned_slots_exist(fase) and not replace_existing:
+    target_unit_ids = _unit_ids_for_preview(preview)
+    if _assigned_slots_exist(fase, unit_ids=target_unit_ids) and not replace_existing:
         raise QualificationError("La fase desti ja te slots omplerts. Revisa'ls o reemplaça el snapshot.")
-    if replace_existing and _protected_slots_exist(fase) and not allow_replace_protected:
+    if replace_existing and _protected_slots_exist(fase, unit_ids=target_unit_ids) and not allow_replace_protected:
         raise QualificationError("No es poden sobreescriure slots bloquejats o manuals.")
 
     with transaction.atomic():
         now = timezone.now()
         run = _create_run(preview, status=QualificationRun.Status.APPLIED, applied_at=now)
-        _clear_qualification_slots(fase)
+        _clear_qualification_slots(fase, unit_ids=target_unit_ids)
         units_by_id = {
             unit.id: unit
-            for unit in ProgramUnit.objects.filter(fase=fase).prefetch_related("slots")
+            for unit in ProgramUnit.objects.filter(fase=fase, id__in=target_unit_ids).prefetch_related("slots")
         }
         for unit_preview in preview.units:
             unit = units_by_id.get(unit_preview.unit_id)
             if unit is None:
                 continue
+            partition_key = _normalize_partition_key(unit_preview.partition_key)
+            partition_hash = (preview.partition_hashes or {}).get(partition_key, preview.snapshot_hash)
             metadata = unit.metadata if isinstance(unit.metadata, dict) else {}
             metadata.update({
-                "qualification_snapshot_hash": preview.snapshot_hash,
+                "qualification_snapshot_hash": partition_hash,
                 "qualification_run_id": run.id,
                 "source_classificacio_id": preview.classificacio.id,
+                "qualification_scope": dict(preview.scope or {"kind": "global"}),
             })
             unit.metadata = metadata
             unit.status = ProgramUnit.Status.GENERATED
@@ -1059,35 +1302,84 @@ def apply_qualification(
                 ],
             )
 
-        _sync_partition_states(preview, run)
-        config = fase.config if isinstance(fase.config, dict) else {}
-        config["qualification"] = {
-            "run_id": run.id,
-            "source_classificacio_id": preview.classificacio.id,
-            "source_phase_id": preview.source_phase.id if preview.source_phase else None,
-            "snapshot_hash": preview.snapshot_hash,
-            "generated_at": now.isoformat(),
-            "summary": preview.summary(),
-            "warnings": list(preview.warnings),
-            "partitions": _partition_keys_for_preview(preview),
-            "stale": False,
-        }
-        fase.config = config
-        fase.estat = CompeticioAparellFase.Estat.GENERATED
-        fase.save(update_fields=["config", "estat", "updated_at"])
+        _sync_partition_states(
+            preview,
+            run,
+            mark_missing_stale=_normalize_partition_keys(partition_keys) is None,
+        )
+        _update_phase_qualification_config(fase, preview=preview, run=run, now=now)
     return preview
 
 
-def qualification_is_stale(fase: CompeticioAparellFase) -> bool:
+def _legacy_global_snapshot_hash(fase: CompeticioAparellFase) -> str:
     config = fase.config if isinstance(fase.config, dict) else {}
     qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
-    stored_hash = str(qualification.get("snapshot_hash") or "").strip()
+    return str(qualification.get("snapshot_hash") or "").strip()
+
+
+def _run_has_partition_hash(run: QualificationRun | None, partition_key: str) -> bool:
+    if run is None:
+        return False
+    payload = run.payload if isinstance(run.payload, dict) else {}
+    partition_hashes = payload.get("partition_hashes") if isinstance(payload.get("partition_hashes"), dict) else {}
+    return _normalize_partition_key(partition_key) in partition_hashes
+
+
+def _global_qualification_is_stale(fase: CompeticioAparellFase) -> bool:
+    stored_hash = _legacy_global_snapshot_hash(fase)
     if not stored_hash:
         return False
     try:
-        return preview_qualification(fase).snapshot_hash != stored_hash
+        preview = preview_qualification(fase)
     except QualificationError:
         return True
+    return stored_hash not in {
+        preview.snapshot_hash,
+        _legacy_global_preview_snapshot_hash(preview),
+    }
+
+
+def qualification_partition_is_stale(fase: CompeticioAparellFase, partition_key: str) -> bool:
+    key = _normalize_partition_key(partition_key)
+    state = (
+        FasePartitionState.objects
+        .filter(fase=fase, partition_key=key)
+        .select_related("qualification_run")
+        .first()
+    )
+    if state is None:
+        return False
+    stored_hash = str(state.source_snapshot_hash or "").strip()
+    if not stored_hash:
+        return False
+    if state.status == FasePartitionState.Status.STALE:
+        return True
+    if not _run_has_partition_hash(state.qualification_run, key):
+        config = fase.config if isinstance(fase.config, dict) else {}
+        qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+        config_hashes = qualification.get("partition_hashes") if isinstance(qualification.get("partition_hashes"), dict) else {}
+        if key not in config_hashes:
+            return _global_qualification_is_stale(fase)
+    try:
+        preview = preview_qualification(fase, partition_keys=[key])
+    except QualificationError:
+        return True
+    current_hash = str((preview.partition_hashes or {}).get(key) or preview.snapshot_hash or "").strip()
+    return current_hash != stored_hash
+
+
+def qualification_stale_partitions(fase: CompeticioAparellFase) -> dict[str, bool]:
+    states = list(FasePartitionState.objects.filter(fase=fase).values_list("partition_key", flat=True))
+    if not states:
+        return {"global": _global_qualification_is_stale(fase)}
+    return {
+        _normalize_partition_key(partition_key): qualification_partition_is_stale(fase, partition_key)
+        for partition_key in states
+    }
+
+
+def qualification_is_stale(fase: CompeticioAparellFase) -> bool:
+    return any(qualification_stale_partitions(fase).values())
 
 
 def qualification_source_changed(fase: CompeticioAparellFase) -> bool:
@@ -1113,56 +1405,42 @@ def accept_current_qualification_snapshot(fase: CompeticioAparellFase) -> Qualif
     now = timezone.now()
     with transaction.atomic():
         run = _create_run(preview, status=QualificationRun.Status.APPLIED, applied_at=now)
+        _sync_partition_states(preview, run, mark_missing_stale=True)
+        _update_phase_qualification_config(fase, preview=preview, run=run, now=now)
         config = fase.config if isinstance(fase.config, dict) else {}
-        old_qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
-        config["qualification"] = {
-            **old_qualification,
-            "run_id": run.id,
-            "source_classificacio_id": preview.classificacio.id,
-            "source_phase_id": preview.source_phase.id if preview.source_phase else None,
-            "snapshot_hash": preview.snapshot_hash,
-            "generated_at": now.isoformat(),
-            "validated_at": now.isoformat(),
-            "manual_validated": True,
-            "summary": preview.summary(),
-            "warnings": list(preview.warnings),
-            "partitions": _partition_keys_for_preview(preview),
-            "stale": False,
-        }
+        qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
+        qualification["validated_at"] = now.isoformat()
+        qualification["manual_validated"] = True
+        config["qualification"] = qualification
         fase.config = config
-        if fase.estat == CompeticioAparellFase.Estat.STALE:
-            fase.estat = CompeticioAparellFase.Estat.GENERATED
-            fase.save(update_fields=["config", "estat", "updated_at"])
-        else:
-            fase.save(update_fields=["config", "updated_at"])
+        fase.save(update_fields=["config", "updated_at"])
     return preview
 
 
 def mark_qualification_stale_if_needed(fase: CompeticioAparellFase) -> bool:
-    if not qualification_is_stale(fase):
+    stale_map = qualification_stale_partitions(fase)
+    stale_keys = [key for key, is_stale in stale_map.items() if is_stale]
+    if not stale_keys:
         return False
     config = fase.config if isinstance(fase.config, dict) else {}
     qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
-    stored_hash = str(qualification.get("snapshot_hash") or "").strip()
     with transaction.atomic():
-        if stored_hash:
-            QualificationRun.objects.filter(
-                fase=fase,
-                snapshot_hash=stored_hash,
-                status=QualificationRun.Status.APPLIED,
-            ).update(status=QualificationRun.Status.STALE)
-        FasePartitionState.objects.filter(fase=fase).update(status=FasePartitionState.Status.STALE)
-        qualification["stale"] = True
+        if FasePartitionState.objects.filter(fase=fase).exists():
+            FasePartitionState.objects.filter(fase=fase, partition_key__in=stale_keys).update(
+                status=FasePartitionState.Status.STALE,
+            )
+        qualification["stale"] = bool(stale_keys)
+        qualification["stale_partitions"] = stale_keys
         config["qualification"] = qualification
         fase.config = config
-        fase.estat = CompeticioAparellFase.Estat.STALE
+        fase.estat = _aggregate_phase_status(fase) if FasePartitionState.objects.filter(fase=fase).exists() else CompeticioAparellFase.Estat.STALE
         fase.save(update_fields=["config", "estat", "updated_at"])
     return True
 
 
 def confirm_qualification_partition(fase: CompeticioAparellFase, partition_key: str) -> FasePartitionState:
-    key = str(partition_key or "").strip() or "global"
-    if qualification_is_stale(fase):
+    key = _normalize_partition_key(partition_key)
+    if qualification_partition_is_stale(fase, key):
         mark_qualification_stale_if_needed(fase)
         raise QualificationError("La font ha canviat. Regenera la proposta abans de confirmar particions.")
 
@@ -1176,21 +1454,11 @@ def confirm_qualification_partition(fase: CompeticioAparellFase, partition_key: 
         state.status = FasePartitionState.Status.CONFIRMED
         state.confirmed_at = timezone.now()
         state.save(update_fields=["status", "confirmed_at", "updated_at"])
-        ProgramUnit.objects.filter(fase=fase, partition_key=key).update(status=ProgramUnit.Status.CONFIRMED)
-        remaining_generated = FasePartitionState.objects.filter(
-            fase=fase,
-            status=FasePartitionState.Status.GENERATED,
-        ).exists()
-        stale_exists = FasePartitionState.objects.filter(
-            fase=fase,
-            status=FasePartitionState.Status.STALE,
-        ).exists()
-        if stale_exists:
-            fase.estat = CompeticioAparellFase.Estat.STALE
-        elif remaining_generated:
-            fase.estat = CompeticioAparellFase.Estat.PARTIALLY_CONFIRMED
+        if key == "global":
+            ProgramUnit.objects.filter(fase=fase, partition_key__in=["", "global"]).update(status=ProgramUnit.Status.CONFIRMED)
         else:
-            fase.estat = CompeticioAparellFase.Estat.CONFIRMED
+            ProgramUnit.objects.filter(fase=fase, partition_key=key).update(status=ProgramUnit.Status.CONFIRMED)
+        fase.estat = _aggregate_phase_status(fase)
         fase.save(update_fields=["estat", "updated_at"])
     return state
 
@@ -1228,8 +1496,10 @@ __all__ = [
     "mark_qualification_stale_if_needed",
     "preview_as_dict",
     "preview_qualification",
+    "qualification_partition_is_stale",
     "qualification_source_changed",
     "qualification_is_stale",
+    "qualification_stale_partitions",
     "record_qualification_preview",
     "validate_classificacio_subject_contract",
     "validate_classificacio_not_circular_source",

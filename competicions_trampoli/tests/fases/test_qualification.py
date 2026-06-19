@@ -1,5 +1,7 @@
 from copy import deepcopy
 from datetime import date
+import random
+from unittest.mock import Mock, patch
 
 from django.test import TestCase
 
@@ -28,12 +30,16 @@ from ...services.fases import (
     create_program_unit_with_empty_slots,
     preview_group_plan,
     preview_qualification,
+    qualification_partition_is_stale,
     qualification_is_stale,
     record_qualification_preview,
 )
+from ...services.fases.qualification import _legacy_global_preview_snapshot_hash
 from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell
 from ...services.fases.planner import configure_phase_source_cut
 from ...services.fases.slot_overrides import assign_team_unit_to_slot, manual_team_unit_options_for_phase
+from ...services.fases.dashboard import phase_dashboard_context
+from ...services.fases.slot_overrides import recoverable_snapshot_options_for_phase, reserve_options_for_phase
 
 
 class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
@@ -94,6 +100,97 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
                 },
             },
         )
+
+    def _applied_run(self, phase, cfg, *, payload, snapshot_hash):
+        return QualificationRun.objects.create(
+            fase=phase,
+            source_classificacio=cfg,
+            status=QualificationRun.Status.APPLIED,
+            snapshot_hash=snapshot_hash,
+            summary=payload.get("summary") or {},
+            payload=payload,
+        )
+
+    def _category_partition_phase(
+        self,
+        *,
+        alevi_count=2,
+        cadet_count=2,
+        qualifiers_count=2,
+        unit_capacity=2,
+        formation_strategy="classification_order",
+    ):
+        participants = [self.ins_1, self.ins_2, self.ins_3]
+        while len(participants) < alevi_count + cadet_count:
+            participants.append(
+                self._create_inscripcio(
+                    self.competicio,
+                    f"Participant {len(participants) + 1}",
+                    ordre=len(participants) + 1,
+                )
+            )
+
+        by_partition = {
+            "categoria:Alevi": participants[:alevi_count],
+            "categoria:Cadet": participants[alevi_count:alevi_count + cadet_count],
+        }
+        scores_by_partition = {}
+        position = 0
+        for partition_key, category_participants in by_partition.items():
+            category = partition_key.split(":", 1)[1]
+            scores_by_partition[partition_key] = []
+            for participant in category_participants:
+                participant.categoria = category
+                participant.save(update_fields=["categoria"])
+                scores_by_partition[partition_key].append(self._score(participant, 100 - position))
+                position += 1
+
+        schema = self._schema_for_app()
+        schema["particions"] = ["categoria"]
+        schema["particions_v2"] = [
+            {"code": "categoria", "apply_mode": "all", "parent_values": []},
+        ]
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.competicio,
+            nom="Classificacio per categoria",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+        dest = self._dest_phase(cfg, name="Semifinal per categoria")
+        dest.config["cut"]["partition_mode"] = "source_partitions"
+        dest.config["cut"]["qualifiers_count"] = qualifiers_count
+        dest.config["cut"]["reserve_count"] = 0
+        dest.config["cut"]["unit_capacity"] = unit_capacity
+        dest.config["group_plan_settings"] = {
+            "split_mode": "by_capacity",
+            "unit_capacity": unit_capacity,
+            "formation_strategy": formation_strategy,
+            "unit_name_template": "{fase} - {particio}",
+        }
+        dest.save(update_fields=["config", "updated_at"])
+        apply_group_plan(dest)
+        return dest, by_partition, scores_by_partition
+
+    def _slots_for_partition(self, fase, partition_key):
+        return list(
+            ProgramUnitSlot.objects
+            .filter(unit__fase=fase, unit__partition_key=partition_key)
+            .order_by("unit__ordre", "slot_index", "id")
+        )
+
+    def _slot_snapshot_for_partition(self, fase, partition_key):
+        return [
+            (slot.subject_kind, slot.subject_id, slot.status, slot.source_position)
+            for slot in self._slots_for_partition(fase, partition_key)
+        ]
+
+    def _preview_subject_order(self, preview):
+        return [
+            (unit.partition_key, [candidate.subject_id for candidate in unit.candidates])
+            for unit in preview.units
+        ]
 
     def _source_cut_config(self, cfg, *, tie_policy="classification_order"):
         return {
@@ -504,6 +601,29 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
             original_slots,
         )
 
+    def test_legacy_global_snapshot_hash_is_not_stale_due_to_new_partition_hash_format(self):
+        score_1 = self._score(self.ins_1, 9.0)
+        self._score(self.ins_2, 8.0)
+        self._score(self.ins_3, 7.0)
+        cfg = self._source_cfg()
+        dest = self._dest_phase(cfg)
+        apply_group_plan(dest)
+        preview = preview_qualification(dest)
+        legacy_hash = _legacy_global_preview_snapshot_hash(preview)
+        dest.config["qualification"] = {
+            "source_classificacio_id": cfg.id,
+            "snapshot_hash": legacy_hash,
+        }
+        dest.save(update_fields=["config", "updated_at"])
+
+        self.assertNotEqual(preview.snapshot_hash, legacy_hash)
+        self.assertFalse(qualification_is_stale(dest))
+
+        score_1.total = 1.0
+        score_1.save(update_fields=["total", "updated_at"])
+
+        self.assertTrue(qualification_is_stale(dest))
+
     def test_manual_decision_marks_tied_cut_as_pending_decision(self):
         self._score(self.ins_1, 9.0)
         self._score(self.ins_2, 8.0)
@@ -629,5 +749,262 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
             [
                 ("any_naixement_forquilla:2007-2009", "any_naixement_forquilla:2007-2009", self.ins_1.id),
                 ("any_naixement_forquilla:2010-2012", "any_naixement_forquilla:2010-2012", self.ins_2.id),
+            ],
+        )
+
+    def test_partial_snapshot_apply_alevi_leaves_cadet_empty_and_later_cadet_does_not_touch_alevi(self):
+        alevi_key = "categoria:Alevi"
+        cadet_key = "categoria:Cadet"
+        dest, by_partition, _scores_by_partition = self._category_partition_phase()
+
+        preview = preview_qualification(dest, partition_keys=[alevi_key])
+
+        self.assertEqual({unit.partition_key for unit in preview.units}, {alevi_key})
+        apply_qualification(dest, partition_keys=[alevi_key])
+
+        self.assertEqual(
+            self._slot_snapshot_for_partition(dest, alevi_key),
+            [
+                ("inscripcio", by_partition[alevi_key][0].id, ProgramUnitSlot.Status.FILLED, 1),
+                ("inscripcio", by_partition[alevi_key][1].id, ProgramUnitSlot.Status.FILLED, 2),
+            ],
+        )
+        cadet_slots = self._slots_for_partition(dest, cadet_key)
+        self.assertEqual(len(cadet_slots), 2)
+        self.assertTrue(all(slot.status == ProgramUnitSlot.Status.EMPTY for slot in cadet_slots))
+
+        alevi_snapshot = self._slot_snapshot_for_partition(dest, alevi_key)
+        apply_qualification(dest, partition_keys=[cadet_key])
+
+        self.assertEqual(self._slot_snapshot_for_partition(dest, alevi_key), alevi_snapshot)
+        self.assertEqual(
+            self._slot_snapshot_for_partition(dest, cadet_key),
+            [
+                ("inscripcio", by_partition[cadet_key][0].id, ProgramUnitSlot.Status.FILLED, 1),
+                ("inscripcio", by_partition[cadet_key][1].id, ProgramUnitSlot.Status.FILLED, 2),
+            ],
+        )
+
+    def test_partial_snapshot_cadet_source_change_does_not_make_alevi_stale(self):
+        alevi_key = "categoria:Alevi"
+        cadet_key = "categoria:Cadet"
+        dest, _by_partition, scores_by_partition = self._category_partition_phase()
+        apply_qualification(dest, partition_keys=[alevi_key])
+        apply_qualification(dest, partition_keys=[cadet_key])
+
+        cadet_score = scores_by_partition[cadet_key][0]
+        cadet_score.total = 1
+        cadet_score.save(update_fields=["total", "updated_at"])
+
+        self.assertFalse(qualification_partition_is_stale(dest, alevi_key))
+        self.assertTrue(qualification_partition_is_stale(dest, cadet_key))
+
+    def test_reserve_and_recoverable_options_use_partition_state_run_before_legacy_config(self):
+        alevi_key = "categoria:Alevi"
+        cadet_key = "categoria:Cadet"
+        cfg = self._source_cfg()
+        dest = self._dest_phase(cfg)
+        legacy_payload = {
+            "summary": {},
+            "units": [
+                {
+                    "partition_key": alevi_key,
+                    "capacity": 1,
+                    "candidates": [
+                        {
+                            "subject_kind": "inscripcio",
+                            "subject_id": self.ins_1.id,
+                            "status": ProgramUnitSlot.Status.FILLED,
+                            "source_particio_key": alevi_key,
+                            "source_position": 1,
+                            "source_row": {"participant": "Alevi antic"},
+                        }
+                    ],
+                },
+                {
+                    "partition_key": cadet_key,
+                    "capacity": 1,
+                    "candidates": [
+                        {
+                            "subject_kind": "inscripcio",
+                            "subject_id": self.ins_3.id,
+                            "status": ProgramUnitSlot.Status.FILLED,
+                            "source_particio_key": cadet_key,
+                            "source_position": 1,
+                            "source_row": {"participant": "Cadet legacy"},
+                        }
+                    ],
+                },
+            ],
+            "reserves": {
+                alevi_key: [
+                    {
+                        "subject_kind": "inscripcio",
+                        "subject_id": self.ins_1.id,
+                        "source_particio_key": alevi_key,
+                        "source_position": 3,
+                        "source_row": {"participant": "Reserva alevi antiga"},
+                    }
+                ],
+                cadet_key: [
+                    {
+                        "subject_kind": "inscripcio",
+                        "subject_id": self.ins_3.id,
+                        "source_particio_key": cadet_key,
+                        "source_position": 3,
+                        "source_row": {"participant": "Reserva cadet legacy"},
+                    }
+                ],
+            },
+        }
+        legacy_run = self._applied_run(dest, cfg, payload=legacy_payload, snapshot_hash="legacy")
+        dest.config = {"qualification": {"run_id": legacy_run.id, "snapshot_hash": "legacy"}}
+        dest.save(update_fields=["config", "updated_at"])
+
+        scoped_payload = {
+            "summary": {},
+            "scope": {"kind": "partition", "partition_keys": [alevi_key]},
+            "units": [
+                {
+                    "partition_key": alevi_key,
+                    "capacity": 1,
+                    "candidates": [
+                        {
+                            "subject_kind": "inscripcio",
+                            "subject_id": self.ins_2.id,
+                            "status": ProgramUnitSlot.Status.FILLED,
+                            "source_particio_key": alevi_key,
+                            "source_position": 1,
+                            "source_row": {"participant": "Alevi vigent"},
+                        }
+                    ],
+                }
+            ],
+            "reserves": {
+                alevi_key: [
+                    {
+                        "subject_kind": "inscripcio",
+                        "subject_id": self.ins_2.id,
+                        "source_particio_key": alevi_key,
+                        "source_position": 3,
+                        "source_row": {"participant": "Reserva alevi vigent"},
+                    }
+                ],
+            },
+        }
+        scoped_run = self._applied_run(dest, cfg, payload=scoped_payload, snapshot_hash="scoped")
+        FasePartitionState.objects.create(
+            fase=dest,
+            partition_key=alevi_key,
+            status=FasePartitionState.Status.GENERATED,
+            qualification_run=scoped_run,
+            source_snapshot_hash="scoped",
+        )
+
+        reserves_by_partition = {
+            option.partition_key: option
+            for option in reserve_options_for_phase(dest)
+        }
+        recoverable_by_partition = {
+            option.partition_key: option
+            for option in recoverable_snapshot_options_for_phase(dest)
+        }
+
+        self.assertEqual(reserves_by_partition[alevi_key].subject_id, self.ins_2.id)
+        self.assertEqual(reserves_by_partition[alevi_key].label, "Reserva alevi vigent")
+        self.assertEqual(recoverable_by_partition[alevi_key].subject_id, self.ins_2.id)
+        self.assertEqual(recoverable_by_partition[alevi_key].label, "Alevi vigent")
+        self.assertEqual(reserves_by_partition[cadet_key].subject_id, self.ins_3.id)
+        self.assertEqual(recoverable_by_partition[cadet_key].subject_id, self.ins_3.id)
+
+    def test_dashboard_exposes_partition_state_per_unit_without_global_stale_contamination(self):
+        alevi_key = "categoria:Alevi"
+        cadet_key = "categoria:Cadet"
+        cfg = self._source_cfg()
+        dest = self._dest_phase(cfg)
+        dest.estat = CompeticioAparellFase.Estat.GENERATED
+        dest.config = {"qualification": {"snapshot_hash": "legacy"}}
+        dest.save(update_fields=["estat", "config", "updated_at"])
+        run = self._applied_run(dest, cfg, payload={"summary": {}, "units": [], "reserves": {}}, snapshot_hash="run")
+        create_program_unit_from_subjects(
+            fase=dest,
+            nom="Alevi",
+            partition_key=alevi_key,
+            subjects=[SlotSubject("inscripcio", self.ins_1.id)],
+        )
+        create_program_unit_from_subjects(
+            fase=dest,
+            nom="Cadet",
+            partition_key=cadet_key,
+            subjects=[SlotSubject("inscripcio", self.ins_2.id)],
+        )
+        FasePartitionState.objects.create(
+            fase=dest,
+            partition_key=alevi_key,
+            status=FasePartitionState.Status.GENERATED,
+            qualification_run=run,
+            source_snapshot_hash="run",
+        )
+        FasePartitionState.objects.create(
+            fase=dest,
+            partition_key=cadet_key,
+            status=FasePartitionState.Status.STALE,
+            qualification_run=run,
+            source_snapshot_hash="run",
+        )
+
+        with patch("competicions_trampoli.services.fases.dashboard.qualification_is_stale", Mock(return_value=True)):
+            with patch("competicions_trampoli.services.fases.dashboard.qualification_source_changed", Mock(return_value=True)):
+                context = phase_dashboard_context(
+                    self.competicio,
+                    selected_app_id=self.comp_aparell.id,
+                    selected_phase_id=dest.id,
+                )
+
+        phase = context["selected_phase"]
+        units_by_partition = {
+            unit.ui_partition_key: unit
+            for unit in phase.ui_units
+        }
+        generated_by_partition = {
+            partition["key"]: partition
+            for partition in phase.ui_generated_partitions
+        }
+
+        self.assertFalse(units_by_partition[alevi_key].ui_partition_is_stale)
+        self.assertTrue(units_by_partition[alevi_key].ui_can_publish)
+        self.assertTrue(units_by_partition[cadet_key].ui_partition_is_stale)
+        self.assertFalse(units_by_partition[cadet_key].ui_can_publish)
+        self.assertFalse(generated_by_partition[alevi_key]["is_stale"])
+        self.assertTrue(generated_by_partition[cadet_key]["is_stale"])
+
+    def test_partial_snapshot_random_formation_is_deterministic_between_preview_and_apply(self):
+        alevi_key = "categoria:Alevi"
+        dest, _by_partition, _scores_by_partition = self._category_partition_phase(
+            alevi_count=4,
+            cadet_count=0,
+            qualifiers_count=4,
+            unit_capacity=2,
+            formation_strategy="random",
+        )
+
+        random.seed(1)
+        first_preview = preview_qualification(dest, partition_keys=[alevi_key])
+        random.seed(2)
+        second_preview = preview_qualification(dest, partition_keys=[alevi_key])
+
+        self.assertEqual(self._preview_subject_order(first_preview), self._preview_subject_order(second_preview))
+        applied = apply_qualification(dest, partition_keys=[alevi_key])
+        self.assertEqual(self._preview_subject_order(applied), self._preview_subject_order(first_preview))
+        self.assertEqual(
+            [
+                slot.subject_id
+                for slot in self._slots_for_partition(dest, alevi_key)
+                if slot.status == ProgramUnitSlot.Status.FILLED
+            ],
+            [
+                subject_id
+                for _partition_key, unit_subjects in self._preview_subject_order(first_preview)
+                for subject_id in unit_subjects
             ],
         )

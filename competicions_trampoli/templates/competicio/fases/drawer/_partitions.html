@@ -25,13 +25,7 @@
             {% endif %}
           </div>
           {% if partition.can_confirm %}
-            <form method="post">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="confirm_partition">
-              <input type="hidden" name="fase_id" value="{{ selected_phase.id }}">
-              <input type="hidden" name="partition_key" value="{{ partition.key }}">
-              <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar partició</button>
-            </form>
+            <span class="badge badge-light border">Confirma des d'una unitat d'aquesta partició</span>
           {% else %}
             <span class="badge badge-light border">{{ partition.status_label }}</span>
           {% endif %}

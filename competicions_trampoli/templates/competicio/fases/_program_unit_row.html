@@ -251,6 +251,40 @@
             </button>
           {% endif %}
         {% endif %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="preview_qualification_unit">
+          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <input type="hidden" name="unit_id" value="{{ unit.id }}">
+          <button class="btn btn-sm btn-outline-primary" type="submit">Previsualitzar aquesta partició</button>
+        </form>
+        <form
+          method="post"
+          data-phase-confirm-title="{% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}"
+          data-phase-confirm-message="{% if unit.ui_partition_qualification_run_id %}Substituir el snapshot d'aquesta partició amb la configuració vigent?{% else %}Aplicar el snapshot només per aquesta partició?{% endif %}"
+          data-phase-confirm-label="{% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}"
+          data-phase-confirm-tone="warning">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="apply_qualification_unit">
+          <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <input type="hidden" name="unit_id" value="{{ unit.id }}">
+          <button class="btn btn-sm btn-primary" type="submit">
+            {% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}
+          </button>
+        </form>
+        {% with unit_partition_key=unit.ui_partition_key|default:"global" %}
+          {% for partition in phase.ui_generated_partitions %}
+            {% if partition.can_confirm and partition.key == unit_partition_key %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="confirm_partition">
+                <input type="hidden" name="fase_id" value="{{ phase.id }}">
+                <input type="hidden" name="unit_id" value="{{ unit.id }}">
+                <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar partició</button>
+              </form>
+            {% endif %}
+          {% endfor %}
+        {% endwith %}
         {% if unit.ui_can_confirm %}
           <form
             method="post"
@@ -452,13 +486,14 @@
       {% if unit.ui_qualification_preview %}
         <form
           method="post"
-          data-phase-confirm-title="{% if phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
-          data-phase-confirm-message="{% if phase.ui_qualification_run_id %}Substituir el snapshot actual amb aquesta previsualització?{% else %}Congelar aquesta previsualització com a snapshot de la fase?{% endif %}"
-          data-phase-confirm-label="{% if phase.ui_qualification_run_id %}Actualitzar snapshot{% else %}Congelar snapshot{% endif %}"
+          data-phase-confirm-title="{% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}"
+          data-phase-confirm-message="{% if unit.ui_partition_qualification_run_id %}Substituir el snapshot d'aquesta partició amb aquesta previsualització?{% else %}Congelar aquesta previsualització com a snapshot de la partició?{% endif %}"
+          data-phase-confirm-label="{% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}"
           data-phase-confirm-tone="warning">
           {% csrf_token %}
-          <input type="hidden" name="action" value="apply_qualification">
+          <input type="hidden" name="action" value="apply_qualification_unit">
           <input type="hidden" name="fase_id" value="{{ phase.id }}">
+          <input type="hidden" name="unit_id" value="{{ unit.id }}">
         <button class="btn btn-sm btn-primary" type="submit">Confirmar previsualització</button>
         </form>
       {% else %}

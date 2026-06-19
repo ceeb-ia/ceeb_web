@@ -16,7 +16,9 @@ from .qualification import (
     mark_qualification_stale_if_needed,
     preview_as_dict,
     preview_qualification,
+    qualification_partition_is_stale,
     qualification_is_stale,
+    qualification_stale_partitions,
     record_qualification_preview,
     validate_classificacio_not_circular_source,
 )
@@ -49,7 +51,9 @@ __all__ = [
     "mark_qualification_stale_if_needed",
     "preview_as_dict",
     "preview_qualification",
+    "qualification_partition_is_stale",
     "qualification_is_stale",
+    "qualification_stale_partitions",
     "record_qualification_preview",
     "validate_classificacio_not_circular_source",
 ]

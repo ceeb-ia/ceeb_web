@@ -26,6 +26,41 @@
       <span>{{ unit.ui_programmed_labels|length }} franja/es</span>
     {% endif %}
     <span>{% if unit.ui_is_published %}Visible al portal{% else %}No visible al portal{% endif %}</span>
+    <form method="post" class="phase-unit-add-slot-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="preview_qualification_unit">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Previsualitzar partició</button>
+    </form>
+    <form
+      method="post"
+      class="phase-unit-add-slot-form"
+      data-phase-confirm-title="{% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}"
+      data-phase-confirm-message="{% if unit.ui_partition_qualification_run_id %}Substituir el snapshot d'aquesta partició amb la configuració vigent?{% else %}Aplicar el snapshot només per aquesta partició?{% endif %}"
+      data-phase-confirm-label="{% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}"
+      data-phase-confirm-tone="warning">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="apply_qualification_unit">
+      <input type="hidden" name="fase_id" value="{{ phase.id }}">
+      <input type="hidden" name="unit_id" value="{{ unit.id }}">
+      <button class="btn btn-sm btn-primary" type="submit">
+        {% if unit.ui_partition_qualification_run_id %}Actualitzar partició{% else %}Congelar partició{% endif %}
+      </button>
+    </form>
+    {% with unit_partition_key=unit.ui_partition_key|default:"global" %}
+      {% for partition in phase.ui_generated_partitions %}
+        {% if partition.can_confirm and partition.key == unit_partition_key %}
+          <form method="post" class="phase-unit-add-slot-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="confirm_partition">
+            <input type="hidden" name="fase_id" value="{{ phase.id }}">
+            <input type="hidden" name="unit_id" value="{{ unit.id }}">
+            <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar partició</button>
+          </form>
+        {% endif %}
+      {% endfor %}
+    {% endwith %}
     {% if unit.ui_can_confirm %}
       <form method="post" class="phase-unit-add-slot-form">
         {% csrf_token %}
