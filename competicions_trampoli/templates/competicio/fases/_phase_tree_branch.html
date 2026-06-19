@@ -19,7 +19,7 @@
             {% if phase.ui_group_plan_stale %}
               <span class="badge badge-danger">Revisar grups</span>
             {% elif phase.ui_qualification_source_changed %}
-              <span class="badge badge-danger">Font canviada</span>
+              <span class="badge badge-warning">Classificació canviada</span>
             {% elif phase.ui_qualification_manual_pending %}
               <span class="badge badge-warning">Snapshot pendent</span>
             {% elif phase.ui_generation_mode == "classification" %}

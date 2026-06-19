@@ -1000,15 +1000,55 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             tipus=ProgramUnit.Tipus.BLOCK,
         )
 
-        with patch("competicions_trampoli.views.competition.fases.actions.qualification_is_stale", Mock(return_value=False)):
-            response = self.client.post(
-                self._common_planner_url(self.comp_aparell),
-                data={
-                    "action": "update_phase_status",
-                    "fase_id": phase.id,
-                    "estat": CompeticioAparellFase.Estat.PUBLISHED,
-                },
-            )
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "update_phase_status",
+                "fase_id": phase.id,
+                "estat": CompeticioAparellFase.Estat.PUBLISHED,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        phase.refresh_from_db()
+        unit.refresh_from_db()
+        self.assertEqual(phase.estat, CompeticioAparellFase.Estat.PUBLISHED)
+        self.assertEqual(unit.status, ProgramUnit.Status.PUBLISHED)
+
+    def test_source_changed_snapshot_does_not_block_phase_publication(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.STALE
+        phase.config = {
+            "qualification": {
+                "run_id": 123,
+                "snapshot_hash": "frozen",
+                "stale": True,
+            }
+        }
+        phase.save(update_fields=["estat", "config", "updated_at"])
+        inscripcio = self._create_inscripcio(self.competicio, "Snapshot estatic")
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Final estatica",
+            subjects=[SlotSubject("inscripcio", inscripcio.id)],
+            tipus=ProgramUnit.Tipus.BLOCK,
+            status=ProgramUnit.Status.GENERATED,
+        )
+        FasePartitionState.objects.create(
+            fase=phase,
+            partition_key="global",
+            status=FasePartitionState.Status.STALE,
+            source_snapshot_hash="frozen",
+        )
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "update_phase_status",
+                "fase_id": phase.id,
+                "estat": CompeticioAparellFase.Estat.PUBLISHED,
+            },
+        )
 
         self.assertEqual(response.status_code, 302)
         phase.refresh_from_db()
@@ -1043,15 +1083,14 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         unit.refresh_from_db()
         self.assertEqual(unit.status, ProgramUnit.Status.CONFIRMED)
 
-        with patch("competicions_trampoli.views.competition.fases.actions.qualification_is_stale", Mock(return_value=False)):
-            publish = self.client.post(
-                self._common_planner_url(self.comp_aparell),
-                data={
-                    "action": "publish_program_unit",
-                    "fase_id": phase.id,
-                    "unit_id": unit.id,
-                },
-            )
+        publish = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "publish_program_unit",
+                "fase_id": phase.id,
+                "unit_id": unit.id,
+            },
+        )
 
         self.assertEqual(publish.status_code, 302)
         unit.refresh_from_db()
@@ -1069,6 +1108,46 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(unpublish.status_code, 302)
         unit.refresh_from_db()
         self.assertEqual(unit.status, ProgramUnit.Status.CONFIRMED)
+
+    def test_source_changed_partition_does_not_block_unit_publication(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.STALE
+        phase.config = {
+            "qualification": {
+                "run_id": 123,
+                "snapshot_hash": "frozen",
+                "stale": True,
+            }
+        }
+        phase.save(update_fields=["estat", "config", "updated_at"])
+        inscripcio = self._create_inscripcio(self.competicio, "Finalista stale")
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Final stale",
+            partition_key="categoria:Cadet",
+            subjects=[SlotSubject("inscripcio", inscripcio.id)],
+            tipus=ProgramUnit.Tipus.BLOCK,
+            status=ProgramUnit.Status.GENERATED,
+        )
+        FasePartitionState.objects.create(
+            fase=phase,
+            partition_key="categoria:Cadet",
+            status=FasePartitionState.Status.STALE,
+            source_snapshot_hash="frozen",
+        )
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "publish_program_unit",
+                "fase_id": phase.id,
+                "unit_id": unit.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, ProgramUnit.Status.PUBLISHED)
 
     def test_post_update_phase_status_rejects_invalid_status(self):
         phase = self._create_phase()

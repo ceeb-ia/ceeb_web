@@ -32,7 +32,6 @@ from ....services.fases.qualification import (
     apply_qualification,
     confirm_qualification_partition,
     preview_as_dict,
-    qualification_is_stale,
     record_qualification_preview,
 )
 from ....services.fases.slot_overrides import (
@@ -82,17 +81,7 @@ def _publish_blockers(phase) -> list[str]:
     qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
     if not qualification.get("run_id"):
         blockers.append("congela el snapshot")
-    elif qualification.get("stale") or qualification_is_stale(phase):
-        blockers.append("recalcula el snapshot")
-    if phase.partition_states.filter(status="stale").exists():
-        blockers.append("revisa les particions obsoletes")
     return blockers
-
-
-def _phase_snapshot_is_stale(phase) -> bool:
-    config = phase.config if isinstance(phase.config, dict) else {}
-    qualification = config.get("qualification") if isinstance(config.get("qualification"), dict) else {}
-    return bool(qualification.get("stale") or (qualification.get("run_id") and qualification_is_stale(phase)))
 
 
 def _phase_has_applied_snapshot(phase) -> bool:
@@ -119,10 +108,6 @@ def _unit_publish_blockers(phase, unit) -> list[str]:
     blockers = []
     if phase.estat == CompeticioAparellFase.Estat.CLOSED:
         blockers.append("la fase esta tancada")
-    if _phase_snapshot_is_stale(phase):
-        blockers.append("recalcula el snapshot")
-    if phase.partition_states.filter(status="stale").exists():
-        blockers.append("revisa les particions obsoletes")
     if not _unit_has_scoreable_subjects(unit):
         blockers.append("la unitat no te places amb participant/equip")
     return blockers

@@ -799,6 +799,21 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         self.assertFalse(qualification_partition_is_stale(dest, alevi_key))
         self.assertTrue(qualification_partition_is_stale(dest, cadet_key))
 
+    def test_source_changed_partition_can_be_confirmed_and_keeps_change_warning(self):
+        alevi_key = "categoria:Alevi"
+        dest, _by_partition, scores_by_partition = self._category_partition_phase()
+        apply_qualification(dest, partition_keys=[alevi_key])
+
+        score = scores_by_partition[alevi_key][0]
+        score.total = 1
+        score.save(update_fields=["total", "updated_at"])
+
+        self.assertTrue(qualification_partition_is_stale(dest, alevi_key))
+        confirmed = confirm_qualification_partition(dest, alevi_key)
+
+        self.assertEqual(confirmed.status, FasePartitionState.Status.CONFIRMED)
+        self.assertTrue(qualification_partition_is_stale(dest, alevi_key))
+
     def test_reserve_and_recoverable_options_use_partition_state_run_before_legacy_config(self):
         alevi_key = "categoria:Alevi"
         cadet_key = "categoria:Cadet"
@@ -922,7 +937,7 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         cadet_key = "categoria:Cadet"
         cfg = self._source_cfg()
         dest = self._dest_phase(cfg)
-        dest.estat = CompeticioAparellFase.Estat.GENERATED
+        dest.estat = CompeticioAparellFase.Estat.STALE
         dest.config = {"qualification": {"snapshot_hash": "legacy"}}
         dest.save(update_fields=["estat", "config", "updated_at"])
         run = self._applied_run(dest, cfg, payload={"summary": {}, "units": [], "reserves": {}}, snapshot_hash="run")
@@ -955,11 +970,15 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
 
         with patch("competicions_trampoli.services.fases.dashboard.qualification_is_stale", Mock(return_value=True)):
             with patch("competicions_trampoli.services.fases.dashboard.qualification_source_changed", Mock(return_value=True)):
-                context = phase_dashboard_context(
-                    self.competicio,
-                    selected_app_id=self.comp_aparell.id,
-                    selected_phase_id=dest.id,
-                )
+                with patch(
+                    "competicions_trampoli.services.fases.dashboard.qualification_stale_partitions",
+                    Mock(return_value={alevi_key: False, cadet_key: True}),
+                ):
+                    context = phase_dashboard_context(
+                        self.competicio,
+                        selected_app_id=self.comp_aparell.id,
+                        selected_phase_id=dest.id,
+                    )
 
         phase = context["selected_phase"]
         units_by_partition = {
@@ -974,9 +993,12 @@ class QualificationServiceTests(_BaseTrampoliDataMixin, TestCase):
         self.assertFalse(units_by_partition[alevi_key].ui_partition_is_stale)
         self.assertTrue(units_by_partition[alevi_key].ui_can_publish)
         self.assertTrue(units_by_partition[cadet_key].ui_partition_is_stale)
-        self.assertFalse(units_by_partition[cadet_key].ui_can_publish)
+        self.assertTrue(units_by_partition[cadet_key].ui_can_publish)
         self.assertFalse(generated_by_partition[alevi_key]["is_stale"])
         self.assertTrue(generated_by_partition[cadet_key]["is_stale"])
+        self.assertEqual(generated_by_partition[cadet_key]["status_label"], "Generada")
+        self.assertEqual(generated_by_partition[cadet_key]["stale_label"], "Classificacio canviada")
+        self.assertTrue(phase.ui_can_publish)
 
     def test_partial_snapshot_random_formation_is_deterministic_between_preview_and_apply(self):
         alevi_key = "categoria:Alevi"

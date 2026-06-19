@@ -1440,17 +1440,11 @@ def mark_qualification_stale_if_needed(fase: CompeticioAparellFase) -> bool:
 
 def confirm_qualification_partition(fase: CompeticioAparellFase, partition_key: str) -> FasePartitionState:
     key = _normalize_partition_key(partition_key)
-    if qualification_partition_is_stale(fase, key):
-        mark_qualification_stale_if_needed(fase)
-        raise QualificationError("La font ha canviat. Regenera la proposta abans de confirmar particions.")
-
     with transaction.atomic():
         try:
             state = FasePartitionState.objects.select_for_update().get(fase=fase, partition_key=key)
         except FasePartitionState.DoesNotExist as exc:
             raise QualificationError("Aquesta particio encara no esta generada.") from exc
-        if state.status == FasePartitionState.Status.STALE:
-            raise QualificationError("Aquesta particio esta obsoleta. Regenera la proposta abans de confirmar-la.")
         state.status = FasePartitionState.Status.CONFIRMED
         state.confirmed_at = timezone.now()
         state.save(update_fields=["status", "confirmed_at", "updated_at"])

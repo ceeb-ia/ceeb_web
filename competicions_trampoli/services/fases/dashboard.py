@@ -21,6 +21,7 @@ from .labels import format_partition_label, program_unit_display_name
 from .qualification import (
     QualificationError,
     qualification_is_stale,
+    qualification_stale_partitions,
     qualification_source_changed,
 )
 from .slot_overrides import (
@@ -118,17 +119,6 @@ def _phase_publish_blockers(phase: CompeticioAparellFase, phase_config: dict) ->
     has_partition_runs = bool(getattr(phase, "ui_partition_qualification_run_ids", []))
     if not qualification.get("run_id") and not has_partition_runs:
         blockers.append("congela el snapshot")
-    elif not getattr(phase, "ui_has_partition_state_scope", False) and (
-        qualification.get("stale") or getattr(phase, "ui_qualification_stale", False)
-    ):
-        blockers.append("recalcula el snapshot")
-    stale_partitions = [
-        state
-        for state in getattr(phase, "ui_partition_states", [])
-        if str(getattr(state, "status", "") or "") == FasePartitionState.Status.STALE
-    ]
-    if stale_partitions:
-        blockers.append("revisa les particions obsoletes")
     return blockers
 
 
@@ -382,6 +372,15 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         }
         phase.ui_partition_states = partition_states
         phase.ui_has_partition_state_scope = bool(partition_states)
+        partition_stale_by_key = {}
+        if partition_states:
+            try:
+                partition_stale_by_key = qualification_stale_partitions(phase)
+            except QualificationError:
+                partition_stale_by_key = {
+                    _partition_key(state.partition_key): True
+                    for state in partition_states
+                }
         phase.ui_partition_qualification_run_ids = sorted({
             int(state.qualification_run_id)
             for state in partition_states
@@ -402,24 +401,34 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
                 "key": state.partition_key,
                 "label": format_partition_label(state.partition_key),
                 "status": state.status,
-                "status_label": state.get_status_display(),
+                "status_label": (
+                    "Confirmada"
+                    if state.status == FasePartitionState.Status.STALE and state.confirmed_at
+                    else (
+                        "Generada"
+                        if state.status == FasePartitionState.Status.STALE
+                        else state.get_status_display()
+                    )
+                ),
                 "qualification_run_id": state.qualification_run_id,
                 "source_snapshot_hash": state.source_snapshot_hash,
                 "confirmed_at": state.confirmed_at,
                 "warnings": list(state.warnings or []),
-                "is_stale": _partition_state_is_stale(
-                    state,
-                    phase_qualification_stale=phase.ui_qualification_stale,
-                    has_partition_states=phase.ui_has_partition_state_scope,
-                ),
-                "stale_label": "Particio obsoleta",
-                "can_confirm": (
-                    not _partition_state_is_stale(
+                "is_stale": partition_stale_by_key.get(
+                    _partition_key(state.partition_key),
+                    _partition_state_is_stale(
                         state,
                         phase_qualification_stale=phase.ui_qualification_stale,
                         has_partition_states=phase.ui_has_partition_state_scope,
-                    )
-                    and state.status == FasePartitionState.Status.GENERATED
+                    ),
+                ),
+                "stale_label": "Classificacio canviada",
+                "can_confirm": (
+                    state.status in {
+                        FasePartitionState.Status.GENERATED,
+                        FasePartitionState.Status.STALE,
+                    }
+                    and state.confirmed_at is None
                 ),
             }
             for state in partition_states
@@ -462,19 +471,29 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_partition_state = unit_partition_state
             unit.ui_partition_status = str(getattr(unit_partition_state, "status", "") or "")
             unit.ui_partition_status_label = (
-                unit_partition_state.get_status_display()
-                if unit_partition_state is not None
-                else ""
+                (
+                    "Confirmada"
+                    if unit_partition_state.status == FasePartitionState.Status.STALE and unit_partition_state.confirmed_at
+                    else (
+                        "Generada"
+                        if unit_partition_state.status == FasePartitionState.Status.STALE
+                        else unit_partition_state.get_status_display()
+                    )
+                )
+                if unit_partition_state is not None else ""
             )
             unit.ui_partition_qualification_run_id = (
                 unit_partition_state.qualification_run_id
                 if unit_partition_state is not None
                 else None
             )
-            unit.ui_partition_is_stale = _partition_state_is_stale(
-                unit_partition_state,
-                phase_qualification_stale=phase.ui_qualification_stale,
-                has_partition_states=phase.ui_has_partition_state_scope,
+            unit.ui_partition_is_stale = partition_stale_by_key.get(
+                unit_partition_key,
+                _partition_state_is_stale(
+                    unit_partition_state,
+                    phase_qualification_stale=phase.ui_qualification_stale,
+                    has_partition_states=phase.ui_has_partition_state_scope,
+                ),
             )
             unit.ui_partition_label = format_partition_label(unit_partition_key)
             unit.ui_formation_strategy = str(metadata.get("formation_strategy") or "classification_order")
@@ -502,7 +521,6 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_can_confirm = unit.status not in {ProgramUnit.Status.CONFIRMED, ProgramUnit.Status.PUBLISHED}
             unit.ui_can_publish = (
                 phase.estat != CompeticioAparellFase.Estat.CLOSED
-                and not unit.ui_partition_is_stale
                 and unit.ui_competitive_slots_count > 0
             )
         phase.ui_units = units
@@ -519,7 +537,11 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         phase.ui_generation_mode = "classification" if phase.ui_has_generated_slots else ("manual" if units else "none")
         phase.ui_publish_blockers = _phase_publish_blockers(phase, phase_config)
         phase.ui_can_publish = (
-            phase.estat in {CompeticioAparellFase.Estat.GENERATED, CompeticioAparellFase.Estat.CONFIRMED}
+            phase.estat in {
+                CompeticioAparellFase.Estat.GENERATED,
+                CompeticioAparellFase.Estat.CONFIRMED,
+                CompeticioAparellFase.Estat.STALE,
+            }
             and not phase.ui_publish_blockers
         )
         phase.ui_publish_blockers_label = "; ".join(phase.ui_publish_blockers)
@@ -527,9 +549,9 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
         if phase.ui_group_plan_stale:
             phase.ui_phase_alerts.append("Grups pendents de revisar")
         if phase.ui_any_partition_stale:
-            phase.ui_phase_alerts.append("Particions obsoletes")
+            phase.ui_phase_alerts.append("Classificacio canviada")
         if not phase.ui_has_partition_state_scope and phase.ui_qualification_source_changed:
-            phase.ui_phase_alerts.append("Font canviada")
+            phase.ui_phase_alerts.append("Classificacio canviada")
         elif not phase.ui_has_partition_state_scope and phase.ui_qualification_manual_pending:
             phase.ui_phase_alerts.append("Snapshot pendent de validar")
         if phase.ui_unit_count and not phase.ui_has_generated_slots:

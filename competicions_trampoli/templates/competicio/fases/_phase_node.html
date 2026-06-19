@@ -105,7 +105,7 @@
           </div>
         </dl>
         {% if phase.ui_qualification_source_changed %}
-          <div class="phase-summary-note is-danger">La classificació font ha canviat.</div>
+          <div class="phase-summary-note">La classificació d'origen ha canviat. El snapshot congelat es conserva i es pot publicar.</div>
         {% elif phase.ui_qualification_manual_pending %}
           <div class="phase-summary-note">Hi ha canvis manuals pendents de validar.</div>
         {% elif not phase.ui_source_configured or not phase.ui_cut_configured %}
