@@ -90,13 +90,6 @@ def _phase_has_applied_snapshot(phase) -> bool:
     return bool(qualification.get("run_id"))
 
 
-def _phase_is_draft(phase) -> bool:
-    return phase.estat not in {
-        CompeticioAparellFase.Estat.PUBLISHED,
-        CompeticioAparellFase.Estat.CLOSED,
-    }
-
-
 def _unit_has_scoreable_subjects(unit) -> bool:
     return unit.slots.filter(
         status__in=[ProgramUnitSlot.Status.FILLED, ProgramUnitSlot.Status.MANUAL],
@@ -415,6 +408,26 @@ def handle_phase_post(view, request):
             messages.success(request, f"Unitat '{unit.nom}' confirmada. Encara no es mostra al portal.")
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
+        if action == "reopen_program_unit":
+            unit_id = request.POST.get("unit_id")
+            unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
+            if phase.estat == CompeticioAparellFase.Estat.CLOSED:
+                messages.error(request, "No es pot tornar a esborrany una unitat d'una fase tancada.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            if unit.status == ProgramUnit.Status.PUBLISHED:
+                messages.error(request, "Retira primer la unitat del portal de jutges.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            if unit.status != ProgramUnit.Status.CONFIRMED:
+                messages.error(request, "Només es poden tornar a esborrany les unitats confirmades.")
+                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+            unit.status = ProgramUnit.Status.PLANNED
+            unit.save(update_fields=["status", "updated_at"])
+            messages.success(
+                request,
+                f"Unitat '{unit.nom}' tornada a esborrany. Places, rotacions i notes s'han conservat.",
+            )
+            return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
+
         if action == "publish_program_unit":
             unit_id = request.POST.get("unit_id")
             unit = get_object_or_404(ProgramUnit, pk=unit_id, fase=phase)
@@ -452,9 +465,6 @@ def handle_phase_post(view, request):
             return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
 
         if action == "clear_program_unit_slots":
-            if not _phase_is_draft(phase):
-                messages.error(request, "Només es poden buidar places mentre la fase està en esborrany.")
-                return view.redirect_to_selected_app(phase.comp_aparell, phase=phase), {}
             unit_id = int(request.POST.get("unit_id") or 0)
             unit, cleared_count = clear_program_unit_slots(phase, unit_id)
             messages.success(request, f"{cleared_count} places buidades a '{unit.nom}'.")

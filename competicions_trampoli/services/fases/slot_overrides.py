@@ -808,6 +808,10 @@ def clear_program_unit_slots(fase: CompeticioAparellFase, unit_id: int) -> tuple
         unit = ProgramUnit.objects.get(id=unit_id, fase=fase)
     except ObjectDoesNotExist as exc:
         raise SlotOverrideError("Unitat no valida per aquesta fase.") from exc
+    if fase.estat == CompeticioAparellFase.Estat.CLOSED:
+        raise SlotOverrideError("No es poden buidar places d'una fase tancada.")
+    if unit.status not in {ProgramUnit.Status.PLANNED, ProgramUnit.Status.GENERATED}:
+        raise SlotOverrideError("Torna la unitat a esborrany abans de buidar-ne les places.")
     slots = list(ProgramUnitSlot.objects.filter(unit=unit).order_by("ordre", "slot_index", "id"))
     if any(slot.locked for slot in slots):
         raise SlotOverrideError("No es poden buidar places bloquejades.")

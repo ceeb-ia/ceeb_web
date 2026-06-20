@@ -231,7 +231,7 @@
       <summary title="Accions de la unitat" aria-label="Accions de la unitat">...</summary>
       <div class="phase-slot-actions-menu phase-unit-actions-menu">
         {% if unit.slots.all %}
-          {% if phase.ui_user_status_value == 'planned' %}
+          {% if unit.ui_can_clear_slots %}
             <form
               method="post"
               class="phase-unit-clear-slots-form"
@@ -246,7 +246,7 @@
               <button class="btn btn-sm btn-outline-warning" type="submit">Buidar places</button>
             </form>
           {% else %}
-            <button class="btn btn-sm btn-outline-warning" type="button" disabled title="Només es pot buidar una unitat en esborrany">
+            <button class="btn btn-sm btn-outline-warning" type="button" disabled title="Torna la unitat a esborrany abans de buidar-ne les places">
               Buidar places
             </button>
           {% endif %}
@@ -297,6 +297,20 @@
             <input type="hidden" name="fase_id" value="{{ phase.id }}">
             <input type="hidden" name="unit_id" value="{{ unit.id }}">
             <button class="btn btn-sm btn-outline-primary" type="submit">Confirmar unitat</button>
+          </form>
+        {% endif %}
+        {% if unit.ui_can_reopen %}
+          <form
+            method="post"
+            data-phase-confirm-title="Tornar a esborrany"
+            data-phase-confirm-message="Tornar la unitat {{ unit.ui_display_name|default:unit.nom }} a esborrany? Les places, rotacions i notes es conservaran."
+            data-phase-confirm-label="Tornar a esborrany"
+            data-phase-confirm-tone="warning">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reopen_program_unit">
+            <input type="hidden" name="fase_id" value="{{ phase.id }}">
+            <input type="hidden" name="unit_id" value="{{ unit.id }}">
+            <button class="btn btn-sm btn-outline-warning" type="submit">Tornar a esborrany</button>
           </form>
         {% endif %}
         {% if unit.ui_is_published %}

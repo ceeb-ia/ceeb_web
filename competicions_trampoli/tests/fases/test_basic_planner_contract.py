@@ -104,6 +104,34 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.context["competicio"], self.competicio)
         self.assertEqual(response.context["comp_aparell"], self.comp_aparell)
         self.assertIn(fase, list(response.context["phases"]))
+
+    def test_tree_unit_card_groups_operational_actions_under_overflow_menu(self):
+        phase = self._create_phase()
+        create_program_unit_with_empty_slots(
+            fase=phase,
+            nom="Semifinal Grup 1",
+            capacity=2,
+            tipus=ProgramUnit.Tipus.BLOCK,
+        )
+
+        response = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        card_start = html.index('<article class="phase-program-unit-card">')
+        card_end = html.index("</article>", card_start)
+        card_html = html[card_start:card_end]
+        menu_start = card_html.index('<details class="phase-slot-actions phase-unit-actions">')
+        menu_end = card_html.index("</details>", menu_start)
+        menu_html = card_html[menu_start:menu_end]
+
+        self.assertIn('aria-label="Accions de la unitat"', menu_html)
+        self.assertIn('value="preview_qualification_unit"', menu_html)
+        self.assertIn('value="apply_qualification_unit"', menu_html)
+        self.assertIn('value="confirm_program_unit"', menu_html)
+        self.assertNotIn('value="add_extra_program_slot"', menu_html)
+        self.assertLess(card_html.index('value="add_extra_program_slot"'), menu_start)
+        self.assertGreater(card_html.index('<summary>Editar unitat</summary>'), menu_end)
         body = response.content.decode("utf-8")
         self.assertNotIn("Fase unica", body)
         self.assertIn("DEFAULT reservat", body)
@@ -453,7 +481,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             self.assertEqual(slot.source_row, {})
         self.assertContains(response, "2 places buidades")
 
-    def test_clear_all_slots_in_unit_requires_draft_phase(self):
+    def test_clear_all_slots_in_unit_requires_editable_unit(self):
         phase = self._create_phase()
         phase.estat = CompeticioAparellFase.Estat.PUBLISHED
         phase.save(update_fields=["estat", "updated_at"])
@@ -461,6 +489,7 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
             fase=phase,
             nom="Unitat publicada",
             subjects=[SlotSubject("inscripcio", 101, status=ProgramUnitSlot.Status.FILLED)],
+            status=ProgramUnit.Status.PUBLISHED,
         )
 
         response = self.client.post(
@@ -472,7 +501,72 @@ class FasesBasicPlannerTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         slot = unit.slots.get()
         self.assertEqual(slot.status, ProgramUnitSlot.Status.FILLED)
-        self.assertContains(response, "Només es poden buidar places mentre la fase està en esborrany.")
+        self.assertContains(response, "Torna la unitat a esborrany abans de buidar-ne les places.")
+
+    def test_confirmed_unit_can_return_to_draft_without_changing_slots_rotations_or_scores(self):
+        phase = self._create_phase()
+        phase.estat = CompeticioAparellFase.Estat.PARTIALLY_CONFIRMED
+        phase.save(update_fields=["estat", "updated_at"])
+        inscripcio = self._create_inscripcio(self.competicio, "Semifinalista")
+        unit = create_program_unit_from_subjects(
+            fase=phase,
+            nom="Semifinal",
+            subjects=[SlotSubject("inscripcio", inscripcio.id, status=ProgramUnitSlot.Status.FILLED)],
+            status=ProgramUnit.Status.CONFIRMED,
+        )
+        rotation_link = self._place_program_unit_in_rotacions(unit)
+        score = ScoreEntry.objects.create(
+            competicio=self.competicio,
+            inscripcio=inscripcio,
+            comp_aparell=self.comp_aparell,
+            fase=phase,
+            exercici=1,
+            inputs={},
+            outputs={"total": 8},
+            total=8,
+        )
+        slot = unit.slots.get()
+        slot_snapshot = (slot.status, slot.subject_kind, slot.subject_id)
+
+        page = self.client.get(f"{self._common_planner_url(self.comp_aparell)}&phase={phase.id}")
+        self.assertContains(page, "Tornar a esborrany")
+
+        response = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "reopen_program_unit",
+                "fase_id": phase.id,
+                "unit_id": unit.id,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        unit.refresh_from_db()
+        slot.refresh_from_db()
+        self.assertEqual(unit.status, ProgramUnit.Status.PLANNED)
+        self.assertEqual((slot.status, slot.subject_kind, slot.subject_id), slot_snapshot)
+        self.assertTrue(RotacioAssignacioProgramUnit.objects.filter(id=rotation_link.id).exists())
+        self.assertTrue(ScoreEntry.objects.filter(id=score.id).exists())
+        response_messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertTrue(any("Places, rotacions i notes s'han conservat." in message for message in response_messages))
+        self.assertContains(response, "Buidar places")
+
+        cleared = self.client.post(
+            self._common_planner_url(self.comp_aparell),
+            data={
+                "action": "clear_program_unit_slots",
+                "fase_id": phase.id,
+                "unit_id": unit.id,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(cleared.status_code, 200)
+        slot.refresh_from_db()
+        self.assertEqual(slot.status, ProgramUnitSlot.Status.EMPTY)
+        self.assertTrue(RotacioAssignacioProgramUnit.objects.filter(id=rotation_link.id).exists())
+        self.assertTrue(ScoreEntry.objects.filter(id=score.id).exists())
 
     def test_group_plan_seeds_expected_classification_positions_on_empty_slots(self):
         phase = self._create_phase()

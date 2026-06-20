@@ -519,6 +519,14 @@ def _decorate_phase_units(phases: list[CompeticioAparellFase], programming_by_un
             unit.ui_is_confirmed = unit.status == ProgramUnit.Status.CONFIRMED
             unit.ui_is_published = unit.status == ProgramUnit.Status.PUBLISHED
             unit.ui_can_confirm = unit.status not in {ProgramUnit.Status.CONFIRMED, ProgramUnit.Status.PUBLISHED}
+            unit.ui_can_reopen = (
+                unit.status == ProgramUnit.Status.CONFIRMED
+                and phase.estat != CompeticioAparellFase.Estat.CLOSED
+            )
+            unit.ui_can_clear_slots = (
+                unit.status in {ProgramUnit.Status.PLANNED, ProgramUnit.Status.GENERATED}
+                and phase.estat != CompeticioAparellFase.Estat.CLOSED
+            )
             unit.ui_can_publish = (
                 phase.estat != CompeticioAparellFase.Estat.CLOSED
                 and unit.ui_competitive_slots_count > 0
