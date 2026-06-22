@@ -6750,4 +6750,83 @@
     {% include "competicio/inscripcions/styles/_teams_detail_preview.html" %}
     {% include "competicio/inscripcions/styles/_series_layout.html" %}
     {% include "competicio/inscripcions/styles/_media_workspace.html" %}
+    @media (max-width: 1400px), (max-height: 820px) {
+      body,
+      .inscripcions-page-shell {
+        --actions-drawer-width: min(88vw, 620px);
+        --actions-drawer-gap: 16px;
+      }
+
+      .inscripcions-page-shell {
+        padding: 12px;
+      }
+
+      .inscripcions-page-shell.is-drawer-open .inscripcions-workspace {
+        padding-right: 0;
+      }
+
+      .inscripcions-page-shell.is-drawer-open .inscripcions-backdrop {
+        display: block;
+      }
+
+      .inscripcions-drawer-toggle {
+        width: 58px;
+        min-width: 58px;
+        height: 58px;
+      }
+
+      .inscripcions-drawer-toggle-icon {
+        width: 44px;
+        height: 44px;
+      }
+
+      .inscripcions-drawer-toggle-icon img {
+        width: 38px;
+        height: 38px;
+      }
+
+      .actions-body {
+        grid-template-columns: 152px minmax(0, 1fr);
+      }
+
+      .actions-nav {
+        gap: 6px;
+        padding: 12px 10px;
+      }
+
+      .actions-nav-btn {
+        padding: 8px 9px;
+      }
+
+      .actions-content,
+      .panel-body,
+      .action-panel-body {
+        padding: 12px;
+      }
+
+      .search-bar-card,
+      .chips,
+      .grouping-controls,
+      .tab-select-card {
+        padding: 8px 10px;
+      }
+
+      .cols-inline-item {
+        min-width: 190px;
+        max-width: 240px;
+      }
+
+      .team-workspace-row,
+      .groups-workspace-row-prep,
+      .series-workspace-row {
+        gap: 12px;
+      }
+
+      .team-workbench-card,
+      .groups-pane-card,
+      .series-pane-card,
+      .media-workspace-card {
+        padding: 12px;
+      }
+    }
   </style>

@@ -21,6 +21,56 @@
     }
   }
 
+  @media (max-width: 1400px), (max-height: 820px) {
+    .phase-dashboard-shell {
+      --phase-drawer-width: min(88vw, 600px);
+      --phase-drawer-gap: 16px;
+      --phase-drawer-top: 76px;
+      width: calc(100% - 12px);
+      margin-top: 6px;
+      padding: 12px;
+    }
+
+    .phase-dashboard-body-card,
+    .phase-flow-card,
+    .phase-tree-card,
+    .phase-summary-card,
+    .phase-tree-node,
+    .phase-unit-row,
+    .phase-partition-item {
+      padding: 10px;
+    }
+
+    .phase-dashboard-grid,
+    .phase-flow-stack {
+      gap: 10px;
+    }
+
+    .phase-dashboard-stats,
+    .phase-app-tabs,
+    .phase-action-row,
+    .phase-action-stack,
+    .phase-unit-meta,
+    .phase-unit-statuses,
+    .phase-step-list,
+    .phase-slot-summary,
+    .phase-summary-badges,
+    .phase-flow-actions {
+      gap: 6px;
+    }
+
+    .phase-page-shell.is-drawer-open .phase-dashboard-main {
+      padding-right: 0;
+    }
+
+    .phase-page-shell.is-drawer-open .phase-drawer-backdrop {
+      display: block;
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+  }
+
   @media (max-width: 768px) {
     .phase-dashboard-shell {
       --phase-drawer-width: min(95vw, 640px);

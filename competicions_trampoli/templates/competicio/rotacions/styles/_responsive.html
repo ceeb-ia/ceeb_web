@@ -89,6 +89,51 @@
       }
     }
 
+    @media (max-width: 1400px), (max-height: 820px) {
+      .rotation-dashboard-shell {
+        --rotation-drawer-left-width: min(90vw, 520px);
+        --rotation-drawer-export-width: min(88vw, 390px);
+        --rotation-drawer-gap: 16px;
+        --rotation-cell-width: 200px;
+        --rotation-cell-max-height: 136px;
+        width: calc(100% - 12px);
+        margin-top: 6px;
+        padding: 12px;
+      }
+
+      body.planner-left-open .rotation-dashboard-main,
+      body.planner-export-open .rotation-dashboard-main {
+        padding-left: 0;
+        padding-right: 0;
+      }
+
+      body.planner-left-open #planner-left-backdrop,
+      body.planner-export-open #planner-export-backdrop {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+
+      .rotation-dashboard-header {
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .rotation-toolbar {
+        top: 4px;
+      }
+
+      .rotation-toolbar-panels {
+        max-height: min(52vh, 430px);
+        padding: 10px;
+      }
+
+      .rotation-toolbar-panel-grid > [data-drawer-panel="globals"],
+      .rotation-toolbar-panel-grid > [data-drawer-panel="franges"] {
+        grid-column: span 12;
+      }
+    }
+
     @media (max-width: 768px) {
       .rotation-dashboard-header {
         gap: 12px;
