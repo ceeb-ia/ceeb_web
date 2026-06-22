@@ -63,7 +63,12 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
     if isinstance(config, ResourceSolverConfig):
         return config
     engine_name = str(getattr(config, "name", "") or "")
-    default_linkage_mode = "input" if engine_name in {"resource_solver_linkage", "resource_solver_vinculacio"} else "off"
+    default_linkage_mode = (
+        "input"
+        if engine_name
+        in {"resource_solver_linkage", "resource_solver_vinculacio", "resource_solver_conflict_repair"}
+        else "off"
+    )
     explicit_linkage_mode = getattr(
         config,
         "resource_solver_linkage_mode",

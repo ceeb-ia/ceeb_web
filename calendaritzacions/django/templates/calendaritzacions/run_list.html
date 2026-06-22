@@ -28,6 +28,7 @@
         <option value="legacy" {% if request.GET.engine == "legacy" %}selected{% endif %}>Legacy</option>
         <option value="resource_solver" {% if request.GET.engine == "resource_solver" %}selected{% endif %}>Resource solver</option>
         <option value="resource_solver_linkage" {% if request.GET.engine == "resource_solver_linkage" %}selected{% endif %}>Resource solver + linkage</option>
+        <option value="resource_solver_conflict_repair" {% if request.GET.engine == "resource_solver_conflict_repair" %}selected{% endif %}>Resource solver + conflict repair</option>
       </select>
     </div>
     <div class="col-12 col-lg-2 mt-2 mt-lg-0">

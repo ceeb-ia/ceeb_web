@@ -47,6 +47,13 @@ class DjangoCalendarizationRunModelTests(unittest.TestCase):
             (CalendarizationRun.LEVEL_CONSTRAINT_AGGREGATE, "Suau agregat"),
             CalendarizationRun.LEVEL_CONSTRAINT_CHOICES,
         )
+        self.assertIn(
+            (
+                CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
+                "Resource solver + conflict repair",
+            ),
+            CalendarizationRun.ENGINE_CHOICES,
+        )
 
     def test_mark_methods_update_state_without_requiring_db_in_unit_test(self):
         from calendaritzacions.django.models import CalendarizationRun

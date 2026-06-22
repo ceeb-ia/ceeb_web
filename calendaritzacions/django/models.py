@@ -22,6 +22,7 @@ class CalendarizationRun(models.Model):
     ENGINE_RESOURCE_SOLVER = "resource_solver"
     ENGINE_RESOURCE_SOLVER_LINKAGE = "resource_solver_linkage"
     ENGINE_RESOURCE_SOLVER_VINCULACIO = "resource_solver_vinculacio"
+    ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR = "resource_solver_conflict_repair"
 
     LINKAGE_MODE_OFF = "off"
     LINKAGE_MODE_INPUT = "input"
@@ -49,6 +50,7 @@ class CalendarizationRun(models.Model):
         (ENGINE_LEGACY, "Legacy"),
         (ENGINE_RESOURCE_SOLVER, "Resource solver"),
         (ENGINE_RESOURCE_SOLVER_LINKAGE, "Resource solver + linkage"),
+        (ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR, "Resource solver + conflict repair"),
     )
     PHASE_CHOICES = (
         (PHASE_FIRST, "Primera fase"),

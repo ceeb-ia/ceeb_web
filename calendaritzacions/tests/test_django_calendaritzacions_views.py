@@ -117,6 +117,7 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         payloads = {
             "input_demand": {"plots": {"heatmap": "/tmp/heatmap.png", "friday": "/tmp/friday.png", "manifest": "/tmp/manifest.json"}},
             "resource_solver_decomposition_plots": {"plots": {"component_graph_3d": "/tmp/component_graph_3d.html", "resource_excess": "/tmp/resource_excess.png"}},
+            "resource_solver_conflict_repair_plots": {"plots": {"component_team_count_histogram": "/tmp/component_team_count_histogram.png"}},
             "resource_solver_final_plots": {"plots": {"group_sizes": "/tmp/group_sizes.png"}},
         }
 
@@ -130,7 +131,7 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         ):
             galleries = _build_plot_galleries(run)
 
-        self.assertEqual([gallery["title"] for gallery in galleries], ["Plots pre-run", "Descomposicio", "Plots post-run"])
+        self.assertEqual([gallery["title"] for gallery in galleries], ["Plots pre-run", "Descomposicio", "Conflict repair", "Plots post-run"])
         self.assertEqual(galleries[0]["plots"][0]["id"], "heatmap")
         self.assertNotIn("friday", [plot["id"] for plot in galleries[0]["plots"]])
         self.assertIn("/runs/7/plots/input_demand/heatmap/", galleries[0]["plots"][0]["url"])
@@ -138,7 +139,26 @@ class DjangoCalendarizationViewsTests(unittest.TestCase):
         self.assertEqual(galleries[1]["plots"][0]["kind"], "html")
         self.assertEqual(galleries[1]["plots"][1]["id"], "resource_excess")
         self.assertEqual(galleries[1]["plots"][1]["kind"], "image")
-        self.assertEqual(galleries[2]["plots"][0]["id"], "group_sizes")
+        self.assertEqual(galleries[2]["plots"][0]["id"], "component_team_count_histogram")
+        self.assertEqual(galleries[3]["plots"][0]["id"], "group_sizes")
+
+    def test_conflict_repair_result_is_presented_as_solver_solution(self):
+        from calendaritzacions.django.services.audit_presenter import build_audit_presentation
+
+        presentation = build_audit_presentation(
+            "resource_solver_conflict_repair_result",
+            {
+                "status": "OPTIMAL",
+                "assignments": [{"team_id": "T1", "group_id": "G1", "number": 1}],
+                "real_matches": [],
+                "resource_usage": [],
+                "group_summary": [],
+                "entity_excess": {},
+            },
+        )
+
+        self.assertEqual(presentation["title"], "Resultat complet conflict-repair")
+        self.assertTrue(any(card["label"] == "Assignacions" for card in presentation["cards"]))
 
     def test_status_view_uses_db_progress_logs_when_redis_has_no_progress(self):
         from calendaritzacions.django.views import RunStatusJsonView

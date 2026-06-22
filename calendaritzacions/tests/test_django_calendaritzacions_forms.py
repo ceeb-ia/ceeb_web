@@ -64,6 +64,10 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
             CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
             dict(form.fields["engine_name"].choices),
         )
+        self.assertIn(
+            CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
+            dict(form.fields["engine_name"].choices),
+        )
 
     def test_form_rejects_unsupported_file_extension(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
@@ -95,6 +99,11 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
         self.assertEqual(choices[CalendarizationRun.LEVEL_CONSTRAINT_AGGREGATE], "Suau agregat")
         grouping_choices = dict(form.fields["resource_solver_competition_grouping"].choices)
         self.assertEqual(grouping_choices[CalendarizationRun.COMPETITION_GROUPING_LEAGUE], "Nom Lliga")
+        engine_choices = dict(form.fields["engine_name"].choices)
+        self.assertEqual(
+            engine_choices[CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR],
+            "Resource solver + conflict repair",
+        )
 
 
 if __name__ == "__main__":

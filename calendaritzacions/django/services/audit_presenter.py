@@ -72,6 +72,30 @@ ARTIFACT_EXPLANATIONS = {
         "Resultat complet del solver",
         "Resultat tecnic complet que alimenta l'Excel i les auditories.",
     ),
+    "resource_solver_conflict_repair_result": (
+        "Resultat complet conflict-repair",
+        "Resultat tecnic complet del motor per components inicials i reparacio de hubs.",
+    ),
+    "conflict_repair_initial_components": (
+        "Components inicials conflict-repair",
+        "Components generats amb competicions i vinculacions, abans de mirar recursos.",
+    ),
+    "conflict_repair_component_solves": (
+        "Resolucions parcials conflict-repair",
+        "Detall de les resolucions dels components inicials i dels blocs reparats.",
+    ),
+    "conflict_repair_hubs": (
+        "Hubs de conflicte",
+        "Recursos i jornades on la solucio inicial supera capacitat.",
+    ),
+    "conflict_repair_blocks": (
+        "Blocs de reparacio",
+        "Subgrafs reconnectats per reparar xocs de recursos, expandits per vinculacions.",
+    ),
+    "conflict_repair_iteration_summary": (
+        "Resum conflict-repair",
+        "Comparativa entre solucio inicial i solucio final despres de la reparacio.",
+    ),
 }
 
 
@@ -104,7 +128,7 @@ def build_audit_presentation(
         _present_candidate_catalog(presentation, payload)
     elif artifact == "solver_model_summary" and isinstance(payload, dict):
         _present_solver_model_summary(presentation, payload)
-    elif artifact in {"resource_solution", "resource_solver_result"} and isinstance(payload, dict):
+    elif artifact in {"resource_solution", "resource_solver_result", "resource_solver_conflict_repair_result"} and isinstance(payload, dict):
         _present_resource_solution(presentation, payload)
     elif artifact == "solver_explanations" and isinstance(payload, dict):
         _present_solver_explanations(presentation, payload)

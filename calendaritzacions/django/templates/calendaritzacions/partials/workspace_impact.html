@@ -85,7 +85,7 @@
   </div>
 </div>
 
-<div class="workspace-kpi-grid mb-3">
+<div class="workspace-kpi-grid mb-3" id="workspaceImpactKpis" data-total-teams="{{ impact_view.total_teams|default:0 }}">
   {% for kpi in impact_view.kpis %}
   <div class="workspace-kpi workspace-kpi-{{ kpi.status|default:'neutral' }}" data-impact-kpi="{{ kpi.key|default:'' }}">
     <div class="workspace-kpi-label">{{ kpi.label }}</div>
@@ -120,6 +120,16 @@
     <div class="text-muted small mb-3">Impacte distribuit per jornada.</div>
     <div data-impact-chart="round"></div>
   </div>
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-1">Severitat mitjana per modalitat</div>
+    <div class="text-muted small mb-3">Escala 0-10 normalitzada dins aquest workspace.</div>
+    <div data-impact-chart="modality_severity"></div>
+  </div>
+  <div class="workspace-panel">
+    <div class="font-weight-bold mb-1">Severitat mitjana per tipus</div>
+    <div class="text-muted small mb-3">Comparativa de gravetat mitjana per classe d'incidencia.</div>
+    <div data-impact-chart="type_severity"></div>
+  </div>
 </div>
 
 <div class="row">
@@ -128,12 +138,19 @@
       <div class="font-weight-bold mb-2">Resum per modalitat</div>
       <div class="table-responsive">
         <table class="table table-sm workspace-table mb-0">
-          <thead class="thead-light"><tr><th>Modalitat</th><th>Equips</th><th>Incidencies</th><th>Entitats</th></tr></thead>
+          <thead class="thead-light"><tr><th>Modalitat</th><th>Equips</th><th>% afectats</th><th>Incidencies</th><th>Impacte/equip</th><th>Impacte 0-10</th></tr></thead>
           <tbody>
           {% for row in impact_view.modality_rows %}
-          <tr><td class="font-weight-bold">{{ row.label }}</td><td>{{ row.team_count }}</td><td>{{ row.incident_count }}</td><td>{{ row.entity_count }}</td></tr>
+          <tr>
+            <td class="font-weight-bold">{{ row.label }}</td>
+            <td>{{ row.team_count }}</td>
+            <td>{{ row.affected_ratio|floatformat:1 }}%</td>
+            <td>{{ row.incident_count }}</td>
+            <td>{{ row.impact_score_per_team|floatformat:1 }}</td>
+            <td>{{ row.impact_score_avg|floatformat:1 }}</td>
+          </tr>
           {% empty %}
-          <tr><td colspan="4" class="text-center text-muted">No hi ha dades per modalitat.</td></tr>
+          <tr><td colspan="6" class="text-center text-muted">No hi ha dades per modalitat.</td></tr>
           {% endfor %}
           </tbody>
         </table>
@@ -145,12 +162,19 @@
       <div class="font-weight-bold mb-2">Top entitats</div>
       <div class="table-responsive">
         <table class="table table-sm workspace-table mb-0">
-          <thead class="thead-light"><tr><th>Entitat</th><th>Equips</th><th>Incidencies</th><th>Modalitats</th></tr></thead>
+          <thead class="thead-light"><tr><th>Entitat</th><th>Equips</th><th>Incidencies</th><th>Impacte/equip</th><th>Impacte 0-10</th><th>Modalitats</th></tr></thead>
           <tbody>
           {% for row in impact_view.entity_rows %}
-          <tr><td class="font-weight-bold">{{ row.label }}</td><td>{{ row.team_count }}</td><td>{{ row.incident_count }}</td><td>{{ row.modality_count }}</td></tr>
+          <tr>
+            <td class="font-weight-bold">{{ row.label }}</td>
+            <td>{{ row.team_count }}</td>
+            <td>{{ row.incident_count }}</td>
+            <td>{{ row.impact_score_per_team|floatformat:1 }}</td>
+            <td>{{ row.impact_score_avg|floatformat:1 }}</td>
+            <td>{{ row.modality_count }}</td>
+          </tr>
           {% empty %}
-          <tr><td colspan="4" class="text-center text-muted">No hi ha dades per entitat.</td></tr>
+          <tr><td colspan="6" class="text-center text-muted">No hi ha dades per entitat.</td></tr>
           {% endfor %}
           </tbody>
         </table>
@@ -170,7 +194,7 @@
   <div class="table-responsive workspace-impact-table-wrap">
     <table class="table table-sm table-hover workspace-table mb-0">
       <thead class="thead-light">
-      <tr><th>Equip</th><th>Entitat</th><th>Competicio</th><th>Tipus</th><th>Jornades</th><th>Impacte</th><th></th></tr>
+      <tr><th>Equip</th><th>Entitat</th><th>Competicio</th><th>Tipus</th><th>Jornades</th><th>Impacte</th><th>Nivell</th><th></th></tr>
       </thead>
       <tbody>
       {% for row in impact_view.affected_rows %}
@@ -191,7 +215,8 @@
           data-rounds="{{ row.round_tokens }}"
           data-round-labels="{{ row.round_labels }}"
           data-excess="{{ row.excess }}"
-          data-severity="{{ row.severity }}">
+          data-severity="{{ row.severity }}"
+          data-impact-score="{{ row.impact_score }}">
         <td>
           <div class="font-weight-bold">{{ row.team_name }}</div>
           <div class="text-muted small">{{ row.team_id }}</div>
@@ -204,13 +229,14 @@
         <td>{{ row.type_label }}</td>
         <td>{{ row.round_labels|default:"-" }}</td>
         <td>{{ row.impact }}</td>
+        <td>{{ row.impact_band }}</td>
         <td class="text-right">
           <a class="btn btn-sm btn-outline-secondary mb-1" href="{% url 'calendaritzacions:resource_workspace_team' run.pk row.team_id %}">Equip</a>
           <a class="btn btn-sm btn-outline-primary mb-1" href="{% url 'calendaritzacions:resource_workspace_incident' run.pk row.incident_id %}">Incidencia</a>
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="7" class="text-center text-muted">No hi ha equips afectats.</td></tr>
+      <tr><td colspan="8" class="text-center text-muted">No hi ha equips afectats.</td></tr>
       {% endfor %}
       </tbody>
     </table>

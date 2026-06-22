@@ -7,6 +7,9 @@ from pathlib import Path
 from calendaritzacions.engine.base import EngineResult
 from calendaritzacions.engine.config import EngineConfig
 from calendaritzacions.engine.registry import get_engine
+from calendaritzacions.engine.variants.resource_solver.conflict_repair_service import (
+    ResourceSolverConflictRepairEngine,
+)
 from calendaritzacions.engine.variants.resource_solver.service import ResourceSolverEngine
 
 HAS_PANDAS = importlib.util.find_spec("pandas") is not None
@@ -79,9 +82,32 @@ class ResourceSolverServiceTests(unittest.TestCase):
             )
             self.assertTrue(any(log.startswith("resource_solver: status=") for log in result.logs))
 
+    @unittest.skipUnless(HAS_PANDAS and HAS_OPENPYXL, "pandas/openpyxl not installed")
+    def test_conflict_repair_run_returns_engine_result_with_audits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "input.xlsx"
+            _write_input(input_path)
+
+            result = ResourceSolverConflictRepairEngine().run(
+                str(input_path),
+                EngineConfig(name="resource_solver_conflict_repair"),
+            )
+
+            self.assertIsInstance(result, EngineResult)
+            self.assertTrue(Path(result.output_path).exists())
+            self.assertIn("conflict_repair_initial_components", result.audit_paths)
+            self.assertIn("conflict_repair_iteration_summary", result.audit_paths)
+            self.assertIn("resource_solver_conflict_repair_result", result.audit_paths)
+            self.assertIn("resource_solver_conflict_repair_plots", result.audit_paths)
+            conflict_plots = json.loads(Path(result.audit_paths["resource_solver_conflict_repair_plots"]).read_text(encoding="utf-8"))
+            self.assertEqual(conflict_plots["artifact_type"], "resource_solver_conflict_repair_plots")
+            self.assertTrue(conflict_plots["plots"])
+            self.assertTrue(any(log.startswith("resource_solver_conflict_repair: status=") for log in result.logs))
+
     def test_registry_exposes_resource_solver_and_legacy(self):
         self.assertIsInstance(get_engine("resource_solver"), ResourceSolverEngine)
         self.assertIsInstance(get_engine("resource_solver_linkage"), ResourceSolverEngine)
+        self.assertIsInstance(get_engine("resource_solver_conflict_repair"), ResourceSolverConflictRepairEngine)
         self.assertTrue(callable(get_engine("legacy")))
 
     def test_process_calendarization_can_route_to_resource_solver(self):

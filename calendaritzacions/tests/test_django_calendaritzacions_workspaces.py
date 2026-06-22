@@ -13,6 +13,60 @@ else:  # pragma: no cover
 
 
 class DjangoCalendarizationWorkspaceTests(TestCase):
+    def test_workspace_accepts_conflict_repair_result_artifact(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import CalendarizationRun, WorkspaceAssignment
+        from calendaritzacions.django.services.workspaces import get_or_create_workspace_for_run
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "resource_solver_conflict_repair_result.json"
+            team_catalog = root / "team_catalog.json"
+            candidate_catalog = root / "candidate_catalog.json"
+            resource_pressure = root / "resource_pressure.json"
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "status": "OPTIMAL",
+                        "assignments": [{"team_id": "A", "group_id": "G1", "number": 1}],
+                        "real_matches": [],
+                        "resource_usage": [],
+                        "group_summary": [],
+                        "entity_excess": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            team_catalog.write_text(
+                json.dumps([{"team_id": "A", "name": "Equip A", "entity": "Club", "league_name": "Lliga"}]),
+                encoding="utf-8",
+            )
+            candidate_catalog.write_text(
+                json.dumps([{"candidate_id": "A-G1-1", "team_id": "A", "group_id": "G1", "number": 1}]),
+                encoding="utf-8",
+            )
+            resource_pressure.write_text(json.dumps([]), encoding="utf-8")
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/test.xlsx",
+                input_name="test.xlsx",
+                engine_name=CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                audit_paths={
+                    "resource_solver_conflict_repair_result": str(result_path),
+                    "team_catalog": str(team_catalog),
+                    "candidate_catalog": str(candidate_catalog),
+                    "resource_pressure": str(resource_pressure),
+                },
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+
+        self.assertEqual(workspace.source_artifact, "resource_solver_conflict_repair_result")
+        self.assertEqual(WorkspaceAssignment.objects.filter(workspace=workspace).count(), 1)
+
     def test_workspace_hydrates_resource_excess_and_team_explanation(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")

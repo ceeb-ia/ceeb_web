@@ -57,9 +57,16 @@ def _resource_solver_engine() -> CalendarizationEngine:
     return ResourceSolverEngine()
 
 
+def _resource_solver_conflict_repair_engine() -> CalendarizationEngine:
+    from calendaritzacions.engine.variants.resource_solver import ResourceSolverConflictRepairEngine
+
+    return ResourceSolverConflictRepairEngine()
+
+
 _ENGINES["resource_solver"] = _resource_solver_engine()
 _ENGINES["resource_solver_linkage"] = _resource_solver_engine()
 _ENGINES["resource_solver_vinculacio"] = _resource_solver_engine()
+_ENGINES["resource_solver_conflict_repair"] = _resource_solver_conflict_repair_engine()
 
 
 def register_engine(name: str, engine: RegisteredEngine) -> None:

@@ -260,7 +260,12 @@ def _read_related_audit_payloads(run: CalendarizationRun, *, exclude: str) -> di
     related: dict[str, object] = {}
     raw_audit_paths = getattr(run, "audit_paths", {})
     audit_paths = raw_audit_paths if isinstance(raw_audit_paths, dict) else {}
-    for artifact in ("team_catalog", "resource_solution", "resource_solver_result"):
+    for artifact in (
+        "team_catalog",
+        "resource_solution",
+        "resource_solver_result",
+        "resource_solver_conflict_repair_result",
+    ):
         if artifact == exclude:
             continue
         path = audit_paths.get(artifact)
@@ -437,6 +442,7 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
     for artifact, title in [
         ("input_demand", "Plots pre-run"),
         ("resource_solver_decomposition_plots", "Descomposicio"),
+        ("resource_solver_conflict_repair_plots", "Conflict repair"),
         ("resource_solver_final_plots", "Plots post-run"),
     ]:
         plots = _plot_ids_for_artifact(run, artifact)

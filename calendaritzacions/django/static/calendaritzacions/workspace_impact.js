@@ -19,6 +19,8 @@
   var filtersToggle = document.getElementById('workspaceImpactFiltersToggle');
   var filtersCollapse = document.getElementById('workspaceImpactFiltersCollapse');
   var chartNodes = Array.from(document.querySelectorAll('[data-impact-chart]'));
+  var kpiRoot = document.getElementById('workspaceImpactKpis');
+  var totalTeams = parseInt((kpiRoot && kpiRoot.dataset.totalTeams) || '0', 10) || 0;
 
   function normalize(value){
     return String(value || '').trim().toLocaleLowerCase();
@@ -61,8 +63,15 @@
     if (node) node.textContent = String(value);
   }
 
+  function formatDecimal(value){
+    var numeric = Number(value || 0);
+    if (!isFinite(numeric)) return '0';
+    if (Math.abs(numeric - Math.round(numeric)) < 0.05) return String(Math.round(numeric));
+    return numeric.toFixed(1);
+  }
+
   function rowNumber(row, key){
-    var parsed = parseInt(row.dataset[key] || '0', 10);
+    var parsed = Number(row.dataset[key] || '0');
     return isNaN(parsed) ? 0 : parsed;
   }
 
@@ -73,46 +82,61 @@
         if (token) roundValues.push(token);
       });
     });
-    setKpi('affected_teams', uniqueCount(visibleRows.map(function(row){ return row.dataset.teamId; })));
-    setKpi('affected_incidents', uniqueCount(visibleRows.map(function(row){ return row.dataset.incidentId; })));
+    var affectedTeams = uniqueCount(visibleRows.map(function(row){ return row.dataset.teamId; }));
+    var affectedIncidents = uniqueCount(visibleRows.map(function(row){ return row.dataset.incidentId; }));
+    var severityTotal = visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'severity'); }, 0);
+    var excessTotal = visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'excess'); }, 0);
+    var impactScoreTotal = visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'impactScore'); }, 0);
+    setKpi('affected_teams', affectedTeams);
+    setKpi('affected_incidents', affectedIncidents);
     setKpi('affected_entities', uniqueCount(visibleRows.map(function(row){ return row.dataset.entityLabel; })));
     setKpi('affected_rounds', uniqueCount(roundValues));
-    setKpi('severity_total', visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'severity'); }, 0));
-    setKpi('excess_total', visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'excess'); }, 0));
+    setKpi('severity_total', formatDecimal(severityTotal));
+    setKpi('excess_per_team', formatDecimal(affectedTeams ? excessTotal / affectedTeams : 0));
+    setKpi('avg_severity_per_team', formatDecimal(affectedTeams ? severityTotal / affectedTeams : 0));
+    setKpi('avg_severity_per_incident', formatDecimal(affectedIncidents ? severityTotal / affectedIncidents : 0));
+    setKpi('avg_impact_score', formatDecimal(visibleRows.length ? impactScoreTotal / visibleRows.length : 0));
+    setKpi('affected_team_ratio', formatDecimal(totalTeams ? (affectedTeams / totalTeams) * 100 : 0) + '%');
   }
 
-  function addBucket(buckets, key, label, teamId){
+  function addBucket(buckets, key, label, row){
     if (!key) return;
     if (!buckets[key]) {
-      buckets[key] = {label: label || key, rows: 0, teams: {}};
+      buckets[key] = {label: label || key, rows: 0, teams: {}, impactScoreTotal: 0, severityTotal: 0};
     }
     buckets[key].rows += 1;
-    if (teamId) buckets[key].teams[teamId] = true;
+    buckets[key].impactScoreTotal += rowNumber(row, 'impactScore');
+    buckets[key].severityTotal += rowNumber(row, 'severity');
+    if (row.dataset.teamId) buckets[key].teams[row.dataset.teamId] = true;
   }
 
   function chartBuckets(visibleRows, kind){
     var buckets = {};
     visibleRows.forEach(function(row){
-      if (kind === 'modality') {
-        addBucket(buckets, row.dataset.modalityLabel || 'Sense modalitat', row.dataset.modalityLabel || 'Sense modalitat', row.dataset.teamId);
-      } else if (kind === 'entity') {
-        addBucket(buckets, row.dataset.entityLabel || 'Sense entitat', row.dataset.entityLabel || 'Sense entitat', row.dataset.teamId);
-      } else if (kind === 'type') {
-        addBucket(buckets, row.dataset.type || 'other', row.dataset.typeLabel || row.dataset.type || 'Altres', row.dataset.teamId);
-      } else if (kind === 'round') {
+      if (kind === 'modality' || kind === 'modality_severity') {
+        addBucket(buckets, row.dataset.modalityLabel || 'Sense modalitat', row.dataset.modalityLabel || 'Sense modalitat', row);
+      } else if (kind === 'entity' || kind === 'entity_severity') {
+        addBucket(buckets, row.dataset.entityLabel || 'Sense entitat', row.dataset.entityLabel || 'Sense entitat', row);
+      } else if (kind === 'type' || kind === 'type_severity') {
+        addBucket(buckets, row.dataset.type || 'other', row.dataset.typeLabel || row.dataset.type || 'Altres', row);
+      } else if (kind === 'round' || kind === 'round_severity') {
         var tokens = normalize(row.dataset.rounds).split(/\s+/);
         var labels = String(row.dataset.roundLabels || '').split(/\s*,\s*/);
         tokens.forEach(function(token, index){
-          if (token) addBucket(buckets, token, labels[index] || token, row.dataset.teamId);
+          if (token) addBucket(buckets, token, labels[index] || token, row);
         });
       }
     });
     return Object.keys(buckets).map(function(key){
       var bucket = buckets[key];
+      var isSeverity = kind.indexOf('_severity') !== -1;
+      var teamCount = Object.keys(bucket.teams).length;
+      var value = isSeverity ? (bucket.rows ? bucket.impactScoreTotal / bucket.rows : 0) : (kind === 'type' ? bucket.rows : teamCount);
       return {
         key: key,
         label: bucket.label,
-        value: kind === 'type' ? bucket.rows : Object.keys(bucket.teams).length
+        value: value,
+        valueText: isSeverity ? formatDecimal(value) + '/10' : String(value)
       };
     }).filter(function(row){ return row.value > 0; }).sort(function(a, b){
       return b.value - a.value || a.label.localeCompare(b.label);
@@ -137,7 +161,7 @@
         '<div class="audit-bar-row workspace-impact-bar-row">' +
           '<div class="audit-bar-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</div>' +
           '<div class="audit-bar-track"><div class="audit-bar-fill" style="width: ' + pct + '%;"></div></div>' +
-          '<div class="audit-bar-value">' + row.value + '</div>' +
+          '<div class="audit-bar-value">' + escapeHtml(row.valueText || row.value) + '</div>' +
         '</div>';
     }).join('');
   }

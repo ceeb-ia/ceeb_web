@@ -26,6 +26,7 @@ RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
+    CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
 }
 
 
@@ -43,7 +44,7 @@ def get_or_create_workspace_for_run(
             run=run,
             name=f"Workspace run {run.pk}",
             status=AssignmentWorkspace.STATUS_ACTIVE,
-            source_artifact="resource_solution",
+            source_artifact=_workspace_solution_artifact(run),
         )
     if force or not _workspace_is_current(workspace):
         hydrate_workspace_from_audits(run, workspace=workspace)
@@ -83,7 +84,7 @@ def hydrate_workspace_from_audits(
         _create_level_mismatch_incidents(workspace, solver_explanations, teams)
         workspace.summary = _build_persisted_summary(workspace)
         workspace.status = AssignmentWorkspace.STATUS_ACTIVE
-        workspace.source_artifact = "resource_solution"
+        workspace.source_artifact = str(payloads.get("resource_solution_artifact") or _workspace_solution_artifact(run))
         workspace.save(update_fields=["summary", "status", "source_artifact", "updated_at"])
 
     return workspace
@@ -1219,6 +1220,12 @@ def _validate_workspace_run(run: CalendarizationRun) -> None:
         raise ValueError("El workspace nomes esta disponible pels motors resource_solver.")
 
 
+def _workspace_solution_artifact(run: CalendarizationRun) -> str:
+    if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR:
+        return "resource_solver_conflict_repair_result"
+    return "resource_solution"
+
+
 def _workspace_is_hydrated(workspace: AssignmentWorkspace) -> bool:
     return (
         WorkspaceAssignment.objects.filter(workspace=workspace).exists()
@@ -1238,9 +1245,12 @@ def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
         discovered = discover_audit_paths(run.output_path)
         audit_paths = {**discovered, **stored_audit_paths}
 
+    resource_solution_artifact = _workspace_solution_artifact(run)
     resource_solution_path = (
-        stored_audit_paths.get("resource_solution")
+        stored_audit_paths.get(resource_solution_artifact)
+        or stored_audit_paths.get("resource_solution")
         or stored_audit_paths.get("component_merged_solution")
+        or audit_paths.get(resource_solution_artifact)
         or audit_paths.get("resource_solution")
         or audit_paths.get("component_merged_solution")
     )
@@ -1261,6 +1271,7 @@ def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
     )
     return {
         "resource_solution": solution,
+        "resource_solution_artifact": resource_solution_artifact,
         "team_catalog": team_catalog,
         "candidate_catalog": candidate_catalog,
         "resource_pressure": resource_pressure,
