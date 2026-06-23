@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from itertools import combinations
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
@@ -33,8 +34,10 @@ from calendaritzacions.engine.variants.resource_solver.conflict_repair import (
     initial_components_payload,
     iteration_summary_payload,
     linkage_conflicts_payload,
+    linkage_buckets,
     merge_assignments,
     repair_blocks_payload,
+    refine_initial_components_by_cut_points,
     team_to_initial_component,
     validate_assignments,
 )
@@ -101,7 +104,13 @@ class ResourceSolverConflictRepairEngine:
         logs.extend(_competition_context_log_lines(context))
 
         _report(progress, "Resolent components inicials per competicio i links...", 35)
-        initial_components = build_initial_components(context)
+        base_initial_components = build_initial_components(context)
+        initial_components = refine_initial_components_by_cut_points(context, base_initial_components)
+        if len(initial_components) != len(base_initial_components):
+            logs.append(
+                "conflict-repair: intra-hub cuts "
+                f"components={len(base_initial_components)}->{len(initial_components)}"
+            )
         initial_components_audit = _write_and_report_partial_audits(
             {"conflict_repair_initial_components": initial_components_payload(initial_components)},
             output_dir,
@@ -343,6 +352,7 @@ class ResourceSolverConflictRepairEngine:
             if manifest_path:
                 _rewrite_conflict_repair_plot_manifest(manifest_path)
                 audit_paths["resource_solver_conflict_repair_plots"] = manifest_path
+                audit_paths.update(_hub_cut_diagnostics_audit_path(manifest_path))
             logs.append(f"conflict-repair: plots components generats={max(0, len(conflict_repair_plots) - 1)}")
         except Exception as exc:
             logs.append(f"conflict-repair: plots components no generats ({exc})")
@@ -447,11 +457,29 @@ def _write_and_report_conflict_repair_plots(
             return {}
         _rewrite_conflict_repair_plot_manifest(manifest_path)
         _report_artifact(progress, "resource_solver_conflict_repair_plots", manifest_path)
+        audit_paths = {"resource_solver_conflict_repair_plots": manifest_path}
+        hub_cut_path = _hub_cut_diagnostics_audit_path(manifest_path)
+        if hub_cut_path:
+            audit_paths.update(hub_cut_path)
+            _report_artifact(progress, "conflict_repair_hub_cut_diagnostics", hub_cut_path["conflict_repair_hub_cut_diagnostics"])
         logs.append(f"conflict-repair: plots components inicials generats={max(0, len(plots) - 1)}")
-        return {"resource_solver_conflict_repair_plots": manifest_path}
+        return audit_paths
     except Exception as exc:
         logs.append(f"conflict-repair: plots components inicials no generats ({exc})")
         return {}
+
+
+def _hub_cut_diagnostics_audit_path(manifest_path: str) -> dict[str, str]:
+    try:
+        payload = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    diagnostics_path = str(payload.get("hub_cut_diagnostics") or "")
+    if not diagnostics_path:
+        return {}
+    return {"conflict_repair_hub_cut_diagnostics": diagnostics_path}
 
 
 def _partial_iteration_summary_payload(
@@ -504,6 +532,22 @@ def _repair_linkage_blocks(
         fallback_resource_excess = _total_resource_excess(
             build_solution(_raw_result("FEASIBLE", fallback_assignments), repair_context)
         )
+        local_assignments, local_meta = _local_linkage_repair_assignments(
+            context=context,
+            initial_components=initial_components,
+            initial_result=initial_result,
+            block=block,
+            fallback_assignments=fallback_assignments,
+            fallback_mismatches=fallback_mismatches,
+        )
+        local_used_as_fallback = False
+        if local_meta.get("improved"):
+            fallback_assignments = local_assignments
+            fallback_mismatches = int(local_meta.get("selected_linkage_mismatches", fallback_mismatches))
+            fallback_resource_excess = _total_resource_excess(
+                build_solution(_raw_result("FEASIBLE", fallback_assignments), repair_context)
+            )
+            local_used_as_fallback = True
         skipped_due_deadline = block_solve_limit <= 0
         solve_limit = 0.0 if skipped_due_deadline else getattr(repair_context.config, "time_limit_seconds", None)
         _report(
@@ -514,7 +558,14 @@ def _repair_linkage_blocks(
             f"linkages={len(block.linkage_keys)}, timeout={solve_limit}s)",
             _stage_percent(58, 62, index - 1, total),
         )
-        if skipped_due_deadline:
+        if local_used_as_fallback and fallback_mismatches == 0:
+            built_model = None
+            hint_added = False
+            solution = build_solution(_raw_result("FEASIBLE", fallback_assignments), repair_context)
+            solution_mismatches = fallback_mismatches
+            solution_resource_excess = fallback_resource_excess
+            skipped_due_deadline = False
+        elif skipped_due_deadline:
             built_model = None
             hint_added = False
             solution = build_solution(
@@ -582,6 +633,8 @@ def _repair_linkage_blocks(
                 "accepted": accepted,
                 "fallback_used": fallback_used,
                 "fallback_assignment_count": len(fallback_assignments),
+                "local_repair": local_meta,
+                "local_used_as_fallback": local_used_as_fallback,
                 "selected_assignment_count": len(selected_assignments),
                 "hint_added": hint_added,
                 "skipped_due_deadline": skipped_due_deadline,
@@ -591,6 +644,203 @@ def _repair_linkage_blocks(
             }
         )
     return repaired, tuple(records)
+
+
+def _local_linkage_repair_assignments(
+    *,
+    context: SolverContext,
+    initial_components: tuple[Any, ...],
+    initial_result: ResourceSolverResult,
+    block: Any,
+    fallback_assignments: tuple[Assignment, ...],
+    fallback_mismatches: int,
+) -> tuple[tuple[Assignment, ...], dict[str, Any]]:
+    if not bool(getattr(context.config, "local_linkage_repair_enabled", False)):
+        return fallback_assignments, {"enabled": False, "improved": False}
+    if fallback_mismatches <= 0:
+        return fallback_assignments, {
+            "enabled": True,
+            "improved": False,
+            "reason": "no_linkage_damage",
+            "fallback_linkage_mismatches": fallback_mismatches,
+        }
+
+    current_block = tuple(sorted(fallback_assignments, key=lambda item: item.team_id))
+    current_global = _replace_assignments_for_teams(initial_result.assignments, current_block, block.team_ids)
+    current_score, current_metrics = _local_repair_score(
+        context=context,
+        initial_components=initial_components,
+        assignments=current_global,
+        linkage_keys=block.linkage_keys,
+        baseline_assignments=initial_result.assignments,
+    )
+    best_score = current_score
+    best_block = current_block
+    max_iterations = max(0, int(getattr(context.config, "local_linkage_repair_max_iterations", 50) or 50))
+    max_evaluations = max(1, int(getattr(context.config, "local_linkage_repair_max_pair_evaluations", 500) or 500))
+    evaluations = 0
+    accepted_moves = 0
+    reason = "no_improving_swap"
+    valid_candidates = {
+        (candidate.team_id, candidate.group_id, int(candidate.number))
+        for candidate in context.candidates
+    }
+
+    for _iteration in range(max_iterations):
+        move_found = False
+        pair_candidates = _local_repair_pair_candidates(context, block, best_block)
+        for left_team_id, right_team_id in pair_candidates:
+            if evaluations >= max_evaluations:
+                reason = "evaluation_budget"
+                break
+            candidate_block = _swap_team_assignments(best_block, left_team_id, right_team_id, valid_candidates)
+            if candidate_block is None:
+                continue
+            candidate_global = _replace_assignments_for_teams(initial_result.assignments, candidate_block, block.team_ids)
+            score, _metrics = _local_repair_score(
+                context=context,
+                initial_components=initial_components,
+                assignments=candidate_global,
+                linkage_keys=block.linkage_keys,
+                baseline_assignments=initial_result.assignments,
+            )
+            evaluations += 1
+            if score < best_score:
+                best_score = score
+                best_block = candidate_block
+                move_found = True
+                accepted_moves += 1
+                break
+        if evaluations >= max_evaluations or not move_found:
+            break
+
+    final_global = _replace_assignments_for_teams(initial_result.assignments, best_block, block.team_ids)
+    _final_score, final_metrics = _local_repair_score(
+        context=context,
+        initial_components=initial_components,
+        assignments=final_global,
+        linkage_keys=block.linkage_keys,
+        baseline_assignments=initial_result.assignments,
+    )
+    improved = best_score < current_score and int(final_metrics["linkage_mismatches"]) <= int(current_metrics["linkage_mismatches"])
+    return best_block, {
+        "enabled": True,
+        "improved": improved,
+        "reason": "improved" if improved else reason,
+        "evaluations": evaluations,
+        "accepted_moves": accepted_moves,
+        "fallback_score": round(current_score, 4),
+        "selected_score": round(best_score, 4),
+        "fallback_linkage_mismatches": int(current_metrics["linkage_mismatches"]),
+        "selected_linkage_mismatches": int(final_metrics["linkage_mismatches"]),
+        "fallback_resource_excess": int(current_metrics["resource_excess"]),
+        "selected_resource_excess": int(final_metrics["resource_excess"]),
+        "fallback_entity_excess": int(current_metrics["entity_excess"]),
+        "selected_entity_excess": int(final_metrics["entity_excess"]),
+        "selected_churn": int(final_metrics["churn"]),
+    }
+
+
+def _local_repair_pair_candidates(
+    context: SolverContext,
+    block: Any,
+    assignments: tuple[Assignment, ...],
+) -> tuple[tuple[str, str], ...]:
+    assignment_by_team = {assignment.team_id: assignment for assignment in assignments}
+    block_team_ids = set(assignment_by_team)
+    linkage_team_ids = {
+        team_id
+        for linkage_key, team_ids in linkage_buckets(context).items()
+        if linkage_key in set(block.linkage_keys)
+        for team_id in team_ids
+        if team_id in block_team_ids
+    }
+    team_by_id = {team.team_id: team for team in context.teams}
+
+    pairs: list[tuple[int, str, str]] = []
+    for left, right in combinations(sorted(block_team_ids), 2):
+        left_assignment = assignment_by_team[left]
+        right_assignment = assignment_by_team[right]
+        left_team = team_by_id.get(left)
+        right_team = team_by_id.get(right)
+        same_group = left_assignment.group_id == right_assignment.group_id
+        directly_linked = left in linkage_team_ids or right in linkage_team_ids
+        same_league = bool(left_team and right_team and left_team.league_name == right_team.league_name)
+        if directly_linked and same_group:
+            priority = 0
+        elif directly_linked and same_league:
+            priority = 1
+        elif directly_linked:
+            priority = 2
+        elif same_group:
+            priority = 3
+        elif same_league:
+            priority = 4
+        else:
+            priority = 5
+        pairs.append((priority, left, right))
+    return tuple((left, right) for _priority, left, right in sorted(pairs))
+
+
+def _swap_team_assignments(
+    assignments: tuple[Assignment, ...],
+    left_team_id: str,
+    right_team_id: str,
+    valid_candidates: set[tuple[str, str, int]],
+) -> tuple[Assignment, ...] | None:
+    by_team = {assignment.team_id: assignment for assignment in assignments}
+    left = by_team.get(left_team_id)
+    right = by_team.get(right_team_id)
+    if left is None or right is None:
+        return None
+    swapped_left = Assignment(left.team_id, right.group_id, right.number)
+    swapped_right = Assignment(right.team_id, left.group_id, left.number)
+    if (swapped_left.team_id, swapped_left.group_id, int(swapped_left.number)) not in valid_candidates:
+        return None
+    if (swapped_right.team_id, swapped_right.group_id, int(swapped_right.number)) not in valid_candidates:
+        return None
+    by_team[left.team_id] = swapped_left
+    by_team[right.team_id] = swapped_right
+    return tuple(sorted(by_team.values(), key=lambda item: item.team_id))
+
+
+def _replace_assignments_for_teams(
+    assignments: tuple[Assignment, ...],
+    replacements: tuple[Assignment, ...],
+    team_ids: tuple[str, ...] | list[str] | set[str],
+) -> tuple[Assignment, ...]:
+    selected = {str(team_id) for team_id in team_ids}
+    by_team = {assignment.team_id: assignment for assignment in assignments if assignment.team_id not in selected}
+    by_team.update({assignment.team_id: assignment for assignment in replacements})
+    return tuple(sorted(by_team.values(), key=lambda item: item.team_id))
+
+
+def _local_repair_score(
+    *,
+    context: SolverContext,
+    initial_components: tuple[Any, ...],
+    assignments: tuple[Assignment, ...],
+    linkage_keys: tuple[str, ...] | list[str] | set[str],
+    baseline_assignments: tuple[Assignment, ...],
+) -> tuple[float, dict[str, int]]:
+    result = build_solution(_raw_result("FEASIBLE", assignments), context)
+    linkage_mismatches = _linkage_mismatch_total(context, result, initial_components, linkage_keys)
+    resource_excess = _total_resource_excess(result)
+    entity_excess = sum(int(value) for value in result.entity_excess.values())
+    baseline = {assignment.team_id: assignment for assignment in baseline_assignments}
+    churn = sum(1 for assignment in assignments if baseline.get(assignment.team_id) != assignment)
+    score = (
+        linkage_mismatches * int(getattr(context.config, "linkage_violation_weight", 100_000) or 100_000)
+        + resource_excess * int(getattr(context.config, "resource_excess_weight", 100_000) or 100_000)
+        + entity_excess * int(getattr(context.config, "entity_excess_weight", 10_000) or 10_000)
+        + churn
+    )
+    return float(score), {
+        "linkage_mismatches": int(linkage_mismatches),
+        "resource_excess": int(resource_excess),
+        "entity_excess": int(entity_excess),
+        "churn": int(churn),
+    }
 
 
 def _linkage_mismatch_total(

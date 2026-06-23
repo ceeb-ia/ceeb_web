@@ -106,13 +106,14 @@ class _UnionFind:
 
 
 def build_initial_components(context: SolverContext) -> tuple[InitialComponent, ...]:
-    """Split teams by hard domain, leaving small cross-domain linkages repairable."""
+    """Split teams by hard domain, optionally leaving linkages repairable."""
 
     domain_by_team = team_initial_domain_keys(context)
     domains = sorted(set(domain_by_team.values()))
     uf = _UnionFind(domains)
     linkage_keys_by_domain: dict[str, set[str]] = defaultdict(set)
     small_linkage_max_size = _small_linkage_max_size(context)
+    connector_mode = _initial_linkage_connector_mode(context)
 
     for linkage_key, team_ids in linkage_buckets(context).items():
         linked_domains = sorted(
@@ -124,7 +125,7 @@ def build_initial_components(context: SolverContext) -> tuple[InitialComponent, 
         )
         if not linked_domains:
             continue
-        if len(team_ids) > small_linkage_max_size:
+        if connector_mode == "all" or (connector_mode == "large" and len(team_ids) > small_linkage_max_size):
             first = linked_domains[0]
             for domain_key in linked_domains:
                 uf.union(first, domain_key)
@@ -169,6 +170,40 @@ def build_initial_components(context: SolverContext) -> tuple[InitialComponent, 
             )
         )
     return tuple(components)
+
+
+def refine_initial_components_by_cut_points(
+    context: SolverContext,
+    components: Iterable[InitialComponent],
+) -> tuple[InitialComponent, ...]:
+    """Split large initial components on safe articulation points.
+
+    The split is conservative: it only accepts a cut when every resulting
+    subcomponent owns a disjoint set of candidate groups. That avoids solving
+    two independent CP-SAT models that could assign the same group/number.
+    """
+
+    if not _intra_hub_cut_enabled(context):
+        return tuple(components)
+    refined: list[InitialComponent] = []
+    max_rounds = max(0, int(getattr(context.config, "intra_hub_cut_max_rounds", 3) or 0))
+    for component in components:
+        pending = [component]
+        for _round in range(max_rounds):
+            next_pending: list[InitialComponent] = []
+            changed = False
+            for item in pending:
+                split = _split_component_by_best_cut(context, item)
+                if split is None:
+                    next_pending.append(item)
+                    continue
+                next_pending.extend(split)
+                changed = True
+            pending = next_pending
+            if not changed:
+                break
+        refined.extend(pending)
+    return _renumber_initial_components(refined)
 
 
 def detect_conflict_hubs(
@@ -624,6 +659,163 @@ def repair_blocks_payload(blocks: Iterable[RepairBlock]) -> dict[str, Any]:
     }
 
 
+def _split_component_by_best_cut(
+    context: SolverContext,
+    component: InitialComponent,
+) -> tuple[InitialComponent, ...] | None:
+    min_teams = max(2, int(getattr(context.config, "intra_hub_cut_min_teams", 10) or 10))
+    if len(component.team_ids) < min_teams:
+        return None
+    graph = _component_cut_graph(context, component)
+    if not graph:
+        return None
+    base_component_count = _component_count_after_removing(graph, removed="")
+    candidate_cuts: list[tuple[int, int, str, tuple[tuple[str, ...], ...]]] = []
+    for node_id in sorted(graph):
+        kind = node_id.split(":", 1)[0]
+        if kind == "team":
+            continue
+        partitions = _team_partitions_after_removing(graph, node_id)
+        if len(partitions) <= 1:
+            continue
+        cut_gain = _component_count_after_removing(graph, node_id) - base_component_count
+        if cut_gain <= 0:
+            continue
+        if not _partitions_have_disjoint_groups(context, partitions):
+            continue
+        smallest = min(len(partition) for partition in partitions)
+        candidate_cuts.append((cut_gain, smallest, node_id, partitions))
+    if not candidate_cuts:
+        return None
+
+    _gain, _smallest, node_id, partitions = max(candidate_cuts, key=lambda item: (item[0], item[1], item[2]))
+    domain_by_team = team_initial_domain_keys(context)
+    candidate_count_by_team = Counter(candidate.team_id for candidate in context.candidates)
+    linkage_keys_by_team = _linkage_keys_by_team(context)
+    split_components: list[InitialComponent] = []
+    for index, team_ids in enumerate(partitions, start=1):
+        competition_keys = tuple(sorted({domain_by_team[team_id] for team_id in team_ids if team_id in domain_by_team}))
+        linkage_keys = tuple(sorted({key for team_id in team_ids for key in linkage_keys_by_team.get(team_id, ())}))
+        split_components.append(
+            InitialComponent(
+                component_id=f"{component.component_id}.{index}",
+                competition_keys=competition_keys,
+                team_ids=team_ids,
+                linkage_keys=linkage_keys,
+                candidate_count=sum(candidate_count_by_team[team_id] for team_id in team_ids),
+            )
+        )
+    return tuple(split_components)
+
+
+def _component_cut_graph(context: SolverContext, component: InitialComponent) -> dict[str, set[str]]:
+    team_ids = set(component.team_ids)
+    if not team_ids:
+        return {}
+    domain_by_team = team_initial_domain_keys(context)
+    graph: dict[str, set[str]] = defaultdict(set)
+
+    def connect(left: str, right: str) -> None:
+        if not left or not right or left == right:
+            return
+        graph[left].add(right)
+        graph[right].add(left)
+
+    for team in context.teams:
+        if team.team_id not in team_ids:
+            continue
+        team_node = f"team:{team.team_id}"
+        graph.setdefault(team_node, set())
+        connect(team_node, f"competition:{domain_by_team.get(team.team_id, '')}")
+        level = normalize_hard_level(getattr(team, "level", "")) or str(getattr(team, "level", "") or "unknown")
+        connect(team_node, f"level:{level}")
+
+    for linkage_key, linked_team_ids in linkage_buckets(context).items():
+        local_team_ids = sorted(team_id for team_id in linked_team_ids if team_id in team_ids)
+        if len(local_team_ids) <= 1:
+            continue
+        linkage_node = f"linkage:{linkage_key}"
+        for team_id in local_team_ids:
+            connect(f"team:{team_id}", linkage_node)
+
+    for candidate in context.candidates:
+        if candidate.team_id not in team_ids:
+            continue
+        for resource_id in candidate.potential_resources:
+            connect(f"team:{candidate.team_id}", f"resource:{split_timed_resource_id(str(resource_id))[0]}")
+    return {node_id: set(neighbours) for node_id, neighbours in graph.items()}
+
+
+def _team_partitions_after_removing(
+    graph: dict[str, set[str]],
+    removed: str,
+) -> tuple[tuple[str, ...], ...]:
+    seen: set[str] = set()
+    partitions: list[tuple[str, ...]] = []
+    nodes = sorted(node_id for node_id in graph if node_id != removed)
+    for start in nodes:
+        if start in seen:
+            continue
+        queue = deque([start])
+        seen.add(start)
+        team_ids: set[str] = set()
+        while queue:
+            current = queue.popleft()
+            if current.startswith("team:"):
+                team_ids.add(current.split(":", 1)[1])
+            for neighbour in graph.get(current, ()):
+                if neighbour == removed or neighbour in seen:
+                    continue
+                seen.add(neighbour)
+                queue.append(neighbour)
+        if team_ids:
+            partitions.append(tuple(sorted(team_ids)))
+    return tuple(sorted(partitions, key=lambda ids: (-len(ids), ids)))
+
+
+def _component_count_after_removing(graph: dict[str, set[str]], removed: str) -> int:
+    return len(_team_partitions_after_removing(graph, removed))
+
+
+def _partitions_have_disjoint_groups(
+    context: SolverContext,
+    partitions: tuple[tuple[str, ...], ...],
+) -> bool:
+    owners: dict[str, int] = {}
+    for index, team_ids in enumerate(partitions):
+        group_ids = {
+            str(candidate.group_id)
+            for candidate in context.candidates
+            if candidate.team_id in set(team_ids)
+        }
+        if not group_ids:
+            return False
+        for group_id in group_ids:
+            previous = owners.setdefault(group_id, index)
+            if previous != index:
+                return False
+    return True
+
+
+def _renumber_initial_components(components: Iterable[InitialComponent]) -> tuple[InitialComponent, ...]:
+    rows = sorted(
+        components,
+        key=lambda component: (component.competition_keys, component.team_ids, component.component_id),
+    )
+    return tuple(
+        replace(component, component_id=f"I{index:03d}")
+        for index, component in enumerate(rows, start=1)
+    )
+
+
+def _linkage_keys_by_team(context: SolverContext) -> dict[str, tuple[str, ...]]:
+    rows: dict[str, set[str]] = defaultdict(set)
+    for linkage_key, team_ids in linkage_buckets(context).items():
+        for team_id in team_ids:
+            rows[team_id].add(linkage_key)
+    return {team_id: tuple(sorted(keys)) for team_id, keys in rows.items()}
+
+
 def _initial_domain_key(team: Any, config: Any | None) -> str:
     key = _competition_key_to_string(competition_key_for_team(team, config))
     if _hard_level_enabled(config):
@@ -634,6 +826,19 @@ def _initial_domain_key(team: Any, config: Any | None) -> str:
 
 def _hard_level_enabled(config: Any | None) -> bool:
     return str(getattr(config, "level_constraint_mode", "off") if config is not None else "off").strip().casefold() == "hard"
+
+
+def _initial_linkage_connector_mode(context: SolverContext) -> str:
+    mode = str(getattr(context.config, "initial_linkage_connector_mode", "off") or "off").strip().casefold()
+    if mode in {"all", "on", "yes"}:
+        return "all"
+    if mode in {"large", "large_only", "current", "legacy"}:
+        return "large"
+    return "off"
+
+
+def _intra_hub_cut_enabled(context: SolverContext) -> bool:
+    return bool(getattr(context.config, "intra_hub_cut_enabled", False))
 
 
 def _small_linkage_max_size(context: SolverContext) -> int:
@@ -780,6 +985,7 @@ __all__ = [
     "linkage_buckets",
     "merge_assignments",
     "repair_blocks_payload",
+    "refine_initial_components_by_cut_points",
     "split_timed_resource_id",
     "team_competition_keys",
     "team_to_initial_component",

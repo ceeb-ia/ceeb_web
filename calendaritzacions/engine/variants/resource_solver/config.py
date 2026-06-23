@@ -70,6 +70,13 @@ class ResourceSolverConfig:
     linkage_mode: str = "off"
     linkage_violation_weight: int = 100_000
     linkage_max_group_size: int = 2
+    initial_linkage_connector_mode: str = "off"
+    intra_hub_cut_enabled: bool = True
+    intra_hub_cut_min_teams: int = 10
+    intra_hub_cut_max_rounds: int = 3
+    local_linkage_repair_enabled: bool = True
+    local_linkage_repair_max_iterations: int = 50
+    local_linkage_repair_max_pair_evaluations: int = 500
     level_constraint_mode: str = "off"
     level_a_mismatch_weight: int = 1_000_000
     level_band_mismatch_weight: int = 200_000
@@ -195,6 +202,57 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         linkage_mode=linkage_mode,
         linkage_violation_weight=int(getattr(config, "linkage_violation_weight", 100_000)),
         linkage_max_group_size=int(getattr(config, "linkage_max_group_size", 2)),
+        initial_linkage_connector_mode=_normalize_initial_linkage_connector_mode(
+            getattr(
+                config,
+                "initial_linkage_connector_mode",
+                os.getenv("CALENDARITZACIONS_SOLVER_INITIAL_LINKAGE_CONNECTOR_MODE", "off"),
+            )
+        ),
+        intra_hub_cut_enabled=_coerce_bool(
+            getattr(
+                config,
+                "intra_hub_cut_enabled",
+                os.getenv("CALENDARITZACIONS_SOLVER_INTRA_HUB_CUT_ENABLED", "1"),
+            ),
+            default=True,
+        ),
+        intra_hub_cut_min_teams=int(
+            getattr(
+                config,
+                "intra_hub_cut_min_teams",
+                _env_int("CALENDARITZACIONS_SOLVER_INTRA_HUB_CUT_MIN_TEAMS", 10),
+            )
+        ),
+        intra_hub_cut_max_rounds=int(
+            getattr(
+                config,
+                "intra_hub_cut_max_rounds",
+                _env_int("CALENDARITZACIONS_SOLVER_INTRA_HUB_CUT_MAX_ROUNDS", 3),
+            )
+        ),
+        local_linkage_repair_enabled=_coerce_bool(
+            getattr(
+                config,
+                "local_linkage_repair_enabled",
+                os.getenv("CALENDARITZACIONS_SOLVER_LOCAL_LINKAGE_REPAIR_ENABLED", "1"),
+            ),
+            default=True,
+        ),
+        local_linkage_repair_max_iterations=int(
+            getattr(
+                config,
+                "local_linkage_repair_max_iterations",
+                _env_int("CALENDARITZACIONS_SOLVER_LOCAL_LINKAGE_REPAIR_MAX_ITERATIONS", 50),
+            )
+        ),
+        local_linkage_repair_max_pair_evaluations=int(
+            getattr(
+                config,
+                "local_linkage_repair_max_pair_evaluations",
+                _env_int("CALENDARITZACIONS_SOLVER_LOCAL_LINKAGE_REPAIR_MAX_PAIR_EVALUATIONS", 500),
+            )
+        ),
         level_constraint_mode=str(level_constraint_mode or "off"),
         level_a_mismatch_weight=int(getattr(config, "level_a_mismatch_weight", 1_000_000)),
         level_band_mismatch_weight=int(getattr(config, "level_band_mismatch_weight", 200_000)),
@@ -226,3 +284,25 @@ def _normalize_competition_grouping(value: object) -> str:
     if mode in {"fields", "camp", "camps", "modalitat", "modalitat_categoria_subcategoria"}:
         return "fields"
     return "auto"
+
+
+def _normalize_initial_linkage_connector_mode(value: object) -> str:
+    mode = str(value or "off").strip().casefold()
+    if mode in {"", "off", "none", "repair", "repair_only", "no"}:
+        return "off"
+    if mode in {"large", "large_only", "current", "legacy"}:
+        return "large"
+    if mode in {"all", "on", "yes"}:
+        return "all"
+    return "off"
+
+
+def _coerce_bool(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().casefold()
+    if text in {"1", "true", "yes", "on", "si", "sí"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default

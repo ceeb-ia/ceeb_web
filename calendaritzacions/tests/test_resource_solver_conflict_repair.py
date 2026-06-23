@@ -18,10 +18,12 @@ from calendaritzacions.engine.variants.resource_solver.conflict_repair import (
     frozen_usage_by_resource,
     linkage_buckets,
     merge_assignments,
+    refine_initial_components_by_cut_points,
     team_to_initial_component,
 )
 from calendaritzacions.engine.variants.resource_solver.conflict_repair_service import (
     _add_assignment_hint,
+    _local_linkage_repair_assignments,
     _repair_linkage_blocks,
     _repair_block_solve_limit,
     _repair_blocks,
@@ -66,6 +68,37 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertEqual(blocks[0].initial_component_ids, ("I001", "I002"))
 
+    def test_large_linkage_connector_mode_off_keeps_domains_split(self):
+        context = _context(
+            linked=True,
+            extra_linked_team=True,
+            config=ResourceSolverConfig(
+                competition_grouping="league",
+                initial_linkage_connector_mode="off",
+            ),
+        )
+
+        components = build_initial_components(context)
+
+        self.assertEqual(len(components), 2)
+        self.assertEqual([component.team_ids for component in components], [("T1", "T2"), ("T3", "T4", "T5")])
+
+    def test_large_linkage_connector_mode_large_preserves_previous_union(self):
+        context = _context(
+            linked=True,
+            extra_linked_team=True,
+            config=ResourceSolverConfig(
+                competition_grouping="league",
+                initial_linkage_connector_mode="large",
+                linkage_max_group_size=2,
+            ),
+        )
+
+        components = build_initial_components(context)
+
+        self.assertEqual(len(components), 1)
+        self.assertEqual(components[0].team_ids, ("T1", "T2", "T3", "T4", "T5"))
+
     def test_hard_level_split_separates_a_from_non_a_inside_competition(self):
         context = _context(
             levels={"T1": "A", "T2": "A", "T3": "B", "T4": "C"},
@@ -79,6 +112,16 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual([component.team_ids for component in components], [("T1", "T2"), ("T3", "T4")])
         self.assertTrue(any("level_family|A" in component.competition_keys[0] for component in components))
         self.assertTrue(any("level_family|no-A" in component.competition_keys[0] for component in components))
+
+    def test_intra_hub_cut_refines_safe_articulation_when_groups_are_disjoint(self):
+        context = _cut_context()
+        components = build_initial_components(context)
+
+        refined = refine_initial_components_by_cut_points(context, components)
+
+        self.assertEqual(len(components), 1)
+        self.assertEqual(len(refined), 2)
+        self.assertEqual([component.team_ids for component in refined], [("T1", "T2"), ("T3", "T4", "T5")])
 
     def test_conflict_hub_builds_repair_block(self):
         context = _context(capacity=1)
@@ -205,7 +248,10 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual(records[0]["selected_assignment_count"], 2)
 
     def test_linkage_repair_uses_fallback_on_unknown(self):
-        context = _context(linked=True)
+        context = _context(
+            linked=True,
+            config=ResourceSolverConfig(competition_grouping="league", local_linkage_repair_enabled=False),
+        )
         components = build_initial_components(context)
         initial_result = _result_with_two_locals(context)
         conflicts = detect_linkage_conflicts(context, initial_result, components)
@@ -231,6 +277,28 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual(records[0]["fallback_linkage_mismatches"], 7)
         self.assertTrue(records[0]["fallback_used"])
         self.assertFalse(records[0]["accepted"])
+
+    def test_local_linkage_repair_can_use_swap_before_cpsat(self):
+        context = _context(linked=True)
+        components = build_initial_components(context)
+        initial_result = _result_with_two_locals(context)
+        conflicts = detect_linkage_conflicts(context, initial_result, components)
+        blocks = build_linkage_repair_blocks(context, components, conflicts)
+        fallback = tuple(assignment for assignment in initial_result.assignments if assignment.team_id in blocks[0].team_ids)
+
+        repaired, meta = _local_linkage_repair_assignments(
+            context=context,
+            initial_components=components,
+            initial_result=initial_result,
+            block=blocks[0],
+            fallback_assignments=fallback,
+            fallback_mismatches=conflicts[0].mismatch_count,
+        )
+
+        self.assertTrue(meta["enabled"])
+        self.assertTrue(meta["improved"])
+        self.assertLess(meta["selected_linkage_mismatches"], meta["fallback_linkage_mismatches"])
+        self.assertEqual({assignment.team_id for assignment in repaired}, {"T1", "T2", "T3", "T4"})
 
     def test_assignment_hint_marks_selected_candidate(self):
         context = _context()
@@ -327,10 +395,10 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual(deadline, 84700.0)
 
 
-def _context(capacity=10, linked=False, same_entity=False, levels=None, config=None, same_league=False) -> SolverContext:
+def _context(capacity=10, linked=False, same_entity=False, levels=None, config=None, same_league=False, extra_linked_team=False) -> SolverContext:
     base_resource = BaseResource("R", "Pista", "Divendres", "18:00")
     level_by_team = levels or {}
-    teams = (
+    teams = [
         TeamRecord(
             "T1",
             "Team 1",
@@ -357,6 +425,65 @@ def _context(capacity=10, linked=False, same_entity=False, levels=None, config=N
             linkage_side="fora" if linked else "",
         ),
         TeamRecord("T4", "Team 4", "Club" if same_entity else "Club 4", "League A" if same_league else "League B", venue="Pista", day="Divendres", time="18:00", level=level_by_team.get("T4", "")),
+    ]
+    if extra_linked_team:
+        teams.append(
+            TeamRecord(
+                "T5",
+                "Team 5",
+                "Club 5",
+                "League B",
+                venue="Pista",
+                day="Divendres",
+                time="18:00",
+                level=level_by_team.get("T5", ""),
+                linkage_group="L1" if linked else "",
+                linkage_side="casa" if linked else "",
+            )
+        )
+    groups = (
+        GroupSpec("G1", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+        GroupSpec("G2", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+    )
+    return SolverContext(
+        teams=tuple(teams),
+        phase=PRIMERA_FASE,
+        phase_name="primera_fase",
+        base_resources={base_resource.resource_id: base_resource},
+        capacities={
+            base_resource.resource_id: CapacityEstimate(base_resource.resource_id, capacity, "test", len(teams))
+        },
+        pressure=(),
+        groups=groups,
+        candidates=tuple(
+            item
+            for item in (
+            _candidate("T1", "G1", 1),
+            _candidate("T1", "G1", 2),
+            _candidate("T2", "G1", 1),
+            _candidate("T2", "G1", 2),
+            _candidate("T3", "G2", 1),
+            _candidate("T3", "G2", 2),
+            _candidate("T4", "G2", 1),
+            _candidate("T4", "G2", 2),
+            _candidate("T5", "G2", 1) if extra_linked_team else None,
+            _candidate("T5", "G2", 2) if extra_linked_team else None,
+            )
+            if item is not None
+        ),
+        config=config or ResourceSolverConfig(competition_grouping="league"),
+    )
+
+
+def _cut_context() -> SolverContext:
+    resource_a = BaseResource("RA", "Pista A", "Divendres", "18:00")
+    resource_b = BaseResource("RB", "Pista B", "Divendres", "18:00")
+    teams = (
+        TeamRecord("T1", "Team 1", "Club 1", "League A", venue="Pista Compartida", day="Divendres", time="18:00", level="A", linkage_group="L1", linkage_side="casa"),
+        TeamRecord("T2", "Team 2", "Club 2", "League A", venue="Pista Compartida", day="Divendres", time="18:00", level="A"),
+        TeamRecord("T3", "Team 3", "Club 3", "League B", venue="Pista Compartida", day="Divendres", time="18:00", level="B", linkage_group="L1", linkage_side="fora"),
+        TeamRecord("T4", "Team 4", "Club 4", "League B", venue="Pista Compartida", day="Divendres", time="18:00", level="B"),
+        TeamRecord("T5", "Team 5", "Club 5", "League B", venue="Pista Compartida", day="Divendres", time="18:00", level="B", linkage_group="L1", linkage_side="casa"),
     )
     groups = (
         GroupSpec("G1", 2, 2, 2, "primera_fase", numbers=(1, 2)),
@@ -366,27 +493,40 @@ def _context(capacity=10, linked=False, same_entity=False, levels=None, config=N
         teams=teams,
         phase=PRIMERA_FASE,
         phase_name="primera_fase",
-        base_resources={base_resource.resource_id: base_resource},
+        base_resources={resource_a.resource_id: resource_a, resource_b.resource_id: resource_b},
         capacities={
-            base_resource.resource_id: CapacityEstimate(base_resource.resource_id, capacity, "test", len(teams))
+            resource_a.resource_id: CapacityEstimate(resource_a.resource_id, 10, "test", 2),
+            resource_b.resource_id: CapacityEstimate(resource_b.resource_id, 10, "test", 3),
         },
         pressure=(),
         groups=groups,
         candidates=(
-            _candidate("T1", "G1", 1),
-            _candidate("T1", "G1", 2),
-            _candidate("T2", "G1", 1),
-            _candidate("T2", "G1", 2),
-            _candidate("T3", "G2", 1),
-            _candidate("T3", "G2", 2),
-            _candidate("T4", "G2", 1),
-            _candidate("T4", "G2", 2),
+            _candidate_resource("T1", "G1", 1, "RA"),
+            _candidate_resource("T1", "G1", 2, "RA"),
+            _candidate_resource("T2", "G1", 1, "RA"),
+            _candidate_resource("T2", "G1", 2, "RA"),
+            _candidate_resource("T3", "G2", 1, "RB"),
+            _candidate_resource("T3", "G2", 2, "RB"),
+            _candidate_resource("T4", "G2", 1, "RB"),
+            _candidate_resource("T4", "G2", 2, "RB"),
+            _candidate_resource("T5", "G2", 1, "RB"),
+            _candidate_resource("T5", "G2", 2, "RB"),
         ),
-        config=config or ResourceSolverConfig(competition_grouping="league"),
+        config=ResourceSolverConfig(
+            competition_grouping="league",
+            initial_linkage_connector_mode="large",
+            linkage_max_group_size=1,
+            intra_hub_cut_enabled=True,
+            intra_hub_cut_min_teams=4,
+        ),
     )
 
 
 def _candidate(team_id, group_id, number):
+    return _candidate_resource(team_id, group_id, number, "R")
+
+
+def _candidate_resource(team_id, group_id, number, resource_id):
     return Candidate(
         candidate_id=f"{team_id}-{group_id}-{number}",
         team_id=team_id,
@@ -395,7 +535,7 @@ def _candidate(team_id, group_id, number):
         seed_request_original="",
         potential_home_rounds=(1,) if number == 1 else (),
         opponent_number_by_round={1: 2},
-        potential_resources=("R|J1",) if number == 1 else (),
+        potential_resources=(f"{resource_id}|J1",) if number == 1 else (),
     )
 
 

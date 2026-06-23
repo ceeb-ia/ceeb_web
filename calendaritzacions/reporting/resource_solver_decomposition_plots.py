@@ -11,6 +11,12 @@ from typing import Any
 
 TOP_COMPONENTS = 20
 TOP_HEATMAP_ITEMS = 15
+MAX_HUB_CUT_COMPONENTS = 6
+MAX_HUB_CUT_NETWORK_NODES = 120
+MAX_HUB_CUT_LABELS = 38
+MAX_HUB_CUT_MATRIX_NODES = 18
+MAX_BETWEENNESS_EXACT_NODES = 260
+MAX_BETWEENNESS_SAMPLE_NODES = 90
 MAX_COMPONENT_NETWORKS = 12
 MAX_FULL_NETWORK_NODES = 120
 MAX_FULL_NETWORK_LABELS = 45
@@ -35,6 +41,7 @@ def write_resource_solver_decomposition_plots(
     matplotlib.use("Agg")
 
     import matplotlib.pyplot as plt
+    plt.rcParams["figure.max_open_warning"] = 0
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -50,6 +57,9 @@ def write_resource_solver_decomposition_plots(
 
     largest = _largest_component(components)
     if context is not None and largest is not None:
+        plot_specs.append(("initial_hub_concentration_heatmap", _plot_initial_hub_concentration_heatmap(components, context)))
+        hub_cut_diagnostics = _build_hub_cut_diagnostics(components, context)
+        plot_specs.extend(_hub_cut_plot_specs(hub_cut_diagnostics))
         plot_specs.append(
             (
                 "top_component_competition_resource_heatmap",
@@ -84,10 +94,14 @@ def write_resource_solver_decomposition_plots(
         json.dumps(
             {
                 "artifact_type": "resource_solver_decomposition_plots",
+                "hub_cut_diagnostics": _write_hub_cut_diagnostics(output_path, stem, hub_cut_diagnostics)
+                if context is not None and largest is not None
+                else "",
                 "plots": plots,
                 "plot_descriptions": _plot_descriptions(plots),
                 "notes": [
                     "Els plots component_network_* mostren nodes tipats i arestes de dependencia.",
+                    "Els plots hub_cut_* mostren punts d'acoblament interns dels components inicials grans.",
                     "El plot component_graph_3d es un HTML interactiu amb rotacio, zoom i seleccio de nodes.",
                     "Els components molt grans es resumeixen per evitar imatges illegibles.",
                 ],
@@ -210,6 +224,231 @@ def _plot_candidate_pareto_by_component(components: list[dict[str, Any]]) -> Any
     line_ax.axhline(80, color="#777777", linestyle="--", linewidth=1)
     line_ax.set_ylabel("Candidats acumulats (%)")
     line_ax.set_ylim(0, 105)
+    return fig
+
+
+def _plot_initial_hub_concentration_heatmap(components: list[dict[str, Any]], context: Any) -> Any | None:
+    rows, attractors, matrix = _initial_hub_concentration_matrix(components, context)
+    if not rows or not attractors:
+        return None
+    import matplotlib.pyplot as plt
+
+    values = [[matrix.get((component["component_id"], attractor["node_id"]), 0) for attractor in attractors] for component in rows]
+    fig, ax = plt.subplots(figsize=(max(10, 0.48 * len(attractors)), max(5.5, 0.36 * len(rows))))
+    image = ax.imshow(values, aspect="auto", cmap="YlOrRd")
+    ax.set_title("Concentracio inicial de hubs del graf")
+    ax.set_xlabel("Node atractor")
+    ax.set_ylabel("Component inicial")
+    ax.set_xticks(
+        range(len(attractors)),
+        [
+            f"{_node_kind_short_label(attractor['kind'])}: {_short_label(attractor['label'], max_len=24)}"
+            for attractor in attractors
+        ],
+        rotation=45,
+        ha="right",
+    )
+    ax.set_yticks(
+        range(len(rows)),
+        [
+            f"{_short_label(component['component_id'], max_len=10)} ({int(component['team_count'])} eq.)"
+            for component in rows
+        ],
+    )
+    colorbar = fig.colorbar(image, ax=ax)
+    colorbar.set_label("Connexions equip-node")
+
+    for row_index, row_values in enumerate(values):
+        for column_index, value in enumerate(row_values):
+            if value <= 0:
+                continue
+            ax.text(
+                column_index,
+                row_index,
+                str(value),
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#111111" if value < max(max(items) for items in values) * 0.55 else "#ffffff",
+            )
+    return fig
+
+
+def _hub_cut_plot_specs(diagnostics: dict[str, Any]) -> list[tuple[str, Any | None]]:
+    specs: list[tuple[str, Any | None]] = []
+    for hub in diagnostics.get("hubs", ())[:MAX_HUB_CUT_COMPONENTS]:
+        component_id = _safe_component_id(hub.get("component_id", "hub"))
+        specs.append((f"hub_cut_network_{component_id}", _plot_hub_cut_network(hub)))
+        specs.append((f"hub_cut_ranking_{component_id}", _plot_hub_cut_ranking(hub)))
+        specs.append((f"hub_cut_matrix_{component_id}", _plot_hub_cut_matrix(hub)))
+    return specs
+
+
+def _plot_hub_cut_network(hub: dict[str, Any]) -> Any | None:
+    graph = hub.get("graph") or {}
+    nodes = graph.get("nodes") or {}
+    edges = graph.get("edges") or []
+    if not nodes or not edges:
+        return None
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    selected = set(_selected_hub_cut_network_nodes(hub))
+    if not selected:
+        return None
+    selected_edges = [
+        edge
+        for edge in edges
+        if edge.get("source") in selected and edge.get("target") in selected
+    ]
+    if not selected_edges:
+        return None
+
+    selected_nodes = {node_id: nodes[node_id] for node_id in selected if node_id in nodes}
+    layout_edges = [(edge["source"], edge["target"], edge.get("kind", "")) for edge in selected_edges]
+    positions = _dependency_network_layout(selected_nodes, layout_edges)
+    metrics = {row["node_id"]: row for row in hub.get("node_metrics", ())}
+    max_weight = max(float(edge.get("weight", 1) or 1) for edge in selected_edges)
+    max_betweenness = max((float(row.get("betweenness", 0) or 0) for row in metrics.values()), default=0.0)
+
+    fig, ax = plt.subplots(figsize=(12, 8.2))
+    for edge in selected_edges:
+        source = edge["source"]
+        target = edge["target"]
+        if source not in positions or target not in positions:
+            continue
+        x1, y1 = positions[source]
+        x2, y2 = positions[target]
+        weight = float(edge.get("weight", 1) or 1)
+        ax.plot(
+            [x1, x2],
+            [y1, y2],
+            color=_edge_color(str(edge.get("kind") or "")),
+            linewidth=0.45 + 2.8 * (weight / max_weight),
+            alpha=0.22 + 0.26 * (weight / max_weight),
+            zorder=1,
+        )
+
+    for kind in ("competition", "resource", "linkage", "level", "team"):
+        node_ids = [node_id for node_id, node in selected_nodes.items() if node.get("kind") == kind]
+        if not node_ids:
+            continue
+        xs = [positions[node_id][0] for node_id in node_ids]
+        ys = [positions[node_id][1] for node_id in node_ids]
+        sizes = []
+        edge_colors = []
+        widths = []
+        for node_id in node_ids:
+            row = metrics.get(node_id, {})
+            sizes.append(70 + min(780, float(row.get("weighted_degree", 0) or 0) * 18))
+            is_cut = bool(row.get("is_articulation"))
+            betweenness = float(row.get("betweenness", 0) or 0)
+            edge_colors.append("#D62728" if is_cut or (max_betweenness and betweenness >= max_betweenness * 0.5) else "#ffffff")
+            widths.append(1.8 if is_cut else 0.8)
+        ax.scatter(
+            xs,
+            ys,
+            s=sizes,
+            color=_node_color(kind),
+            edgecolors=edge_colors,
+            linewidths=widths,
+            alpha=0.92,
+            label=_node_kind_label(kind),
+            zorder=3,
+        )
+
+    label_nodes = _label_hub_cut_nodes(selected_nodes, metrics)
+    for node_id in label_nodes:
+        if node_id not in positions:
+            continue
+        x_pos, y_pos = positions[node_id]
+        node = selected_nodes[node_id]
+        row = metrics.get(node_id, {})
+        prefix = "*" if row.get("is_articulation") else ""
+        ax.text(
+            x_pos,
+            y_pos + 0.026,
+            prefix + _short_label(node.get("label", node_id), max_len=24 if node.get("kind") != "team" else 13),
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            color="#222222",
+            zorder=4,
+        )
+
+    legend_items = [
+        Line2D([0], [0], marker="o", color="w", label=_node_kind_label(kind), markerfacecolor=_node_color(kind), markersize=8)
+        for kind in ("competition", "resource", "linkage", "level", "team")
+        if any(node.get("kind") == kind for node in selected_nodes.values())
+    ]
+    if legend_items:
+        ax.legend(handles=legend_items, loc="lower center", ncol=min(5, len(legend_items)), frameon=False)
+    ax.set_title(
+        f"Entramat intra-hub {hub.get('component_id')} - "
+        f"{hub.get('team_count', 0)} equips, "
+        f"{len(nodes)} nodes, {len(edges)} arestes"
+    )
+    ax.set_xlim(-1.08, 1.08)
+    ax.set_ylim(-1.08, 1.08)
+    ax.axis("off")
+    return fig
+
+
+def _plot_hub_cut_ranking(hub: dict[str, Any]) -> Any | None:
+    rows = [
+        row
+        for row in hub.get("node_metrics", ())
+        if row.get("kind") != "team"
+    ][:TOP_COMPONENTS]
+    if not rows:
+        return None
+    import matplotlib.pyplot as plt
+
+    labels = [
+        f"{_node_kind_short_label(row.get('kind', ''))}: {_short_label(row.get('label', row.get('node_id')), max_len=34)}"
+        for row in rows
+    ]
+    values = [float(row.get("cut_score", 0) or 0) for row in rows]
+    colors = [_node_color(str(row.get("kind") or "")) for row in rows]
+    y_pos = list(range(len(rows)))
+
+    fig, ax = plt.subplots(figsize=(11.5, max(5, 0.36 * len(rows))))
+    ax.barh(y_pos, values, color=colors)
+    ax.set_yticks(y_pos, labels)
+    ax.invert_yaxis()
+    ax.set_title(f"Ranking de punts febles intra-hub {hub.get('component_id')}")
+    ax.set_xlabel("Cut score = betweenness + cut_gain + grau ponderat normalitzat")
+    ax.grid(axis="x", alpha=0.22)
+    for index, row in enumerate(rows):
+        text = (
+            f"b={float(row.get('betweenness', 0) or 0):.2f} "
+            f"wd={float(row.get('weighted_degree', 0) or 0):.0f} "
+            f"gain={int(row.get('cut_gain', 0) or 0)} "
+            f"eq={int(row.get('affected_team_count', 0) or 0)}"
+        )
+        ax.text(values[index] + max(values or [1]) * 0.01, index, text, va="center", fontsize=7)
+    return fig
+
+
+def _plot_hub_cut_matrix(hub: dict[str, Any]) -> Any | None:
+    matrix_payload = hub.get("cooccurrence_matrix") or {}
+    nodes = matrix_payload.get("nodes") or []
+    values = matrix_payload.get("values") or []
+    if not nodes or not values:
+        return None
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(max(8, 0.42 * len(nodes)), max(6, 0.38 * len(nodes))))
+    image = ax.imshow(values, aspect="auto", cmap="PuBuGn")
+    labels = [
+        f"{_node_kind_short_label(node.get('kind', ''))}: {_short_label(node.get('label', node.get('node_id')), max_len=22)}"
+        for node in nodes
+    ]
+    ax.set_title(f"Coocurrencia de nodes atractors {hub.get('component_id')}")
+    ax.set_xticks(range(len(nodes)), labels, rotation=45, ha="right")
+    ax.set_yticks(range(len(nodes)), labels)
+    colorbar = fig.colorbar(image, ax=ax)
+    colorbar.set_label("Equips connectats als dos nodes")
     return fig
 
 
@@ -894,6 +1133,453 @@ def _component_dependency_graph(component: dict[str, Any], context: Any) -> dict
     return {"nodes": nodes, "edges": sorted(set(edges))}
 
 
+def _initial_hub_concentration_matrix(
+    components: list[dict[str, Any]],
+    context: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Counter[tuple[str, str]]]:
+    rows = sorted(
+        components,
+        key=lambda item: (int(item["team_count"]), int(item["candidate_count"]), item["component_id"]),
+        reverse=True,
+    )[:TOP_COMPONENTS]
+    if not rows:
+        return [], [], Counter()
+
+    matrix: Counter[tuple[str, str]] = Counter()
+    totals: Counter[str] = Counter()
+    component_counts: Counter[str] = Counter()
+    metadata: dict[str, dict[str, str]] = {}
+    for component in rows:
+        component_id = str(component["component_id"])
+        graph = _component_dependency_graph(component, context)
+        nodes = graph["nodes"]
+        if not nodes:
+            continue
+        component_seen: set[str] = set()
+        for left, right, _kind in graph["edges"]:
+            for node_id in (left, right):
+                node = nodes.get(node_id)
+                if not node or node.get("kind") == "team":
+                    continue
+                metadata[node_id] = {
+                    "node_id": node_id,
+                    "kind": str(node.get("kind") or ""),
+                    "label": str(node.get("label") or node.get("key") or node_id),
+                }
+                matrix[(component_id, node_id)] += 1
+                totals[node_id] += 1
+                component_seen.add(node_id)
+        for node_id in component_seen:
+            component_counts[node_id] += 1
+
+    attractor_ids = sorted(
+        totals,
+        key=lambda node_id: (
+            -component_counts[node_id],
+            -totals[node_id],
+            metadata.get(node_id, {}).get("kind", ""),
+            metadata.get(node_id, {}).get("label", node_id),
+        ),
+    )[:TOP_HEATMAP_ITEMS]
+    attractors = [metadata[node_id] for node_id in attractor_ids if node_id in metadata]
+    active_rows = [
+        component
+        for component in rows
+        if any(matrix.get((str(component["component_id"]), attractor["node_id"]), 0) for attractor in attractors)
+    ]
+    return active_rows, attractors, matrix
+
+
+def _build_hub_cut_diagnostics(components: list[dict[str, Any]], context: Any) -> dict[str, Any]:
+    hubs: list[dict[str, Any]] = []
+    rows = sorted(
+        components,
+        key=lambda item: (int(item["team_count"]), int(item["candidate_count"]), item["component_id"]),
+        reverse=True,
+    )[:MAX_HUB_CUT_COMPONENTS]
+    for component in rows:
+        graph = _hub_cut_graph(component, context)
+        if not graph["nodes"] or not graph["edges"]:
+            continue
+        metrics = _hub_cut_node_metrics(graph)
+        cooccurrence = _hub_cut_cooccurrence_matrix(graph, metrics)
+        hubs.append(
+            {
+                "component_id": component["component_id"],
+                "team_count": int(component["team_count"]),
+                "candidate_count": int(component["candidate_count"]),
+                "node_count": len(graph["nodes"]),
+                "edge_count": len(graph["edges"]),
+                "betweenness_approximate": bool(metrics.get("_approximate")),
+                "best_cut_nodes": [row for row in metrics["rows"] if row.get("kind") != "team"][:10],
+                "node_metrics": metrics["rows"],
+                "cooccurrence_matrix": cooccurrence,
+                "graph": graph,
+            }
+        )
+    return {
+        "artifact_type": "resource_solver_hub_cut_diagnostics",
+        "hub_count": len(hubs),
+        "hubs": hubs,
+        "notes": [
+            "Betweenness exacta fins al llindar configurat; per grafs grans s'usa mostra determinista.",
+            "cut_gain estima quants components addicionals apareixen si es retira aquell node.",
+            "weighted_degree suma el pes de les arestes: recursos candidats poden pesar mes d'una vegada.",
+        ],
+    }
+
+
+def _write_hub_cut_diagnostics(output_path: Path, stem: str, diagnostics: dict[str, Any]) -> str:
+    if not diagnostics.get("hubs"):
+        return ""
+    path = output_path / f"{stem}_hub_cut_diagnostics.json"
+    payload = {**diagnostics, "hubs": [_hub_without_plot_graph(hub) for hub in diagnostics.get("hubs", ())]}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return str(path)
+
+
+def _hub_without_plot_graph(hub: dict[str, Any]) -> dict[str, Any]:
+    graph = hub.get("graph") or {}
+    graph_payload = {
+        "nodes": list((graph.get("nodes") or {}).values()),
+        "edges": graph.get("edges") or [],
+    }
+    return {**hub, "graph": graph_payload}
+
+
+def _hub_cut_graph(component: dict[str, Any], context: Any) -> dict[str, Any]:
+    team_ids = set(component.get("team_ids") or ())
+    if not team_ids:
+        return {"nodes": {}, "edges": []}
+
+    teams = [team for team in _sequence(_get(context, "teams")) if str(_get(team, "team_id", "")) in team_ids]
+    candidates = [candidate for candidate in _sequence(_get(context, "candidates")) if str(_get(candidate, "team_id", "")) in team_ids]
+    nodes: dict[str, dict[str, str]] = {}
+    edge_weights: Counter[tuple[str, str, str]] = Counter()
+
+    def add_node(kind: str, key: str, label: str) -> str:
+        node_id = f"{kind}:{key}"
+        nodes.setdefault(node_id, {"node_id": node_id, "kind": kind, "key": key, "label": label})
+        return node_id
+
+    def add_edge(left: str, right: str, kind: str, weight: int = 1) -> None:
+        if not left or not right or left == right:
+            return
+        source, target = sorted((left, right))
+        edge_weights[(source, target, kind)] += max(1, int(weight or 1))
+
+    team_node_by_id: dict[str, str] = {}
+    for team in teams:
+        team_id = str(_get(team, "team_id"))
+        team_node = add_node("team", team_id, str(_get(team, "name", _get(team, "team_name", team_id)) or team_id))
+        team_node_by_id[team_id] = team_node
+
+        competition_key = _competition_key_for_team(team)
+        competition_node = add_node("competition", competition_key, _competition_label(team))
+        add_edge(team_node, competition_node, "competition")
+
+        level_label = _level_family_label(_get(team, "level", ""))
+        level_node = add_node("level", level_label, level_label)
+        add_edge(team_node, level_node, "level")
+
+    for linkage_key, linkage_team_ids in _component_linkage_groups(teams).items():
+        linkage_node = add_node("linkage", linkage_key, _short_linkage_label(linkage_key))
+        for team_id in linkage_team_ids:
+            team_node = team_node_by_id.get(team_id)
+            if team_node:
+                add_edge(team_node, linkage_node, "linkage")
+
+    for candidate in candidates:
+        team_id = str(_get(candidate, "team_id", ""))
+        team_node = team_node_by_id.get(team_id)
+        if not team_node:
+            continue
+        for resource_id in _sequence(_get(candidate, "potential_resources")):
+            resource_key = _base_resource_id(resource_id)
+            resource_node = add_node("resource", resource_key, resource_key)
+            add_edge(team_node, resource_node, "resource")
+
+    edges = [
+        {"source": source, "target": target, "kind": kind, "weight": weight}
+        for (source, target, kind), weight in sorted(edge_weights.items())
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
+def _hub_cut_node_metrics(graph: dict[str, Any]) -> dict[str, Any]:
+    nodes = graph["nodes"]
+    edges = graph["edges"]
+    neighbours: dict[str, set[str]] = defaultdict(set)
+    weighted_degree: Counter[str] = Counter()
+    degree: Counter[str] = Counter()
+    for edge in edges:
+        source = str(edge["source"])
+        target = str(edge["target"])
+        weight = float(edge.get("weight", 1) or 1)
+        neighbours[source].add(target)
+        neighbours[target].add(source)
+        degree[source] += 1
+        degree[target] += 1
+        weighted_degree[source] += weight
+        weighted_degree[target] += weight
+
+    betweenness, approximate = _betweenness_centrality(neighbours)
+    articulation_points = _articulation_points(neighbours)
+    baseline_components = _component_count_without_node(neighbours, "")
+    max_weighted_degree = max((float(value) for value in weighted_degree.values()), default=1.0)
+    max_betweenness = max((float(value) for value in betweenness.values()), default=1.0)
+
+    rows: list[dict[str, Any]] = []
+    for node_id, node in nodes.items():
+        cut_components = _component_count_without_node(neighbours, node_id)
+        cut_gain = max(0, cut_components - baseline_components)
+        affected_teams = _affected_team_count(node_id, nodes, neighbours)
+        b_value = float(betweenness.get(node_id, 0.0) or 0.0)
+        wd_value = float(weighted_degree.get(node_id, 0.0) or 0.0)
+        cut_score = (
+            (b_value / max_betweenness if max_betweenness else 0.0) * 6.0
+            + cut_gain * 2.0
+            + (wd_value / max_weighted_degree if max_weighted_degree else 0.0)
+        )
+        rows.append(
+            {
+                "node_id": node_id,
+                "kind": node.get("kind", ""),
+                "key": node.get("key", ""),
+                "label": node.get("label", node_id),
+                "degree": int(degree.get(node_id, 0)),
+                "weighted_degree": round(wd_value, 4),
+                "betweenness": round(b_value, 6),
+                "is_articulation": node_id in articulation_points,
+                "cut_gain": cut_gain,
+                "affected_team_count": affected_teams,
+                "cut_score": round(cut_score, 6),
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            -float(row["cut_score"]),
+            row["kind"] == "team",
+            -float(row["betweenness"]),
+            -float(row["weighted_degree"]),
+            str(row["label"]),
+        )
+    )
+    return {"rows": rows, "_approximate": approximate}
+
+
+def _hub_cut_cooccurrence_matrix(graph: dict[str, Any], metrics: dict[str, Any]) -> dict[str, Any]:
+    nodes = graph["nodes"]
+    neighbours: dict[str, set[str]] = defaultdict(set)
+    for edge in graph["edges"]:
+        source = str(edge["source"])
+        target = str(edge["target"])
+        neighbours[source].add(target)
+        neighbours[target].add(source)
+
+    ranked = [
+        row
+        for row in metrics["rows"]
+        if row.get("kind") != "team"
+    ][:MAX_HUB_CUT_MATRIX_NODES]
+    if not ranked:
+        return {"nodes": [], "values": []}
+    node_ids = [row["node_id"] for row in ranked]
+
+    team_neighbours: dict[str, set[str]] = {}
+    for node_id in node_ids:
+        team_neighbours[node_id] = {
+            neighbour
+            for neighbour in neighbours.get(node_id, set())
+            if (nodes.get(neighbour) or {}).get("kind") == "team"
+        }
+    values = [
+        [
+            len(team_neighbours[left].intersection(team_neighbours[right]))
+            for right in node_ids
+        ]
+        for left in node_ids
+    ]
+    return {
+        "nodes": [
+            {
+                "node_id": row["node_id"],
+                "kind": row["kind"],
+                "label": row["label"],
+            }
+            for row in ranked
+        ],
+        "values": values,
+    }
+
+
+def _betweenness_centrality(neighbours: dict[str, set[str]]) -> tuple[dict[str, float], bool]:
+    node_ids = sorted(neighbours)
+    if not node_ids:
+        return {}, False
+    approximate = len(node_ids) > MAX_BETWEENNESS_EXACT_NODES
+    sources = node_ids
+    if approximate:
+        ordered = sorted(node_ids, key=lambda node_id: (-len(neighbours.get(node_id, ())), node_id))
+        head = ordered[: MAX_BETWEENNESS_SAMPLE_NODES // 2]
+        stride = max(1, len(ordered) // max(1, MAX_BETWEENNESS_SAMPLE_NODES - len(head)))
+        sampled = ordered[::stride][: max(0, MAX_BETWEENNESS_SAMPLE_NODES - len(head))]
+        sources = sorted(set(head + sampled))
+
+    centrality = {node_id: 0.0 for node_id in node_ids}
+    for source in sources:
+        stack: list[str] = []
+        predecessors: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+        sigma = dict.fromkeys(node_ids, 0.0)
+        sigma[source] = 1.0
+        distance = dict.fromkeys(node_ids, -1)
+        distance[source] = 0
+        queue = [source]
+        for current in queue:
+            stack.append(current)
+            for neighbor in sorted(neighbours.get(current, ())):
+                if distance[neighbor] < 0:
+                    queue.append(neighbor)
+                    distance[neighbor] = distance[current] + 1
+                if distance[neighbor] == distance[current] + 1:
+                    sigma[neighbor] += sigma[current]
+                    predecessors[neighbor].append(current)
+        dependency = dict.fromkeys(node_ids, 0.0)
+        while stack:
+            node_id = stack.pop()
+            for predecessor in predecessors[node_id]:
+                if sigma[node_id]:
+                    dependency[predecessor] += (sigma[predecessor] / sigma[node_id]) * (1.0 + dependency[node_id])
+            if node_id != source:
+                centrality[node_id] += dependency[node_id]
+
+    scale = 1.0
+    node_count = len(node_ids)
+    if approximate and sources:
+        scale *= node_count / len(sources)
+    if node_count > 2:
+        scale *= 1.0 / ((node_count - 1) * (node_count - 2))
+    for node_id in centrality:
+        centrality[node_id] *= scale
+    return centrality, approximate
+
+
+def _articulation_points(neighbours: dict[str, set[str]]) -> set[str]:
+    visited: set[str] = set()
+    discovery: dict[str, int] = {}
+    low: dict[str, int] = {}
+    parent: dict[str, str | None] = {}
+    points: set[str] = set()
+    time = 0
+
+    def visit(node_id: str) -> None:
+        nonlocal time
+        visited.add(node_id)
+        discovery[node_id] = time
+        low[node_id] = time
+        time += 1
+        child_count = 0
+        for neighbor in sorted(neighbours.get(node_id, ())):
+            if neighbor not in visited:
+                parent[neighbor] = node_id
+                child_count += 1
+                visit(neighbor)
+                low[node_id] = min(low[node_id], low[neighbor])
+                if parent.get(node_id) is None and child_count > 1:
+                    points.add(node_id)
+                if parent.get(node_id) is not None and low[neighbor] >= discovery[node_id]:
+                    points.add(node_id)
+            elif neighbor != parent.get(node_id):
+                low[node_id] = min(low[node_id], discovery[neighbor])
+
+    for node_id in sorted(neighbours):
+        if node_id in visited:
+            continue
+        parent[node_id] = None
+        visit(node_id)
+    return points
+
+
+def _component_count_without_node(neighbours: dict[str, set[str]], removed: str) -> int:
+    nodes = {node_id for node_id in neighbours if node_id != removed}
+    if not nodes:
+        return 0
+    seen: set[str] = set()
+    count = 0
+    for start in sorted(nodes):
+        if start in seen:
+            continue
+        count += 1
+        queue = [start]
+        seen.add(start)
+        for current in queue:
+            for neighbor in neighbours.get(current, ()):
+                if neighbor == removed or neighbor in seen:
+                    continue
+                seen.add(neighbor)
+                queue.append(neighbor)
+    return count
+
+
+def _affected_team_count(node_id: str, nodes: dict[str, dict[str, str]], neighbours: dict[str, set[str]]) -> int:
+    if (nodes.get(node_id) or {}).get("kind") == "team":
+        return 1
+    return sum(1 for neighbor in neighbours.get(node_id, ()) if (nodes.get(neighbor) or {}).get("kind") == "team")
+
+
+def _selected_hub_cut_network_nodes(hub: dict[str, Any]) -> list[str]:
+    graph = hub.get("graph") or {}
+    nodes = graph.get("nodes") or {}
+    metrics = {row["node_id"]: row for row in hub.get("node_metrics", ())}
+    non_team = [
+        row["node_id"]
+        for row in hub.get("node_metrics", ())
+        if row.get("kind") != "team"
+    ][:35]
+    selected = set(non_team)
+    neighbours: dict[str, set[str]] = defaultdict(set)
+    for edge in graph.get("edges") or []:
+        source = edge.get("source")
+        target = edge.get("target")
+        if source and target:
+            neighbours[str(source)].add(str(target))
+            neighbours[str(target)].add(str(source))
+    team_candidates: set[str] = set()
+    for node_id in selected:
+        team_candidates.update(
+            neighbor
+            for neighbor in neighbours.get(node_id, ())
+            if (nodes.get(neighbor) or {}).get("kind") == "team"
+        )
+    teams = sorted(
+        team_candidates,
+        key=lambda node_id: (
+            -float(metrics.get(node_id, {}).get("weighted_degree", 0) or 0),
+            node_id,
+        ),
+    )
+    remaining = max(0, MAX_HUB_CUT_NETWORK_NODES - len(selected))
+    selected.update(teams[:remaining])
+    return sorted(selected)
+
+
+def _label_hub_cut_nodes(nodes: dict[str, dict[str, str]], metrics: dict[str, dict[str, Any]]) -> list[str]:
+    rows = sorted(
+        (
+            row
+            for node_id, row in metrics.items()
+            if node_id in nodes
+        ),
+        key=lambda row: (
+            row.get("kind") == "team",
+            not row.get("is_articulation"),
+            -float(row.get("cut_score", 0) or 0),
+            str(row.get("label", "")),
+        ),
+    )
+    return [row["node_id"] for row in rows[:MAX_HUB_CUT_LABELS]]
+
+
 def _dependency_network_layout(
     nodes: dict[str, dict[str, str]],
     edges: list[tuple[str, str, str]],
@@ -907,6 +1593,7 @@ def _dependency_network_layout(
         "competition": (-0.82, 0.25),
         "resource": (0.82, 0.25),
         "linkage": (0.0, -0.82),
+        "level": (-0.42, -0.58),
         "team": (0.0, 0.0),
     }
     for kind, node_ids in by_kind.items():
@@ -1153,6 +1840,14 @@ def _plot_descriptions(plots: dict[str, str]) -> dict[str, str]:
             descriptions[plot_id] = "Relacio entre recursos i competicions que fan crecer cada component."
         elif plot_id == "candidate_pareto_by_component":
             descriptions[plot_id] = "Concentracio de variables candidates per component."
+        elif plot_id == "initial_hub_concentration_heatmap":
+            descriptions[plot_id] = "Heatmap component-node que mostra quins recursos, competicions i linkages concentren mes connexions inicials."
+        elif plot_id.startswith("hub_cut_network_"):
+            descriptions[plot_id] = "Graf intra-hub amb mida per grau ponderat i vora vermella per punts de tall o alta betweenness."
+        elif plot_id.startswith("hub_cut_ranking_"):
+            descriptions[plot_id] = "Ranking de nodes interns del hub ordenats per cut score, betweenness, cut gain i grau ponderat."
+        elif plot_id.startswith("hub_cut_matrix_"):
+            descriptions[plot_id] = "Heatmap de coocurrencia entre nodes atractors dins el hub."
         elif plot_id.startswith("component_network_"):
             descriptions[plot_id] = "Xarxa completa de dependencies del component, amb nodes team/competition/resource/linkage."
         elif plot_id.startswith("component_bridge_network_") or plot_id == "top_component_network":
@@ -1169,6 +1864,7 @@ def _node_color(kind: str) -> str:
         "competition": "#4E79A7",
         "resource": "#F28E2B",
         "linkage": "#B07AA1",
+        "level": "#59A14F",
         "team": "#BAB0AC",
     }.get(kind, "#777777")
 
@@ -1178,6 +1874,7 @@ def _edge_color(kind: str) -> str:
         "competition": "#4E79A7",
         "resource": "#F28E2B",
         "linkage": "#B07AA1",
+        "level": "#59A14F",
     }.get(kind, "#9E9E9E")
 
 
@@ -1191,7 +1888,18 @@ def _node_kind_label(kind: str) -> str:
         "competition": "Competicio",
         "resource": "Recurs",
         "linkage": "Linkage",
+        "level": "Nivell",
         "team": "Equip",
+    }.get(kind, kind)
+
+
+def _node_kind_short_label(kind: str) -> str:
+    return {
+        "competition": "Comp",
+        "resource": "Rec",
+        "linkage": "Link",
+        "level": "Niv",
+        "team": "Eq",
     }.get(kind, kind)
 
 
@@ -1200,6 +1908,7 @@ def _kind_angle_offset(kind: str) -> float:
         "competition": 0.15,
         "resource": 1.25,
         "linkage": 2.35,
+        "level": 1.8,
         "team": 0.75,
     }.get(kind, 0.0)
 
@@ -1242,6 +1951,19 @@ def _short_linkage_label(linkage_key: str) -> str:
     if len(parts) >= 4:
         return f"{parts[1]} / {parts[-1]}"
     return linkage_key
+
+
+def _level_family_label(value: Any) -> str:
+    text = str(value or "").strip().casefold()
+    if not text:
+        return "Nivell desconegut"
+    if "nivell a" in text or text in {"a", "level a"}:
+        return "Nivell A"
+    if "nivell b" in text or text in {"b", "level b"}:
+        return "Nivell B"
+    if "nivell c" in text or text in {"c", "level c"}:
+        return "Nivell C"
+    return str(value or "Nivell desconegut").strip() or "Nivell desconegut"
 
 
 def _normalize_linkage_group(value: Any) -> str:

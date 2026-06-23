@@ -99,9 +99,11 @@ class ResourceSolverServiceTests(unittest.TestCase):
             self.assertIn("conflict_repair_iteration_summary", result.audit_paths)
             self.assertIn("resource_solver_conflict_repair_result", result.audit_paths)
             self.assertIn("resource_solver_conflict_repair_plots", result.audit_paths)
+            self.assertIn("conflict_repair_hub_cut_diagnostics", result.audit_paths)
             conflict_plots = json.loads(Path(result.audit_paths["resource_solver_conflict_repair_plots"]).read_text(encoding="utf-8"))
             self.assertEqual(conflict_plots["artifact_type"], "resource_solver_conflict_repair_plots")
             self.assertTrue(conflict_plots["plots"])
+            self.assertTrue(Path(result.audit_paths["conflict_repair_hub_cut_diagnostics"]).exists())
             self.assertTrue(any(log.startswith("resource_solver_conflict_repair: status=") for log in result.logs))
 
     def test_registry_exposes_resource_solver_and_legacy(self):
