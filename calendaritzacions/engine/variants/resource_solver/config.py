@@ -30,6 +30,30 @@ class ResourceSolverConfig:
     time_limit_seconds: float = field(
         default_factory=lambda: _env_float("CALENDARITZACIONS_SOLVER_TIME_LIMIT_SECONDS", 1800.0)
     )
+    internal_solve_time_limit_seconds: float = field(
+        default_factory=lambda: _env_float("CALENDARITZACIONS_SOLVER_INTERNAL_TIME_LIMIT_SECONDS", 900.0)
+    )
+    initial_solve_time_limit_seconds: float = field(
+        default_factory=lambda: _env_float(
+            "CALENDARITZACIONS_SOLVER_INITIAL_TIME_LIMIT_SECONDS",
+            _env_float("CALENDARITZACIONS_SOLVER_TIME_LIMIT_SECONDS", 1800.0),
+        )
+    )
+    repair_solve_time_limit_seconds: float = field(
+        default_factory=lambda: _env_float(
+            "CALENDARITZACIONS_SOLVER_REPAIR_TIME_LIMIT_SECONDS",
+            _env_float("CALENDARITZACIONS_SOLVER_INTERNAL_TIME_LIMIT_SECONDS", 900.0),
+        )
+    )
+    worker_time_limit_seconds: float = field(
+        default_factory=lambda: _env_float(
+            "CALENDARITZACIONS_SOLVER_WORKER_TIME_LIMIT_SECONDS",
+            _env_float("CELERY_TASK_TIME_LIMIT", 0.0),
+        )
+    )
+    finalization_margin_seconds: float = field(
+        default_factory=lambda: _env_float("CALENDARITZACIONS_SOLVER_FINALIZATION_MARGIN_SECONDS", 1800.0)
+    )
     num_search_workers: int = field(
         default_factory=lambda: _env_int("CALENDARITZACIONS_SOLVER_NUM_SEARCH_WORKERS", 2)
     )
@@ -108,6 +132,50 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
                 config,
                 "time_limit_seconds",
                 _env_float("CALENDARITZACIONS_SOLVER_TIME_LIMIT_SECONDS", 1800.0),
+            )
+        ),
+        internal_solve_time_limit_seconds=float(
+            getattr(
+                config,
+                "internal_solve_time_limit_seconds",
+                _env_float("CALENDARITZACIONS_SOLVER_INTERNAL_TIME_LIMIT_SECONDS", 900.0),
+            )
+        ),
+        initial_solve_time_limit_seconds=float(
+            getattr(
+                config,
+                "initial_solve_time_limit_seconds",
+                _env_float(
+                    "CALENDARITZACIONS_SOLVER_INITIAL_TIME_LIMIT_SECONDS",
+                    _env_float("CALENDARITZACIONS_SOLVER_TIME_LIMIT_SECONDS", 1800.0),
+                ),
+            )
+        ),
+        repair_solve_time_limit_seconds=float(
+            getattr(
+                config,
+                "repair_solve_time_limit_seconds",
+                _env_float(
+                    "CALENDARITZACIONS_SOLVER_REPAIR_TIME_LIMIT_SECONDS",
+                    _env_float("CALENDARITZACIONS_SOLVER_INTERNAL_TIME_LIMIT_SECONDS", 900.0),
+                ),
+            )
+        ),
+        worker_time_limit_seconds=float(
+            getattr(
+                config,
+                "worker_time_limit_seconds",
+                _env_float(
+                    "CALENDARITZACIONS_SOLVER_WORKER_TIME_LIMIT_SECONDS",
+                    _env_float("CELERY_TASK_TIME_LIMIT", 0.0),
+                ),
+            )
+        ),
+        finalization_margin_seconds=float(
+            getattr(
+                config,
+                "finalization_margin_seconds",
+                _env_float("CALENDARITZACIONS_SOLVER_FINALIZATION_MARGIN_SECONDS", 1800.0),
             )
         ),
         num_search_workers=int(

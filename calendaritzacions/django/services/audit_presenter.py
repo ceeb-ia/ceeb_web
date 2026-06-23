@@ -96,6 +96,10 @@ ARTIFACT_EXPLANATIONS = {
         "Resum conflict-repair",
         "Comparativa entre solucio inicial i solucio final despres de la reparacio.",
     ),
+    "conflict_repair_iteration_summary_partial": (
+        "Resum parcial conflict-repair",
+        "Estat abans de reoptimitzar blocs: exces inicial, hubs detectats i blocs pendents.",
+    ),
 }
 
 

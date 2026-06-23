@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from calendaritzacions.domain.phases import PRIMERA_FASE
 from calendaritzacions.engine.config import EngineConfig
@@ -18,7 +19,12 @@ from calendaritzacions.engine.variants.resource_solver.conflict_repair import (
     team_to_initial_component,
 )
 from calendaritzacions.engine.variants.resource_solver.conflict_repair_service import (
+    _add_assignment_hint,
+    _repair_block_solve_limit,
+    _repair_blocks,
+    _repair_deadline_at,
     _result_from_assignments,
+    _with_internal_solve_limit,
 )
 from calendaritzacions.engine.variants.resource_solver.solution import build_solution
 from calendaritzacions.engine.variants.resource_solver.types import (
@@ -116,6 +122,157 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         )
 
         self.assertEqual(result.entity_excess, {("Club", "G1"): 1, ("Club", "G2"): 1})
+
+    def test_internal_solve_limit_caps_conflict_repair_subproblems(self):
+        context = _context()
+        context = SolverContext(
+            teams=context.teams,
+            phase=context.phase,
+            phase_name=context.phase_name,
+            base_resources=context.base_resources,
+            capacities=context.capacities,
+            pressure=context.pressure,
+            groups=context.groups,
+            candidates=context.candidates,
+            config=ResourceSolverConfig(
+                time_limit_seconds=14400,
+                internal_solve_time_limit_seconds=300,
+                repair_solve_time_limit_seconds=300,
+                competition_grouping="league",
+            ),
+        )
+
+        capped = _with_internal_solve_limit(context)
+
+        self.assertEqual(capped.config.time_limit_seconds, 300)
+        self.assertEqual(context.config.time_limit_seconds, 14400)
+
+    def test_repair_block_uses_initial_assignment_as_fallback_on_unknown(self):
+        context = _context(capacity=1)
+        initial_result = _result_with_two_locals(context)
+        block = SimpleNamespace(
+            block_id="R001",
+            team_ids=("T1", "T2"),
+            conflict_resource_ids=("R|J1",),
+            initial_component_ids=("I001",),
+        )
+        built_model = SimpleNamespace(backend="stub", model=None, variables=None, summary={})
+
+        with patch(
+            "calendaritzacions.engine.variants.resource_solver.conflict_repair_service.build_solver_model",
+            return_value=built_model,
+        ), patch(
+            "calendaritzacions.engine.variants.resource_solver.conflict_repair_service.solve_model",
+            return_value=SimpleNamespace(status="UNKNOWN", assignments=(), logs=("timeout",)),
+        ):
+            repaired, records = _repair_blocks(
+                context=context,
+                initial_result=initial_result,
+                repair_blocks=(block,),
+            )
+
+        self.assertEqual(
+            [(assignment.team_id, assignment.group_id, assignment.number) for assignment in repaired["R001"]],
+            [("T1", "G1", 1), ("T2", "G1", 2)],
+        )
+        self.assertEqual(records[0]["status"], "UNKNOWN")
+        self.assertTrue(records[0]["fallback_used"])
+        self.assertFalse(records[0]["accepted"])
+        self.assertEqual(records[0]["selected_assignment_count"], 2)
+
+    def test_assignment_hint_marks_selected_candidate(self):
+        context = _context()
+        added_hints = []
+
+        class ModelStub:
+            def AddHint(self, variable, value):
+                added_hints.append((variable, value))
+
+        variables = SimpleNamespace(
+            x={candidate.candidate_id: f"var-{candidate.candidate_id}" for candidate in context.candidates},
+            candidate_by_id={candidate.candidate_id: candidate for candidate in context.candidates},
+        )
+        built_model = SimpleNamespace(model=ModelStub(), variables=variables)
+
+        added = _add_assignment_hint(
+            built_model,
+            (Assignment("T1", "G1", 1), Assignment("T2", "G1", 2)),
+        )
+
+        self.assertTrue(added)
+        self.assertIn(("var-T1-G1-1", 1), added_hints)
+        self.assertIn(("var-T1-G1-2", 0), added_hints)
+
+    def test_repair_deadline_skips_blocks_and_keeps_fallback(self):
+        context = _context(capacity=1)
+        initial_result = _result_with_two_locals(context)
+        blocks = (
+            SimpleNamespace(
+                block_id="R001",
+                team_ids=("T1", "T2"),
+                conflict_resource_ids=("R|J1",),
+                initial_component_ids=("I001",),
+            ),
+            SimpleNamespace(
+                block_id="R002",
+                team_ids=("T3", "T4"),
+                conflict_resource_ids=("R|J1",),
+                initial_component_ids=("I002",),
+            ),
+        )
+
+        with patch(
+            "calendaritzacions.engine.variants.resource_solver.conflict_repair_service.build_solver_model",
+        ) as build_solver:
+            repaired, records = _repair_blocks(
+                context=context,
+                initial_result=initial_result,
+                repair_blocks=blocks,
+                repair_deadline_at=0.0,
+            )
+
+        self.assertFalse(build_solver.called)
+        self.assertEqual(set(repaired), {"R001", "R002"})
+        self.assertTrue(all(record["fallback_used"] for record in records))
+        self.assertTrue(all(record["skipped_due_deadline"] for record in records))
+        self.assertEqual([record["status"] for record in records], ["SKIPPED_GLOBAL_DEADLINE", "SKIPPED_GLOBAL_DEADLINE"])
+
+    def test_repair_block_limit_splits_remaining_time_across_blocks(self):
+        context = _context()
+        context = SolverContext(
+            teams=context.teams,
+            phase=context.phase,
+            phase_name=context.phase_name,
+            base_resources=context.base_resources,
+            capacities=context.capacities,
+            pressure=context.pressure,
+            groups=context.groups,
+            candidates=context.candidates,
+            config=ResourceSolverConfig(
+                repair_solve_time_limit_seconds=3600,
+                competition_grouping="league",
+            ),
+        )
+
+        with patch(
+            "calendaritzacions.engine.variants.resource_solver.conflict_repair_service.perf_counter",
+            return_value=100.0,
+        ):
+            limit = _repair_block_solve_limit(
+                context=context,
+                repair_deadline_at=3700.0,
+                remaining_blocks=2,
+            )
+
+        self.assertEqual(limit, 1800.0)
+
+    def test_repair_deadline_reserves_finalization_margin(self):
+        deadline = _repair_deadline_at(
+            100.0,
+            SimpleNamespace(worker_time_limit_seconds=86400, finalization_margin_seconds=1800),
+        )
+
+        self.assertEqual(deadline, 84700.0)
 
 
 def _context(capacity=10, linked=False, same_entity=False) -> SolverContext:
