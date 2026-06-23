@@ -22,14 +22,17 @@ from calendaritzacions.engine.variants.resource_solver.config import (
 )
 from calendaritzacions.engine.variants.resource_solver.conflict_repair import (
     build_initial_components,
+    build_linkage_repair_blocks,
     build_repair_blocks,
     component_solve_payload,
     conflict_hubs_payload,
     context_with_residual_capacities,
     detect_conflict_hubs,
+    detect_linkage_conflicts,
     frozen_usage_by_resource,
     initial_components_payload,
     iteration_summary_payload,
+    linkage_conflicts_payload,
     merge_assignments,
     repair_blocks_payload,
     team_to_initial_component,
@@ -140,9 +143,65 @@ class ResourceSolverConflictRepairEngine:
             f"resource_excess={_total_resource_excess(initial_result)}"
         )
 
-        _report(progress, "Detectant hubs de conflicte de recursos...", 55)
+        _report(progress, "Detectant linkages tallats per reconciliar...", 55)
+        linkage_conflicts = detect_linkage_conflicts(context, initial_result, initial_components)
+        linkage_blocks = build_linkage_repair_blocks(context, initial_components, linkage_conflicts)
+        early_audit_paths.update(
+            _write_and_report_partial_audits(
+                {
+                    "conflict_repair_linkage_conflicts": linkage_conflicts_payload(linkage_conflicts),
+                    "conflict_repair_linkage_blocks": repair_blocks_payload(linkage_blocks),
+                },
+                output_dir,
+                progress,
+            )
+        )
+        logs.append(
+            "conflict-repair: linkage "
+            f"conflicts={len(linkage_conflicts)} "
+            f"mismatches={sum(conflict.mismatch_count for conflict in linkage_conflicts)} "
+            f"blocks={len(linkage_blocks)}"
+        )
+
+        _report(progress, "Reoptimitzant blocs de linkage...", 58)
+        linkage_repaired_by_block, linkage_repair_records = _repair_linkage_blocks(
+            context=context,
+            initial_components=initial_components,
+            initial_result=initial_result,
+            linkage_blocks=linkage_blocks,
+            progress=progress,
+            repair_deadline_at=_repair_deadline_at(started_at, solver_config),
+        )
+        try:
+            linkage_assignments = merge_assignments(
+                context=context,
+                initial_assignments=initial_result.assignments,
+                repaired_assignments_by_block=linkage_repaired_by_block,
+                repair_blocks=linkage_blocks,
+            )
+            linkage_result = _result_from_assignments(
+                context=context,
+                assignments=linkage_assignments,
+                status=_aggregate_status([initial_result.status, *(record["status"] for record in linkage_repair_records if record.get("accepted"))]),
+                logs=("resource_solver_conflict_repair: linkage repair solution rebuilt",),
+            )
+        except ValueError as exc:
+            logs.append(f"conflict-repair: linkage merge invalid ({exc})")
+            linkage_result = initial_result
+            linkage_repair_records = (
+                *linkage_repair_records,
+                {
+                    "stage": "linkage_repair",
+                    "status": "INVALID_MERGE",
+                    "accepted": False,
+                    "fallback_used": True,
+                    "error": str(exc),
+                },
+            )
+
+        _report(progress, "Detectant hubs de conflicte de recursos...", 62)
         team_to_component = team_to_initial_component(initial_components)
-        conflict_hubs = detect_conflict_hubs(context, initial_result, team_to_component)
+        conflict_hubs = detect_conflict_hubs(context, linkage_result, team_to_component)
         repair_blocks = build_repair_blocks(context, initial_components, conflict_hubs)
         early_audit_paths.update(
             _write_and_report_partial_audits(
@@ -164,30 +223,31 @@ class ResourceSolverConflictRepairEngine:
             f"conflicts={len(conflict_hubs)} blocks={len(repair_blocks)}"
         )
 
-        _report(progress, "Reoptimitzant blocs amb capacitats residuals...", 65)
+        _report(progress, "Reoptimitzant blocs amb capacitats residuals...", 68)
         repaired_by_block, repair_records = _repair_blocks(
             context=context,
-            initial_result=initial_result,
+            initial_result=linkage_result,
             repair_blocks=repair_blocks,
             progress=progress,
             repair_deadline_at=_repair_deadline_at(started_at, solver_config),
         )
+        all_repair_records = (*linkage_repair_records, *repair_records)
 
         try:
             final_assignments = merge_assignments(
                 context=context,
-                initial_assignments=initial_result.assignments,
+                initial_assignments=linkage_result.assignments,
                 repaired_assignments_by_block=repaired_by_block,
                 repair_blocks=repair_blocks,
             )
             validation = validate_assignments(context, final_assignments)
             final_status = _aggregate_status(
                 [
-                    initial_result.status,
-                    *(record["status"] for record in repair_records if record.get("accepted")),
+                    linkage_result.status,
+                    *(record["status"] for record in all_repair_records if record.get("accepted")),
                 ]
             )
-            if any(record.get("fallback_used") for record in repair_records):
+            if any(record.get("fallback_used") for record in all_repair_records):
                 final_status = "FEASIBLE"
         except ValueError as exc:
             logs.append(f"conflict-repair: merge invalid ({exc})")
@@ -205,7 +265,7 @@ class ResourceSolverConflictRepairEngine:
             "conflict-repair: final "
             f"assignments={len(final_result.assignments)}/{len(context.teams)} "
             f"resource_excess={_total_resource_excess(final_result)} "
-            f"accepted_repairs={sum(1 for record in repair_records if record.get('accepted'))}"
+            f"accepted_repairs={sum(1 for record in all_repair_records if record.get('accepted'))}"
         )
 
         _report(progress, "Generant auditoria i Excel conflict-repair...", 80)
@@ -221,12 +281,14 @@ class ResourceSolverConflictRepairEngine:
             {
                 "conflict_repair_initial_components": initial_components_payload(initial_components),
                 "conflict_repair_component_solves": component_solve_payload(initial_records),
+                "conflict_repair_linkage_conflicts": linkage_conflicts_payload(linkage_conflicts),
+                "conflict_repair_linkage_blocks": repair_blocks_payload(linkage_blocks),
                 "conflict_repair_hubs": conflict_hubs_payload(conflict_hubs),
                 "conflict_repair_blocks": repair_blocks_payload(repair_blocks),
                 "conflict_repair_iteration_summary": iteration_summary_payload(
                     initial_result=initial_result,
                     final_result=final_result,
-                    repair_records=repair_records,
+                    repair_records=all_repair_records,
                     validation=validation,
                 ),
             }
@@ -407,6 +469,143 @@ def _partial_iteration_summary_payload(
         "repair_block_count": len(repair_blocks),
         "pending_repair_blocks": len(repair_blocks),
     }
+
+
+def _repair_linkage_blocks(
+    *,
+    context: SolverContext,
+    initial_components: tuple[Any, ...],
+    initial_result: ResourceSolverResult,
+    linkage_blocks: tuple[Any, ...],
+    progress: Any | None = None,
+    repair_deadline_at: float | None = None,
+) -> tuple[dict[str, tuple[Assignment, ...]], tuple[dict[str, Any], ...]]:
+    repaired: dict[str, tuple[Assignment, ...]] = {}
+    records: list[dict[str, Any]] = []
+    total = len(linkage_blocks)
+    if total == 0:
+        _report(progress, "No hi ha blocs de linkage per reoptimitzar.", 62)
+    for index, block in enumerate(linkage_blocks, start=1):
+        subcontext = filter_context_by_team_ids(context, block.team_ids)
+        block_solve_limit = _repair_block_solve_limit(
+            context=context,
+            repair_deadline_at=repair_deadline_at,
+            remaining_blocks=total - index + 1,
+        )
+        repair_context = _with_solve_time_limit(subcontext, block_solve_limit)
+        fallback_assignments = _assignments_for_team_ids(initial_result.assignments, block.team_ids)
+        fallback_solution = build_solution(_raw_result("FEASIBLE", fallback_assignments), context)
+        fallback_mismatches = _linkage_mismatch_total(
+            context,
+            fallback_solution,
+            initial_components,
+            block.linkage_keys,
+        )
+        fallback_resource_excess = _total_resource_excess(
+            build_solution(_raw_result("FEASIBLE", fallback_assignments), repair_context)
+        )
+        skipped_due_deadline = block_solve_limit <= 0
+        solve_limit = 0.0 if skipped_due_deadline else getattr(repair_context.config, "time_limit_seconds", None)
+        _report(
+            progress,
+            "Reoptimitzant linkage "
+            f"{index}/{total}: {block.block_id} "
+            f"({len(block.team_ids)} equips, {len(repair_context.candidates)} candidats, "
+            f"linkages={len(block.linkage_keys)}, timeout={solve_limit}s)",
+            _stage_percent(58, 62, index - 1, total),
+        )
+        if skipped_due_deadline:
+            built_model = None
+            hint_added = False
+            solution = build_solution(
+                _raw_result(
+                    "SKIPPED_GLOBAL_DEADLINE",
+                    (),
+                    logs=("linkage repair skipped to preserve finalization margin",),
+                ),
+                repair_context,
+            )
+            solution_mismatches = fallback_mismatches
+            solution_resource_excess = fallback_resource_excess
+        else:
+            built_model = build_solver_model(repair_context)
+            hint_added = _add_assignment_hint(built_model, fallback_assignments)
+            raw_result = solve_model(built_model, repair_context.config)
+            solution = build_solution(raw_result, repair_context)
+            global_solution = build_solution(_raw_result(solution.status, solution.assignments), context)
+            solution_mismatches = _linkage_mismatch_total(
+                context,
+                global_solution,
+                initial_components,
+                block.linkage_keys,
+            )
+            solution_resource_excess = _total_resource_excess(solution)
+
+        accepted = (
+            solution.status in {"OPTIMAL", "FEASIBLE"}
+            and len(solution.assignments) == len(block.team_ids)
+            and solution_mismatches <= fallback_mismatches
+        )
+        if accepted:
+            repaired[block.block_id] = solution.assignments
+            selected_assignments = solution.assignments
+            selected_mismatches = solution_mismatches
+            fallback_used = False
+        else:
+            repaired[block.block_id] = fallback_assignments
+            selected_assignments = fallback_assignments
+            selected_mismatches = fallback_mismatches
+            fallback_used = True
+        _report(
+            progress,
+            "Linkage reoptimitzat "
+            f"{index}/{total}: {block.block_id} "
+            f"status={solution.status} accepted={accepted} "
+            f"fallback={fallback_used} "
+            f"mismatches={selected_mismatches}",
+            _stage_percent(58, 62, index, total),
+        )
+        records.append(
+            {
+                "stage": "linkage_repair",
+                "block_id": block.block_id,
+                "initial_component_ids": block.initial_component_ids,
+                "team_count": len(block.team_ids),
+                "linkage_keys": block.linkage_keys,
+                "status": solution.status,
+                "assignment_count": len(solution.assignments),
+                "linkage_mismatches": solution_mismatches,
+                "fallback_linkage_mismatches": fallback_mismatches,
+                "selected_linkage_mismatches": selected_mismatches,
+                "resource_excess": solution_resource_excess,
+                "fallback_resource_excess": fallback_resource_excess,
+                "accepted": accepted,
+                "fallback_used": fallback_used,
+                "fallback_assignment_count": len(fallback_assignments),
+                "selected_assignment_count": len(selected_assignments),
+                "hint_added": hint_added,
+                "skipped_due_deadline": skipped_due_deadline,
+                "solve_time_limit_seconds": solve_limit,
+                "backend": getattr(built_model, "backend", "skipped"),
+                "model_summary": getattr(built_model, "summary", {}) or {},
+            }
+        )
+    return repaired, tuple(records)
+
+
+def _linkage_mismatch_total(
+    context: SolverContext,
+    result: ResourceSolverResult,
+    initial_components: tuple[Any, ...],
+    linkage_keys: tuple[str, ...] | list[str] | set[str] | None = None,
+) -> int:
+    allowed = {str(key) for key in linkage_keys or ()}
+    conflicts = detect_linkage_conflicts(context, result, initial_components)
+    return sum(
+        int(conflict.mismatch_count)
+        for conflict in conflicts
+        if not allowed or conflict.linkage_key in allowed
+    )
 
 
 def _repair_blocks(

@@ -9,10 +9,12 @@ from calendaritzacions.engine.variants.resource_solver.config import (
     coerce_resource_solver_config,
 )
 from calendaritzacions.engine.variants.resource_solver.conflict_repair import (
+    build_linkage_repair_blocks,
     build_initial_components,
     build_repair_blocks,
     context_with_residual_capacities,
     detect_conflict_hubs,
+    detect_linkage_conflicts,
     frozen_usage_by_resource,
     linkage_buckets,
     merge_assignments,
@@ -20,6 +22,7 @@ from calendaritzacions.engine.variants.resource_solver.conflict_repair import (
 )
 from calendaritzacions.engine.variants.resource_solver.conflict_repair_service import (
     _add_assignment_hint,
+    _repair_linkage_blocks,
     _repair_block_solve_limit,
     _repair_blocks,
     _repair_deadline_at,
@@ -47,14 +50,35 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual(len(components), 2)
         self.assertEqual([component.team_ids for component in components], [("T1", "T2"), ("T3", "T4")])
 
-    def test_linkage_connects_initial_competitions(self):
+    def test_small_linkage_is_cut_and_registered_for_repair(self):
         context = _context(linked=True)
 
         components = build_initial_components(context)
+        result = _result_with_two_locals(context)
+        conflicts = detect_linkage_conflicts(context, result, components)
+        blocks = build_linkage_repair_blocks(context, components, conflicts)
 
-        self.assertEqual(len(components), 1)
-        self.assertEqual(components[0].team_ids, ("T1", "T2", "T3", "T4"))
+        self.assertEqual(len(components), 2)
         self.assertEqual(tuple(linkage_buckets(context).values()), (("T1", "T3"),))
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0].component_ids, ("I001", "I002"))
+        self.assertEqual(conflicts[0].mismatch_count, 7)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].initial_component_ids, ("I001", "I002"))
+
+    def test_hard_level_split_separates_a_from_non_a_inside_competition(self):
+        context = _context(
+            levels={"T1": "A", "T2": "A", "T3": "B", "T4": "C"},
+            config=ResourceSolverConfig(competition_grouping="league", level_constraint_mode="hard"),
+            same_league=True,
+        )
+
+        components = build_initial_components(context)
+
+        self.assertEqual(len(components), 2)
+        self.assertEqual([component.team_ids for component in components], [("T1", "T2"), ("T3", "T4")])
+        self.assertTrue(any("level_family|A" in component.competition_keys[0] for component in components))
+        self.assertTrue(any("level_family|no-A" in component.competition_keys[0] for component in components))
 
     def test_conflict_hub_builds_repair_block(self):
         context = _context(capacity=1)
@@ -180,6 +204,34 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertFalse(records[0]["accepted"])
         self.assertEqual(records[0]["selected_assignment_count"], 2)
 
+    def test_linkage_repair_uses_fallback_on_unknown(self):
+        context = _context(linked=True)
+        components = build_initial_components(context)
+        initial_result = _result_with_two_locals(context)
+        conflicts = detect_linkage_conflicts(context, initial_result, components)
+        blocks = build_linkage_repair_blocks(context, components, conflicts)
+        built_model = SimpleNamespace(backend="stub", model=None, variables=None, summary={})
+
+        with patch(
+            "calendaritzacions.engine.variants.resource_solver.conflict_repair_service.build_solver_model",
+            return_value=built_model,
+        ), patch(
+            "calendaritzacions.engine.variants.resource_solver.conflict_repair_service.solve_model",
+            return_value=SimpleNamespace(status="UNKNOWN", assignments=(), logs=("timeout",)),
+        ):
+            repaired, records = _repair_linkage_blocks(
+                context=context,
+                initial_components=components,
+                initial_result=initial_result,
+                linkage_blocks=blocks,
+            )
+
+        self.assertEqual(set(repaired), {"L001"})
+        self.assertEqual(records[0]["stage"], "linkage_repair")
+        self.assertEqual(records[0]["fallback_linkage_mismatches"], 7)
+        self.assertTrue(records[0]["fallback_used"])
+        self.assertFalse(records[0]["accepted"])
+
     def test_assignment_hint_marks_selected_candidate(self):
         context = _context()
         added_hints = []
@@ -275,8 +327,9 @@ class ResourceSolverConflictRepairTests(unittest.TestCase):
         self.assertEqual(deadline, 84700.0)
 
 
-def _context(capacity=10, linked=False, same_entity=False) -> SolverContext:
+def _context(capacity=10, linked=False, same_entity=False, levels=None, config=None, same_league=False) -> SolverContext:
     base_resource = BaseResource("R", "Pista", "Divendres", "18:00")
+    level_by_team = levels or {}
     teams = (
         TeamRecord(
             "T1",
@@ -286,22 +339,24 @@ def _context(capacity=10, linked=False, same_entity=False) -> SolverContext:
             venue="Pista",
             day="Divendres",
             time="18:00",
+            level=level_by_team.get("T1", ""),
             linkage_group="L1" if linked else "",
             linkage_side="casa" if linked else "",
         ),
-        TeamRecord("T2", "Team 2", "Club" if same_entity else "Club 2", "League A", venue="Pista", day="Divendres", time="18:00"),
+        TeamRecord("T2", "Team 2", "Club" if same_entity else "Club 2", "League A", venue="Pista", day="Divendres", time="18:00", level=level_by_team.get("T2", "")),
         TeamRecord(
             "T3",
             "Team 3",
             "Club" if same_entity else "Club 3",
-            "League B",
+            "League A" if same_league else "League B",
             venue="Pista",
             day="Divendres",
             time="18:00",
+            level=level_by_team.get("T3", ""),
             linkage_group="L1" if linked else "",
             linkage_side="fora" if linked else "",
         ),
-        TeamRecord("T4", "Team 4", "Club" if same_entity else "Club 4", "League B", venue="Pista", day="Divendres", time="18:00"),
+        TeamRecord("T4", "Team 4", "Club" if same_entity else "Club 4", "League A" if same_league else "League B", venue="Pista", day="Divendres", time="18:00", level=level_by_team.get("T4", "")),
     )
     groups = (
         GroupSpec("G1", 2, 2, 2, "primera_fase", numbers=(1, 2)),
@@ -327,7 +382,7 @@ def _context(capacity=10, linked=False, same_entity=False) -> SolverContext:
             _candidate("T4", "G2", 1),
             _candidate("T4", "G2", 2),
         ),
-        config=ResourceSolverConfig(competition_grouping="league"),
+        config=config or ResourceSolverConfig(competition_grouping="league"),
     )
 
 

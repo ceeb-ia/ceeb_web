@@ -13,14 +13,17 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
 from dataclasses import asdict, dataclass, is_dataclass, replace
+from itertools import combinations
 from typing import Any, Iterable
 
+from calendaritzacions.domain.phases import phase_calendar, slot_count_for_numbers
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import (
     capacity_for_resource,
 )
 from calendaritzacions.engine.variants.resource_solver.input_adapter import (
     competition_key_for_team,
 )
+from calendaritzacions.engine.variants.resource_solver.groups import normalize_hard_level
 from calendaritzacions.engine.variants.resource_solver.types import (
     Assignment,
     CapacityEstimate,
@@ -67,6 +70,17 @@ class RepairBlock:
     skipped_reason: str = ""
 
 
+@dataclass(frozen=True)
+class LinkageConflict:
+    linkage_key: str
+    relation: str
+    team_ids: tuple[str, ...]
+    component_ids: tuple[str, ...]
+    mismatch_count: int
+    checked_rounds: int
+    pair_count: int
+
+
 class _UnionFind:
     def __init__(self, items: Iterable[str]) -> None:
         self.parent = {item: item for item in items}
@@ -92,60 +106,63 @@ class _UnionFind:
 
 
 def build_initial_components(context: SolverContext) -> tuple[InitialComponent, ...]:
-    """Split teams by competition/linkage, deliberately ignoring resources."""
+    """Split teams by hard domain, leaving small cross-domain linkages repairable."""
 
-    competition_by_team = team_competition_keys(context)
-    competitions = sorted(set(competition_by_team.values()))
-    uf = _UnionFind(competitions)
-    linkage_keys_by_competition: dict[str, set[str]] = defaultdict(set)
+    domain_by_team = team_initial_domain_keys(context)
+    domains = sorted(set(domain_by_team.values()))
+    uf = _UnionFind(domains)
+    linkage_keys_by_domain: dict[str, set[str]] = defaultdict(set)
+    small_linkage_max_size = _small_linkage_max_size(context)
 
     for linkage_key, team_ids in linkage_buckets(context).items():
-        linked_competitions = sorted(
+        linked_domains = sorted(
             {
-                competition_by_team[team_id]
+                domain_by_team[team_id]
                 for team_id in team_ids
-                if team_id in competition_by_team
+                if team_id in domain_by_team
             }
         )
-        if not linked_competitions:
+        if not linked_domains:
             continue
-        first = linked_competitions[0]
-        for competition_key in linked_competitions:
-            uf.union(first, competition_key)
-            linkage_keys_by_competition[competition_key].add(linkage_key)
+        if len(team_ids) > small_linkage_max_size:
+            first = linked_domains[0]
+            for domain_key in linked_domains:
+                uf.union(first, domain_key)
+        for domain_key in linked_domains:
+            linkage_keys_by_domain[domain_key].add(linkage_key)
 
-    competitions_by_root: dict[str, list[str]] = defaultdict(list)
-    for competition_key in competitions:
-        competitions_by_root[uf.find(competition_key)].append(competition_key)
+    domains_by_root: dict[str, list[str]] = defaultdict(list)
+    for domain_key in domains:
+        domains_by_root[uf.find(domain_key)].append(domain_key)
 
-    teams_by_competition: dict[str, list[str]] = defaultdict(list)
-    for team_id, competition_key in competition_by_team.items():
-        teams_by_competition[competition_key].append(team_id)
+    teams_by_domain: dict[str, list[str]] = defaultdict(list)
+    for team_id, domain_key in domain_by_team.items():
+        teams_by_domain[domain_key].append(team_id)
 
     candidate_count_by_team = Counter(candidate.team_id for candidate in context.candidates)
     components: list[InitialComponent] = []
-    for index, competition_keys in enumerate(
-        sorted((tuple(sorted(keys)) for keys in competitions_by_root.values()), key=lambda keys: keys),
+    for index, domain_keys in enumerate(
+        sorted((tuple(sorted(keys)) for keys in domains_by_root.values()), key=lambda keys: keys),
         start=1,
     ):
         team_ids = tuple(
             sorted(
                 team_id
-                for competition_key in competition_keys
-                for team_id in teams_by_competition.get(competition_key, ())
+                for domain_key in domain_keys
+                for team_id in teams_by_domain.get(domain_key, ())
             )
         )
         linkage_keys = tuple(
             sorted(
                 linkage_key
-                for competition_key in competition_keys
-                for linkage_key in linkage_keys_by_competition.get(competition_key, set())
+                for domain_key in domain_keys
+                for linkage_key in linkage_keys_by_domain.get(domain_key, set())
             )
         )
         components.append(
             InitialComponent(
                 component_id=f"I{index:03d}",
-                competition_keys=competition_keys,
+                competition_keys=domain_keys,
                 team_ids=team_ids,
                 linkage_keys=linkage_keys,
                 candidate_count=sum(candidate_count_by_team[team_id] for team_id in team_ids),
@@ -187,6 +204,117 @@ def detect_conflict_hubs(
             )
         )
     return tuple(sorted(hubs, key=lambda hub: (hub.resource_id, hub.team_ids)))
+
+
+def detect_linkage_conflicts(
+    context: SolverContext,
+    result: ResourceSolverResult,
+    initial_components: Iterable[InitialComponent],
+) -> tuple[LinkageConflict, ...]:
+    """Return cut linkages whose home/away pattern is not coordinated."""
+
+    component_by_team = team_to_initial_component(initial_components)
+    assignment_by_team = {assignment.team_id: assignment for assignment in result.assignments}
+    conflicts: list[LinkageConflict] = []
+    for linkage_key, team_ids in linkage_buckets(context).items():
+        component_ids = tuple(sorted({component_by_team.get(team_id, "") for team_id in team_ids if component_by_team.get(team_id)}))
+        if len(component_ids) <= 1:
+            continue
+
+        mismatch_count = 0
+        checked_rounds = 0
+        pair_count = 0
+        teams = [team for team in context.teams if team.team_id in set(team_ids)]
+        for left, right in combinations(sorted(teams, key=lambda team: team.team_id), 2):
+            relation = _linkage_relation(getattr(left, "linkage_side", ""), getattr(right, "linkage_side", ""))
+            if relation not in {"same", "opposite"}:
+                continue
+            left_assignment = assignment_by_team.get(left.team_id)
+            right_assignment = assignment_by_team.get(right.team_id)
+            if left_assignment is None or right_assignment is None:
+                continue
+            left_pattern = _home_away_pattern(left_assignment, context)
+            right_pattern = _home_away_pattern(right_assignment, context)
+            rounds = sorted(set(left_pattern).union(right_pattern))
+            if not rounds:
+                continue
+            pair_count += 1
+            checked_rounds += len(rounds)
+            for round_index in rounds:
+                left_side = left_pattern.get(round_index, "rest")
+                right_side = right_pattern.get(round_index, "rest")
+                if relation == "same" and left_side != right_side:
+                    mismatch_count += 1
+                elif relation == "opposite" and {left_side, right_side} != {"home", "away"}:
+                    mismatch_count += 1
+        if mismatch_count <= 0:
+            continue
+        conflicts.append(
+            LinkageConflict(
+                linkage_key=linkage_key,
+                relation="mixed" if pair_count > 1 else "",
+                team_ids=tuple(sorted(team_ids)),
+                component_ids=component_ids,
+                mismatch_count=mismatch_count,
+                checked_rounds=checked_rounds,
+                pair_count=pair_count,
+            )
+        )
+    return tuple(sorted(conflicts, key=lambda conflict: (-conflict.mismatch_count, conflict.linkage_key)))
+
+
+def build_linkage_repair_blocks(
+    context: SolverContext,
+    initial_components: Iterable[InitialComponent],
+    linkage_conflicts: Iterable[LinkageConflict],
+) -> tuple[RepairBlock, ...]:
+    components = tuple(initial_components)
+    component_by_id = {component.component_id: component for component in components}
+    if not component_by_id:
+        return ()
+    uf = _UnionFind(component_by_id)
+    linkage_keys_by_component: dict[str, set[str]] = defaultdict(set)
+    for conflict in linkage_conflicts:
+        component_ids = tuple(component_id for component_id in conflict.component_ids if component_id in component_by_id)
+        if not component_ids:
+            continue
+        first = component_ids[0]
+        for component_id in component_ids:
+            uf.union(first, component_id)
+            linkage_keys_by_component[component_id].add(conflict.linkage_key)
+
+    grouped: dict[str, set[str]] = defaultdict(set)
+    for conflict in linkage_conflicts:
+        for component_id in conflict.component_ids:
+            if component_id in component_by_id:
+                grouped[uf.find(component_id)].add(component_id)
+
+    blocks: list[RepairBlock] = []
+    for index, component_ids in enumerate(sorted((tuple(sorted(ids)) for ids in grouped.values()), key=lambda ids: ids), start=1):
+        team_ids = tuple(
+            sorted(
+                team_id
+                for component_id in component_ids
+                for team_id in component_by_id[component_id].team_ids
+            )
+        )
+        linkage_keys = tuple(
+            sorted(
+                linkage_key
+                for component_id in component_ids
+                for linkage_key in linkage_keys_by_component.get(component_id, set())
+            )
+        )
+        blocks.append(
+            RepairBlock(
+                block_id=f"L{index:03d}",
+                initial_component_ids=component_ids,
+                team_ids=team_ids,
+                conflict_resource_ids=(),
+                linkage_keys=linkage_keys,
+            )
+        )
+    return tuple(blocks)
 
 
 def build_repair_blocks(
@@ -411,6 +539,13 @@ def team_competition_keys(context: SolverContext) -> dict[str, str]:
     }
 
 
+def team_initial_domain_keys(context: SolverContext) -> dict[str, str]:
+    return {
+        team.team_id: _initial_domain_key(team, context.config)
+        for team in context.teams
+    }
+
+
 def team_to_initial_component(
     components: Iterable[InitialComponent],
 ) -> dict[str, str]:
@@ -437,6 +572,16 @@ def linkage_buckets(context: SolverContext) -> dict[str, tuple[str, ...]]:
         key: tuple(sorted(team_ids))
         for key, team_ids in sorted(buckets.items())
         if len(team_ids) > 1
+    }
+
+
+def linkage_conflicts_payload(conflicts: Iterable[LinkageConflict]) -> dict[str, Any]:
+    rows = [_json_ready(conflict) for conflict in conflicts]
+    return {
+        "artifact_type": "resource_solver_conflict_repair_linkage_conflicts",
+        "conflict_count": len(rows),
+        "total_mismatches": sum(int(row.get("mismatch_count", 0) or 0) for row in rows),
+        "conflicts": rows,
     }
 
 
@@ -477,6 +622,65 @@ def repair_blocks_payload(blocks: Iterable[RepairBlock]) -> dict[str, Any]:
         "block_count": len(rows),
         "blocks": rows,
     }
+
+
+def _initial_domain_key(team: Any, config: Any | None) -> str:
+    key = _competition_key_to_string(competition_key_for_team(team, config))
+    if _hard_level_enabled(config):
+        family = "A" if normalize_hard_level(getattr(team, "level", "")) == "A" else "no-A"
+        key = f"{key}|level_family|{family}"
+    return key
+
+
+def _hard_level_enabled(config: Any | None) -> bool:
+    return str(getattr(config, "level_constraint_mode", "off") if config is not None else "off").strip().casefold() == "hard"
+
+
+def _small_linkage_max_size(context: SolverContext) -> int:
+    try:
+        return max(2, int(getattr(context.config, "linkage_max_group_size", 2) or 2))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _linkage_relation(left_side: Any, right_side: Any) -> str | None:
+    if _normalize_linkage_side(left_side) == "indiferent" or _normalize_linkage_side(right_side) == "indiferent":
+        return None
+    same = getattr(_linkage_helpers, "linkage_sides_match", None)
+    if callable(same):
+        try:
+            if bool(same(left_side, right_side)):
+                return "same"
+        except Exception:
+            pass
+    opposite = getattr(_linkage_helpers, "linkage_sides_are_opposites", None)
+    if callable(opposite):
+        try:
+            if bool(opposite(left_side, right_side)):
+                return "opposite"
+        except Exception:
+            pass
+    return "same" if _normalize_linkage_side(left_side) == _normalize_linkage_side(right_side) else "opposite"
+
+
+def _home_away_pattern(assignment: Assignment, context: SolverContext) -> dict[int, str]:
+    group = next((item for item in context.groups if item.group_id == assignment.group_id), None)
+    if group is None:
+        phase = context.phase
+    else:
+        phase = phase_calendar(group.phase_name or context.phase_name, slot_count_for_numbers(group.numbers))
+    pattern: dict[int, str] = {}
+    for round_index, round_matches in enumerate(phase, start=1):
+        side = "rest"
+        for home_number, away_number in round_matches:
+            if int(home_number) == int(assignment.number):
+                side = "home"
+                break
+            if int(away_number) == int(assignment.number):
+                side = "away"
+                break
+        pattern[round_index] = side
+    return pattern
 
 
 def iteration_summary_payload(
@@ -562,14 +766,17 @@ __all__ = [
     "InitialComponent",
     "RepairBlock",
     "build_initial_components",
+    "build_linkage_repair_blocks",
     "build_repair_blocks",
     "component_solve_payload",
     "conflict_hubs_payload",
     "context_with_residual_capacities",
     "detect_conflict_hubs",
+    "detect_linkage_conflicts",
     "frozen_usage_by_resource",
     "initial_components_payload",
     "iteration_summary_payload",
+    "linkage_conflicts_payload",
     "linkage_buckets",
     "merge_assignments",
     "repair_blocks_payload",
