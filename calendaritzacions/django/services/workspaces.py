@@ -27,6 +27,7 @@ RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
+    CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER,
 }
 
 
@@ -1223,6 +1224,8 @@ def _validate_workspace_run(run: CalendarizationRun) -> None:
 def _workspace_solution_artifact(run: CalendarizationRun) -> str:
     if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR:
         return "resource_solver_conflict_repair_result"
+    if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER:
+        return "resource_solver_pattern_master_result"
     return "resource_solution"
 
 

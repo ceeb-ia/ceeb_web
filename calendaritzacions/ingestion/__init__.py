@@ -1,6 +1,6 @@
 from calendaritzacions.ingestion.excel_reader import read_excel
 from calendaritzacions.ingestion.ids import ensure_team_ids
-from calendaritzacions.ingestion.legacy_input import prepare_legacy_input
+from calendaritzacions.ingestion.legacy_input import normalize_legacy_input_columns, prepare_legacy_input
 from calendaritzacions.ingestion.modalitat_map import load_modalitat_map
 from calendaritzacions.ingestion.validators import (
     InputValidationError,
@@ -12,6 +12,7 @@ __all__ = [
     "InputValidationError",
     "ensure_team_ids",
     "load_modalitat_map",
+    "normalize_legacy_input_columns",
     "prepare_legacy_input",
     "read_excel",
     "validate_no_mixed_home_away_requests",

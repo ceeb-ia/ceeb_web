@@ -238,12 +238,13 @@ def _generated_group_id(team: TeamRecord, sequence: int) -> str:
 
 
 def _has_consecutive_hour_slots(teams: tuple[TeamRecord, ...]) -> bool:
-    minutes = sorted(_parse_hour_slot(team.time) for team in teams)
+    minutes = [_parse_hour_slot(team.time) for team in teams]
     if any(value is None for value in minutes):
         return False
+    sorted_minutes = sorted(int(value) for value in minutes)
     return all(
         right - left == 60
-        for left, right in zip(minutes, minutes[1:])
+        for left, right in zip(sorted_minutes, sorted_minutes[1:])
     )
 
 

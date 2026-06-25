@@ -185,7 +185,8 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         small_groups = groups_by_team["T0"]
         large_groups = groups_by_team["T4"]
         self.assertEqual(len(small_groups), 1)
-        self.assertEqual(len(large_groups), 3)
+        self.assertEqual(len(large_groups), 2)
+        self.assertEqual([group.target_size for group in context.groups if group.group_id in large_groups], [9, 8])
         self.assertTrue(small_groups.isdisjoint(large_groups))
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
@@ -198,7 +199,9 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         context = build_context_from_dataframe(pd.DataFrame(rows), ResourceSolverConfig(linkage_mode="off"))
         groups_by_team = _candidate_groups_by_team(context)
 
-        self.assertEqual(len(groups_by_team["T0"]), 2)
+        self.assertEqual(len(groups_by_team["T0"]), 1)
+        self.assertEqual(context.groups[0].target_size, 9)
+        self.assertEqual(context.groups[0].numbers, tuple(range(1, 11)))
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
     def test_context_can_force_league_or_field_competition_grouping(self):

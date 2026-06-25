@@ -72,7 +72,8 @@ class ResourceSolverGroupsTests(unittest.TestCase):
         )
         empty_counts = list(empty_numbers_by_group(groups).values())
 
-        self.assertEqual([group.target_size for group in groups], [6, 6, 5])
+        self.assertEqual([group.target_size for group in groups], [9, 8])
+        self.assertEqual(groups[0].numbers, tuple(range(1, 11)))
         self.assertLessEqual(max(empty_counts) - min(empty_counts), 1)
 
     def test_structural_group_size_targets_allow_exceptional_to_avoid_small_groups(self):

@@ -95,10 +95,14 @@ def build_group_specs(
     *,
     group_prefix: str = "G",
 ) -> tuple[GroupSpec, ...]:
-    targets = group_size_targets(
-        len(tuple(teams)),
-        max_group_size=config.max_group_size,
-    )
+    team_count = len(tuple(teams))
+    if int(getattr(config, "max_group_size", IDEAL_MAX_GROUP_SIZE) or IDEAL_MAX_GROUP_SIZE) == IDEAL_MAX_GROUP_SIZE:
+        targets = structural_group_size_targets(team_count)
+    else:
+        targets = group_size_targets(
+            team_count,
+            max_group_size=config.max_group_size,
+        )
     return tuple(
         GroupSpec(
             group_id=f"{group_prefix}{index}",

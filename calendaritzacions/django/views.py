@@ -28,6 +28,15 @@ class CalendaritzacionsAccessMixin(AppAccessRequiredMixin):
     required_app_access = "calendaritzacions"
 
 
+PATTERN_MASTER_TABLE_PLOT_IDS = {
+    "microhub_summary",
+    "pattern_summary",
+    "compatibility_graph",
+    "selected_patterns",
+    "postrun_status",
+}
+
+
 class RunListView(CalendaritzacionsAccessMixin, ListView):
     model = CalendarizationRun
     template_name = "calendaritzacions/run_list.html"
@@ -443,6 +452,9 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
         ("input_demand", "Plots pre-run"),
         ("resource_solver_decomposition_plots", "Descomposicio"),
         ("resource_solver_conflict_repair_plots", "Conflict repair"),
+        ("pattern_master_prerun_plots", "Pattern master pre-run"),
+        ("pattern_master_graph_plots", "Pattern master grafs"),
+        ("pattern_master_postrun_plots", "Pattern master post-run"),
         ("resource_solver_final_plots", "Plots post-run"),
     ]:
         plots = _plot_ids_for_artifact(run, artifact)
@@ -496,7 +508,10 @@ def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
     return sorted(
         plot_id
         for plot_id, path in plots.items()
-        if plot_id not in {"manifest", "friday"} and path and Path(str(path)).suffix.lower() in {".png", ".html"}
+        if plot_id not in {"manifest", "friday"}
+        and plot_id not in PATTERN_MASTER_TABLE_PLOT_IDS
+        and path
+        and Path(str(path)).suffix.lower() in {".png", ".html"}
     )
 
 
@@ -551,5 +566,13 @@ def _plot_label(plot_id: str) -> str:
         "top_component_competition_resource_heatmap": "Mapa competicio-recurs",
         "top_component_network": "Xarxa component",
         "component_graph_3d": "Graf 3D interactiu",
+        "microhub_network": "Xarxa microhubs",
+        "compatibility_network": "Xarxa incompatibilitats",
+        "selected_patterns_network": "Xarxa patterns seleccionats",
+        "microhub_summary": "Microhubs",
+        "pattern_summary": "Patterns",
+        "compatibility_graph": "Taula incompatibilitats",
+        "selected_patterns": "Patterns seleccionats",
+        "postrun_status": "Resum pattern-master",
     }
     return labels.get(plot_id, plot_id.replace("_", " ").title())

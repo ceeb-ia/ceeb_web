@@ -97,7 +97,12 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
     default_linkage_mode = (
         "input"
         if engine_name
-        in {"resource_solver_linkage", "resource_solver_vinculacio", "resource_solver_conflict_repair"}
+        in {
+            "resource_solver_linkage",
+            "resource_solver_vinculacio",
+            "resource_solver_conflict_repair",
+            "resource_solver_pattern_master",
+        }
         else "off"
     )
     explicit_linkage_mode = getattr(

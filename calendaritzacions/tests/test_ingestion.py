@@ -9,6 +9,7 @@ from calendaritzacions.ingestion import (
     InputValidationError,
     ensure_team_ids,
     load_modalitat_map,
+    normalize_legacy_input_columns,
     prepare_legacy_input,
     validate_no_mixed_home_away_requests,
     validate_required_columns,
@@ -102,6 +103,56 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(df["Id"].tolist(), ["EXISTING"])
         self.assertEqual(prepared["Id"].tolist(), [expected])
         self.assertEqual(modalitat_map.to_dict("records"), [{"Modalitat": "FUTBOL 5", "Nom": "INFANTIL"}])
+
+    def test_normalize_legacy_input_columns_accepts_external_export_aliases(self):
+        df = pd.DataFrame(
+            {
+                "Id Equip": ["E1"],
+                "Nom": ["Equip"],
+                "Entitat": ["Club"],
+                "Modalitat": ["FUTBOL 7 "],
+                "Categoria": ["ALEVI"],
+                "SubCategoria": ["MIXT "],
+                "Nivell": ["Nivell B"],
+                SEED_COLUMN: ["Casa"],
+                "Dia partit": ["Dissabte"],
+                "Hora partit": ["18:15 h"],
+            }
+        )
+
+        normalized = normalize_legacy_input_columns(df)
+
+        self.assertIn("Id", normalized.columns)
+        self.assertIn("Subcategoria", normalized.columns)
+        self.assertIn("Horari partit", normalized.columns)
+        self.assertEqual(normalized.loc[0, "Nom Lliga"], "FUTBOL 7 - ALEVI - MIXT")
+        self.assertEqual(normalized.loc[0, "Horari partit"], "18:15 h")
+
+    def test_prepare_legacy_input_accepts_external_export_without_nom_lliga(self):
+        df = pd.DataFrame(
+            {
+                "Id Equip": ["E1"],
+                "Nom": ["Equip"],
+                "Entitat": ["Club"],
+                "Modalitat": ["FUTBOL 7"],
+                "Categoria": ["ALEVI"],
+                "SubCategoria": ["MIXT"],
+                "Nivell": ["Nivell B"],
+                SEED_COLUMN: ["Casa"],
+                "Dia partit": ["Dissabte"],
+                "Hora partit": ["18:15 h"],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = Path(tmpdir) / "map_modalitat_nom.csv"
+            csv_path.write_text("Modalitat;Nom\nFUTBOL 7;ALEVI\n", encoding="utf-8")
+            prepared, _modalitat_map = prepare_legacy_input(df, csv_path)
+
+        self.assertIn("Id", prepared.columns)
+        self.assertEqual(prepared.loc[0, "Nom Lliga"], "FUTBOL 7 - ALEVI - MIXT")
+        self.assertEqual(prepared.loc[0, "Subcategoria"], "MIXT")
+        self.assertEqual(prepared.loc[0, "Horari partit"], "18:15 h")
 
     def test_prepare_legacy_input_fails_when_entitat_missing(self):
         df = _minimal_df().drop(columns=["Entitat"])

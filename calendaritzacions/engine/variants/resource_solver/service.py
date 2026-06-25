@@ -32,7 +32,12 @@ from calendaritzacions.engine.variants.resource_solver.solution import (
     result_to_json_ready,
 )
 from calendaritzacions.engine.variants.resource_solver.types import SolverContext
-from calendaritzacions.ingestion import InputValidationError, prepare_legacy_input, read_excel
+from calendaritzacions.ingestion import (
+    InputValidationError,
+    normalize_legacy_input_columns,
+    prepare_legacy_input,
+    read_excel,
+)
 from calendaritzacions.ingestion.ids import ensure_team_ids
 
 
@@ -466,7 +471,7 @@ def _build_input_pre_analysis(
     except InputValidationError as exc:
         validation_status = "fallback_prepared"
         validation_notes.append(str(exc))
-        input_df = ensure_team_ids(raw_df.copy())
+        input_df = ensure_team_ids(normalize_legacy_input_columns(raw_df))
         logs.append(f"input: preparacio legacy no aplicable; fallback amb Ids ({exc})")
 
     demand_analysis = build_input_demand_analysis(input_df)

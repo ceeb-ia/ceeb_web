@@ -132,6 +132,20 @@ class ResourceSolverLinkageTests(unittest.TestCase):
             len([team for team in first_updated if not team.linkage_group]),
         )
 
+    def test_simulation_tolerates_unparseable_hour_slots(self):
+        teams = (
+            _team("T1", time="", seed="casa"),
+            _team("T2", time=None, seed="casa"),
+            _team("T3", time="pendent", seed="fora"),
+            _team("T4", time="18:00", seed="fora"),
+            _team("T5", time="19:00", seed="fora"),
+        )
+
+        _updated, audit = simulate_linkage_groups(teams)
+
+        self.assertEqual(len(audit), 1)
+        self.assertFalse(audit[0]["consecutive_hour_slots"])
+
 
 if __name__ == "__main__":
     unittest.main()

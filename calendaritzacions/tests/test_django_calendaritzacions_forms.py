@@ -68,6 +68,10 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
             CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
             dict(form.fields["engine_name"].choices),
         )
+        self.assertIn(
+            CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER,
+            dict(form.fields["engine_name"].choices),
+        )
 
     def test_form_rejects_unsupported_file_extension(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
@@ -103,6 +107,10 @@ class DjangoCalendarizationRunFormTests(unittest.TestCase):
         self.assertEqual(
             engine_choices[CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR],
             "Resource solver + conflict repair",
+        )
+        self.assertEqual(
+            engine_choices[CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER],
+            "Resource solver + pattern master",
         )
 
 
