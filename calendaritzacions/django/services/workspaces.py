@@ -23,13 +23,18 @@ from calendaritzacions.django.services.audit_reader import discover_audit_paths,
 
 HYDRATION_VERSION = 8
 MAX_POSITIVE_SMALLINT = 32767
+ENGINE_RESOURCE_SOLVER_PATTERN_MASTER = getattr(
+    CalendarizationRun,
+    "ENGINE_RESOURCE_SOLVER_PATTERN_MASTER",
+    "resource_solver_pattern_master",
+)
 RESOURCE_WORKSPACE_ENGINES = {
     CalendarizationRun.ENGINE_LEGACY,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR,
-    CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER,
+    ENGINE_RESOURCE_SOLVER_PATTERN_MASTER,
 }
 
 
@@ -1322,7 +1327,7 @@ def _workspace_solution_artifact(run: CalendarizationRun) -> str:
         return "kpis"
     if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR:
         return "resource_solver_conflict_repair_result"
-    if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER:
+    if run.engine_name == ENGINE_RESOURCE_SOLVER_PATTERN_MASTER:
         return "resource_solver_pattern_master_result"
     return "resource_solution"
 

@@ -14,6 +14,8 @@ from calendaritzacions.engine.variants.resource_solver.pattern_master.patterns i
 from calendaritzacions.engine.variants.resource_solver.pattern_master.types import HubPattern, PatternConflict
 from calendaritzacions.engine.variants.resource_solver.types import SolverContext
 
+AGGREGATE_PATTERN_ID_SAMPLE_LIMIT = 80
+
 
 def build_pattern_conflicts(
     context: SolverContext,
@@ -64,7 +66,7 @@ def _aggregate_constraints_payload(context: SolverContext, patterns: tuple[HubPa
             "type": "competition_number_capacity",
             "competition_key": competition_key,
             "number": number,
-            "pattern_ids": sorted(pattern_ids),
+            **_pattern_id_sample(pattern_ids),
         }
         for (competition_key, number), pattern_ids in sorted(owners.items())
     ]
@@ -81,11 +83,20 @@ def _aggregate_constraints_payload(context: SolverContext, patterns: tuple[HubPa
             "type": "slot_domain_number_capacity",
             "domain_key": domain_key,
             "number": number,
-            "pattern_ids": sorted(pattern_ids),
+            **_pattern_id_sample(pattern_ids),
         }
         for (domain_key, number), pattern_ids in sorted(domain_owners.items())
     )
     return payload
+
+
+def _pattern_id_sample(pattern_ids: list[str]) -> dict[str, Any]:
+    sorted_ids = sorted(pattern_ids)
+    return {
+        "pattern_count": len(sorted_ids),
+        "pattern_ids": sorted_ids[:AGGREGATE_PATTERN_ID_SAMPLE_LIMIT],
+        "pattern_ids_truncated": len(sorted_ids) > AGGREGATE_PATTERN_ID_SAMPLE_LIMIT,
+    }
 
 
 def _conflict_payload(conflict: PatternConflict) -> dict[str, Any]:

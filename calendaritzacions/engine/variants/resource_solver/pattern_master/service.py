@@ -7,6 +7,7 @@ selects compatible hub patterns before materializing real groups.
 
 from __future__ import annotations
 
+import gc
 import json
 from pathlib import Path
 from typing import Any
@@ -87,6 +88,8 @@ class ResourceSolverPatternMasterEngine:
         context = build_context_from_dataframe(pre_analysis["input_df"], config=solver_config)
         logs.extend(_context_log_lines(context))
         logs.extend(_competition_context_log_lines(context))
+        del pre_analysis
+        gc.collect()
 
         _report(progress, "Construint microhubs per recursos i linkages...", 30)
         hubs = build_microhubs(context)
@@ -133,6 +136,8 @@ class ResourceSolverPatternMasterEngine:
                 progress,
             )
         )
+        del prerun_payload
+        gc.collect()
 
         _report(progress, "Construint graf d'incompatibilitats de patterns...", 42)
         conflicts = build_pattern_conflicts(context, patterns)
@@ -148,6 +153,8 @@ class ResourceSolverPatternMasterEngine:
                 progress,
             )
         )
+        del compat_payload, graph_payload
+        gc.collect()
 
         _report(progress, "Resolent CP-SAT mestre de patterns...", 55)
         selection = solve_master_selection(context, patterns, conflicts)
@@ -175,16 +182,10 @@ class ResourceSolverPatternMasterEngine:
             local_explanations=local_explanations,
         )
         postrun_payload = build_postrun_plot_payload(output_dir, selection, selected_patterns, result)
-        audit_payloads.update(pre_analysis["audit_payloads"])
         audit_payloads.update(
             {
-                "pattern_master_microhubs": microhubs_payload(hubs),
-                "pattern_master_patterns": patterns_payload(patterns),
-                "pattern_master_compatibility_graph": compat_payload,
                 "pattern_master_selection": master_selection_payload(selection),
                 "pattern_master_materialization": materialization_payload(context, selected_patterns, result),
-                "pattern_master_prerun_plots": prerun_payload,
-                "pattern_master_graph_plots": graph_payload,
                 "pattern_master_postrun_plots": postrun_payload,
             }
         )

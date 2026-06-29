@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from time import perf_counter
 from typing import Any, Iterable
 
@@ -62,20 +62,18 @@ def solve_master_selection(
                 model.Add(sum(terms) <= int(cap))
 
     domain_capacity = slot_domain_number_capacity(context)
-    domain_counts_by_pattern = {
-        pattern.pattern_id: pattern_slot_domain_number_counts(context, pattern)
-        for pattern in rows
-    }
+    domain_terms: dict[tuple[str, int], list[Any]] = defaultdict(list)
+    for pattern in rows:
+        for domain_key, counts in pattern_slot_domain_number_counts(context, pattern).items():
+            for number, count in counts.items():
+                if int(count) > 0:
+                    domain_terms[(domain_key, int(number))].append(int(count) * x[pattern.pattern_id])
     for domain_key, counts in domain_capacity.items():
         for number, cap in counts.items():
-            terms = [
-                int(domain_counts_by_pattern[pattern.pattern_id].get(domain_key, {}).get(number, 0))
-                * x[pattern.pattern_id]
-                for pattern in rows
-                if int(domain_counts_by_pattern[pattern.pattern_id].get(domain_key, {}).get(number, 0)) > 0
-            ]
+            terms = domain_terms.get((domain_key, int(number)), [])
             if terms:
                 model.Add(sum(terms) <= int(cap))
+    del domain_terms
 
     resource_terms, materialization_vars = _add_group_materialization_constraints(model, x, rows, context)
 
@@ -96,9 +94,7 @@ def solve_master_selection(
     solver = cp_model.CpSolver()
     limit = float(getattr(context.config, "internal_solve_time_limit_seconds", 60.0) or 60.0)
     solver.parameters.max_time_in_seconds = limit
-    workers = int(getattr(context.config, "num_search_workers", 0) or 0)
-    if workers > 0:
-        solver.parameters.num_search_workers = workers
+    solver.parameters.num_search_workers = 1
     status_code = solver.Solve(model)
     status = _status_name(cp_model, status_code)
     if status not in {"OPTIMAL", "FEASIBLE"}:
@@ -162,6 +158,13 @@ def _add_group_materialization_constraints(
             if not group_ids:
                 model.Add(pattern_var == 0)
                 continue
+            if len(group_ids) == 1:
+                group_id = group_ids[0]
+                group_terms[group_id].append(pattern_var)
+                slot_terms[(group_id, number)].append(pattern_var)
+                team_group_terms[(assignment.team_id, group_id)].append(pattern_var)
+                materialization_vars.append((pattern_var, assignment.team_id, group_id, number))
+                continue
             terms = []
             for group_id in group_ids:
                 var = model.NewBoolVar(
@@ -223,6 +226,7 @@ def _add_group_materialization_constraints(
         slot_terms,
         candidate_by_assignment,
         resource_terms,
+        context,
     )
     return dict(resource_terms), materialization_vars
 
@@ -302,13 +306,11 @@ def _candidate_group_ids_by_team_number(context: SolverContext) -> dict[tuple[st
     return candidate_groups
 
 
-def _add_real_resource_terms(
-    model: Any,
+def _iter_real_resource_match_inputs(
     materialization_vars: list[tuple[Any, str, str, int]],
     slot_terms: dict[tuple[str, int], list[Any]],
     candidate_by_assignment: dict[tuple[str, str, int], Candidate],
-    resource_terms: dict[str, list[Any]],
-) -> None:
+) -> Iterable[tuple[Any, str, str, int, int, str, list[Any]]]:
     for home_var, team_id, group_id, number in materialization_vars:
         candidate = candidate_by_assignment.get((team_id, group_id, int(number)))
         if candidate is None:
@@ -324,14 +326,46 @@ def _add_real_resource_terms(
             away_terms = slot_terms.get((group_id, int(away_number)), [])
             if not away_terms:
                 continue
-            away_used = sum(away_terms)
-            match_var = model.NewBoolVar(
-                f"match_resource_{_safe_name(team_id)}_{_safe_name(group_id)}_{number}_{round_index}"
-            )
-            model.Add(match_var <= home_var)
-            model.Add(match_var <= away_used)
-            model.Add(match_var >= home_var + away_used - 1)
-            resource_terms[resources[index]].append(match_var)
+            resource_id = resources[index]
+            yield home_var, team_id, group_id, int(number), round_index, resource_id, away_terms
+
+
+def _add_real_resource_terms(
+    model: Any,
+    materialization_vars: list[tuple[Any, str, str, int]],
+    slot_terms: dict[tuple[str, int], list[Any]],
+    candidate_by_assignment: dict[tuple[str, str, int], Candidate],
+    resource_terms: dict[str, list[Any]],
+    context: SolverContext,
+) -> None:
+    potential_by_resource = Counter(
+        resource_id
+        for _home_var, _team_id, _group_id, _number, _round_index, resource_id, _away_terms
+        in _iter_real_resource_match_inputs(materialization_vars, slot_terms, candidate_by_assignment)
+    )
+    saturable_resources = {
+        resource_id
+        for resource_id, count in potential_by_resource.items()
+        if int(count) > capacity_for_resource(context, resource_id)
+    }
+    if not saturable_resources:
+        return
+
+    for home_var, team_id, group_id, number, round_index, resource_id, away_terms in _iter_real_resource_match_inputs(
+        materialization_vars,
+        slot_terms,
+        candidate_by_assignment,
+    ):
+        if resource_id not in saturable_resources:
+            continue
+        away_used = sum(away_terms)
+        match_var = model.NewBoolVar(
+            f"match_resource_{_safe_name(team_id)}_{_safe_name(group_id)}_{number}_{round_index}"
+        )
+        model.Add(match_var <= home_var)
+        model.Add(match_var <= away_used)
+        model.Add(match_var >= home_var + away_used - 1)
+        resource_terms[resource_id].append(match_var)
 
 
 def _candidate_by_team_group_number(context: SolverContext) -> dict[tuple[str, str, int], Candidate]:

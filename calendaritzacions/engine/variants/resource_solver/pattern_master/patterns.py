@@ -22,6 +22,9 @@ try:
 except Exception:  # pragma: no cover
     linkage_domain = None
 
+PATTERN_PAYLOAD_ASSIGNMENT_SAMPLE_LIMIT = 20
+PATTERN_PAYLOAD_RESOURCE_USAGE_SAMPLE_LIMIT = 40
+
 
 def generate_initial_patterns(
     context: SolverContext,
@@ -892,13 +895,27 @@ def _load_cp_model() -> Any | None:
 
 
 def _pattern_payload(pattern: HubPattern) -> dict[str, Any]:
-    payload = asdict(pattern)
-    payload["assignments"] = [asdict(item) for item in pattern.assignments]
-    payload["competition_number_counts"] = {
-        key: {str(number): count for number, count in counts.items()}
-        for key, counts in pattern.competition_number_counts.items()
+    resource_items = sorted(pattern.resource_usage.items())
+    return {
+        "pattern_id": pattern.pattern_id,
+        "hub_id": pattern.hub_id,
+        "variant": pattern.variant,
+        "cost": pattern.cost,
+        "cost_breakdown": dict(pattern.cost_breakdown),
+        "assignment_count": len(pattern.assignments),
+        "assignments": [
+            asdict(item)
+            for item in pattern.assignments[:PATTERN_PAYLOAD_ASSIGNMENT_SAMPLE_LIMIT]
+        ],
+        "assignments_truncated": len(pattern.assignments) > PATTERN_PAYLOAD_ASSIGNMENT_SAMPLE_LIMIT,
+        "resource_usage_count": len(resource_items),
+        "resource_usage": dict(resource_items[:PATTERN_PAYLOAD_RESOURCE_USAGE_SAMPLE_LIMIT]),
+        "resource_usage_truncated": len(resource_items) > PATTERN_PAYLOAD_RESOURCE_USAGE_SAMPLE_LIMIT,
+        "competition_number_counts": {
+            key: {str(number): count for number, count in counts.items()}
+            for key, counts in pattern.competition_number_counts.items()
+        },
     }
-    return payload
 
 
 def _slot_domain_key(group_ids: tuple[str, ...]) -> str:
