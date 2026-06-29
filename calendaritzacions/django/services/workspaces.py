@@ -10,6 +10,7 @@ from typing import Any
 
 from django.db import transaction
 
+from calendaritzacions.domain.phases import phase_calendar, slot_count_for_numbers
 from calendaritzacions.django.models import (
     AssignmentWorkspace,
     CalendarizationComponentRun,
@@ -20,9 +21,10 @@ from calendaritzacions.django.models import (
 )
 from calendaritzacions.django.services.audit_reader import discover_audit_paths, read_json_file
 
-HYDRATION_VERSION = 7
+HYDRATION_VERSION = 8
 MAX_POSITIVE_SMALLINT = 32767
 RESOURCE_WORKSPACE_ENGINES = {
+    CalendarizationRun.ENGINE_LEGACY,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_LINKAGE,
     CalendarizationRun.ENGINE_RESOURCE_SOLVER_VINCULACIO,
@@ -61,6 +63,9 @@ def hydrate_workspace_from_audits(
 
     _validate_workspace_run(run)
     workspace = workspace or get_or_create_workspace_for_run(run)
+    if run.engine_name == CalendarizationRun.ENGINE_LEGACY:
+        return _hydrate_legacy_workspace_from_kpis(run, workspace=workspace)
+
     payloads = _read_payloads(run)
     solution = payloads["resource_solution"]
     teams = _team_lookup(payloads["team_catalog"])
@@ -135,6 +140,8 @@ def get_workspace_incident_detail(
         return _linkage_violation_incident_detail(workspace, incident)
     if incident.incident_type == WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH:
         return _level_mismatch_incident_detail(workspace, incident)
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_SEED_DEVIATION:
+        return _seed_deviation_incident_detail(workspace, incident)
 
     resource_id = incident.resource_id
     matches = WorkspaceResourceMatch.objects.filter(
@@ -451,6 +458,95 @@ def _level_mismatch_incident_detail(
             "Provar moure un equip implicat a un grup amb nivell normalitzat compatible.",
             "Prioritzar no barrejar A amb no-A quan hi hagi alternativa.",
             "Usar equips B/C com a pont abans de barrejar directament B amb C.",
+        ],
+    }
+
+
+def _seed_deviation_incident_detail(
+    workspace: AssignmentWorkspace,
+    incident: WorkspaceResourceIncident,
+) -> dict[str, Any]:
+    payload = incident.payload or {}
+    team_ids = [str(team_id) for team_id in (incident.team_ids or [])]
+    assignments = {
+        assignment.team_id: assignment
+        for assignment in WorkspaceAssignment.objects.filter(
+            workspace=workspace,
+            team_id__in=team_ids,
+        )
+    }
+    group_ids = {assignment.group_id for assignment in assignments.values() if assignment.group_id}
+    matches = list(
+        WorkspaceResourceMatch.objects.filter(
+            workspace=workspace,
+            group_id__in=group_ids,
+        ).order_by("group_id", "round_index", "id")
+    )
+    affected_rounds = {
+        round_index
+        for round_index in (_int_or_none(value) for value in _list(payload.get("rounds")))
+        if round_index is not None
+    }
+    affected_matches = []
+    team_calendars = []
+    for team_id in team_ids:
+        assignment = assignments.get(team_id)
+        if assignment is None:
+            continue
+        calendar = []
+        for match in matches:
+            if match.home_team_id != team_id and match.away_team_id != team_id:
+                continue
+            is_home = match.home_team_id == team_id
+            opponent_id = match.away_team_id if is_home else match.home_team_id
+            opponent_name = match.payload.get("away_team_name" if is_home else "home_team_name", "")
+            row = {
+                "id": match.pk,
+                "round": match.round_index,
+                "side": "Casa" if is_home else "Fora",
+                "opponent_id": opponent_id,
+                "opponent": _team_label(opponent_id, opponent_name),
+                "resource": _resource_label(match.home_resource_id) if is_home else "-",
+                "home_team": _team_label(match.home_team_id, match.payload.get("home_team_name", "")),
+                "home_team_id": match.home_team_id,
+                "away_team": _team_label(match.away_team_id, match.payload.get("away_team_name", "")),
+                "away_team_id": match.away_team_id,
+                "is_affected_round": bool(match.round_index in affected_rounds),
+            }
+            calendar.append(row)
+            if row["is_affected_round"]:
+                affected_matches.append(row)
+        team_calendars.append(
+            {
+                "team_id": team_id,
+                "team_name": assignment.team_name or team_id,
+                "number": assignment.assigned_number,
+                "group_id": assignment.group_id,
+                "calendar": calendar,
+            }
+        )
+
+    return {
+        **_incident_summary(incident),
+        "detail": (
+            "El motor legacy ha assignat un numero diferent del numero esperat per la peticio. "
+            "La severitat representa les jornades on canvia el patró casa/fora."
+        ),
+        "facts": [
+            {"label": "Equip", "value": payload.get("team_name") or ", ".join(team_ids) or "-"},
+            {"label": "Grup", "value": payload.get("group_id") or "-"},
+            {"label": "Peticio", "value": payload.get("requested") or "-"},
+            {"label": "Numero esperat", "value": payload.get("expected_number") or "-"},
+            {"label": "Numero assignat", "value": payload.get("assigned_number") or "-"},
+            {"label": "Jornades afectades", "value": payload.get("damage_rounds") or incident.severity},
+            {"label": "Detall", "value": payload.get("differences") or "-"},
+        ],
+        "affected_matches": affected_matches,
+        "team_calendars": team_calendars,
+        "recommendations": [
+            "Comparar el numero esperat amb alternatives del mateix grup abans de moure l'equip.",
+            "Prioritzar canvis que redueixin jornades afectades sense crear conflictes d'entitat.",
+            "Si la peticio era CASA/FORA, revisar la dupla assignada a l'entitat.",
         ],
     }
 
@@ -1218,10 +1314,12 @@ def _validate_workspace_run(run: CalendarizationRun) -> None:
     if run.status != CalendarizationRun.STATUS_SUCCESS:
         raise ValueError("El workspace nomes es pot crear per runs finalitzats correctament.")
     if run.engine_name not in RESOURCE_WORKSPACE_ENGINES:
-        raise ValueError("El workspace nomes esta disponible pels motors resource_solver.")
+        raise ValueError("El workspace nomes esta disponible pels motors calendaritzables.")
 
 
 def _workspace_solution_artifact(run: CalendarizationRun) -> str:
+    if run.engine_name == CalendarizationRun.ENGINE_LEGACY:
+        return "kpis"
     if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_CONFLICT_REPAIR:
         return "resource_solver_conflict_repair_result"
     if run.engine_name == CalendarizationRun.ENGINE_RESOURCE_SOLVER_PATTERN_MASTER:
@@ -1239,6 +1337,501 @@ def _workspace_is_hydrated(workspace: AssignmentWorkspace) -> bool:
 
 def _workspace_is_current(workspace: AssignmentWorkspace) -> bool:
     return _workspace_is_hydrated(workspace) and (workspace.summary or {}).get("hydration_version") == HYDRATION_VERSION
+
+
+def _hydrate_legacy_workspace_from_kpis(
+    run: CalendarizationRun,
+    *,
+    workspace: AssignmentWorkspace,
+) -> AssignmentWorkspace:
+    payload = _read_legacy_kpis(run)
+    analysis_rows = _list_dicts(payload.get("analysis_rows"))
+    phase = _legacy_phase_calendar(run, payload, analysis_rows)
+    records = _legacy_assignment_records(analysis_rows, phase)
+
+    with transaction.atomic():
+        WorkspaceResourceIncident.objects.filter(workspace=workspace).delete()
+        WorkspaceResourceMatch.objects.filter(workspace=workspace).delete()
+        WorkspaceAssignment.objects.filter(workspace=workspace).delete()
+
+        _create_legacy_assignments(workspace, records, phase)
+        _create_legacy_matches(workspace, records, phase)
+        _create_legacy_seed_deviation_incidents(workspace, records)
+        _create_legacy_entity_conflict_incidents(workspace, payload)
+        _create_legacy_level_mismatch_incidents(workspace, payload)
+        workspace.summary = _build_persisted_summary(workspace)
+        workspace.status = AssignmentWorkspace.STATUS_ACTIVE
+        workspace.source_artifact = "kpis"
+        workspace.save(update_fields=["summary", "status", "source_artifact", "updated_at"])
+
+    return workspace
+
+
+def _read_legacy_kpis(run: CalendarizationRun) -> dict[str, Any]:
+    audit_paths = dict(run.audit_paths or {}) if isinstance(run.audit_paths, dict) else {}
+    candidates = [
+        run.kpis_path,
+        audit_paths.get("kpis"),
+        audit_paths.get("kpi"),
+    ]
+    if run.output_path:
+        discovered = discover_audit_paths(run.output_path)
+        candidates.extend(
+            path
+            for key, path in discovered.items()
+            if key == "kpis" or str(key).startswith("kpis_")
+        )
+    for path in candidates:
+        if not path:
+            continue
+        payload = read_json_file(str(Path(path)))
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _legacy_phase_calendar(
+    run: CalendarizationRun,
+    payload: dict[str, Any],
+    analysis_rows: list[dict[str, Any]],
+) -> tuple[tuple[tuple[int, int], ...], ...]:
+    numbers = [
+        number
+        for number in (_int_or_none(row.get("numero_assignat")) for row in analysis_rows)
+        if number is not None
+    ]
+    phase_name = str(payload.get("fase") or run.phase or CalendarizationRun.PHASE_FIRST)
+    try:
+        return phase_calendar(phase_name, slot_count_for_numbers(numbers))
+    except Exception:
+        return phase_calendar(phase_name, 8)
+
+
+def _legacy_assignment_records(
+    analysis_rows: list[dict[str, Any]],
+    phase: tuple[tuple[tuple[int, int], ...], ...],
+) -> list[dict[str, Any]]:
+    records = []
+    used_ids: set[str] = set()
+    for index, row in enumerate(analysis_rows):
+        team_name = _first_legacy_text(row, ("Equip", "Nom", "team_name", "name"))
+        if not team_name or team_name == "DESCANS":
+            continue
+        assigned_number = _int_or_none(row.get("numero_assignat"))
+        group_id = _first_legacy_text(row, ("Grup", "group_id"))
+        if assigned_number is None or not group_id:
+            continue
+        team_id = _legacy_team_id(row, index, used_ids)
+        team = _legacy_team_payload(row, team_id, team_name)
+        home_rounds = _legacy_home_rounds(assigned_number, phase)
+        home_resources = [
+            _legacy_home_resource_row(team, group_id, round_index)
+            for round_index in home_rounds
+        ]
+        selected_candidate = {
+            "team_id": team_id,
+            "group_id": group_id,
+            "number": assigned_number,
+            "potential_home_rounds": home_rounds,
+            "potential_resources": [row["resource_id"] for row in home_resources],
+        }
+        records.append(
+            {
+                "row": row,
+                "team_id": team_id,
+                "team_name": team_name,
+                "entity": _first_legacy_text(row, ("Entitat", "entity")) or "Sense entitat",
+                "group_id": group_id,
+                "assigned_number": assigned_number,
+                "seed_request_original": _first_legacy_text(row, ("peticio", "Núm. sorteig", "Num. sorteig")),
+                "team": team,
+                "selected_candidate": selected_candidate,
+                "home_resources": home_resources,
+            }
+        )
+    return records
+
+
+def _create_legacy_assignments(
+    workspace: AssignmentWorkspace,
+    records: list[dict[str, Any]],
+    phase: tuple[tuple[tuple[int, int], ...], ...],
+) -> None:
+    rows = [
+        WorkspaceAssignment(
+            workspace=workspace,
+            run=workspace.run,
+            team_id=record["team_id"],
+            team_name=record["team_name"],
+            entity=record["entity"],
+            group_id=record["group_id"],
+            assigned_number=record["assigned_number"],
+            previous_group_id=record["group_id"],
+            previous_number=record["assigned_number"],
+            seed_request_original=record["seed_request_original"],
+            payload=_json_safe(
+                {
+                    "team": record["team"],
+                    "selected_candidate": record["selected_candidate"],
+                    "home_resources": record["home_resources"],
+                    "alternatives": _legacy_alternatives(record["team"], record["group_id"], phase),
+                    "legacy_row": record["row"],
+                }
+            ),
+        )
+        for record in records
+    ]
+    if rows:
+        WorkspaceAssignment.objects.bulk_create(rows)
+
+
+def _create_legacy_matches(
+    workspace: AssignmentWorkspace,
+    records: list[dict[str, Any]],
+    phase: tuple[tuple[tuple[int, int], ...], ...],
+) -> None:
+    by_group_number: dict[str, dict[int, dict[str, Any]]] = defaultdict(dict)
+    for record in records:
+        by_group_number[record["group_id"]][int(record["assigned_number"])] = record
+
+    rows = []
+    for group_id, by_number in by_group_number.items():
+        for round_index, round_matches in enumerate(phase, start=1):
+            for home_number, away_number in round_matches:
+                home = by_number.get(int(home_number))
+                away = by_number.get(int(away_number))
+                if not home or not away:
+                    continue
+                resource_id = _legacy_resource_id(home["team"], group_id, round_index)
+                rows.append(
+                    WorkspaceResourceMatch(
+                        workspace=workspace,
+                        run=workspace.run,
+                        round_index=round_index,
+                        group_id=group_id,
+                        home_team_id=home["team_id"],
+                        away_team_id=away["team_id"],
+                        home_resource_id=resource_id,
+                        payload=_json_safe(
+                            {
+                                "engine": "legacy",
+                                "round_index": round_index,
+                                "group_id": group_id,
+                                "home_number": home_number,
+                                "away_number": away_number,
+                                "home_team_name": home["team_name"],
+                                "away_team_name": away["team_name"],
+                                "resource_id": resource_id,
+                            }
+                        ),
+                    )
+                )
+    if rows:
+        WorkspaceResourceMatch.objects.bulk_create(rows)
+
+
+def _create_legacy_seed_deviation_incidents(
+    workspace: AssignmentWorkspace,
+    records: list[dict[str, Any]],
+) -> None:
+    rows = []
+    for record in records:
+        row = record["row"]
+        severity = _legacy_damage_rounds(row)
+        if severity <= 0 and not _truthy(row.get("te_incidencia")):
+            continue
+        rounds = _legacy_incident_rounds(row)
+        expected = _int_or_none(row.get("numero_esperat"))
+        assigned = record["assigned_number"]
+        league = _legacy_competition_label(record["team"])
+        rows.append(
+            WorkspaceResourceIncident(
+                workspace=workspace,
+                run=workspace.run,
+                incident_type=WorkspaceResourceIncident.TYPE_SEED_DEVIATION,
+                status=WorkspaceResourceIncident.STATUS_OPEN,
+                severity=_incident_severity(severity or 1),
+                resource_id=f"{record['group_id']}|seed_deviation|{record['team_id']}"[:255],
+                excess=0,
+                locals_count=severity,
+                capacity=0,
+                team_ids=[record["team_id"]],
+                payload=_json_safe(
+                    {
+                        "engine": "legacy",
+                        "team_id": record["team_id"],
+                        "team_name": record["team_name"],
+                        "group_id": record["group_id"],
+                        "requested": row.get("peticio"),
+                        "expected_number": expected,
+                        "assigned_number": assigned,
+                        "rounds": rounds,
+                        "damage_rounds": severity,
+                        "differences": row.get("diferencies_jornades"),
+                        "league_counts": {league: 1},
+                        "resource_label": f"{record['group_id']} - {record['team_name']}",
+                    }
+                ),
+            )
+        )
+    if rows:
+        WorkspaceResourceIncident.objects.bulk_create(rows)
+
+
+def _create_legacy_entity_conflict_incidents(
+    workspace: AssignmentWorkspace,
+    payload: dict[str, Any],
+) -> None:
+    rows = []
+    assignments = list(WorkspaceAssignment.objects.filter(workspace=workspace))
+    for conflict in _list_dicts(payload.get("conflictes_entitat")):
+        group_id = _first_legacy_text(conflict, ("Grup", "group_id"))
+        entity = _first_legacy_text(conflict, ("Entitat", "entity"))
+        if not group_id or not entity:
+            continue
+        team_ids = [
+            assignment.team_id
+            for assignment in assignments
+            if assignment.group_id == group_id and assignment.entity == entity
+        ]
+        if len(team_ids) <= 1:
+            continue
+        count = _int_or_none(conflict.get("Count")) or len(team_ids)
+        excess = max(1, count - 1)
+        league_counts = Counter(
+            _assignment_competition_label(assignment)
+            for assignment in assignments
+            if assignment.team_id in team_ids
+        )
+        rows.append(
+            WorkspaceResourceIncident(
+                workspace=workspace,
+                run=workspace.run,
+                incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
+                status=WorkspaceResourceIncident.STATUS_OPEN,
+                severity=_incident_severity(excess),
+                resource_id=f"{group_id}|{entity}"[:255],
+                excess=excess,
+                locals_count=count,
+                capacity=1,
+                team_ids=team_ids,
+                payload=_json_safe(
+                    {
+                        "engine": "legacy",
+                        "entity": entity,
+                        "group_id": group_id,
+                        "team_slots": [
+                            {
+                                "team_id": assignment.team_id,
+                                "team_name": assignment.team_name,
+                                "number": assignment.assigned_number,
+                            }
+                            for assignment in assignments
+                            if assignment.team_id in team_ids
+                        ],
+                        "league_counts": dict(league_counts),
+                    }
+                ),
+            )
+        )
+    if rows:
+        WorkspaceResourceIncident.objects.bulk_create(rows)
+
+
+def _create_legacy_level_mismatch_incidents(
+    workspace: AssignmentWorkspace,
+    payload: dict[str, Any],
+) -> None:
+    rows = []
+    assignments = list(WorkspaceAssignment.objects.filter(workspace=workspace))
+    for incident in _list_dicts(payload.get("nivells_dispars")):
+        group_id = _first_legacy_text(incident, ("Grup", "group_id"))
+        if not group_id:
+            continue
+        group_assignments = [assignment for assignment in assignments if assignment.group_id == group_id]
+        team_ids = [assignment.team_id for assignment in group_assignments]
+        if len(team_ids) < 2:
+            continue
+        dispersion = _int_or_none(incident.get("Dif")) or 1
+        league_counts = Counter(_assignment_competition_label(assignment) for assignment in group_assignments)
+        rows.append(
+            WorkspaceResourceIncident(
+                workspace=workspace,
+                run=workspace.run,
+                incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH,
+                status=WorkspaceResourceIncident.STATUS_OPEN,
+                severity=_incident_severity(dispersion),
+                resource_id=f"{group_id}|level_mismatch"[:255],
+                excess=dispersion,
+                locals_count=len(team_ids),
+                capacity=0,
+                team_ids=team_ids,
+                payload=_json_safe(
+                    {
+                        "engine": "legacy",
+                        "group_id": group_id,
+                        "families": [str(incident.get("Nivells") or "")],
+                        "dispersion": dispersion,
+                        "violation_cost": dispersion,
+                        "league_counts": dict(league_counts),
+                        "teams": [
+                            {
+                                "team_id": assignment.team_id,
+                                "team_name": assignment.team_name,
+                                "group_id": assignment.group_id,
+                                "assigned_number": assignment.assigned_number,
+                                "raw_level": _assignment_team(assignment).get("level", ""),
+                                "normalized_level": _workspace_level_label(_assignment_team(assignment).get("level", "")),
+                            }
+                            for assignment in group_assignments
+                        ],
+                    }
+                ),
+            )
+        )
+    if rows:
+        WorkspaceResourceIncident.objects.bulk_create(rows)
+
+
+def _legacy_team_payload(row: dict[str, Any], team_id: str, team_name: str) -> dict[str, Any]:
+    league = _first_legacy_text(row, ("Categoria", "Nom Lliga", "league_name")) or "Sense lliga"
+    return {
+        "team_id": team_id,
+        "name": team_name,
+        "entity": _first_legacy_text(row, ("Entitat", "entity")) or "Sense entitat",
+        "league_name": league,
+        "modality": _first_legacy_text(row, ("Modalitat", "modality")) or "Sense modalitat",
+        "category": _first_legacy_text(row, ("Categoria", "category")),
+        "subcategory": _first_legacy_text(row, ("Subcategoria", "subcategory")),
+        "level": _first_legacy_text(row, ("Nivell", "level")),
+        "venue": _first_legacy_text(row, ("Pista joc", "venue")),
+        "day": _first_legacy_text(row, ("Dia partit", "day")),
+        "time": _first_legacy_text(row, ("Horari partit", "time")),
+        "seed_request_original": _first_legacy_text(row, ("peticio", "request_code")),
+    }
+
+
+def _legacy_team_id(row: dict[str, Any], index: int, used_ids: set[str]) -> str:
+    raw = _first_legacy_text(row, ("Id", "team_id", "id"))
+    if not raw:
+        raw = f"legacy-{index + 1}"
+    candidate = raw
+    suffix = 2
+    while candidate in used_ids:
+        candidate = f"{raw}-{suffix}"
+        suffix += 1
+    used_ids.add(candidate)
+    return candidate
+
+
+def _legacy_home_rounds(
+    assigned_number: int,
+    phase: tuple[tuple[tuple[int, int], ...], ...],
+) -> list[int]:
+    rounds = []
+    for round_index, round_matches in enumerate(phase, start=1):
+        if any(int(home) == int(assigned_number) for home, _away in round_matches):
+            rounds.append(round_index)
+    return rounds
+
+
+def _legacy_home_resource_row(team: dict[str, Any], group_id: str, round_index: int) -> dict[str, Any]:
+    resource_id = _legacy_resource_id(team, group_id, round_index)
+    base_resource_id, _round_label = _split_resource_round(resource_id)
+    return {
+        "round": round_index,
+        "resource_id": resource_id,
+        "resource": _resource_label(resource_id),
+        "base_resource_id": base_resource_id,
+        "locals_count": 0,
+        "capacity": 1,
+        "excess": 0,
+        "pressure": "",
+        "demand_count": "",
+        "is_critical": False,
+        "sharing_teams": [],
+    }
+
+
+def _legacy_resource_id(team: dict[str, Any], group_id: str, round_index: int) -> str:
+    venue = _resource_token(team.get("venue") or "legacy")
+    day = _resource_token(team.get("day") or group_id or "grup")
+    hour = _resource_token(team.get("time") or "sense-hora")
+    return f"{venue}|{day}|{hour}|J{round_index}"
+
+
+def _legacy_alternatives(
+    team: dict[str, Any],
+    group_id: str,
+    phase: tuple[tuple[tuple[int, int], ...], ...],
+) -> list[dict[str, Any]]:
+    rows = []
+    for number in range(1, 9):
+        rounds = _legacy_home_rounds(number, phase)
+        rows.append(
+            {
+                "group_id": group_id,
+                "number": number,
+                "home_rounds": rounds,
+                "resources": [_resource_label(_legacy_resource_id(team, group_id, round_index)) for round_index in rounds],
+                "current_resource_excess": 0,
+                "critical_resources": 0,
+            }
+        )
+    return rows
+
+
+def _legacy_damage_rounds(row: dict[str, Any]) -> int:
+    value = _int_or_none(row.get("dany_jornades"))
+    if value is not None:
+        return max(0, value)
+    value = _int_or_none(row.get("Mismatch jornades"))
+    return max(0, value or 0)
+
+
+def _legacy_incident_rounds(row: dict[str, Any]) -> list[int]:
+    text = str(row.get("diferencies_jornades") or row.get("Diferències jornades") or "")
+    rounds = []
+    for match in re.finditer(r"\bJ\s*(\d+)\b", text, flags=re.IGNORECASE):
+        try:
+            rounds.append(int(match.group(1)))
+        except ValueError:
+            continue
+    return sorted(set(rounds))
+
+
+def _legacy_competition_label(team: dict[str, Any]) -> str:
+    parts = [
+        str(team.get("league_name") or "").strip(),
+        str(team.get("modality") or "").strip(),
+        str(team.get("category") or "").strip(),
+        str(team.get("subcategory") or "").strip(),
+    ]
+    compact = [part for part in parts if part]
+    return " / ".join(compact) if compact else "Sense lliga"
+
+
+def _first_legacy_text(row: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text.casefold() not in {"nan", "none", "null", "—", "-"}:
+            return text
+    return ""
+
+
+def _resource_token(value: Any) -> str:
+    text = str(value or "").strip()
+    return re.sub(r"\|+", " ", text) if text else "sense-dada"
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().casefold()
+    return text in {"1", "true", "yes", "si", "sí"}
 
 
 def _read_payloads(run: CalendarizationRun) -> dict[str, Any]:
@@ -1539,6 +2132,9 @@ def _create_linkage_violation_incidents(
         linkage_group = _first_text(violation, ("linkage_group", "linkage_group_id", "group", "group_id", "link_id"))
         expected_relation = _first_text(violation, ("expected_relation", "expected", "relation", "constraint"))
         violation_cost = _linkage_violation_cost(violation)
+        is_calendar_warning = str(violation.get("severity") or "").strip().casefold() == "warning" and int(
+            _number(violation.get("calendar_mismatches"))
+        ) <= 0
         league_counts = Counter(_competition_label(teams.get(team_id, {})) for team_id in team_ids)
         resource_id = _linkage_violation_resource_id(venue, day, times, linkage_group)
         payload = {
@@ -1558,9 +2154,9 @@ def _create_linkage_violation_incidents(
                 run=workspace.run,
                 incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
                 status=WorkspaceResourceIncident.STATUS_OPEN,
-                severity=_incident_severity(violation_cost),
+                severity=1 if is_calendar_warning else _incident_severity(violation_cost),
                 resource_id=resource_id,
-                excess=max(1, int(math.ceil(violation_cost))),
+                excess=1 if is_calendar_warning else max(1, int(math.ceil(violation_cost))),
                 locals_count=len(team_ids),
                 capacity=0,
                 team_ids=team_ids,
@@ -1877,6 +2473,7 @@ def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
     incidents = WorkspaceResourceIncident.objects.filter(workspace=workspace)
     resource_incidents = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS)
     entity_conflicts = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT)
+    seed_deviations = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_SEED_DEVIATION)
     linkage_violations = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION)
     level_mismatches = incidents.filter(incident_type=WorkspaceResourceIncident.TYPE_LEVEL_MISMATCH)
     return {
@@ -1885,6 +2482,7 @@ def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
         "matches": WorkspaceResourceMatch.objects.filter(workspace=workspace).count(),
         "resource_incidents": resource_incidents.count(),
         "entity_conflicts": entity_conflicts.count(),
+        "seed_deviations": seed_deviations.count(),
         "linkage_violations": linkage_violations.count(),
         "level_mismatches": level_mismatches.count(),
         "resource_excess_total": sum(incident.excess for incident in resource_incidents),
@@ -1902,6 +2500,10 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
         workspace=workspace,
         incident_type=WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
     )
+    seed_deviations = WorkspaceResourceIncident.objects.filter(
+        workspace=workspace,
+        incident_type=WorkspaceResourceIncident.TYPE_SEED_DEVIATION,
+    )
     linkage_violations = WorkspaceResourceIncident.objects.filter(
         workspace=workspace,
         incident_type=WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION,
@@ -1913,6 +2515,7 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
     excess_total = sum(incident.excess for incident in resource_incidents)
     resource_count = resource_incidents.count()
     entity_conflict_count = entity_conflicts.count()
+    seed_deviation_count = seed_deviations.count()
     linkage_violation_count = linkage_violations.count()
     level_mismatch_count = level_mismatches.count()
     return [
@@ -1928,6 +2531,12 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
             "label": "Conflictes entitat",
             "value": entity_conflict_count,
             "status": "warning" if entity_conflict_count else "success",
+        },
+        {
+            "label": "Desviacions peticio",
+            "value": seed_deviation_count,
+            "subtitle": f"{sum(incident.severity for incident in seed_deviations)} jornades",
+            "status": "warning" if seed_deviation_count else "success",
         },
         {
             "label": "Linkage violat",
@@ -1977,6 +2586,7 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
     if incident.incident_type == WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION:
         linkage_group = str(payload.get("linkage_group") or "-")
         expected_relation = str(payload.get("expected_relation") or "-")
+        is_warning = str(payload.get("severity") or "").strip().casefold() == "warning"
         venue = str(payload.get("venue") or "")
         day = str(payload.get("day") or "")
         times = payload.get("times")
@@ -1991,10 +2601,18 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
             "id": incident.pk,
             "incident_id": incident.pk,
             "type_key": incident.incident_type,
-            "type": "Linkage violation",
+            "type": "Linkage warning" if is_warning else "Linkage violation",
             "title": " - ".join(title_parts) if title_parts else "Linkage violation",
-            "summary": f"{expected_relation} incumplert",
-            "description": f"{expected_relation} incumplert",
+            "summary": (
+                f"{expected_relation} no coincideix en numero, calendari compatible"
+                if is_warning
+                else f"{expected_relation} incumplert"
+            ),
+            "description": (
+                f"{expected_relation} no coincideix en numero, pero no genera mismatches casa/fora"
+                if is_warning
+                else f"{expected_relation} incumplert"
+            ),
             "impact": f"+{payload.get('violation_cost') or incident.excess}",
             "count": incident.excess,
             "severity": incident.severity,
@@ -2036,6 +2654,33 @@ def _incident_summary(incident: WorkspaceResourceIncident) -> dict[str, Any]:
             "competition": _top_league_label(payload.get("league_counts")),
             "team": ", ".join(team_labels) if team_labels else "-",
             "team_name": ", ".join(team_labels) if team_labels else "-",
+            "team_ids": incident.team_ids or [],
+            "payload": payload,
+        }
+    if incident.incident_type == WorkspaceResourceIncident.TYPE_SEED_DEVIATION:
+        team_name = str(payload.get("team_name") or "-")
+        group_id = str(payload.get("group_id") or "-")
+        expected = payload.get("expected_number") or "-"
+        assigned = payload.get("assigned_number") or "-"
+        damage = payload.get("damage_rounds") or incident.severity
+        return {
+            "id": incident.pk,
+            "incident_id": incident.pk,
+            "type_key": incident.incident_type,
+            "type": "Desviacio peticio",
+            "title": f"{team_name} - {group_id}",
+            "summary": f"Esperat {expected}, assignat {assigned}",
+            "description": f"{damage} jornada/es afectades",
+            "impact": str(damage),
+            "count": damage,
+            "severity": incident.severity,
+            "status": incident.get_status_display(),
+            "resource": group_id,
+            "venue": group_id,
+            "league": _top_league_label(payload.get("league_counts")),
+            "competition": _top_league_label(payload.get("league_counts")),
+            "team": team_name,
+            "team_name": team_name,
             "team_ids": incident.team_ids or [],
             "payload": payload,
         }

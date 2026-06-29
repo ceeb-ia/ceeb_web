@@ -237,6 +237,17 @@ def _incident_rounds(
     rounds_by_group: dict[str, set[int]],
     rounds_by_team: dict[str, set[int]],
 ) -> list[int]:
+    payload = incident.payload or {}
+    payload_rounds = payload.get("rounds")
+    if isinstance(payload_rounds, list):
+        rounds = []
+        for value in payload_rounds:
+            try:
+                rounds.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        if rounds:
+            return sorted(set(rounds))
     parsed = _round_from_resource(incident.resource_id)
     if parsed:
         return [parsed]

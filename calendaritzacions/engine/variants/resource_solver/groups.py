@@ -14,7 +14,6 @@ IDEAL_MIN_GROUP_SIZE = 6
 IDEAL_MAX_GROUP_SIZE = 8
 EXCEPTIONAL_MAX_GROUP_SIZE = 10
 DEFAULT_NUMBERS = tuple(range(1, 9))
-EXCEPTIONAL_NUMBERS = tuple(range(1, 11))
 HARD_LEVEL_FAMILIES = ("A", "B", "C")
 
 
@@ -103,17 +102,7 @@ def build_group_specs(
             team_count,
             max_group_size=config.max_group_size,
         )
-    return tuple(
-        GroupSpec(
-            group_id=f"{group_prefix}{index}",
-            min_size=target_size,
-            max_size=target_size,
-            target_size=target_size,
-            phase_name=phase_name,
-            numbers=_numbers_for_target_size(target_size),
-        )
-        for index, target_size in enumerate(targets, start=1)
-    )
+    return _group_specs_from_targets(targets, phase_name=phase_name, group_prefix=group_prefix)
 
 
 def build_hard_level_group_plan(
@@ -146,16 +135,10 @@ def build_hard_level_group_plan(
     audit_rows: list[dict[str, object]] = []
     for family in HARD_LEVEL_FAMILIES:
         targets = structural_group_size_targets(planned_counts[family])
-        family_groups = tuple(
-            GroupSpec(
-                group_id=f"{group_prefix}_{family}_G{index}",
-                min_size=target_size,
-                max_size=target_size,
-                target_size=target_size,
-                phase_name=phase_name,
-                numbers=_numbers_for_target_size(target_size),
-            )
-            for index, target_size in enumerate(targets, start=1)
+        family_groups = _group_specs_from_targets(
+            targets,
+            phase_name=phase_name,
+            group_prefix=f"{group_prefix}_{family}_G",
         )
         groups.extend(family_groups)
         groups_by_family[family] = family_groups
@@ -257,10 +240,49 @@ def _bounded_group_size_targets(num_teams: int, *, min_size: int, max_size: int)
 
 
 def _numbers_for_target_size(target_size: int) -> tuple[int, ...]:
-    return EXCEPTIONAL_NUMBERS if target_size > IDEAL_MAX_GROUP_SIZE else DEFAULT_NUMBERS
+    return DEFAULT_NUMBERS
+
+
+def _group_specs_from_targets(
+    targets: tuple[int, ...],
+    *,
+    phase_name: str,
+    group_prefix: str,
+) -> tuple[GroupSpec, ...]:
+    groups: list[GroupSpec] = []
+    for index, target_size in enumerate(targets, start=1):
+        if target_size > IDEAL_MAX_GROUP_SIZE:
+            bucket_id = f"{group_prefix}{index}"
+            for suffix in ("A", "B"):
+                groups.append(
+                    GroupSpec(
+                        group_id=f"{bucket_id}{suffix}",
+                        min_size=0,
+                        max_size=IDEAL_MAX_GROUP_SIZE,
+                        target_size=0,
+                        phase_name=phase_name,
+                        numbers=DEFAULT_NUMBERS,
+                        size_bucket_id=bucket_id,
+                        size_bucket_target=target_size,
+                    )
+                )
+            continue
+        groups.append(
+            GroupSpec(
+                group_id=f"{group_prefix}{index}",
+                min_size=target_size,
+                max_size=target_size,
+                target_size=target_size,
+                phase_name=phase_name,
+                numbers=DEFAULT_NUMBERS,
+            )
+        )
+    return tuple(groups)
 
 
 def _empty_count_for_target(target_size: int) -> int:
+    if target_size > IDEAL_MAX_GROUP_SIZE:
+        return 0
     return len(_numbers_for_target_size(target_size)) - target_size
 
 
@@ -294,6 +316,7 @@ def empty_numbers_by_group(group_specs: Iterable[GroupSpec]) -> dict[str, int]:
     return {
         group.group_id: len(group.numbers) - group.target_size
         for group in group_specs
+        if not str(getattr(group, "size_bucket_id", "") or "")
     }
 
 

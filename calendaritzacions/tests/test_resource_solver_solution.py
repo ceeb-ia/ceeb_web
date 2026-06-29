@@ -180,6 +180,7 @@ def _ten_slot_context() -> SolverContext:
                 max_size=9,
                 target_size=9,
                 phase_name="primera_fase",
+                numbers=tuple(range(1, 11)),
             ),
         ),
         candidates=(

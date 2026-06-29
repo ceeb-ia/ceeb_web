@@ -185,8 +185,12 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         small_groups = groups_by_team["T0"]
         large_groups = groups_by_team["T4"]
         self.assertEqual(len(small_groups), 1)
-        self.assertEqual(len(large_groups), 2)
-        self.assertEqual([group.target_size for group in context.groups if group.group_id in large_groups], [9, 8])
+        self.assertEqual(len(large_groups), 3)
+        large_group_specs = [group for group in context.groups if group.group_id in large_groups]
+        self.assertEqual([group.target_size for group in large_group_specs], [0, 0, 8])
+        self.assertEqual([group.size_bucket_id for group in large_group_specs], ["C1_G1", "C1_G1", ""])
+        self.assertEqual([group.size_bucket_target for group in large_group_specs], [9, 9, 0])
+        self.assertTrue(all(group.numbers == tuple(range(1, 9)) for group in large_group_specs))
         self.assertTrue(small_groups.isdisjoint(large_groups))
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
@@ -199,9 +203,11 @@ class ResourceSolverResourcesTests(unittest.TestCase):
         context = build_context_from_dataframe(pd.DataFrame(rows), ResourceSolverConfig(linkage_mode="off"))
         groups_by_team = _candidate_groups_by_team(context)
 
-        self.assertEqual(len(groups_by_team["T0"]), 1)
-        self.assertEqual(context.groups[0].target_size, 9)
-        self.assertEqual(context.groups[0].numbers, tuple(range(1, 11)))
+        self.assertEqual(len(groups_by_team["T0"]), 2)
+        self.assertEqual([group.target_size for group in context.groups], [0, 0])
+        self.assertEqual([group.size_bucket_id for group in context.groups], ["C1_G1", "C1_G1"])
+        self.assertEqual([group.size_bucket_target for group in context.groups], [9, 9])
+        self.assertTrue(all(group.numbers == tuple(range(1, 9)) for group in context.groups))
 
     @unittest.skipUnless(HAS_PANDAS, "pandas not installed")
     def test_context_can_force_league_or_field_competition_grouping(self):

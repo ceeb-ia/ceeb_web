@@ -13,6 +13,104 @@ else:  # pragma: no cover
 
 
 class DjangoCalendarizationWorkspaceTests(TestCase):
+    def test_workspace_hydrates_legacy_kpis_seed_deviations(self):
+        if not HAS_DJANGO:
+            self.skipTest("django not installed")
+
+        from calendaritzacions.django.models import (
+            CalendarizationRun,
+            WorkspaceAssignment,
+            WorkspaceResourceIncident,
+            WorkspaceResourceMatch,
+        )
+        from calendaritzacions.django.services.workspace_impact import get_workspace_impact_view
+        from calendaritzacions.django.services.workspaces import (
+            get_or_create_workspace_for_run,
+            get_workspace_incident_detail,
+            get_workspace_summary,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            kpis_path = root / "kpis_legacy.json"
+            kpis_path.write_text(
+                json.dumps(
+                    {
+                        "fase": "primera_fase",
+                        "jornades": 7,
+                        "analysis_rows": [
+                            {
+                                "Id": "A",
+                                "Equip": "Equip A",
+                                "Entitat": "Club A",
+                                "Modalitat": "Futbol",
+                                "Categoria": "Lliga 1",
+                                "Subcategoria": "",
+                                "Grup": "G1",
+                                "Nivell": "Nivell A",
+                                "Dia partit": "Divendres",
+                                "Pista joc": "Pista 1",
+                                "Horari partit": "18:00",
+                                "peticio": "2",
+                                "numero_esperat": 2,
+                                "numero_assignat": 1,
+                                "te_peticio_efectiva": True,
+                                "te_incidencia": True,
+                                "dany_jornades": 1,
+                                "diferencies_jornades": "J1: Casa vs Equip B",
+                            },
+                            {
+                                "Id": "B",
+                                "Equip": "Equip B",
+                                "Entitat": "Club B",
+                                "Modalitat": "Futbol",
+                                "Categoria": "Lliga 1",
+                                "Subcategoria": "",
+                                "Grup": "G1",
+                                "Nivell": "Nivell B",
+                                "Dia partit": "Divendres",
+                                "Pista joc": "Pista 2",
+                                "Horari partit": "18:00",
+                                "peticio": "",
+                                "numero_esperat": None,
+                                "numero_assignat": 2,
+                                "te_peticio_efectiva": False,
+                                "te_incidencia": False,
+                                "dany_jornades": 0,
+                                "diferencies_jornades": "",
+                            },
+                        ],
+                        "conflictes_entitat": [],
+                        "nivells_dispars": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run = CalendarizationRun.objects.create(
+                input_file="inputs/legacy.xlsx",
+                input_name="legacy.xlsx",
+                engine_name=CalendarizationRun.ENGINE_LEGACY,
+                phase=CalendarizationRun.PHASE_FIRST,
+                status=CalendarizationRun.STATUS_SUCCESS,
+                kpis_path=str(kpis_path),
+                audit_paths={"kpis": str(kpis_path)},
+            )
+
+            workspace = get_or_create_workspace_for_run(run)
+            summary = get_workspace_summary(workspace)
+            incident = WorkspaceResourceIncident.objects.get(workspace=workspace)
+            detail = get_workspace_incident_detail(workspace, incident.pk)
+            impact = get_workspace_impact_view(workspace)
+
+        self.assertEqual(workspace.source_artifact, "kpis")
+        self.assertEqual(WorkspaceAssignment.objects.filter(workspace=workspace).count(), 2)
+        self.assertEqual(WorkspaceResourceMatch.objects.filter(workspace=workspace).count(), 1)
+        self.assertEqual(incident.incident_type, WorkspaceResourceIncident.TYPE_SEED_DEVIATION)
+        self.assertEqual(incident.severity, 1)
+        self.assertTrue(any(kpi["label"] == "Desviacions peticio" and kpi["value"] == 1 for kpi in summary["kpis"]))
+        self.assertEqual(detail["facts"][3]["value"], 2)
+        self.assertEqual(impact["affected_rows"][0]["rounds"], [1])
+
     def test_workspace_accepts_conflict_repair_result_artifact(self):
         if not HAS_DJANGO:
             self.skipTest("django not installed")

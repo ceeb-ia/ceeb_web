@@ -410,7 +410,21 @@ def _construct_greedy_assignment(
 ) -> tuple[Candidate, ...] | None:
     """Build a deterministic feasible-looking assignment for large fallback cases."""
 
-    remaining_by_group = {group.group_id: group.target_size for group in context.groups}
+    flexible_group_ids = {
+        group.group_id
+        for group in context.groups
+        if str(getattr(group, "size_bucket_id", "") or "")
+    }
+    remaining_by_group = {
+        group.group_id: (len(group.numbers) if group.group_id in flexible_group_ids else group.target_size)
+        for group in context.groups
+    }
+    remaining_by_bucket: dict[str, int] = {}
+    for group in context.groups:
+        bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+        if bucket_id:
+            remaining_by_bucket[bucket_id] = int(getattr(group, "size_bucket_target", 0) or 0)
+    group_by_id = {group.group_id: group for group in context.groups}
     used_slots: set[tuple[str, int]] = set()
     selected: list[Candidate] = []
     group_entity_counts: dict[tuple[str, str], int] = defaultdict(int)
@@ -430,7 +444,11 @@ def _construct_greedy_assignment(
         chosen = None
         for candidate in options:
             slot = (candidate.group_id, candidate.number)
+            candidate_group = group_by_id.get(candidate.group_id)
+            bucket_id = str(getattr(candidate_group, "size_bucket_id", "") or "") if candidate_group else ""
             if remaining_by_group.get(candidate.group_id, 0) <= 0 or slot in used_slots:
+                continue
+            if bucket_id and remaining_by_bucket.get(bucket_id, 0) <= 0:
                 continue
             if (team.entity, candidate.group_id) in hard_entity_separation_keys:
                 if group_entity_counts[(candidate.group_id, team.entity)] > 0:
@@ -440,7 +458,13 @@ def _construct_greedy_assignment(
         if chosen is None:
             for candidate in options:
                 slot = (candidate.group_id, candidate.number)
-                if remaining_by_group.get(candidate.group_id, 0) > 0 and slot not in used_slots:
+                candidate_group = group_by_id.get(candidate.group_id)
+                bucket_id = str(getattr(candidate_group, "size_bucket_id", "") or "") if candidate_group else ""
+                if (
+                    remaining_by_group.get(candidate.group_id, 0) > 0
+                    and (not bucket_id or remaining_by_bucket.get(bucket_id, 0) > 0)
+                    and slot not in used_slots
+                ):
                     chosen = candidate
                     break
         if chosen is None:
@@ -448,9 +472,19 @@ def _construct_greedy_assignment(
         selected.append(chosen)
         used_slots.add((chosen.group_id, chosen.number))
         remaining_by_group[chosen.group_id] -= 1
+        chosen_group = group_by_id.get(chosen.group_id)
+        chosen_bucket_id = str(getattr(chosen_group, "size_bucket_id", "") or "") if chosen_group else ""
+        if chosen_bucket_id:
+            remaining_by_bucket[chosen_bucket_id] -= 1
         group_entity_counts[(chosen.group_id, team_by_id[chosen.team_id].entity)] += 1
 
-    if any(value != 0 for value in remaining_by_group.values()):
+    if any(
+        value != 0
+        for group_id, value in remaining_by_group.items()
+        if group_id not in flexible_group_ids
+    ):
+        return None
+    if any(value != 0 for value in remaining_by_bucket.values()):
         return None
     return tuple(selected)
 
@@ -479,8 +513,18 @@ def _evaluate_assignment_combo(
         count_by_group[candidate.group_id] += 1
         candidate_by_group_number[slot] = candidate
 
+    bucket_counts: dict[str, int] = defaultdict(int)
+    bucket_targets: dict[str, int] = {}
     for group in context.groups:
+        bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+        if bucket_id:
+            bucket_counts[bucket_id] += count_by_group[group.group_id]
+            bucket_targets[bucket_id] = int(getattr(group, "size_bucket_target", 0) or 0)
+            continue
         if count_by_group[group.group_id] != group.target_size:
+            return None
+    for bucket_id, target in bucket_targets.items():
+        if bucket_counts.get(bucket_id, 0) != target:
             return None
 
     objective_value = 0
@@ -490,6 +534,7 @@ def _evaluate_assignment_combo(
             len(group.numbers) - count_by_group[group.group_id]
             for group in context.groups
             if group.group_id in group_ids
+            and not str(getattr(group, "size_bucket_id", "") or "")
         ]
         if empty_counts and max(empty_counts) - min(empty_counts) > 1:
             if empty_mode == "hard":

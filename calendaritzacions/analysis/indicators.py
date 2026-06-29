@@ -238,7 +238,7 @@ def _build_indicator_tables(df_input, all_results, equip_to_num_sorteig, entitat
     entity_key_col = _entity_assignment_key_column(df_input)
 
     input_meta_cols = ["Id", "Nom", "Entitat", "Nom Lliga", "Núm. sorteig"]
-    for optional_col in ["Modalitat", "Categoria", "Subcategoria", entity_key_col]:
+    for optional_col in ["Modalitat", "Categoria", "Subcategoria", "Pista joc", "Horari partit", entity_key_col]:
         if optional_col not in input_meta_cols and optional_col in df_input.columns:
             input_meta_cols.append(optional_col)
 
@@ -262,6 +262,9 @@ def _build_indicator_tables(df_input, all_results, equip_to_num_sorteig, entitat
 
     all_real = all_results[all_results.apply(_is_real_team_row, axis=1)].copy()
     merge_cols = ["Id", "Modalitat", "Categoria", "Subcategoria", entity_key_col, "req_type", "request_code", "expected_seed", "is_effective_request"]
+    for optional_col in ["Pista joc", "Horari partit"]:
+        if optional_col in input_meta.columns and optional_col not in merge_cols:
+            merge_cols.append(optional_col)
     analysis = all_real.merge(
         input_meta[merge_cols],
         on="Id",

@@ -450,6 +450,7 @@ def _build_plot_galleries(run: CalendarizationRun) -> list[dict[str, object]]:
     galleries: list[dict[str, object]] = []
     for artifact, title in [
         ("input_demand", "Plots pre-run"),
+        ("legacy_final_plots", "Plots legacy post-run"),
         ("resource_solver_decomposition_plots", "Descomposicio"),
         ("resource_solver_conflict_repair_plots", "Conflict repair"),
         ("pattern_master_prerun_plots", "Pattern master pre-run"),
@@ -500,7 +501,7 @@ def _progress_from_log_lines(log_lines: list[object]) -> int | None:
 def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
     try:
         payload = read_json_file(str(ensure_run_audit_path(run, artifact)))
-    except (AttributeError, FileNotFoundError, ValueError, OSError, Http404):
+    except (AttributeError, FileNotFoundError, KeyError, ValueError, OSError, Http404):
         return []
     plots = payload.get("plots") if isinstance(payload, dict) else None
     if not isinstance(plots, dict):
@@ -518,7 +519,7 @@ def _plot_ids_for_artifact(run: CalendarizationRun, artifact: str) -> list[str]:
 def _plot_kind(plot_id: str, run: CalendarizationRun, artifact: str) -> str:
     try:
         payload = read_json_file(str(ensure_run_audit_path(run, artifact)))
-    except (AttributeError, FileNotFoundError, ValueError, OSError, Http404):
+    except (AttributeError, FileNotFoundError, KeyError, ValueError, OSError, Http404):
         return "image"
     plots = payload.get("plots") if isinstance(payload, dict) else None
     if not isinstance(plots, dict):
@@ -559,6 +560,9 @@ def _plot_label(plot_id: str) -> str:
         "resource_excess": "Pressió recursos",
         "entity_conflicts": "Conflictes entitat",
         "status_summary": "Resum final",
+        "legacy_damage_by_modality": "Dany per modalitat",
+        "legacy_damage_by_entity": "Dany per entitat",
+        "legacy_group_sizes": "Mida grups legacy",
         "component_team_count_histogram": "Mida components",
         "top_components_by_teams": "Components principals",
         "components_resources_vs_competitions": "Recursos vs competicions",

@@ -95,6 +95,23 @@ class ResourceSolverModelTests(unittest.TestCase):
             counts[assignment.group_id] += 1
         self.assertEqual(set(counts.values()), {7})
 
+    def test_exceptional_bucket_allows_unbalanced_split_across_two_templates(self):
+        teams = [make_team(index) for index in range(9)]
+        groups = [
+            GroupSpec("G1A", 0, 8, 0, "primera_fase", size_bucket_id="G1", size_bucket_target=9),
+            GroupSpec("G1B", 0, 8, 0, "primera_fase", size_bucket_id="G1", size_bucket_target=9),
+        ]
+        context = make_context(teams, groups, tuple(range(1, 9)))
+
+        result = solve_context(context, use_ortools=False)
+
+        self.assertEqual(result.status, "OPTIMAL")
+        counts = {group.group_id: 0 for group in groups}
+        for assignment in result.assignments:
+            counts[assignment.group_id] += 1
+        self.assertEqual(sum(counts.values()), 9)
+        self.assertTrue(all(count <= 8 for count in counts.values()))
+
     def test_hard_capacity_impossible_is_infeasible_when_match_is_real(self):
         teams = [make_team(1), make_team(2)]
         groups = [GroupSpec("G1", 2, 2, 2, "primera_fase", numbers=(1, 2))]
@@ -119,4 +136,3 @@ class ResourceSolverModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

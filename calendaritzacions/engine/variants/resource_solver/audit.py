@@ -6,7 +6,7 @@ import itertools
 import json
 import math
 from collections import Counter, defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -121,10 +121,12 @@ def build_level_group_planning_audit(context: SolverContext) -> dict[str, Any]:
             "group_id": group.group_id,
             "phase_name": group.phase_name,
             "target_size": group.target_size,
+            "size_bucket_id": str(getattr(group, "size_bucket_id", "") or ""),
+            "size_bucket_target": int(getattr(group, "size_bucket_target", 0) or 0),
             "slot_count": len(group.numbers),
             "numbers": list(group.numbers),
-            "is_small": group.target_size < 6,
-            "is_exceptional_size": group.target_size > 8,
+            "is_small": group.target_size < 6 and not str(getattr(group, "size_bucket_id", "") or ""),
+            "is_exceptional_size": bool(str(getattr(group, "size_bucket_id", "") or "")),
         }
         for group in context.groups
     ]
@@ -847,7 +849,9 @@ def build_linkage_audit(
     violations: list[dict[str, Any]] = []
     checked_pairs = 0
     ok_pairs = 0
-    violation_weight = int(getattr(context.config, "linkage_violation_weight", 100_000) or 100_000)
+    calendar_weight = int(getattr(context.config, "calendar_mismatch_weight", 1_000_000) or 1_000_000)
+    number_warning_weight = int(getattr(context.config, "linkage_number_warning_weight", 1_000) or 1_000)
+    side_by_team_round, rounds_by_team = _side_indexes_for_real_matches(result.real_matches)
 
     for (venue, linkage_group), rows in sorted(rows_by_key.items(), key=lambda item: item[0]):
         group_checked_pairs = 0
@@ -859,10 +863,19 @@ def build_linkage_audit(
                 continue
             checked_pairs += 1
             group_checked_pairs += 1
-            ok, expected_numbers = _linkage_pair_ok(left, right, relation)
-            if ok:
+            number_ok, expected_numbers = _linkage_pair_ok(left, right, relation)
+            calendar_mismatches = _calendar_mismatches_for_rows(
+                side_by_team_round,
+                rounds_by_team,
+                left,
+                right,
+                relation,
+            )
+            if number_ok and calendar_mismatches <= 0:
                 ok_pairs += 1
                 continue
+            cost = calendar_mismatches * calendar_weight if calendar_mismatches > 0 else number_warning_weight
+            severity = "violation" if calendar_mismatches > 0 else "warning"
             violation = {
                 "team_ids": [left["team_id"], right["team_id"]],
                 "assigned_numbers": {
@@ -871,6 +884,8 @@ def build_linkage_audit(
                 },
                 "expected_numbers": expected_numbers,
                 "expected_relation": relation,
+                "number_relation_ok": number_ok,
+                "calendar_mismatches": calendar_mismatches,
                 "linkage_group": linkage_group,
                 "venue": venue,
                 "day": _common_value([left["day"], right["day"]]),
@@ -882,9 +897,9 @@ def build_linkage_audit(
                         if _clean_linkage_value(value)
                     }
                 ),
-                "severity": "violation",
-                "cost": violation_weight,
-                "violation_cost": violation_weight,
+                "severity": severity,
+                "cost": cost,
+                "violation_cost": cost,
             }
             group_violations.append(violation)
             violations.append(violation)
@@ -907,6 +922,8 @@ def build_linkage_audit(
             "checked_pairs": checked_pairs,
             "ok_pairs": ok_pairs,
             "violations": len(violations),
+            "calendar_mismatches": sum(int(item.get("calendar_mismatches", 0) or 0) for item in violations),
+            "warnings": sum(1 for item in violations if item.get("severity") == "warning"),
             "cost": sum(int(item.get("cost", 0) or 0) for item in violations),
         },
         "groups": groups,
@@ -1066,6 +1083,49 @@ def _linkage_pair_ok(
         str(right["team_id"]): expected_right or right_number,
     }
     return expected_right is not None and right_number == expected_right, expected
+
+
+def _calendar_mismatches_for_rows(
+    side_by_team_round: dict[tuple[str, int], str],
+    rounds_by_team: dict[str, set[int]],
+    left: dict[str, Any],
+    right: dict[str, Any],
+    relation: str,
+) -> int:
+    left_team_id = str(left.get("team_id") or "")
+    right_team_id = str(right.get("team_id") or "")
+    mismatches = 0
+    rounds = rounds_by_team.get(left_team_id, set()).union(rounds_by_team.get(right_team_id, set()))
+    for round_index in sorted(rounds):
+        left_side = side_by_team_round.get((left_team_id, round_index), "rest")
+        right_side = side_by_team_round.get((right_team_id, round_index), "rest")
+        if "rest" in {left_side, right_side}:
+            continue
+        if relation == "same_number" and left_side != right_side:
+            mismatches += 1
+        elif relation == "opposite_number" and {left_side, right_side} != {"home", "away"}:
+            mismatches += 1
+    return mismatches
+
+
+def _side_indexes_for_real_matches(
+    real_matches: Iterable[Any],
+) -> tuple[dict[tuple[str, int], str], dict[str, set[int]]]:
+    side_by_team_round: dict[tuple[str, int], str] = {}
+    rounds_by_team: dict[str, set[int]] = defaultdict(set)
+    for match in real_matches:
+        round_index = int(getattr(match, "round_index", 0) or 0)
+        home_team_id = str(getattr(match, "home_team_id", "") or "")
+        away_team_id = str(getattr(match, "away_team_id", "") or "")
+        if not round_index:
+            continue
+        if home_team_id:
+            side_by_team_round[(home_team_id, round_index)] = "home"
+            rounds_by_team[home_team_id].add(round_index)
+        if away_team_id:
+            side_by_team_round[(away_team_id, round_index)] = "away"
+            rounds_by_team[away_team_id].add(round_index)
+    return side_by_team_round, rounds_by_team
 
 
 def _opposite_linkage_number(number: int) -> int | None:

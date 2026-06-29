@@ -64,17 +64,19 @@ class ResourceSolverGroupsTests(unittest.TestCase):
         self.assertEqual({group.phase_name for group in groups}, {"segona_fase"})
         self.assertEqual(empty_numbers_by_group(groups), {"G1": 1, "G2": 1})
 
-    def test_empty_numbers_remain_equivalent_for_unbalanced_total(self):
+    def test_exceptional_target_is_split_into_two_eight_slot_groups(self):
         groups = build_group_specs(
             _teams(17),
             "primera_fase",
             ResourceSolverConfig(),
         )
-        empty_counts = list(empty_numbers_by_group(groups).values())
 
-        self.assertEqual([group.target_size for group in groups], [9, 8])
-        self.assertEqual(groups[0].numbers, tuple(range(1, 11)))
-        self.assertLessEqual(max(empty_counts) - min(empty_counts), 1)
+        self.assertEqual([group.group_id for group in groups], ["G1A", "G1B", "G2"])
+        self.assertEqual([group.target_size for group in groups], [0, 0, 8])
+        self.assertEqual([group.size_bucket_id for group in groups], ["G1", "G1", ""])
+        self.assertEqual([group.size_bucket_target for group in groups], [9, 9, 0])
+        self.assertTrue(all(group.numbers == tuple(range(1, 9)) for group in groups))
+        self.assertEqual(empty_numbers_by_group(groups), {"G2": 0})
 
     def test_structural_group_size_targets_allow_exceptional_to_avoid_small_groups(self):
         self.assertEqual(structural_group_size_targets(8), (8,))
@@ -186,12 +188,11 @@ class ResourceSolverGroupsTests(unittest.TestCase):
         self.assertEqual(context.config.level_group_size_audit[-1]["assigned_to_B_capacity"], 1)
         self.assertEqual(context.config.level_group_size_audit[-1]["assigned_to_C_capacity"], 1)
 
-    def test_group_spec_uses_ten_numbers_for_nine_team_target(self):
+    def test_group_spec_does_not_expand_to_ten_numbers_for_nine_team_target(self):
         group = GroupSpec("G1", 9, 9, 9, "primera_fase")
 
         self.assertEqual(group.target_size, 9)
-        self.assertEqual(group.numbers, tuple(range(1, 11)))
-        self.assertEqual(empty_numbers_by_group((group,)), {"G1": 1})
+        self.assertEqual(group.numbers, tuple(range(1, 9)))
 
     def test_validate_common_phase_rejects_mixed_group_phases(self):
         with self.assertRaises(ValueError):

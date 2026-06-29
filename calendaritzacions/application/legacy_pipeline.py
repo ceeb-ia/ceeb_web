@@ -44,6 +44,7 @@ from calendaritzacions.engine.legacy.home_away import (
 )
 from calendaritzacions.ingestion import InputValidationError, prepare_legacy_input, read_excel
 from calendaritzacions.reporting.legacy_excel_writer import write_legacy_workbook
+from calendaritzacions.reporting.legacy_plots import write_legacy_final_plots
 from calendaritzacions.reporting.json_writer import write_json_payload, write_kpis_json
 from calendaritzacions.second_phase.classifications import enrich_second_phase_classifications
 
@@ -204,6 +205,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
     input_validation_path = os.path.join(BASE_PATH, f"input_validation_{nom_fitxer}.json")
     input_demand_path = os.path.join(BASE_PATH, f"input_demand_{nom_fitxer}.json")
     input_demand_plots_dir = os.path.join(BASE_PATH, f"plots_input_demand_{nom_fitxer}")
+    legacy_final_plots_dir = os.path.join(BASE_PATH, f"plots_legacy_final_{nom_fitxer}")
     solver_trace_path = os.path.join(BASE_PATH, f"solver_trace_{nom_fitxer}.json")
     home_away_resolution_path = os.path.join(BASE_PATH, f"home_away_resolution_{nom_fitxer}.json")
     constraints_report_path = os.path.join(BASE_PATH, f"constraints_report_{nom_fitxer}.json")
@@ -215,6 +217,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
         "input_validation": input_validation_path,
         "input_demand": input_demand_path,
         "input_demand_plots": input_demand_plots_dir,
+        "legacy_final_plots": os.path.join(legacy_final_plots_dir, "manifest.json"),
         "solver_trace": solver_trace_path,
         "home_away_resolution": home_away_resolution_path,
         "constraints_report": constraints_report_path,
@@ -261,6 +264,14 @@ def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool
         )
     except Exception as exc:
         run_context.warnings.append(f"No s'han pogut generar plots de demanda d'input: {exc}")
+    try:
+        write_legacy_final_plots(
+            legacy_final_plots_dir,
+            metrics_pack=metrics_pack,
+            stem=f"legacy_{nom_fitxer}",
+        )
+    except Exception as exc:
+        run_context.warnings.append(f"No s'han pogut generar plots finals legacy: {exc}")
 
     run_context.finish()
     write_json_payload(

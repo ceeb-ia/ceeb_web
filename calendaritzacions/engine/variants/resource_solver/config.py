@@ -69,7 +69,15 @@ class ResourceSolverConfig:
     local_explanation_threshold: int = 50_000
     linkage_mode: str = "off"
     linkage_violation_weight: int = 100_000
+    calendar_mismatch_weight: int = 1_000_000
+    linkage_number_warning_weight: int = 1_000
     linkage_max_group_size: int = 2
+    pattern_master_local_min_patterns: int = 12
+    pattern_master_local_max_patterns: int = 96
+    pattern_master_local_patterns_per_team: int = 6
+    pattern_master_local_patterns_per_linkage: int = 8
+    pattern_master_local_base_solve_seconds: float = 3.0
+    pattern_master_local_extra_seconds_per_team_over_8: float = 2.0
     initial_linkage_connector_mode: str = "off"
     intra_hub_cut_enabled: bool = True
     intra_hub_cut_min_teams: int = 10
@@ -206,7 +214,19 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         ),
         linkage_mode=linkage_mode,
         linkage_violation_weight=int(getattr(config, "linkage_violation_weight", 100_000)),
+        calendar_mismatch_weight=int(getattr(config, "calendar_mismatch_weight", 1_000_000)),
+        linkage_number_warning_weight=int(getattr(config, "linkage_number_warning_weight", 1_000)),
         linkage_max_group_size=int(getattr(config, "linkage_max_group_size", 2)),
+        pattern_master_local_min_patterns=int(getattr(config, "pattern_master_local_min_patterns", 12)),
+        pattern_master_local_max_patterns=int(getattr(config, "pattern_master_local_max_patterns", 96)),
+        pattern_master_local_patterns_per_team=int(getattr(config, "pattern_master_local_patterns_per_team", 6)),
+        pattern_master_local_patterns_per_linkage=int(getattr(config, "pattern_master_local_patterns_per_linkage", 8)),
+        pattern_master_local_base_solve_seconds=float(
+            getattr(config, "pattern_master_local_base_solve_seconds", 3.0)
+        ),
+        pattern_master_local_extra_seconds_per_team_over_8=float(
+            getattr(config, "pattern_master_local_extra_seconds_per_team_over_8", 2.0)
+        ),
         initial_linkage_connector_mode=_normalize_initial_linkage_connector_mode(
             getattr(
                 config,

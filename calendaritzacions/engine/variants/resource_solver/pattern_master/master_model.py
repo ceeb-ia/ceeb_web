@@ -175,12 +175,21 @@ def _add_group_materialization_constraints(
                 materialization_vars.append((var, assignment.team_id, group_id, number))
             model.Add(sum(terms) == pattern_var)
 
+    bucket_terms: dict[str, list[Any]] = defaultdict(list)
+    bucket_targets: dict[str, int] = {}
     for group in context.groups:
-        model.Add(sum(group_terms.get(group.group_id, [])) == int(group.target_size))
+        bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+        if bucket_id:
+            bucket_terms[bucket_id].extend(group_terms.get(group.group_id, []))
+            bucket_targets[bucket_id] = int(getattr(group, "size_bucket_target", 0) or 0)
+        else:
+            model.Add(sum(group_terms.get(group.group_id, [])) == int(group.target_size))
         for number in group.numbers:
             terms = slot_terms.get((group.group_id, int(number)), [])
             if terms:
                 model.Add(sum(terms) <= 1)
+    for bucket_id, terms in sorted(bucket_terms.items()):
+        model.Add(sum(terms) == bucket_targets[bucket_id])
 
     entity_by_team = {team.team_id: team.entity for team in context.teams}
     groups_by_team: dict[str, set[str]] = defaultdict(set)

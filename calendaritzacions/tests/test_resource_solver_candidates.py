@@ -51,7 +51,7 @@ class ResourceSolverCandidatesTests(unittest.TestCase):
         self.assertTrue(all(candidate.seed_request_original == "CASA" for candidate in candidates))
         self.assertIn("A-G1-1", {candidate.candidate_id for candidate in candidates})
 
-    def test_generates_ten_slot_projection_for_nine_team_group(self):
+    def test_generates_eight_slot_projection_for_nine_team_group(self):
         team = TeamRecord(
             team_id="A",
             name="Equip A",
@@ -66,18 +66,15 @@ class ResourceSolverCandidatesTests(unittest.TestCase):
         candidates = generate_candidates((team,), (group,), PRIMERA_FASE)
         by_number = {candidate.number: candidate for candidate in candidates}
 
-        self.assertEqual(group.numbers, tuple(range(1, 11)))
-        self.assertEqual(set(by_number), set(range(1, 11)))
-        self.assertEqual(by_number[9].potential_home_rounds, (1, 3, 5, 8))
-        self.assertEqual(by_number[9].opponent_number_by_round[9], 2)
+        self.assertEqual(group.numbers, tuple(range(1, 9)))
+        self.assertEqual(set(by_number), set(range(1, 9)))
         self.assertEqual(
-            by_number[10].potential_resources,
+            by_number[8].potential_resources,
             (
                 "pavello-1|divendres|18-00|J1",
                 "pavello-1|divendres|18-00|J3",
                 "pavello-1|divendres|18-00|J5",
-                "pavello-1|divendres|18-00|J7",
-                "pavello-1|divendres|18-00|J8",
+                "pavello-1|divendres|18-00|J6",
             ),
         )
 

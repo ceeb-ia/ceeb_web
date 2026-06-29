@@ -24,8 +24,11 @@ from calendaritzacions.engine.variants.resource_solver.pattern_master.patterns i
     overloaded_slot_domains_from_patterns,
     pattern_slot_domain_number_counts,
     slot_domain_number_capacity,
+    _calendar_mismatches_for_assignment_pair,
+    _local_pattern_limit,
+    _local_solve_time_limit,
 )
-from calendaritzacions.engine.variants.resource_solver.pattern_master.types import HubPattern, PatternAssignment
+from calendaritzacions.engine.variants.resource_solver.pattern_master.types import HubPattern, MicroHub, PatternAssignment
 from calendaritzacions.engine.variants.resource_solver.types import (
     BaseResource,
     Candidate,
@@ -143,6 +146,40 @@ class ResourceSolverPatternMasterTests(unittest.TestCase):
             ),
         )
         self.assertLess(link_preserving.cost, link_breaking.cost)
+
+    def test_local_pattern_limit_scales_with_hub_size_and_linkage(self):
+        context = _context_same_competition_different_resources(linked=True)
+        hubs = build_microhubs(context)
+
+        self.assertGreater(_local_pattern_limit(context, hubs[0]), 12)
+
+    def test_local_solve_time_limit_scales_after_eight_teams(self):
+        context = _context_same_competition_different_resources()
+
+        self.assertEqual(
+            _local_solve_time_limit(context, MicroHub("H8", tuple(str(index) for index in range(8)))),
+            3.0,
+        )
+        self.assertEqual(
+            _local_solve_time_limit(context, MicroHub("H10", tuple(str(index) for index in range(10)))),
+            7.0,
+        )
+
+    def test_calendar_mismatch_ignores_rounds_where_either_team_rests(self):
+        context = _context_mixed_group_sizes()
+
+        self.assertEqual(
+            _calendar_mismatches_for_assignment_pair(context, "G4", 1, "G2", 1, "same"),
+            0,
+        )
+        self.assertEqual(
+            _calendar_mismatches_for_assignment_pair(context, "G2", 1, "G2", 2, "same"),
+            1,
+        )
+        self.assertEqual(
+            _calendar_mismatches_for_assignment_pair(context, "G2", 1, "G2", 2, "opposite"),
+            0,
+        )
 
     def test_master_resource_excess_uses_materialized_group_candidate(self):
         context = _context_materialization_avoids_phantom_resource_excess()
@@ -340,6 +377,24 @@ def _context_linkage_with_local_resource_pressure() -> SolverContext:
         pressure=(),
         groups=groups,
         candidates=candidates,
+        config=ResourceSolverConfig(competition_grouping="league"),
+    )
+
+
+def _context_mixed_group_sizes() -> SolverContext:
+    groups = (
+        GroupSpec("G2", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+        GroupSpec("G4", 4, 4, 4, "primera_fase", numbers=(1, 2, 3, 4)),
+    )
+    return SolverContext(
+        teams=(),
+        phase=PRIMERA_FASE,
+        phase_name="primera_fase",
+        base_resources={},
+        capacities={},
+        pressure=(),
+        groups=groups,
+        candidates=(),
         config=ResourceSolverConfig(competition_grouping="league"),
     )
 

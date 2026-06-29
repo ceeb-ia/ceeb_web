@@ -40,8 +40,15 @@ def add_empty_number_constraints(
     if len(context.groups) <= 1:
         return
 
+    flexible_group_ids = {
+        group.group_id
+        for group in context.groups
+        if str(getattr(group, "size_bucket_id", "") or "")
+    }
     empty_by_group: dict[str, int] = {
-        group.group_id: len(group.numbers) - group.target_size for group in context.groups
+        group.group_id: len(group.numbers) - group.target_size
+        for group in context.groups
+        if group.group_id not in flexible_group_ids
     }
     mode = getattr(context.config, "empty_number_balance_mode", "hard")
     imbalances = []

@@ -21,13 +21,17 @@ def _build_analysis_export(metrics_pack: dict[str, Any]) -> pd.DataFrame:
         if diffs_col and diffs_col in analysis_export.columns:
             analysis_export[diffs_col] = analysis_export[diffs_col].apply(_format_diffs_excel)
         export_cols = [
+            "Id",
             "Entitat",
             "Modalitat",
             "Categoria",
+            "Subcategoria",
             "Grup",
             "Nom",
             "Nivell",
             "Dia partit",
+            "Pista joc",
+            "Horari partit",
             "req_type",
             "request_code",
             "expected_seed",
