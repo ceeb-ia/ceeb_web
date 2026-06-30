@@ -75,17 +75,28 @@ def solve_master_selection(
                 model.Add(sum(terms) <= int(cap))
     del domain_terms
 
-    resource_terms, materialization_vars = _add_group_materialization_constraints(model, x, rows, context)
-
+    logs: list[str] = []
     resource_excess_terms = []
     resource_weight = int(getattr(context.config, "resource_excess_weight", 100_000) or 100_000)
-    for resource_id, terms in sorted(resource_terms.items()):
-        if not terms:
-            continue
-        usage = sum(terms)
-        excess = model.NewIntVar(0, len(terms), f"resource_excess_{_safe_name(resource_id)}")
-        model.Add(excess >= usage - capacity_for_resource(context, resource_id))
-        resource_excess_terms.append(excess)
+    materialization_vars: list[tuple[Any, str, str, int]] = []
+    materialization_terms = _estimate_materialization_terms(context, rows)
+    materialization_limit = int(getattr(context.config, "pattern_master_inline_materialization_max_terms", 150_000) or 0)
+    if materialization_limit > 0 and materialization_terms <= materialization_limit:
+        resource_terms, materialization_vars = _add_group_materialization_constraints(model, x, rows, context)
+        for resource_id, terms in sorted(resource_terms.items()):
+            if not terms:
+                continue
+            usage = sum(terms)
+            excess = model.NewIntVar(0, len(terms), f"resource_excess_{_safe_name(resource_id)}")
+            model.Add(excess >= usage - capacity_for_resource(context, resource_id))
+            resource_excess_terms.append(excess)
+        logs.append(f"pattern master inline materialization enabled: terms={materialization_terms}")
+    else:
+        resource_excess_terms.extend(_add_pattern_resource_excess_terms(model, x, rows, context))
+        logs.append(
+            "pattern master inline materialization skipped: "
+            f"terms={materialization_terms} limit={materialization_limit}"
+        )
 
     model.Minimize(
         sum(int(pattern.cost) * x[pattern.pattern_id] for pattern in rows)
@@ -116,7 +127,7 @@ def solve_master_selection(
         objective_value=float(solver.ObjectiveValue()),
         materialized_assignments=materialized_assignments,
         conflicts=conflict_rows,
-        logs=(f"pattern master solved in {perf_counter() - started:.3f}s",),
+        logs=(*logs, f"pattern master solved in {perf_counter() - started:.3f}s"),
     )
 
 
@@ -135,6 +146,43 @@ def master_selection_payload(selection: MasterSelection) -> dict[str, Any]:
         "conflict_count": len(selection.conflicts),
         "logs": list(selection.logs),
     }
+
+
+def _estimate_materialization_terms(context: SolverContext, patterns: tuple[HubPattern, ...]) -> int:
+    candidate_groups = _candidate_group_ids_by_team_number(context)
+    terms = 0
+    for pattern in patterns:
+        for assignment in pattern.assignments:
+            terms += len(candidate_groups.get((assignment.team_id, int(assignment.number)), ()))
+    return terms
+
+
+def _add_pattern_resource_excess_terms(
+    model: Any,
+    pattern_vars: dict[str, Any],
+    patterns: tuple[HubPattern, ...],
+    context: SolverContext,
+) -> list[Any]:
+    terms_by_resource: dict[str, list[Any]] = defaultdict(list)
+    max_by_resource: Counter[str] = Counter()
+    for pattern in patterns:
+        pattern_var = pattern_vars[pattern.pattern_id]
+        for resource_id, count in pattern.resource_usage.items():
+            usage = int(count or 0)
+            if usage <= 0:
+                continue
+            resource_key = str(resource_id)
+            terms_by_resource[resource_key].append(usage * pattern_var)
+            max_by_resource[resource_key] += usage
+
+    excess_terms: list[Any] = []
+    for resource_id, terms in sorted(terms_by_resource.items()):
+        if max_by_resource[resource_id] <= capacity_for_resource(context, resource_id):
+            continue
+        excess = model.NewIntVar(0, int(max_by_resource[resource_id]), f"pattern_resource_excess_{_safe_name(resource_id)}")
+        model.Add(excess >= sum(terms) - capacity_for_resource(context, resource_id))
+        excess_terms.append(excess)
+    return excess_terms
 
 
 def _add_group_materialization_constraints(

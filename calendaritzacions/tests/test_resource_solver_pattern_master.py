@@ -11,6 +11,7 @@ from calendaritzacions.engine.variants.resource_solver.pattern_master.incompatib
 from calendaritzacions.engine.variants.resource_solver.pattern_master.incompatibilities import compatibility_payload
 from calendaritzacions.engine.variants.resource_solver.pattern_master.master_model import solve_master_selection
 from calendaritzacions.engine.variants.resource_solver.pattern_master.materialization import (
+    materialize_master_selection,
     materialize_patterns,
     selected_patterns_from_ids,
 )
@@ -85,6 +86,31 @@ class ResourceSolverPatternMasterTests(unittest.TestCase):
         result, _raw, _built = materialize_patterns(context, selected_patterns)
 
         self.assertIn(selection.status, {"OPTIMAL", "FEASIBLE"})
+        self.assertIn(result.status, {"OPTIMAL", "FEASIBLE"})
+        self.assertEqual(len(result.assignments), len(context.teams))
+
+    def test_large_master_can_skip_inline_materialization(self):
+        context = _context_same_competition_different_resources()
+        context = SolverContext(
+            **{
+                **context.__dict__,
+                "config": ResourceSolverConfig(
+                    competition_grouping="league",
+                    pattern_master_inline_materialization_max_terms=1,
+                ),
+            }
+        )
+        hubs = build_microhubs(context)
+        patterns = generate_initial_patterns(context, hubs)
+        conflicts = build_pattern_conflicts(context, patterns)
+
+        selection = solve_master_selection(context, patterns, conflicts)
+        selected_patterns = selected_patterns_from_ids(patterns, selection.selected_pattern_ids)
+        result, _raw, _built = materialize_master_selection(context, selected_patterns, selection)
+
+        self.assertIn(selection.status, {"OPTIMAL", "FEASIBLE"})
+        self.assertEqual(selection.materialized_assignments, ())
+        self.assertTrue(any("inline materialization skipped" in log for log in selection.logs))
         self.assertIn(result.status, {"OPTIMAL", "FEASIBLE"})
         self.assertEqual(len(result.assignments), len(context.teams))
 

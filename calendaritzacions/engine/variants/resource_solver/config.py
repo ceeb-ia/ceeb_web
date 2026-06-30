@@ -78,6 +78,9 @@ class ResourceSolverConfig:
     pattern_master_local_patterns_per_linkage: int = 8
     pattern_master_local_base_solve_seconds: float = 3.0
     pattern_master_local_extra_seconds_per_team_over_8: float = 2.0
+    pattern_master_inline_materialization_max_terms: int = field(
+        default_factory=lambda: _env_int("CALENDARITZACIONS_PATTERN_MASTER_INLINE_MATERIALIZATION_MAX_TERMS", 150_000)
+    )
     initial_linkage_connector_mode: str = "off"
     intra_hub_cut_enabled: bool = True
     intra_hub_cut_min_teams: int = 10
@@ -226,6 +229,13 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         ),
         pattern_master_local_extra_seconds_per_team_over_8=float(
             getattr(config, "pattern_master_local_extra_seconds_per_team_over_8", 2.0)
+        ),
+        pattern_master_inline_materialization_max_terms=int(
+            getattr(
+                config,
+                "pattern_master_inline_materialization_max_terms",
+                _env_int("CALENDARITZACIONS_PATTERN_MASTER_INLINE_MATERIALIZATION_MAX_TERMS", 150_000),
+            )
         ),
         initial_linkage_connector_mode=_normalize_initial_linkage_connector_mode(
             getattr(
