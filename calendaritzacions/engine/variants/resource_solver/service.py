@@ -562,10 +562,16 @@ def _competition_context_log_lines(context: SolverContext) -> list[str]:
     lines = [f"pre-solver: competicions={len(summaries)}"]
     for summary in summaries:
         repartiment = ",".join(str(value) for value in summary["repartiment"])
+        bucket_targets = summary.get("bucket_targets") or {}
+        bucket_suffix = ""
+        if bucket_targets:
+            buckets = ",".join(f"{key}:{value}" for key, value in sorted(bucket_targets.items()))
+            bucket_suffix = f"buckets=[{buckets}] logical_total={summary['logical_target_total']} "
         lines.append(
             "pre-solver competicio: "
             f"{summary['label']} | teams={summary['teams']} "
             f"groups={summary['groups']} repartiment=[{repartiment}] "
+            f"{bucket_suffix}"
             f"candidates={summary['candidates']} "
             f"critical_resources={summary['critical_resources']} "
             f"max_pressure={summary['max_pressure']:.2f}"
@@ -643,6 +649,19 @@ def _competition_summaries(context: SolverContext) -> list[dict[str, Any]]:
             for team_id in team_ids
             for group_id in group_ids_by_team.get(team_id, set())
         }
+        bucket_targets: dict[str, int] = {}
+        normal_target_total = 0
+        repartiment = []
+        for group_id in sorted(group_ids, key=_natural_group_key):
+            group = group_by_id.get(group_id)
+            if group is None:
+                continue
+            repartiment.append(group.target_size)
+            bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+            if bucket_id:
+                bucket_targets[bucket_id] = int(getattr(group, "size_bucket_target", 0) or 0)
+            else:
+                normal_target_total += int(group.target_size)
         pressure_rows = [
             row
             for row in context.pressure
@@ -653,11 +672,9 @@ def _competition_summaries(context: SolverContext) -> list[dict[str, Any]]:
                 "label": label,
                 "teams": len(teams),
                 "groups": len(group_ids),
-                "repartiment": [
-                    group_by_id[group_id].target_size
-                    for group_id in sorted(group_ids, key=_natural_group_key)
-                    if group_id in group_by_id
-                ],
+                "repartiment": repartiment,
+                "bucket_targets": bucket_targets,
+                "logical_target_total": normal_target_total + sum(bucket_targets.values()),
                 "candidates": int(candidate_count_by_label[label]),
                 "critical_resources": sum(1 for row in pressure_rows if getattr(row, "is_critical", False)),
                 "max_pressure": max((float(getattr(row, "pressure", 0.0) or 0.0) for row in pressure_rows), default=0.0),

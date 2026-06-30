@@ -110,9 +110,36 @@ class ResourceSolverPatternMasterTests(unittest.TestCase):
 
         self.assertIn(selection.status, {"OPTIMAL", "FEASIBLE"})
         self.assertEqual(selection.materialized_assignments, ())
-        self.assertTrue(any("inline materialization skipped" in log for log in selection.logs))
+        self.assertTrue(
+            any("inline materialization skipped" in log or "deterministic fallback" in log for log in selection.logs)
+        )
         self.assertIn(result.status, {"OPTIMAL", "FEASIBLE"})
         self.assertEqual(len(result.assignments), len(context.teams))
+
+    def test_skipped_inline_master_rejects_unfillable_group_totals(self):
+        context, pattern = _context_with_unfillable_group_after_number_selection()
+
+        selection = solve_master_selection(context, (pattern,), ())
+
+        self.assertEqual(selection.status, "INFEASIBLE")
+
+    def test_skipped_inline_aggregate_allows_fewer_number_users_than_groups(self):
+        context, pattern = _context_with_fewer_number_users_than_groups()
+
+        selection = solve_master_selection(context, (pattern,), ())
+
+        self.assertIn(selection.status, {"OPTIMAL", "FEASIBLE"})
+        self.assertEqual(selection.materialized_assignments, ())
+        self.assertTrue(any("aggregate materialization" in log for log in selection.logs))
+
+    def test_skipped_inline_aggregate_respects_exceptional_bucket_target(self):
+        context, pattern = _context_with_exceptional_bucket_pattern()
+
+        selection = solve_master_selection(context, (pattern,), ())
+
+        self.assertIn(selection.status, {"OPTIMAL", "FEASIBLE"})
+        self.assertEqual(selection.materialized_assignments, ())
+        self.assertTrue(any("aggregate materialization" in log for log in selection.logs))
 
     def test_master_respects_slot_domain_capacity_before_materialization(self):
         context = _context_with_level_domains_needing_variants()
@@ -315,6 +342,132 @@ def _context_materialization_avoids_phantom_resource_excess() -> SolverContext:
         groups=groups,
         candidates=candidates,
         config=ResourceSolverConfig(competition_grouping="league"),
+    )
+
+
+def _context_with_unfillable_group_after_number_selection() -> tuple[SolverContext, HubPattern]:
+    groups = (
+        GroupSpec("G1", 1, 1, 1, "primera_fase", numbers=(1, 2)),
+        GroupSpec("G2", 1, 1, 1, "primera_fase", numbers=(1, 2)),
+    )
+    teams = (
+        TeamRecord("T1", "Team 1", "Club 1", "League A", venue="Pista", day="D", time="10:00"),
+        TeamRecord("T2", "Team 2", "Club 2", "League A", venue="Pista", day="D", time="11:00"),
+    )
+    candidates = tuple(
+        Candidate(
+            candidate_id=f"{team.team_id}-G1-{number}",
+            team_id=team.team_id,
+            group_id="G1",
+            number=number,
+            seed_request_original="",
+            potential_home_rounds=(),
+            opponent_number_by_round={},
+            potential_resources=(),
+        )
+        for team in teams
+        for number in (1, 2)
+    )
+    context = _pattern_test_context(groups, teams, candidates)
+    competition_key = next(iter(competition_number_capacity(context)))
+    pattern = HubPattern(
+        pattern_id="H1_base",
+        hub_id="H1",
+        assignments=(PatternAssignment("T1", 1), PatternAssignment("T2", 2)),
+        cost=0,
+        competition_number_counts={competition_key: {1: 1, 2: 1}},
+    )
+    return context, pattern
+
+
+def _context_with_fewer_number_users_than_groups() -> tuple[SolverContext, HubPattern]:
+    groups = tuple(
+        GroupSpec(f"G{index}", 1, 1, 1, "primera_fase", numbers=(1, 2))
+        for index in range(1, 4)
+    )
+    teams = tuple(
+        TeamRecord(f"T{index}", f"Team {index}", f"Club {index}", "League A", venue="Pista", day="D", time=f"1{index}:00")
+        for index in range(1, 4)
+    )
+    candidates = _all_group_number_candidates(teams, groups)
+    context = _pattern_test_context(groups, teams, candidates)
+    competition_key = next(iter(competition_number_capacity(context)))
+    pattern = HubPattern(
+        pattern_id="H1_base",
+        hub_id="H1",
+        assignments=(
+            PatternAssignment("T1", 1),
+            PatternAssignment("T2", 2),
+            PatternAssignment("T3", 2),
+        ),
+        cost=0,
+        competition_number_counts={competition_key: {1: 1, 2: 2}},
+    )
+    return context, pattern
+
+
+def _context_with_exceptional_bucket_pattern() -> tuple[SolverContext, HubPattern]:
+    groups = (
+        GroupSpec("G1A", 0, 8, 0, "primera_fase", size_bucket_id="G1", size_bucket_target=9),
+        GroupSpec("G1B", 0, 8, 0, "primera_fase", size_bucket_id="G1", size_bucket_target=9),
+    )
+    teams = tuple(
+        TeamRecord(f"T{index}", f"Team {index}", f"Club {index}", "League A", venue="Pista", day="D", time=f"1{index}:00")
+        for index in range(1, 10)
+    )
+    candidates = _all_group_number_candidates(teams, groups)
+    context = _pattern_test_context(groups, teams, candidates)
+    competition_key = next(iter(competition_number_capacity(context)))
+    assignments = tuple(
+        PatternAssignment(team.team_id, number)
+        for team, number in zip(teams, (1, 2, 3, 4, 5, 6, 7, 8, 1))
+    )
+    pattern = HubPattern(
+        pattern_id="H1_base",
+        hub_id="H1",
+        assignments=assignments,
+        cost=0,
+        competition_number_counts={competition_key: {1: 2, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1}},
+    )
+    return context, pattern
+
+
+def _all_group_number_candidates(teams: tuple[TeamRecord, ...], groups: tuple[GroupSpec, ...]) -> tuple[Candidate, ...]:
+    return tuple(
+        Candidate(
+            candidate_id=f"{team.team_id}-{group.group_id}-{number}",
+            team_id=team.team_id,
+            group_id=group.group_id,
+            number=number,
+            seed_request_original="",
+            potential_home_rounds=(),
+            opponent_number_by_round={},
+            potential_resources=(),
+        )
+        for team in teams
+        for group in groups
+        for number in group.numbers
+    )
+
+
+def _pattern_test_context(
+    groups: tuple[GroupSpec, ...],
+    teams: tuple[TeamRecord, ...],
+    candidates: tuple[Candidate, ...],
+) -> SolverContext:
+    return SolverContext(
+        teams=teams,
+        phase=PRIMERA_FASE,
+        phase_name="primera_fase",
+        base_resources={},
+        capacities={},
+        pressure=(),
+        groups=groups,
+        candidates=candidates,
+        config=ResourceSolverConfig(
+            competition_grouping="league",
+            pattern_master_inline_materialization_max_terms=1,
+        ),
     )
 
 

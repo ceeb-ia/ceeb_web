@@ -92,11 +92,13 @@ def solve_master_selection(
             resource_excess_terms.append(excess)
         logs.append(f"pattern master inline materialization enabled: terms={materialization_terms}")
     else:
+        aggregate_vars = _add_aggregate_materialization_constraints(model, x, rows, context)
         resource_excess_terms.extend(_add_pattern_resource_excess_terms(model, x, rows, context))
         logs.append(
             "pattern master inline materialization skipped: "
             f"terms={materialization_terms} limit={materialization_limit}"
         )
+        logs.append(f"pattern master aggregate materialization enabled: vars={aggregate_vars}")
 
     model.Minimize(
         sum(int(pattern.cost) * x[pattern.pattern_id] for pattern in rows)
@@ -183,6 +185,65 @@ def _add_pattern_resource_excess_terms(
         model.Add(excess >= sum(terms) - capacity_for_resource(context, resource_id))
         excess_terms.append(excess)
     return excess_terms
+
+
+def _add_aggregate_materialization_constraints(
+    model: Any,
+    pattern_vars: dict[str, Any],
+    patterns: tuple[HubPattern, ...],
+    context: SolverContext,
+) -> int:
+    """Keep the skipped master materialization group-real without per-team vars."""
+
+    groups_by_domain = _slot_domain_group_ids(context)
+    group_by_id = {group.group_id: group for group in context.groups}
+    selected_terms_by_domain_number: dict[tuple[str, int], list[Any]] = defaultdict(list)
+    for pattern in patterns:
+        pattern_var = pattern_vars[pattern.pattern_id]
+        for domain_key, counts in pattern_slot_domain_number_counts(context, pattern).items():
+            for number, count in counts.items():
+                if int(count) > 0:
+                    selected_terms_by_domain_number[(domain_key, int(number))].append(int(count) * pattern_var)
+
+    flow_terms_by_group_number: dict[tuple[str, int], list[Any]] = defaultdict(list)
+    flow_terms_by_group: dict[str, list[Any]] = defaultdict(list)
+    variable_count = 0
+    for (domain_key, number), selected_terms in sorted(selected_terms_by_domain_number.items()):
+        group_ids = tuple(
+            group_id
+            for group_id in groups_by_domain.get(domain_key, ())
+            if number in getattr(group_by_id.get(group_id), "numbers", ())
+        )
+        selected_count = sum(selected_terms)
+        if not group_ids:
+            model.Add(selected_count == 0)
+            continue
+
+        flows = []
+        for group_id in group_ids:
+            flow = model.NewBoolVar(f"agg_flow_{variable_count}")
+            variable_count += 1
+            flows.append(flow)
+            flow_terms_by_group_number[(group_id, number)].append(flow)
+            flow_terms_by_group[group_id].append(flow)
+        model.Add(sum(flows) == selected_count)
+
+    for terms in flow_terms_by_group_number.values():
+        model.Add(sum(terms) <= 1)
+
+    bucket_terms: dict[str, list[Any]] = defaultdict(list)
+    bucket_targets: dict[str, int] = {}
+    for group in context.groups:
+        bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+        if bucket_id:
+            bucket_terms[bucket_id].extend(flow_terms_by_group.get(group.group_id, []))
+            bucket_targets[bucket_id] = int(getattr(group, "size_bucket_target", 0) or 0)
+            continue
+        model.Add(sum(flow_terms_by_group.get(group.group_id, [])) == int(group.target_size))
+
+    for bucket_id, terms in sorted(bucket_terms.items()):
+        model.Add(sum(terms) == bucket_targets[bucket_id])
+    return variable_count
 
 
 def _add_group_materialization_constraints(
@@ -312,12 +373,14 @@ def _solve_master_fallback(
         if chosen is None:
             return MasterSelection(status="INFEASIBLE", selected_pattern_ids=(), conflicts=conflicts)
         selected.append(chosen)
+    if not _aggregate_materialization_ok(context, tuple(selected)):
+        return MasterSelection(status="INFEASIBLE", selected_pattern_ids=(), conflicts=conflicts)
     return MasterSelection(
         status="FEASIBLE",
         selected_pattern_ids=tuple(pattern.pattern_id for pattern in selected),
         objective_value=float(sum(pattern.cost for pattern in selected)),
         conflicts=conflicts,
-        logs=("deterministic fallback pattern master used",),
+        logs=("deterministic fallback pattern master used", "pattern master aggregate materialization checked"),
     )
 
 
@@ -347,11 +410,98 @@ def _slot_domain_capacity_ok(
     return True
 
 
+def _aggregate_materialization_ok(
+    context: SolverContext,
+    patterns: tuple[HubPattern, ...],
+    *,
+    max_units: int = 80,
+) -> bool:
+    group_by_id = {group.group_id: group for group in context.groups}
+    groups_by_domain = _slot_domain_group_ids(context)
+    units: list[tuple[str, int]] = []
+    for pattern in patterns:
+        for domain_key, counts in pattern_slot_domain_number_counts(context, pattern).items():
+            for number, count in counts.items():
+                units.extend((domain_key, int(number)) for _index in range(int(count)))
+    if len(units) > max_units:
+        return True
+
+    remaining_by_group: dict[str, int] = {}
+    remaining_by_bucket: dict[str, int] = {}
+    for group in context.groups:
+        bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+        if bucket_id:
+            remaining_by_group[group.group_id] = len(group.numbers)
+            remaining_by_bucket[bucket_id] = int(getattr(group, "size_bucket_target", 0) or 0)
+        else:
+            remaining_by_group[group.group_id] = int(group.target_size)
+
+    options_by_unit = [
+        (
+            domain_key,
+            number,
+            tuple(
+                group_id
+                for group_id in groups_by_domain.get(domain_key, ())
+                if number in getattr(group_by_id.get(group_id), "numbers", ())
+            ),
+        )
+        for domain_key, number in units
+    ]
+    if any(not options for _domain_key, _number, options in options_by_unit):
+        return False
+    options_by_unit.sort(key=lambda item: (len(item[2]), item[0], item[1]))
+    used_group_numbers: set[tuple[str, int]] = set()
+
+    def assign(index: int) -> bool:
+        if index >= len(options_by_unit):
+            normal_ok = all(
+                remaining == 0
+                for group_id, remaining in remaining_by_group.items()
+                if not str(getattr(group_by_id[group_id], "size_bucket_id", "") or "")
+            )
+            return normal_ok and all(remaining == 0 for remaining in remaining_by_bucket.values())
+
+        _domain_key, number, group_ids = options_by_unit[index]
+        for group_id in group_ids:
+            if remaining_by_group.get(group_id, 0) <= 0:
+                continue
+            if (group_id, number) in used_group_numbers:
+                continue
+            group = group_by_id[group_id]
+            bucket_id = str(getattr(group, "size_bucket_id", "") or "")
+            if bucket_id and remaining_by_bucket.get(bucket_id, 0) <= 0:
+                continue
+            remaining_by_group[group_id] -= 1
+            if bucket_id:
+                remaining_by_bucket[bucket_id] -= 1
+            used_group_numbers.add((group_id, number))
+            if assign(index + 1):
+                return True
+            used_group_numbers.remove((group_id, number))
+            if bucket_id:
+                remaining_by_bucket[bucket_id] += 1
+            remaining_by_group[group_id] += 1
+        return False
+
+    return assign(0)
+
+
 def _candidate_group_ids_by_team_number(context: SolverContext) -> dict[tuple[str, int], set[str]]:
     candidate_groups: dict[tuple[str, int], set[str]] = defaultdict(set)
     for candidate in context.candidates:
         candidate_groups[(candidate.team_id, int(candidate.number))].add(candidate.group_id)
     return candidate_groups
+
+
+def _slot_domain_group_ids(context: SolverContext) -> dict[str, tuple[str, ...]]:
+    domains: dict[str, set[str]] = defaultdict(set)
+    for group_ids in _candidate_group_ids_by_team_number(context).values():
+        if not group_ids:
+            continue
+        key = "groups|" + "|".join(sorted(group_ids))
+        domains[key].update(group_ids)
+    return {key: tuple(sorted(value)) for key, value in sorted(domains.items())}
 
 
 def _iter_real_resource_match_inputs(
