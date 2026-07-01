@@ -10,6 +10,7 @@ from __future__ import annotations
 import gc
 import json
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from calendaritzacions.engine.base import EngineResult
@@ -66,6 +67,7 @@ class ResourceSolverPatternMasterEngine:
     """Experimental pattern-selection solver variant."""
 
     def run(self, input_path: str, config: Any, progress: Any | None = None) -> EngineResult:
+        run_started = perf_counter()
         solver_config = coerce_resource_solver_config(config)
         logs = [
             "resource_solver_pattern_master: starting",
@@ -157,7 +159,14 @@ class ResourceSolverPatternMasterEngine:
         gc.collect()
 
         _report(progress, "Resolent CP-SAT mestre de patterns...", 55)
-        selection = solve_master_selection(context, patterns, conflicts)
+        master_time_limit = _pattern_master_solve_time_limit(solver_config, run_started)
+        logs.append(f"pattern-master: master time_limit={master_time_limit:.1f}s")
+        selection = solve_master_selection(
+            context,
+            patterns,
+            conflicts,
+            time_limit_seconds=master_time_limit,
+        )
         logs.extend(selection.logs)
         selected_patterns = selected_patterns_from_ids(patterns, selection.selected_pattern_ids)
         logs.append(
@@ -233,6 +242,24 @@ def _write_and_report(payloads: dict[str, Any], output_dir: Path, progress: Any 
     for name, path in paths.items():
         _report_artifact(progress, name, path)
     return paths
+
+
+def _pattern_master_solve_time_limit(config: Any, run_started: float) -> float:
+    explicit = float(getattr(config, "pattern_master_solve_time_limit_seconds", 0.0) or 0.0)
+    if explicit > 0:
+        return explicit
+
+    fallback = max(1.0, float(getattr(config, "internal_solve_time_limit_seconds", 60.0) or 60.0))
+    worker_limit = float(getattr(config, "worker_time_limit_seconds", 0.0) or 0.0)
+    if worker_limit <= 0:
+        return fallback
+
+    reserve = max(0.0, float(getattr(config, "pattern_master_materialization_reserve_seconds", 3600.0) or 0.0))
+    elapsed = max(0.0, perf_counter() - run_started)
+    remaining_for_master = worker_limit - elapsed - reserve
+    if remaining_for_master <= 0:
+        return 1.0
+    return max(1.0, remaining_for_master)
 
 
 __all__ = ["ResourceSolverPatternMasterEngine"]

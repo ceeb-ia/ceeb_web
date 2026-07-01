@@ -78,6 +78,12 @@ class ResourceSolverConfig:
     pattern_master_local_patterns_per_linkage: int = 8
     pattern_master_local_base_solve_seconds: float = 3.0
     pattern_master_local_extra_seconds_per_team_over_8: float = 2.0
+    pattern_master_solve_time_limit_seconds: float = field(
+        default_factory=lambda: _env_float("CALENDARITZACIONS_PATTERN_MASTER_SOLVE_TIME_LIMIT_SECONDS", 0.0)
+    )
+    pattern_master_materialization_reserve_seconds: float = field(
+        default_factory=lambda: _env_float("CALENDARITZACIONS_PATTERN_MASTER_MATERIALIZATION_RESERVE_SECONDS", 3600.0)
+    )
     pattern_master_inline_materialization_max_terms: int = field(
         default_factory=lambda: _env_int("CALENDARITZACIONS_PATTERN_MASTER_INLINE_MATERIALIZATION_MAX_TERMS", 150_000)
     )
@@ -229,6 +235,20 @@ def coerce_resource_solver_config(config: object | None = None) -> ResourceSolve
         ),
         pattern_master_local_extra_seconds_per_team_over_8=float(
             getattr(config, "pattern_master_local_extra_seconds_per_team_over_8", 2.0)
+        ),
+        pattern_master_solve_time_limit_seconds=float(
+            getattr(
+                config,
+                "pattern_master_solve_time_limit_seconds",
+                _env_float("CALENDARITZACIONS_PATTERN_MASTER_SOLVE_TIME_LIMIT_SECONDS", 0.0),
+            )
+        ),
+        pattern_master_materialization_reserve_seconds=float(
+            getattr(
+                config,
+                "pattern_master_materialization_reserve_seconds",
+                _env_float("CALENDARITZACIONS_PATTERN_MASTER_MATERIALIZATION_RESERVE_SECONDS", 3600.0),
+            )
         ),
         pattern_master_inline_materialization_max_terms=int(
             getattr(

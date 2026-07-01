@@ -60,6 +60,18 @@ def materialize_master_selection(
 ) -> tuple[ResourceSolverResult, Any, Any]:
     """Use the group assignments selected inside the master CP-SAT model."""
 
+    selected_patterns = tuple(selected_patterns)
+    if (
+        not selected_patterns
+        and not selection.materialized_assignments
+        and selection.status not in {"OPTIMAL", "FEASIBLE"}
+    ):
+        raw = _raw_result(
+            selection.status,
+            (),
+            logs=("pattern master materialization skipped: no selected patterns",),
+        )
+        return build_solution(raw, context), raw, None
     if not selection.materialized_assignments:
         return materialize_patterns(context, selected_patterns)
     raw = _raw_result(

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from calendaritzacions.domain.phases import PRIMERA_FASE
 from calendaritzacions.engine.config import EngineConfig
@@ -29,7 +30,13 @@ from calendaritzacions.engine.variants.resource_solver.pattern_master.patterns i
     _local_pattern_limit,
     _local_solve_time_limit,
 )
-from calendaritzacions.engine.variants.resource_solver.pattern_master.types import HubPattern, MicroHub, PatternAssignment
+from calendaritzacions.engine.variants.resource_solver.pattern_master.service import _pattern_master_solve_time_limit
+from calendaritzacions.engine.variants.resource_solver.pattern_master.types import (
+    HubPattern,
+    MasterSelection,
+    MicroHub,
+    PatternAssignment,
+)
 from calendaritzacions.engine.variants.resource_solver.types import (
     BaseResource,
     Candidate,
@@ -75,6 +82,36 @@ class ResourceSolverPatternMasterTests(unittest.TestCase):
 
         self.assertEqual(config.linkage_mode, "input")
 
+    def test_pattern_master_time_limit_uses_worker_budget_minus_reserve(self):
+        config = ResourceSolverConfig(
+            internal_solve_time_limit_seconds=3600,
+            worker_time_limit_seconds=86400,
+            pattern_master_materialization_reserve_seconds=3600,
+        )
+
+        with patch(
+            "calendaritzacions.engine.variants.resource_solver.pattern_master.service.perf_counter",
+            return_value=1200.0,
+        ):
+            limit = _pattern_master_solve_time_limit(config, run_started=200.0)
+
+        self.assertEqual(limit, 81800.0)
+
+    def test_pattern_master_explicit_time_limit_overrides_worker_budget(self):
+        config = ResourceSolverConfig(
+            internal_solve_time_limit_seconds=3600,
+            worker_time_limit_seconds=86400,
+            pattern_master_solve_time_limit_seconds=7200,
+        )
+
+        with patch(
+            "calendaritzacions.engine.variants.resource_solver.pattern_master.service.perf_counter",
+            return_value=1200.0,
+        ):
+            limit = _pattern_master_solve_time_limit(config, run_started=200.0)
+
+        self.assertEqual(limit, 7200.0)
+
     def test_master_selection_materializes_real_assignments(self):
         context = _context_same_competition_different_resources()
         hubs = build_microhubs(context)
@@ -88,6 +125,17 @@ class ResourceSolverPatternMasterTests(unittest.TestCase):
         self.assertIn(selection.status, {"OPTIMAL", "FEASIBLE"})
         self.assertIn(result.status, {"OPTIMAL", "FEASIBLE"})
         self.assertEqual(len(result.assignments), len(context.teams))
+
+    def test_unknown_master_without_selection_skips_materialization(self):
+        context = _context_same_competition_different_resources()
+        selection = MasterSelection(status="UNKNOWN", selected_pattern_ids=())
+
+        result, raw, built = materialize_master_selection(context, (), selection)
+
+        self.assertEqual(result.status, "UNKNOWN")
+        self.assertEqual(result.assignments, ())
+        self.assertIsNone(built)
+        self.assertIn("pattern master materialization skipped: no selected patterns", raw.logs)
 
     def test_large_master_can_skip_inline_materialization(self):
         context = _context_same_competition_different_resources()

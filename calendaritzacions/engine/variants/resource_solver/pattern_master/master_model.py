@@ -27,6 +27,8 @@ def solve_master_selection(
     context: SolverContext,
     patterns: Iterable[HubPattern],
     conflicts: Iterable[PatternConflict],
+    *,
+    time_limit_seconds: float | None = None,
 ) -> MasterSelection:
     cp_model = _load_cp_model()
     rows = tuple(patterns)
@@ -105,13 +107,28 @@ def solve_master_selection(
         + resource_weight * sum(resource_excess_terms)
     )
     solver = cp_model.CpSolver()
-    limit = float(getattr(context.config, "internal_solve_time_limit_seconds", 60.0) or 60.0)
+    limit = float(
+        time_limit_seconds
+        if time_limit_seconds is not None
+        else getattr(context.config, "internal_solve_time_limit_seconds", 60.0)
+        or 60.0
+    )
     solver.parameters.max_time_in_seconds = limit
     solver.parameters.num_search_workers = 1
+    logs.append(f"pattern master solve time limit: {limit:.1f}s")
     status_code = solver.Solve(model)
     status = _status_name(cp_model, status_code)
     if status not in {"OPTIMAL", "FEASIBLE"}:
-        return MasterSelection(status=status, selected_pattern_ids=(), conflicts=conflict_rows, logs=("pattern master found no selection",))
+        return MasterSelection(
+            status=status,
+            selected_pattern_ids=(),
+            conflicts=conflict_rows,
+            logs=(
+                *logs,
+                f"pattern master finished without selection: status={status} wall_time={solver.WallTime():.3f}s",
+                "pattern master found no selection",
+            ),
+        )
     selected = tuple(sorted(pattern_id for pattern_id, var in x.items() if int(solver.Value(var)) > 0))
     materialized_assignments = tuple(
         sorted(
