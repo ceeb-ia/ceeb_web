@@ -18,9 +18,6 @@ from calendaritzacions.engine.variants.resource_solver.constraints.base import (
 from calendaritzacions.engine.variants.resource_solver.constraints.linkage import (
     fallback_linkage_violations,
 )
-from calendaritzacions.engine.variants.resource_solver.constraints.entity_separation import (
-    entity_can_be_separated,
-)
 from calendaritzacions.engine.variants.resource_solver.constraints.level_band import (
     fallback_level_band_violations,
     level_mismatch_weight,
@@ -429,7 +426,6 @@ def _construct_greedy_assignment(
     selected: list[Candidate] = []
     group_entity_counts: dict[tuple[str, str], int] = defaultdict(int)
     team_by_id = {team.team_id: team for team in context.teams}
-    hard_entity_separation_keys = _hard_entity_separation_keys(context)
 
     for team in sorted(context.teams, key=lambda item: item.team_id):
         options = sorted(
@@ -450,9 +446,6 @@ def _construct_greedy_assignment(
                 continue
             if bucket_id and remaining_by_bucket.get(bucket_id, 0) <= 0:
                 continue
-            if (team.entity, candidate.group_id) in hard_entity_separation_keys:
-                if group_entity_counts[(candidate.group_id, team.entity)] > 0:
-                    continue
             chosen = candidate
             break
         if chosen is None:
@@ -545,8 +538,6 @@ def _evaluate_assignment_combo(
             ) * int(getattr(context.config, "empty_number_imbalance_weight", 1_000))
 
     entity_excess = _fallback_entity_excess(context, combo)
-    if entity_excess is None:
-        return None
     objective_value += sum(entity_excess.values()) * int(
         getattr(context.config, "entity_excess_weight", 10_000)
     )
@@ -592,50 +583,21 @@ def _objective_family_for_level_violation(
 def _fallback_entity_excess(
     context: SolverContext,
     combo: tuple[Candidate, ...],
-) -> dict[tuple[str, str], int] | None:
+) -> dict[tuple[str, str], int]:
     team_entity = {team.team_id: team.entity for team in context.teams}
-    hard_entity_separation_keys = _hard_entity_separation_keys(context)
 
     count_by_entity_group: dict[tuple[str, str], int] = defaultdict(int)
     for candidate in combo:
-        count_by_entity_group[(team_entity[candidate.team_id], candidate.group_id)] += 1
+        entity = team_entity[candidate.team_id]
+        if entity:
+            count_by_entity_group[(entity, candidate.group_id)] += 1
 
     excess: dict[tuple[str, str], int] = {}
     for (entity, group_id), count in count_by_entity_group.items():
-        if (entity, group_id) in hard_entity_separation_keys:
-            if count > 1:
-                return None
-            continue
         value = max(0, count - 1)
         if value:
             excess[(entity, group_id)] = value
     return excess
-
-
-def _hard_entity_separation_keys(context: SolverContext) -> set[tuple[str, str]]:
-    entity_by_team = {team.team_id: team.entity for team in context.teams}
-    groups_by_team: dict[str, set[str]] = defaultdict(set)
-    teams_by_group: dict[str, set[str]] = defaultdict(set)
-    for candidate in context.candidates:
-        groups_by_team[candidate.team_id].add(candidate.group_id)
-        teams_by_group[candidate.group_id].add(candidate.team_id)
-
-    hard_keys: set[tuple[str, str]] = set()
-    for group in context.groups:
-        competition_team_ids = teams_by_group.get(group.group_id, set())
-        competition_group_ids = {
-            group_id
-            for team_id in competition_team_ids
-            for group_id in groups_by_team.get(team_id, set())
-        }
-        competition_teams_by_entity: dict[str, list[str]] = defaultdict(list)
-        for team_id in competition_team_ids:
-            competition_teams_by_entity[entity_by_team.get(team_id, "")].append(team_id)
-
-        for entity, team_ids in competition_teams_by_entity.items():
-            if entity_can_be_separated(team_ids, groups_by_team, competition_group_ids):
-                hard_keys.add((entity, group.group_id))
-    return hard_keys
 
 
 def _competition_group_sets(context: SolverContext) -> tuple[tuple[str, ...], ...]:

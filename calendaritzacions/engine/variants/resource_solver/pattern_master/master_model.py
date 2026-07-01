@@ -6,7 +6,6 @@ from collections import Counter, defaultdict
 from time import perf_counter
 from typing import Any, Iterable
 
-from calendaritzacions.engine.variants.resource_solver.constraints.entity_separation import entity_can_be_separated
 from calendaritzacions.engine.variants.resource_solver.constraints.resource_capacity import capacity_for_resource
 from calendaritzacions.engine.variants.resource_solver.pattern_master.patterns import (
     competition_number_capacity,
@@ -80,11 +79,18 @@ def solve_master_selection(
     logs: list[str] = []
     resource_excess_terms = []
     resource_weight = int(getattr(context.config, "resource_excess_weight", 100_000) or 100_000)
+    entity_excess_terms = []
+    entity_weight = int(getattr(context.config, "entity_excess_weight", 10_000) or 10_000)
     materialization_vars: list[tuple[Any, str, str, int]] = []
     materialization_terms = _estimate_materialization_terms(context, rows)
     materialization_limit = int(getattr(context.config, "pattern_master_inline_materialization_max_terms", 150_000) or 0)
     if materialization_limit > 0 and materialization_terms <= materialization_limit:
-        resource_terms, materialization_vars = _add_group_materialization_constraints(model, x, rows, context)
+        resource_terms, materialization_vars, entity_excess_terms = _add_group_materialization_constraints(
+            model,
+            x,
+            rows,
+            context,
+        )
         for resource_id, terms in sorted(resource_terms.items()):
             if not terms:
                 continue
@@ -105,6 +111,7 @@ def solve_master_selection(
     model.Minimize(
         sum(int(pattern.cost) * x[pattern.pattern_id] for pattern in rows)
         + resource_weight * sum(resource_excess_terms)
+        + entity_weight * sum(entity_excess_terms)
     )
     solver = cp_model.CpSolver()
     limit = float(
@@ -268,7 +275,7 @@ def _add_group_materialization_constraints(
     pattern_vars: dict[str, Any],
     patterns: tuple[HubPattern, ...],
     context: SolverContext,
-) -> tuple[dict[str, list[Any]], list[tuple[Any, str, str, int]]]:
+) -> tuple[dict[str, list[Any]], list[tuple[Any, str, str, int]], list[Any]]:
     candidate_groups = _candidate_group_ids_by_team_number(context)
     candidate_by_assignment = _candidate_by_team_group_number(context)
     group_terms: dict[str, list[Any]] = defaultdict(list)
@@ -321,31 +328,32 @@ def _add_group_materialization_constraints(
         model.Add(sum(terms) == bucket_targets[bucket_id])
 
     entity_by_team = {team.team_id: team.entity for team in context.teams}
-    groups_by_team: dict[str, set[str]] = defaultdict(set)
     teams_by_group: dict[str, set[str]] = defaultdict(set)
     for candidate in context.candidates:
-        groups_by_team[candidate.team_id].add(candidate.group_id)
         teams_by_group[candidate.group_id].add(candidate.team_id)
+    entity_excess_terms: list[Any] = []
     for group in context.groups:
         competition_team_ids = teams_by_group.get(group.group_id, set())
-        competition_group_ids = {
-            group_id
-            for team_id in competition_team_ids
-            for group_id in groups_by_team.get(team_id, set())
-        }
         competition_teams_by_entity: dict[str, list[str]] = defaultdict(list)
         for team_id in competition_team_ids:
             competition_teams_by_entity[entity_by_team.get(team_id, "")].append(team_id)
-        for _entity, team_ids in sorted(competition_teams_by_entity.items()):
-            if not entity_can_be_separated(team_ids, groups_by_team, competition_group_ids):
+        for entity, team_ids in sorted(competition_teams_by_entity.items()):
+            if not entity or len(team_ids) <= 1:
                 continue
             terms = [
                 term
                 for team_id in team_ids
                 for term in team_group_terms.get((team_id, group.group_id), ())
             ]
-            if terms:
-                model.Add(sum(terms) <= 1)
+            if len(terms) <= 1:
+                continue
+            excess = model.NewIntVar(
+                0,
+                max(0, len(team_ids) - 1),
+                f"entity_excess_{_safe_name(entity)}_{_safe_name(group.group_id)}",
+            )
+            model.Add(excess >= sum(terms) - 1)
+            entity_excess_terms.append(excess)
     _add_real_resource_terms(
         model,
         materialization_vars,
@@ -354,7 +362,7 @@ def _add_group_materialization_constraints(
         resource_terms,
         context,
     )
-    return dict(resource_terms), materialization_vars
+    return dict(resource_terms), materialization_vars, entity_excess_terms
 
 
 def _solve_master_fallback(

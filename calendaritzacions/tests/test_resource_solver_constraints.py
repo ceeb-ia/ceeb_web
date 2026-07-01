@@ -93,7 +93,7 @@ class ResourceSolverConstraintTests(unittest.TestCase):
         self.assertEqual(len(result.assignments), 2)
         self.assertEqual({a.number for a in result.assignments}, {1, 2})
 
-    def test_entity_separation_is_hard_when_feasible(self):
+    def test_entity_separation_is_avoided_when_feasible(self):
         teams = [_team("A1", "ClubA"), _team("A2", "ClubA"), _team("B1", "ClubB"), _team("B2", "ClubB")]
         groups = [
             GroupSpec("G1", 2, 2, 2, "primera_fase"),
@@ -115,6 +115,28 @@ class ResourceSolverConstraintTests(unittest.TestCase):
                 next(team.entity for team in teams if team.team_id == assignment.team_id)
             )
         self.assertTrue(all(len(entities) == len(set(entities)) for entities in by_group.values()))
+
+    def test_entity_separation_is_soft_when_global_targets_force_collision(self):
+        teams = [_team("A1", "ClubA"), _team("A2", "ClubA"), _team("B1", "ClubB"), _team("B2", "ClubB")]
+        groups = [
+            GroupSpec("G1", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+            GroupSpec("G2", 2, 2, 2, "primera_fase", numbers=(1, 2)),
+        ]
+        candidates = [
+            *[
+                _candidate(team_id, group_id, number)
+                for team_id in ("A1", "A2")
+                for group_id in ("G1", "G2")
+                for number in (1, 2)
+            ],
+            *[_candidate(team_id, "G2", number) for team_id in ("B1", "B2") for number in (1, 2)],
+        ]
+
+        result = solve_context(_context(teams, groups, candidates))
+
+        self.assertIn(result.status, {"OPTIMAL", "FEASIBLE"})
+        self.assertEqual(len(result.assignments), 4)
+        self.assertGreaterEqual(sum(result.entity_excess.values()), 1)
 
     def test_entity_separation_relaxes_only_inevitable_entity(self):
         teams = [_team("A1", "ClubA"), _team("A2", "ClubA"), _team("A3", "ClubA"), _team("B1", "ClubB")]
