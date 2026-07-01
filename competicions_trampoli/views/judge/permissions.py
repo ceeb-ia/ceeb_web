@@ -19,12 +19,29 @@ def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict)
         if isinstance(field, dict) and field.get("code"):
             by_code[field["code"]] = field
 
+    def _effective_permissions_for_patch(perm):
+        runtime_code = str(perm.get("runtime_field_code") or perm.get("field_code") or "").strip()
+        field = by_code.get(runtime_code)
+        if not field or normalize_judge_role(perm.get("role")) != "supervisor":
+            return [perm]
+        ftype = str(field.get("type") or "number").strip().lower()
+        if ftype not in {"matrix", "list"}:
+            return [perm]
+        n_judges = max(1, int(((field.get("judges") or {}).get("count")) or perm.get("judge_index") or 1))
+        out = []
+        for judge_index in range(1, n_judges + 1):
+            row = dict(perm)
+            row["judge_index"] = judge_index
+            out.append(row)
+        return out
+
     perms_by_code = {}
     for perm in permissions:
-        runtime_code = str(perm.get("runtime_field_code") or perm.get("field_code") or "").strip()
-        if not runtime_code:
-            continue
-        perms_by_code.setdefault(runtime_code, []).append(perm)
+        for effective_perm in _effective_permissions_for_patch(perm):
+            runtime_code = str(effective_perm.get("runtime_field_code") or effective_perm.get("field_code") or "").strip()
+            if not runtime_code:
+                continue
+            perms_by_code.setdefault(runtime_code, []).append(effective_perm)
 
     clean = {}
 

@@ -26,6 +26,7 @@
       member_slots: parseMemberSlots(p && p.member_slots),
       member_slot: (p && p.member_slot != null && p.member_slot !== "") ? Math.max(1, Number(p.member_slot)) : null,
       label: String((p && p.label) || ""),
+      role: String((p && p.role) || "standard").trim().toLowerCase() === "supervisor" ? "supervisor" : "standard",
     };
     if(base.scope !== "member"){
       base.member_mode = "";
@@ -64,6 +65,30 @@
     return `${idx}|${n.runtime_field_code}|j${n.judge_index}|s${n.item_start}|c${c}${slot}`;
   }
 
+  function expandedSupervisorPerms(base, idx, field){
+    if(!base || base.role !== "supervisor" || !field) return null;
+    const type = String(field.type || "number");
+    if(type !== "matrix" && type !== "list") return null;
+    const nJudges = Math.max(1, Number((field.judges && field.judges.count) || base.judge_index || 1));
+    const out = [];
+    for(let judgeIndex = 1; judgeIndex <= nJudges; judgeIndex += 1){
+      const next = {
+        ...base,
+        judge_index: judgeIndex,
+        supervised_by_judge_index: base.judge_index,
+        is_supervisor_row: judgeIndex === base.judge_index,
+        is_supervised_row: judgeIndex !== base.judge_index,
+      };
+      out.push({
+        ...next,
+        idx,
+        key: permKey(next, `${idx}-supervisor-${judgeIndex}`),
+        field,
+      });
+    }
+    return out;
+  }
+
   function resolvedPermsForIns(insId){
     const subject = subjectForId(insId);
     const memberCount = Array.isArray(subject.members) ? subject.members.length : 0;
@@ -72,11 +97,17 @@
       const base = normalizePerm(perm);
       if(!base.field_code) return;
       if(!TEAM_SUBJECT_MODE || base.scope !== "member"){
+        const field = schemaField(base.runtime_field_code || base.field_code);
+        const expanded = expandedSupervisorPerms(base, idx, field);
+        if(expanded){
+          resolved.push(...expanded);
+          return;
+        }
         resolved.push({
           ...base,
           idx,
           key: permKey(base, idx),
-          field: schemaField(base.runtime_field_code || base.field_code),
+          field,
         });
         return;
       }
@@ -100,11 +131,17 @@
           member_slot: slot,
           member_label: `M${slot}`,
         };
+        const field = schemaField(runtimeFieldCode);
+        const expanded = expandedSupervisorPerms(resolvedPerm, idx, field);
+        if(expanded){
+          resolved.push(...expanded);
+          return;
+        }
         resolved.push({
           ...resolvedPerm,
           idx,
           key: permKey(resolvedPerm, idx),
-          field: schemaField(runtimeFieldCode),
+          field,
         });
       });
 

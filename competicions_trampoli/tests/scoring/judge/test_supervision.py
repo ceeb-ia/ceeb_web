@@ -126,7 +126,7 @@ class JudgeSupervisionFlowTests(_BaseTrampoliDataMixin, TestCase):
             permissions=[
                 {
                     "field_code": "E",
-                    "judge_index": 1,
+                    "judge_index": 2,
                     "item_start": 1,
                     "item_count": None,
                     "role": "supervisor",
@@ -250,7 +250,7 @@ class JudgeSupervisionFlowTests(_BaseTrampoliDataMixin, TestCase):
                 ],
             )
 
-    def test_supervisor_portal_exposes_pending_panel(self):
+    def test_supervisor_portal_exposes_integrated_pending_polling(self):
         response = self.client.get(
             reverse(
                 "judge_portal_assignment",
@@ -259,8 +259,64 @@ class JudgeSupervisionFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="judgeSupervisionPanel"')
         self.assertContains(response, "SUPERVISION_PENDING_URL")
+        self.assertContains(response, "loadSupervisionPendingIntegrated")
+        self.assertContains(response, "expandedSupervisorPerms")
+        self.assertContains(response, "mergePendingPatchIntoDraft")
+        self.assertNotContains(response, 'id="judgeSupervisionPanel"')
+
+    def test_supervisor_save_publishes_and_approves_other_pending_rows(self):
+        submission = JudgeScoreSubmission.objects.create(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            fase=None,
+            submitted_by_token=self.standard_token,
+            submitted_by_assignment=self.standard_assignment,
+            subject_kind="inscripcio",
+            subject_id=self.inscripcio.id,
+            exercici=1,
+            field_code="E",
+            runtime_field_code="E",
+            judge_index=1,
+            item_start=1,
+            item_count=None,
+            inputs_patch={"E": [[0.6, 0.7, 0.8, 0.9, 1.0], []]},
+            normalized_inputs_patch={"E": [[0.6, 0.7, 0.8, 0.9, 1.0], []]},
+            status=JudgeScoreSubmission.Status.PENDING,
+        )
+
+        response = self.client.post(
+            reverse("judge_save_partial", kwargs={"token": self.supervisor_token.id}),
+            data=json.dumps({
+                "assignment_id": self.supervisor_assignment.id,
+                "inscripcio_id": self.inscripcio.id,
+                "subject_kind": "inscripcio",
+                "subject_id": self.inscripcio.id,
+                "exercici": 1,
+                "inputs_patch": {
+                    "E": [
+                        [0.6, 0.7, 0.8, 0.9, 1.0],
+                        [0.1, 0.2, 0.3, 0.4, 0.5],
+                    ],
+                },
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json().get("publication_status"), "published")
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, JudgeScoreSubmission.Status.APPROVED)
+        self.assertEqual(submission.reviewed_by_token_id, self.supervisor_token.id)
+        entry = ScoreEntry.objects.get(
+            competicio=self.competicio,
+            comp_aparell=self.comp_aparell,
+            inscripcio=self.inscripcio,
+            exercici=1,
+            fase__isnull=True,
+        )
+        self.assertEqual(entry.inputs["E"][0], [0.6, 0.7, 0.8, 0.9, 1.0])
+        self.assertEqual(entry.inputs["E"][1], [0.1, 0.2, 0.3, 0.4, 0.5])
 
     def test_supervision_approve_requires_submission_id(self):
         response = self.client.post(

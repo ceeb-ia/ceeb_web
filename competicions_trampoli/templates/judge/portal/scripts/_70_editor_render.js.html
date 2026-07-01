@@ -50,6 +50,11 @@
     badges.className = "judge-field-badges";
     appendFieldBadge(badges, perm.field_code, "code");
     appendFieldBadge(badges, `Jutge ${perm.judge_index}`, "judge");
+    if(perm.is_supervisor_row){
+      appendFieldBadge(badges, "Supervisor", "supervisor");
+    } else if(perm.is_supervised_row){
+      appendFieldBadge(badges, "Supervisat", "supervised");
+    }
     if(perm.item_count){
       appendFieldBadge(badges, `Items ${perm.item_start}-${perm.item_start + perm.item_count - 1}`, "range");
     }

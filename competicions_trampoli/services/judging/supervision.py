@@ -96,7 +96,10 @@ def token_is_supervisor_for_field(*, token, assignment, comp_aparell, runtime_fi
     runtime_field_code = str(runtime_field_code or "").strip()
     if not runtime_field_code:
         return False
-    if assignment is None or getattr(assignment, "judge_token_id", None) != getattr(token, "id", None):
+    assignment_token_id = getattr(assignment, "judge_token_id", None)
+    if assignment_token_id is None and getattr(assignment, "token", None) is not None:
+        assignment_token_id = getattr(assignment.token, "id", None)
+    if assignment is None or assignment_token_id != getattr(token, "id", None):
         return False
     for permission in assignment.permissions or []:
         clean = permission_with_role(permission)
@@ -238,3 +241,41 @@ def mark_submission_rejected(submission, *, token, assignment):
     submission.reviewed_at = timezone.now()
     submission.save(update_fields=["status", "reviewed_by_token", "reviewed_by_assignment", "reviewed_at", "updated_at"])
     return submission
+
+
+def approve_pending_submissions_for_published_fields(
+    *,
+    competicio,
+    comp_aparell,
+    phase,
+    subject_kind: str,
+    subject_id: int,
+    exercici: int,
+    runtime_field_codes: list[str],
+    token,
+    assignment,
+) -> int:
+    codes = [str(code or "").strip() for code in runtime_field_codes or [] if str(code or "").strip()]
+    if not codes:
+        return 0
+    rows = (
+        JudgeScoreSubmission.objects
+        .filter(
+            competicio=competicio,
+            comp_aparell=comp_aparell,
+            subject_kind=str(subject_kind or "").strip().lower(),
+            subject_id=int(subject_id),
+            exercici=int(exercici),
+            runtime_field_code__in=sorted(set(codes)),
+            status=JudgeScoreSubmission.Status.PENDING,
+            **_phase_filter(phase),
+        )
+        .exclude(submitted_by_token=token)
+        .select_for_update()
+        .order_by("id")
+    )
+    count = 0
+    for submission in rows:
+        mark_submission_approved(submission, token=token, assignment=assignment)
+        count += 1
+    return count

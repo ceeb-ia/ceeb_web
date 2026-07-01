@@ -10,6 +10,7 @@ from ...scoring_engine import ScoringError
 from ...services.judging.submissions import persist_subject_score_patch
 from ...services.judging.supervision import (
     PendingSubmissionSpec,
+    approve_pending_submissions_for_published_fields,
     create_or_update_pending_submission,
     field_requires_supervision,
     token_is_supervisor_for_field,
@@ -167,6 +168,7 @@ def judge_save_partial(request, token):
     raw_by_field = _group_patch_by_field(inputs_patch)
     immediate_patch = {}
     pending_submissions = []
+    supervisor_published_codes = []
 
     for runtime_code, field_patch in sanitized_by_field.items():
         requires_supervision = field_requires_supervision(
@@ -203,6 +205,8 @@ def judge_save_partial(request, token):
             pending_submissions.append(submission)
         else:
             immediate_patch.update(field_patch)
+            if is_supervisor:
+                supervisor_published_codes.append(runtime_code)
 
     try:
         if immediate_patch:
@@ -213,6 +217,17 @@ def judge_save_partial(request, token):
                 subject=subject,
                 phase=scope.phase,
                 patch=immediate_patch,
+            )
+            approve_pending_submissions_for_published_fields(
+                competicio=competicio,
+                comp_aparell=comp_aparell,
+                phase=scope.phase,
+                subject_kind=str(subject["subject_kind"]),
+                subject_id=int(subject["subject_id"]),
+                exercici=exercici,
+                runtime_field_codes=supervisor_published_codes,
+                token=tok,
+                assignment=scope.assignment,
             )
         else:
             entry = _existing_entry_for_subject(competicio, comp_aparell, exercici, subject, scope.phase)
