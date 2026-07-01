@@ -455,7 +455,14 @@
       renderEditor(insId, exercici, { force: true });
       refreshInsNavStatuses();
       refreshExerciseChipStates(insId);
-      setStatus(insId, exercici, "ok", "Desat ✓");
+      const publicationStatus = String(data.publication_status || "published");
+      if(publicationStatus === "pending"){
+        setStatus(insId, exercici, "info", "Pendent de validacio");
+      } else if(publicationStatus === "partial_pending"){
+        setStatus(insId, exercici, "info", "Desat parcialment; hi ha camps pendents");
+      } else {
+        setStatus(insId, exercici, "ok", "Desat");
+      }
       if(typeof opts.onSuccess === "function"){
         opts.onSuccess({ insId, exercici, patch, payload, data, response: res });
       }

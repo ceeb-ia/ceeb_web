@@ -37,15 +37,58 @@
       width:min(100%, 14rem);
       max-width:14rem;
     }
+    .judge-items-strip{
+      display:grid;
+      grid-auto-flow:column;
+      grid-auto-columns:minmax(4.8rem, 5.6rem);
+      align-items:start;
+      gap:.5rem;
+      max-width:100%;
+      padding:.12rem .08rem .42rem;
+      overflow-x:auto;
+      overflow-y:hidden;
+      -webkit-overflow-scrolling:touch;
+      scroll-snap-type:x proximity;
+      scrollbar-width:thin;
+    }
+    .judge-item-cell,
     .judge-portal-page [data-matrix-row="1"]{
       max-width:100%;
       min-width:0;
     }
+    .judge-item-cell{
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      gap:.25rem;
+      scroll-snap-align:start;
+    }
+    .judge-item-label{
+      min-height:2.05rem;
+      color:#475569;
+      font-size:.74rem;
+      font-weight:800;
+      line-height:1.18;
+      text-align:center;
+      overflow-wrap:anywhere;
+      display:flex;
+      align-items:flex-end;
+      justify-content:center;
+    }
+    .judge-item-cell .input-salt,
     .judge-portal-page [data-matrix-row="1"] .input-salt{
-      width:auto;
+      width:100%;
       max-width:none;
-      min-width:4.5rem;
-      flex:1 1 0;
+      min-width:0;
+      text-align:center;
+    }
+    .judge-crash-btn{
+      width:100%;
+      min-height:1.7rem;
+      padding:.05rem .25rem;
+      font-size:.72rem;
+      font-weight:900;
+      line-height:1;
     }
     .status-ok{ color:#0a7; font-weight:600; }
     .status-err{ color:#c22; font-weight:600; }
@@ -198,6 +241,83 @@
     .judge-field-badge.range{ background:#f8fafc; border-color:#cbd5e1; color:#475569; }
     .judge-field-badge.member{ background:#fff7ed; border-color:#fdba74; color:#9a3412; }
     .judge-field-body{ padding:.65rem; }
+    .judge-supervision-panel{
+      border:1px solid #facc15;
+      border-radius:.55rem;
+      background:#fffbeb;
+      padding:.75rem;
+    }
+    .judge-supervision-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:.75rem;
+      flex-wrap:wrap;
+    }
+    .judge-supervision-title{
+      color:#854d0e;
+      font-weight:900;
+      line-height:1.2;
+    }
+    .judge-supervision-subtitle{
+      color:#713f12;
+      font-size:.84rem;
+    }
+    .judge-supervision-actions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:.5rem;
+      flex-wrap:wrap;
+    }
+    .judge-supervision-count{
+      display:inline-flex;
+      align-items:center;
+      border:1px solid #fde68a;
+      border-radius:999px;
+      background:#fff;
+      color:#854d0e;
+      padding:.08rem .5rem;
+      font-size:.78rem;
+      font-weight:800;
+    }
+    .judge-supervision-status{ min-height:1.2rem; margin-top:.45rem; }
+    .judge-supervision-list{
+      display:grid;
+      gap:.55rem;
+      margin-top:.45rem;
+    }
+    .judge-supervision-item{
+      border:1px solid #fde68a;
+      border-radius:.45rem;
+      background:#fff;
+      padding:.65rem;
+    }
+    .judge-supervision-item-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:.55rem;
+      flex-wrap:wrap;
+      margin-bottom:.45rem;
+    }
+    .judge-supervision-item-title{
+      color:#0f172a;
+      font-weight:800;
+      line-height:1.25;
+      overflow-wrap:anywhere;
+    }
+    .judge-supervision-item-meta{
+      color:#64748b;
+      font-size:.78rem;
+      font-weight:700;
+      overflow-wrap:anywhere;
+    }
+    .judge-supervision-patch{
+      min-height:4.5rem;
+      font-family:Consolas, "Liberation Mono", monospace;
+      font-size:.78rem;
+    }
     .group-tab-count{ font-size:.75rem; }
     .judge-group-switcher{
       display:grid;
@@ -818,10 +938,20 @@
         width:min(100%, 12rem);
         max-width:12rem;
       }
+      .judge-items-strip{
+        grid-auto-columns:minmax(4.35rem, 4.9rem);
+        gap:.4rem;
+        margin-left:-.15rem;
+        margin-right:-.15rem;
+      }
       .judge-portal-page [data-matrix-row="1"] .input-salt{
-        width:auto;
+        width:100%;
         max-width:none;
-        min-width:4rem;
+        min-width:0;
+      }
+      .judge-item-label{
+        min-height:1.85rem;
+        font-size:.7rem;
       }
       .competition-mode-modal .modal-dialog{
         max-width:calc(100vw - 1rem);

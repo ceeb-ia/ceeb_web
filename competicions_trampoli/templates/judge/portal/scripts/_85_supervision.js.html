@@ -1,0 +1,171 @@
+  let supervisionBusy = false;
+
+  function supervisionEls(){
+    return {
+      panel: document.getElementById("judgeSupervisionPanel"),
+      refresh: document.getElementById("judgeSupervisionRefresh"),
+      count: document.getElementById("judgeSupervisionCount"),
+      status: document.getElementById("judgeSupervisionStatus"),
+      list: document.getElementById("judgeSupervisionList"),
+    };
+  }
+
+  function supervisionSubjectLabel(item){
+    const subjectId = item && item.subject_id != null ? item.subject_id : item.inscripcio_id;
+    const domId = resolveInsDomId(subjectId);
+    const subject = SUBJECTS_BY_ID[String(domId)] || {};
+    return String(
+      subject.name
+      || subject.nom_i_cognoms
+      || subject.label
+      || `Participant ${subjectId || ""}`
+    );
+  }
+
+  function supervisionPatchValue(item){
+    const patch = (item && item.normalized_inputs_patch && typeof item.normalized_inputs_patch === "object")
+      ? item.normalized_inputs_patch
+      : ((item && item.inputs_patch && typeof item.inputs_patch === "object") ? item.inputs_patch : {});
+    try{
+      return JSON.stringify(patch, null, 2);
+    } catch(_err){
+      return "{}";
+    }
+  }
+
+  function setSupervisionStatus(message, kind){
+    const els = supervisionEls();
+    if(!els.status) return;
+    els.status.className = "judge-supervision-status small " + (
+      kind === "err" ? "text-danger" : (kind === "ok" ? "status-ok" : "text-muted")
+    );
+    els.status.textContent = message || "";
+  }
+
+  function renderSupervisionPending(items){
+    const els = supervisionEls();
+    if(!els.panel || !els.list || !els.count) return;
+    const pending = Array.isArray(items) ? items : [];
+    els.count.textContent = `${pending.length} pendent${pending.length === 1 ? "" : "s"}`;
+    els.list.innerHTML = "";
+    if(!pending.length){
+      els.list.innerHTML = '<div class="text-muted small">No hi ha notes pendents.</div>';
+      return;
+    }
+    pending.forEach((item) => {
+      const row = document.createElement("article");
+      row.className = "judge-supervision-item";
+      row.dataset.submissionId = String(item.id || "");
+      const patchId = `judgeSupervisionPatch-${item.id}`;
+      row.innerHTML = `
+        <div class="judge-supervision-item-head">
+          <div>
+            <div class="judge-supervision-item-title"></div>
+            <div class="judge-supervision-item-meta"></div>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" data-supervision-approve="${item.id}">Aprovar</button>
+        </div>
+        <textarea class="form-control judge-supervision-patch" id="${patchId}" data-supervision-patch="${item.id}" spellcheck="false"></textarea>
+      `;
+      const title = row.querySelector(".judge-supervision-item-title");
+      const meta = row.querySelector(".judge-supervision-item-meta");
+      const textarea = row.querySelector("textarea");
+      if(title){
+        title.textContent = `${supervisionSubjectLabel(item)} · Exercici ${item.exercici || 1}`;
+      }
+      if(meta){
+        meta.textContent = [
+          item.runtime_field_code || item.field_code || "Camp",
+          `J${item.judge_index || 1}`,
+          item.submitted_by_label ? `Enviat per ${item.submitted_by_label}` : "",
+        ].filter(Boolean).join(" · ");
+      }
+      if(textarea){
+        textarea.value = supervisionPatchValue(item);
+      }
+      els.list.appendChild(row);
+    });
+  }
+
+  async function loadSupervisionPending(){
+    const els = supervisionEls();
+    if(!JUDGE_HAS_SUPERVISION || !els.panel || !SUPERVISION_PENDING_URL || supervisionBusy) return;
+    supervisionBusy = true;
+    if(els.refresh) els.refresh.disabled = true;
+    setSupervisionStatus("Carregant pendents...", "");
+    try{
+      const res = await fetch(SUPERVISION_PENDING_URL, { headers: { "Accept": "application/json" } });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok || !data.ok){
+        setSupervisionStatus(data.error || "No s'han pogut carregar els pendents.", "err");
+        return;
+      }
+      renderSupervisionPending(data.pending || []);
+      setSupervisionStatus("", "");
+    } catch(_err){
+      setSupervisionStatus("Error carregant pendents.", "err");
+    } finally {
+      supervisionBusy = false;
+      if(els.refresh) els.refresh.disabled = false;
+    }
+  }
+
+  async function approveSupervisionSubmission(submissionId){
+    const cleanId = String(submissionId || "").trim();
+    if(!cleanId || !SUPERVISION_APPROVE_URL) return;
+    const textarea = document.querySelector(`[data-supervision-patch="${cleanId}"]`);
+    let inputsPatch = null;
+    if(textarea){
+      try{
+        inputsPatch = JSON.parse(textarea.value || "{}");
+      } catch(_err){
+        setSupervisionStatus("El JSON del patch no es valid.", "err");
+        textarea.focus();
+        return;
+      }
+    }
+    setSupervisionStatus("Aprovant...", "");
+    try{
+      const res = await fetch(SUPERVISION_APPROVE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": CSRF_TOKEN,
+        },
+        body: JSON.stringify({
+          submission_id: cleanId,
+          inputs_patch: inputsPatch,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok || !data.ok){
+        setSupervisionStatus(data.error || "No s'ha pogut aprovar.", "err");
+        return;
+      }
+      const item = document.querySelector(`[data-submission-id="${cleanId}"]`);
+      if(item) item.remove();
+      setSupervisionStatus("Nota aprovada.", "ok");
+      await loadSupervisionPending();
+      if(typeof pollUpdates === "function"){
+        pollUpdates({ drain: true });
+      }
+    } catch(_err){
+      setSupervisionStatus("Error aprovant la nota.", "err");
+    }
+  }
+
+  function initSupervisionPanel(){
+    const els = supervisionEls();
+    if(!JUDGE_HAS_SUPERVISION || !els.panel) return;
+    if(els.refresh){
+      els.refresh.addEventListener("click", loadSupervisionPending);
+    }
+    if(els.list){
+      els.list.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("[data-supervision-approve]") : null;
+        if(!btn) return;
+        approveSupervisionSubmission(btn.getAttribute("data-supervision-approve"));
+      });
+    }
+    loadSupervisionPending();
+  }

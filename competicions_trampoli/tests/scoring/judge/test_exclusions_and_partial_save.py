@@ -356,6 +356,9 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("new IntersectionObserver", body)
         self.assertIn("const LAZY_VIDEO_INITIAL_LIMIT = 8;", body)
         self.assertIn("if(isEditorRendered(insId, exercici)){", body)
+        self.assertIn('group.className = "judge-items-strip";', body)
+        self.assertIn('row.className = "judge-item-cell";', body)
+        self.assertIn(".judge-items-strip", body)
 
     def test_judge_portal_does_not_expose_json_endpoints_as_html_navigation(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})

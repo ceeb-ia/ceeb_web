@@ -8,6 +8,7 @@ from .portal import (
     public_live_qr_png,
 )
 from .save import judge_save_partial
+from .supervision import judge_supervision_approve, judge_supervision_pending
 from .updates import JUDGE_UPDATES_LIMIT, judge_updates
 from .video import (
     judge_video_delete,
@@ -25,6 +26,8 @@ __all__ = [
     "judge_service_worker",
     "judge_qr_png",
     "judge_save_partial",
+    "judge_supervision_approve",
+    "judge_supervision_pending",
     "judge_updates",
     "judge_video_delete",
     "judge_video_file",

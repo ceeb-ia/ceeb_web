@@ -157,6 +157,124 @@ class JudgePortalAssignment(models.Model):
         return f"{self.judge_token_id} / {self.comp_aparell_id} / {phase} / {self.label or self.ordre}"
 
 
+class JudgeScoreSubmission(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendent"
+        APPROVED = "approved", "Aprovada"
+        REJECTED = "rejected", "Rebutjada"
+        SUPERSEDED = "superseded", "Substituida"
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="judge_score_submissions",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="judge_score_submissions",
+    )
+    fase = models.ForeignKey(
+        CompeticioAparellFase,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="judge_score_submissions",
+    )
+    submitted_by_token = models.ForeignKey(
+        JudgeDeviceToken,
+        on_delete=models.CASCADE,
+        related_name="score_submissions",
+    )
+    submitted_by_assignment = models.ForeignKey(
+        JudgePortalAssignment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="score_submissions",
+    )
+    reviewed_by_token = models.ForeignKey(
+        JudgeDeviceToken,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_score_submissions",
+    )
+    reviewed_by_assignment = models.ForeignKey(
+        JudgePortalAssignment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_score_submissions",
+    )
+
+    subject_kind = models.CharField(max_length=30, default="inscripcio")
+    subject_id = models.PositiveIntegerField()
+    exercici = models.PositiveSmallIntegerField(default=1)
+    field_code = models.CharField(max_length=80)
+    runtime_field_code = models.CharField(max_length=120, blank=True, default="")
+    judge_index = models.PositiveSmallIntegerField(default=1)
+    item_start = models.PositiveSmallIntegerField(default=1)
+    item_count = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    inputs_patch = models.JSONField(default=dict, blank=True)
+    normalized_inputs_patch = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell", "fase", "status"], name="judgesub_scope_status_idx"),
+            models.Index(fields=["submitted_by_token", "status"], name="judgesub_token_status_idx"),
+            models.Index(fields=["field_code", "runtime_field_code", "status"], name="judgesub_field_status_idx"),
+            models.Index(fields=["subject_kind", "subject_id", "exercici"], name="judgesub_subject_ex_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.subject_kind = str(self.subject_kind or "inscripcio").strip().lower() or "inscripcio"
+        self.field_code = str(self.field_code or "").strip()
+        self.runtime_field_code = str(self.runtime_field_code or self.field_code).strip()
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = "L'aparell no pertany a la mateixa competicio."
+        if self.fase_id:
+            if self.fase.competicio_id != self.competicio_id:
+                errors["fase"] = "La fase no pertany a la mateixa competicio."
+            elif self.fase.comp_aparell_id != self.comp_aparell_id:
+                errors["fase"] = "La fase no pertany a aquest aparell."
+        if self.submitted_by_token_id:
+            if self.submitted_by_token.competicio_id != self.competicio_id:
+                errors["submitted_by_token"] = "El token no pertany a la mateixa competicio."
+        if self.submitted_by_assignment_id:
+            if self.submitted_by_assignment.competicio_id != self.competicio_id:
+                errors["submitted_by_assignment"] = "L'assignacio no pertany a la mateixa competicio."
+        if self.reviewed_by_token_id:
+            if self.reviewed_by_token.competicio_id != self.competicio_id:
+                errors["reviewed_by_token"] = "El supervisor no pertany a la mateixa competicio."
+        if not isinstance(self.inputs_patch, dict):
+            errors["inputs_patch"] = "El patch original ha de ser un objecte JSON."
+        if not isinstance(self.normalized_inputs_patch, dict):
+            errors["normalized_inputs_patch"] = "El patch normalitzat ha de ser un objecte JSON."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.subject_kind = str(self.subject_kind or "inscripcio").strip().lower() or "inscripcio"
+        self.field_code = str(self.field_code or "").strip()
+        self.runtime_field_code = str(self.runtime_field_code or self.field_code).strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"JudgeScoreSubmission {self.status} comp={self.competicio_id} "
+            f"app={self.comp_aparell_id} field={self.field_code} subject={self.subject_kind}:{self.subject_id}"
+        )
+
+
 class PublicLiveToken(models.Model):
     """
     Token per compartir Classificacions Live amb el públic (sense autenticació).

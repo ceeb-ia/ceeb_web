@@ -11,6 +11,10 @@ MEMBER_MODE_CHOICES = [
     ("single", "Només un membre"),
     ("subset", "Diversos membres"),
 ]
+PERMISSION_ROLE_CHOICES = [
+    ("standard", "Standard"),
+    ("supervisor", "Supervisor"),
+]
 
 
 class JudgeTokenCreateForm(forms.Form):
@@ -43,6 +47,12 @@ class PermissionRowForm(forms.Form):
         choices=SCOPE_CHOICES,
         initial="shared",
         widget=forms.Select(attrs={"class": "form-select form-select-sm", "style": "width:120px"}),
+    )
+    role = forms.ChoiceField(
+        required=False,
+        choices=PERMISSION_ROLE_CHOICES,
+        initial="standard",
+        widget=forms.Select(attrs={"class": "form-select form-select-sm", "style": "width:130px"}),
     )
     judge_index = forms.IntegerField(
         required=True,
@@ -82,4 +92,5 @@ class PermissionRowForm(forms.Form):
         self.fields["field_code"].choices = choices
         self.fields["item_start"].initial = 1
         self.fields["scope"].initial = "shared"
+        self.fields["role"].initial = "standard"
         self.fields["member_mode"].initial = "all"

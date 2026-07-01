@@ -184,6 +184,18 @@
               <div class="text-muted small mb-3" data-create-help="judge">
                 El QR de jutge es crea sense permisos. Afegeix-li assignacions al bloc seguent.
               </div>
+              <div class="d-none" aria-hidden="true">
+                {% if is_team_context_mode %}
+                  <table><thead><tr><th>Abast</th></tr></thead></table>
+                {% endif %}
+                {{ formset.management_form }}
+                {% for f in formset.forms %}
+                  {{ f.scope.as_hidden }}
+                  {{ f.member_mode.as_hidden }}
+                  {{ f.member_slots }}
+                  {{ f.role.as_hidden }}
+                {% endfor %}
+              </div>
               {% if can_manage_public_live %}
                 <div class="text-muted small mb-3 d-none" data-create-help="public">
                   El QR public comparteix les classificacions publicades. Els permisos publics detallats encara no tenen model propi.
@@ -260,8 +272,14 @@
                     <thead>
                       <tr class="text-muted small">
                         <th style="min-width:220px;">Camp</th>
-                        <th data-team-column="1">Abast</th>
-                        <th style="min-width:220px;" data-team-column="1">Membres</th>
+                        {% if is_team_context_mode %}
+                          <th>Abast</th>
+                          <th style="min-width:220px;">Membres</th>
+                        {% else %}
+                          <th data-team-column="1">Abast</th>
+                          <th style="min-width:220px;" data-team-column="1">Membres</th>
+                        {% endif %}
+                        <th>Rol</th>
                         <th>Jutge</th>
                         <th>Start</th>
                         <th>Count</th>
@@ -283,24 +301,36 @@
                               <div class="text-danger small mt-1">{{ f.field_code.errors }}</div>
                             {% endif %}
                           </td>
-                          <td data-team-column="1">
-                            {{ f.scope }}
-                            {% if f.scope.errors %}
-                              <div class="text-danger small mt-1">{{ f.scope.errors }}</div>
+                          {% if is_team_context_mode %}
+                            <td data-team-column="1">
+                              {{ f.scope }}
+                              {% if f.scope.errors %}
+                                <div class="text-danger small mt-1">{{ f.scope.errors }}</div>
+                              {% endif %}
+                            </td>
+                            <td data-team-column="1">
+                              <div data-member-target="1">
+                                <div class="mb-1">{{ f.member_mode }}</div>
+                                {{ f.member_slots }}
+                                <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                                {% if f.member_mode.errors %}
+                                  <div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>
+                                {% endif %}
+                                {% if f.member_slots.errors %}
+                                  <div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>
+                                {% endif %}
+                              </div>
+                            </td>
+                          {% else %}
+                            {{ f.scope.as_hidden }}
+                            {{ f.member_mode.as_hidden }}
+                            {{ f.member_slots }}
+                          {% endif %}
+                          <td>
+                            {{ f.role }}
+                            {% if f.role.errors %}
+                              <div class="text-danger small mt-1">{{ f.role.errors }}</div>
                             {% endif %}
-                          </td>
-                          <td data-team-column="1">
-                            <div data-member-target="1">
-                              <div class="mb-1">{{ f.member_mode }}</div>
-                              {{ f.member_slots }}
-                              <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
-                              {% if f.member_mode.errors %}
-                                <div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>
-                              {% endif %}
-                              {% if f.member_slots.errors %}
-                                <div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>
-                              {% endif %}
-                            </div>
                           </td>
                           <td>
                             {{ f.judge_index }}
@@ -343,14 +373,21 @@
                         <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
                       </div>
                     </td>
-                    <td data-team-column="1">{{ formset.empty_form.scope }}</td>
-                    <td data-team-column="1">
-                      <div data-member-target="1">
-                        <div class="mb-1">{{ formset.empty_form.member_mode }}</div>
-                        {{ formset.empty_form.member_slots }}
-                        <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
-                      </div>
-                    </td>
+                    {% if is_team_context_mode %}
+                      <td data-team-column="1">{{ formset.empty_form.scope }}</td>
+                      <td data-team-column="1">
+                        <div data-member-target="1">
+                          <div class="mb-1">{{ formset.empty_form.member_mode }}</div>
+                          {{ formset.empty_form.member_slots }}
+                          <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                        </div>
+                      </td>
+                    {% else %}
+                      {{ formset.empty_form.scope.as_hidden }}
+                      {{ formset.empty_form.member_mode.as_hidden }}
+                      {{ formset.empty_form.member_slots }}
+                    {% endif %}
+                    <td>{{ formset.empty_form.role }}</td>
                     <td>{{ formset.empty_form.judge_index }}</td>
                     <td>{{ formset.empty_form.item_start }}</td>
                     <td>{{ formset.empty_form.item_count }}</td>
@@ -457,7 +494,9 @@
                               </div>
                               <div class="mt-1">
                                 {% for p in row.permission_summaries %}
-                                  <span class="badge bg-white text-dark border">{{ p.label }} · J{{ p.judge_index }}</span>
+                                  <span class="badge {% if p.is_supervisor %}bg-warning text-dark{% else %}bg-white text-dark{% endif %} border">
+                                    {{ p.label }} · J{{ p.judge_index }} · {{ p.role_label }}
+                                  </span>
                                 {% empty %}
                                   <span class="text-muted small">Sense permisos</span>
                                 {% endfor %}
@@ -476,7 +515,9 @@
                             {% if t.permission_summaries %}
                               <div class="mt-1 small text-muted">Permisos antics:</div>
                               {% for p in t.permission_summaries %}
-                                <span class="badge bg-light text-dark">{{ p.label }} · J{{ p.judge_index }}</span>
+                                <span class="badge {% if p.is_supervisor %}bg-warning text-dark{% else %}bg-light text-dark{% endif %}">
+                                  {{ p.label }} · J{{ p.judge_index }} · {{ p.role_label }}
+                                </span>
                               {% endfor %}
                             {% endif %}
                           {% endfor %}
@@ -583,6 +624,7 @@
 
 {% block extra_scripts %}
 {{ app_catalog|json_script:"judge-app-catalog" }}
+{{ schema_field_catalog|json_script:"judge-schema-field-catalog" }}
 <script>
   (function () {
     const createForm = document.getElementById("qrCreateForm");

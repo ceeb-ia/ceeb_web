@@ -23,6 +23,7 @@
 
     {% if permissions %}
 
+      {% include "judge/portal/_supervision_panel.html" %}
 
       <div id="listWrap">
         {% include "judge/portal/_group_tabs.html" %}
@@ -54,6 +55,7 @@
 {% include "judge/portal/scripts/_65_competition_mode_queue.js.html" %}
 {% include "judge/portal/scripts/_70_editor_render.js.html" %}
 {% include "judge/portal/scripts/_80_save_updates.js.html" %}
+{% include "judge/portal/scripts/_85_supervision.js.html" %}
 {% include "judge/portal/scripts/_66_competition_mode_modal.js.html" %}
 {% include "judge/portal/scripts/_90_init.js.html" %}
 </script>

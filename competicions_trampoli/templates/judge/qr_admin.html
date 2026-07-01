@@ -282,6 +282,11 @@
       line-height: 1.2;
       padding: .18rem .42rem;
     }
+    .qr-permission-chip--supervisor {
+      border-color: #f59e0b;
+      background: #fffbeb;
+      color: #78350f;
+    }
     .qr-assignment-card__actions {
       margin-top: .55rem;
     }
@@ -835,7 +840,9 @@
                   </div>
                   <div class="qr-assignment-card__permissions" aria-label="Permisos configurats">
                     {% for p in row.permission_summaries %}
-                      <span class="qr-permission-chip">{{ p.label }} / J{{ p.judge_index }}</span>
+                      <span class="qr-permission-chip{% if p.is_supervisor %} qr-permission-chip--supervisor{% endif %}">
+                        {{ p.label }} / J{{ p.judge_index }} / {{ p.role_label }}
+                      </span>
                     {% empty %}
                       <span class="text-muted small">Sense permisos.</span>
                     {% endfor %}
@@ -933,6 +940,7 @@
                           <th style="min-width:220px;">Camp</th>
                           <th data-team-column="1">Abast</th>
                           <th style="min-width:220px;" data-team-column="1">Membres</th>
+                          <th>Rol</th>
                           <th data-avatar-anchor="qr-admin-access-judge-number">Jutge</th>
                           <th data-avatar-anchor="qr-admin-access-items-limit">Start</th>
                           <th>Count</th>
@@ -950,18 +958,29 @@
                               </div>
                               {% if f.field_code.errors %}<div class="text-danger small mt-1">{{ f.field_code.errors }}</div>{% endif %}
                             </td>
-                            <td data-team-column="1">
-                              {{ f.scope }}
-                              {% if f.scope.errors %}<div class="text-danger small mt-1">{{ f.scope.errors }}</div>{% endif %}
-                            </td>
-                            <td data-team-column="1">
-                              <div data-member-target="1">
-                                <div class="mb-1">{{ f.member_mode }}</div>
-                                {{ f.member_slots }}
-                                <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
-                                {% if f.member_mode.errors %}<div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>{% endif %}
-                                {% if f.member_slots.errors %}<div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>{% endif %}
-                              </div>
+                            <input type="hidden" name="{{ f.scope.html_name }}" value="{{ f.scope.value|default:'shared' }}">
+                            {% if selected_app_context.team_context_mode %}
+                              <td data-team-column="1">
+                                {{ f.scope }}
+                                {% if f.scope.errors %}<div class="text-danger small mt-1">{{ f.scope.errors }}</div>{% endif %}
+                              </td>
+                              <td data-team-column="1">
+                                <div data-member-target="1">
+                                  <div class="mb-1">{{ f.member_mode }}</div>
+                                  {{ f.member_slots }}
+                                  <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                                  {% if f.member_mode.errors %}<div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>{% endif %}
+                                  {% if f.member_slots.errors %}<div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>{% endif %}
+                                </div>
+                              </td>
+                            {% else %}
+                              {{ f.scope.as_hidden }}
+                              {{ f.member_mode.as_hidden }}
+                              {{ f.member_slots }}
+                            {% endif %}
+                            <td>
+                              {{ f.role }}
+                              {% if f.role.errors %}<div class="text-danger small mt-1">{{ f.role.errors }}</div>{% endif %}
                             </td>
                             <td>
                               {{ f.judge_index }}
@@ -996,14 +1015,22 @@
                           <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
                         </div>
                       </td>
-                      <td data-team-column="1">{{ assignment_formset.empty_form.scope }}</td>
-                      <td data-team-column="1">
-                        <div data-member-target="1">
-                          <div class="mb-1">{{ assignment_formset.empty_form.member_mode }}</div>
-                          {{ assignment_formset.empty_form.member_slots }}
-                          <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
-                        </div>
-                      </td>
+                      <input type="hidden" name="{{ assignment_formset.empty_form.scope.html_name }}" value="{{ assignment_formset.empty_form.scope.value|default:'shared' }}">
+                      {% if selected_app_context.team_context_mode %}
+                        <td data-team-column="1">{{ assignment_formset.empty_form.scope }}</td>
+                        <td data-team-column="1">
+                          <div data-member-target="1">
+                            <div class="mb-1">{{ assignment_formset.empty_form.member_mode }}</div>
+                            {{ assignment_formset.empty_form.member_slots }}
+                            <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1"></div>
+                          </div>
+                        </td>
+                      {% else %}
+                        {{ assignment_formset.empty_form.scope.as_hidden }}
+                        {{ assignment_formset.empty_form.member_mode.as_hidden }}
+                        {{ assignment_formset.empty_form.member_slots }}
+                      {% endif %}
+                      <td>{{ assignment_formset.empty_form.role }}</td>
                       <td>{{ assignment_formset.empty_form.judge_index }}</td>
                       <td>{{ assignment_formset.empty_form.item_start }}</td>
                       <td>{{ assignment_formset.empty_form.item_count }}</td>

@@ -43,6 +43,7 @@ from ...services.judging.assignments import (
     effective_assignments_for_token,
     resolve_effective_assignment,
 )
+from ...services.judging.supervision import permission_is_supervisor
 from ...services.judging.subject_scope import (
     filter_inscripcions_queryset_by_subject_scope,
     filter_subject_dicts_by_subject_scope,
@@ -790,6 +791,8 @@ def judge_portal(request, token, assignment_id=None):
 
     save_url = scoped_api_url(save_url)
     updates_url = scoped_api_url(updates_url)
+    supervision_pending_url = scoped_api_url(reverse("judge_supervision_pending", kwargs={"token": str(tok.id)}))
+    supervision_approve_url = scoped_api_url(reverse("judge_supervision_approve", kwargs={"token": str(tok.id)}))
     video_status_url = (
         scoped_api_url(reverse("judge_video_status", kwargs={"token": str(tok.id)}))
         if video_capture_enabled
@@ -832,6 +835,9 @@ def judge_portal(request, token, assignment_id=None):
         "scores_payload_json": scores_payload,
         "save_url": save_url,
         "updates_url": updates_url,
+        "supervision_pending_url": supervision_pending_url,
+        "supervision_approve_url": supervision_approve_url,
+        "judge_has_supervision_permissions": any(permission_is_supervisor(item) for item in permissions),
         "updates_cursor_init": timezone.now().isoformat(),
         "video_capture_enabled": video_capture_enabled,
         "video_status_url": video_status_url,

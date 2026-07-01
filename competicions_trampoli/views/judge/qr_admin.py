@@ -16,6 +16,7 @@ from ...models.competicio import CompeticioAparell, CompeticioAparellFase
 from ...models.judging import JudgeDeviceToken, JudgePortalAssignment, PublicLiveToken
 from ...services.avatar.notes.qrs import AVATAR_MESSAGES as QR_ADMIN_AVATAR_MESSAGES
 from ...services.judging.subject_scope import subject_scope_from_post, subject_scope_options_for_competicio
+from ...services.judging.supervision import validate_single_supervisor_per_field
 from .admin import (
     MAX_TOKEN_PERMISSIONS,
     _app_catalog_for_template,
@@ -289,6 +290,12 @@ def qr_admin_home(request, competicio_id, token_id=None):
                             competicio=competicio,
                             comp_aparell=selected_app,
                         )
+                    validate_single_supervisor_per_field(
+                        competicio=competicio,
+                        comp_aparell=selected_app,
+                        phase=phase,
+                        permissions=permissions,
+                    )
                     try:
                         ordre = int(request.POST.get("ordre") or 1)
                     except (TypeError, ValueError):
@@ -386,6 +393,7 @@ def qr_admin_home(request, competicio_id, token_id=None):
             "subject_scope_options": subject_scope_options_for_competicio(competicio),
             "phase_choices": selected_app_context["phase_choices"],
             "schema_field_catalog": selected_app_context["field_catalog"],
+            "selected_app_context": selected_app_context,
             "max_permissions": MAX_TOKEN_PERMISSIONS,
             "can_manage_public_live": can_manage_public_live,
             "avatar_messages": QR_ADMIN_AVATAR_MESSAGES,

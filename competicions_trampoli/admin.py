@@ -13,7 +13,13 @@ from .models.competicio import (
     ProgramUnitSlot,
     QualificationRun,
 )
-from .models.judging import JudgeConversation, JudgeConversationMessage, JudgeDeviceToken, JudgePortalAssignment
+from .models.judging import (
+    JudgeConversation,
+    JudgeConversationMessage,
+    JudgeDeviceToken,
+    JudgePortalAssignment,
+    JudgeScoreSubmission,
+)
 from .models.rotacions import RotacioAssignacioProgramUnit
 
 
@@ -140,6 +146,36 @@ class JudgePortalAssignmentAdmin(admin.ModelAdmin):
     search_fields = ("judge_token__label", "judge_token__id", "label", "comp_aparell__nom_local")
     autocomplete_fields = ("judge_token", "competicio", "comp_aparell", "fase")
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(JudgeScoreSubmission)
+class JudgeScoreSubmissionAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "competicio",
+        "comp_aparell",
+        "fase",
+        "subject_kind",
+        "subject_id",
+        "exercici",
+        "field_code",
+        "status",
+        "submitted_by_token",
+        "reviewed_by_token",
+        "updated_at",
+    )
+    list_filter = ("status", "competicio", "comp_aparell", "fase")
+    search_fields = ("field_code", "runtime_field_code", "submitted_by_token__label", "submitted_by_token__id")
+    autocomplete_fields = (
+        "competicio",
+        "comp_aparell",
+        "fase",
+        "submitted_by_token",
+        "submitted_by_assignment",
+        "reviewed_by_token",
+        "reviewed_by_assignment",
+    )
+    readonly_fields = ("created_at", "updated_at", "reviewed_at")
 
 
 @admin.register(JudgeConversation)

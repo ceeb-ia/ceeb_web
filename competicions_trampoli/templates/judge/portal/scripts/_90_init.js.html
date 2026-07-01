@@ -7,6 +7,9 @@
   if(VIDEO_CAPTURE_ENABLED){
     initVideoUI();
   }
+  if(JUDGE_HAS_SUPERVISION){
+    initSupervisionPanel();
+  }
   initExercisePanels();
   renderVisibleEditorsInActiveGroup();
   loadVisibleExerciseVideos();

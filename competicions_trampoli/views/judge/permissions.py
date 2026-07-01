@@ -3,6 +3,7 @@ from ...services.scoring.team_scoring import (
     normalize_permission_target,
     resolve_permission_runtime_entries,
 )
+from ...services.judging.supervision import normalize_judge_role
 from ...services.scoring.judge_presence import merge_judge_patch_into_canonical, presence_key
 
 
@@ -125,6 +126,7 @@ def _normalize_permissions(perms):
             "field_code": str(code),
             "runtime_field_code": str(raw_perm.get("runtime_field_code") or code),
             "scope": scope,
+            "role": normalize_judge_role(raw_perm.get("role")),
             "judge_index": int(raw_perm.get("judge_index") or 1),
             "item_start": int(raw_perm.get("item_start") or 1),
             "item_count": (None if item_count in (None, "", "null") else int(item_count)),

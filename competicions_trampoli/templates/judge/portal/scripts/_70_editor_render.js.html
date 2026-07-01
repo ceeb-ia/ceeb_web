@@ -150,22 +150,22 @@
     const rowPresent = isJudgeRowPresent(insId, exercici, perm.runtime_field_code, j);
 
     const group = document.createElement("div");
+    group.className = "judge-items-strip";
+    group.dataset.itemStrip = "1";
     for(let k=0; k<count; k++){
       const idx1 = start + k;
       const idx0 = idx1 - 1;
       const row = document.createElement("div");
-      row.className = "d-flex align-items-center mb-1";
-      row.style.gap = "8px";
+      row.className = "judge-item-cell";
       row.dataset.matrixRow = "1";
       row.dataset.itemIndex = String(idx1);
 
       const lab = document.createElement("div");
-      lab.className = "judge-meta";
-      lab.style.minWidth = "64px";
+      lab.className = "judge-item-label";
       lab.textContent = getItemDisplayLabel(perm.field_code, idx1);
 
       const inp = document.createElement("input");
-      inp.className = "form-control form-control-sm input-salt";
+      inp.className = "form-control form-control-sm input-salt judge-item-input";
       inp.type = "number";
       inp.inputMode = "decimal";
       inp.step = decimalsStep(field.decimals);
@@ -193,12 +193,10 @@
       row.appendChild(inp);
       if(crashEnabled){
         const btn = document.createElement("button");
-        btn.className = "btn btn-sm btn-outline-danger p-0";
+        btn.className = "btn btn-sm btn-outline-danger judge-crash-btn";
         btn.type = "button";
         btn.textContent = "C";
         btn.title = "Crash";
-        btn.style.width = "22px";
-        btn.style.height = "22px";
         btn.dataset.crashBtn = "1";
         btn.addEventListener("click", () => {
           const nextCrash = Array.isArray(effectiveInput(insId, exercici, crashCode))

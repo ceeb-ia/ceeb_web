@@ -28,9 +28,11 @@ from ...services.judging.subject_scope import (
     subject_scope_options_for_competicio,
     subject_scope_summary,
 )
+from ...services.judging.supervision import validate_single_supervisor_per_field
 from ._shared import _judge_item_labels_map_for_comp_aparell
 
 MAX_TOKEN_PERMISSIONS = 15
+PERMISSION_ROLES = {"standard", "supervisor"}
 
 
 def _schema_field_scope(field: dict, *, team_context_mode: bool = False) -> str:
@@ -113,11 +115,17 @@ def _permission_summary_rows(perms):
     for raw_perm in perms or []:
         perm = normalize_permission_target(raw_perm)
         item_count = perm.get("item_count")
+        role = str(perm.get("role") or "standard").strip().lower() or "standard"
+        if role not in PERMISSION_ROLES:
+            role = "standard"
         rows.append({
             "label": build_permission_label(perm),
             "judge_index": int(perm.get("judge_index") or 1),
             "item_start": int(perm.get("item_start") or 1),
             "item_count": (None if item_count in (None, "", "null") else int(item_count)),
+            "role": role,
+            "role_label": "Supervisor" if role == "supervisor" else "Standard",
+            "is_supervisor": role == "supervisor",
         })
     return rows
 
@@ -240,6 +248,9 @@ def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mo
     f = schema_by_code.get(code)
     if not f:
         raise ValueError("Camp no existeix al schema")
+    role = str(row.get("role") or "standard").strip().lower() or "standard"
+    if role not in PERMISSION_ROLES:
+        raise ValueError(f"{code}: rol invalid.")
     requested_scope = str(row.get("scope") or "shared").strip().lower() or "shared"
     if requested_scope not in {"shared", "member"}:
         raise ValueError(f"{code}: scope invalid.")
@@ -303,6 +314,7 @@ def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mo
         "judge_index": j,
         "item_start": item_start,
         "item_count": item_count,
+        "role": role,
     }
     if scope == "member":
         result["member_mode"] = member_mode
@@ -520,6 +532,12 @@ def qr_admin_home(request, competicio_id, token_id=None):
                             competicio=competicio,
                             comp_aparell=assignment_comp_aparell,
                         )
+                    validate_single_supervisor_per_field(
+                        competicio=competicio,
+                        comp_aparell=assignment_comp_aparell,
+                        phase=phase,
+                        permissions=perms,
+                    )
                     try:
                         ordre = int(request.POST.get("ordre") or 1)
                     except Exception:
@@ -577,6 +595,17 @@ def qr_admin_home(request, competicio_id, token_id=None):
 
             if not perms:
                 token_form.add_error(None, "Has d'afegir almenys un permis (camp + jutge) per crear el QR.")
+
+            if not token_form.errors:
+                try:
+                    validate_single_supervisor_per_field(
+                        competicio=competicio,
+                        comp_aparell=comp_aparell,
+                        phase=None,
+                        permissions=perms,
+                    )
+                except ValueError as e:
+                    token_form.add_error(None, str(e))
 
             if not token_form.errors:
                 label = token_form.cleaned_data.get("label") or ""
