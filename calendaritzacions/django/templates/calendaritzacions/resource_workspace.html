@@ -640,6 +640,10 @@
           <div class="filter-panel__body">
             <div class="form-row">
               <div class="col-12 col-md-6 col-lg-3 mb-3">
+                <div class="filter-panel__label">Cerca seu/pista</div>
+                <input id="workspaceVenueSheetFilterVenueText" class="form-control form-control-sm" placeholder="Escriu part del nom..." />
+              </div>
+              <div class="col-12 col-md-6 col-lg-3 mb-3">
                 <div class="filter-panel__label">Seu</div>
                 <select id="workspaceVenueSheetFilterVenue" class="form-control form-control-sm">
                   <option value="">Totes</option>
@@ -685,7 +689,7 @@
       </div>
 
       {% for sheet in venue_round_sheets.sheets %}
-      <div class="workspace-panel workspace-venue-sheet mb-3" data-venue="{{ sheet.venue_key }}" data-round="{{ sheet.round }}" data-modalities="{{ sheet.modality_filter }}" data-linkages="{{ sheet.linkage_filter }}">
+      <div class="workspace-panel workspace-venue-sheet mb-3" data-venue="{{ sheet.venue_key }}" data-venue-text="{{ sheet.venue }}" data-round="{{ sheet.round }}" data-modalities="{{ sheet.modality_filter }}" data-linkages="{{ sheet.linkage_filter }}">
         <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
           <div>
             <div class="text-muted small">Fitxa de jornada</div>
@@ -937,6 +941,7 @@
     var incidentFiltersToggle = document.getElementById('workspaceIncidentFiltersToggle');
     var incidentFiltersCollapse = document.getElementById('workspaceIncidentFiltersCollapse');
     var venueSheetRows = Array.from(document.querySelectorAll('.workspace-venue-sheet'));
+    var venueSheetVenueTextInput = document.getElementById('workspaceVenueSheetFilterVenueText');
     var venueSheetVenueSelect = document.getElementById('workspaceVenueSheetFilterVenue');
     var venueSheetRoundSelect = document.getElementById('workspaceVenueSheetFilterRound');
     var venueSheetModalitySelect = document.getElementById('workspaceVenueSheetFilterModality');
@@ -1151,6 +1156,7 @@
 
     function activeVenueSheetFilterCount(){
       return [
+        venueSheetVenueTextInput ? venueSheetVenueTextInput.value : '',
         venueSheetVenueSelect ? venueSheetVenueSelect.value : '',
         venueSheetRoundSelect ? venueSheetRoundSelect.value : '',
         venueSheetModalitySelect ? venueSheetModalitySelect.value : '',
@@ -1159,6 +1165,7 @@
     }
 
     function applyVenueSheetFilters(){
+      var venueTextQ = normalize(venueSheetVenueTextInput ? venueSheetVenueTextInput.value : '');
       var venueQ = normalize(venueSheetVenueSelect ? venueSheetVenueSelect.value : '');
       var roundQ = normalize(venueSheetRoundSelect ? venueSheetRoundSelect.value : '');
       var modalityQ = normalize(venueSheetModalitySelect ? venueSheetModalitySelect.value : '');
@@ -1167,6 +1174,7 @@
 
       venueSheetRows.forEach(function(row){
         var ok = true;
+        ok = ok && (!venueTextQ || normalize(row.dataset.venueText).indexOf(venueTextQ) !== -1);
         ok = ok && (!venueQ || normalize(row.dataset.venue) === venueQ);
         ok = ok && (!roundQ || normalize(row.dataset.round) === roundQ);
         ok = ok && (!modalityQ || normalize(row.dataset.modalities).split(/\s+/).indexOf(modalityQ) !== -1);
@@ -1188,6 +1196,7 @@
     }
 
     function resetVenueSheetFilters(){
+      if (venueSheetVenueTextInput) venueSheetVenueTextInput.value = '';
       if (venueSheetVenueSelect) venueSheetVenueSelect.value = '';
       if (venueSheetRoundSelect) venueSheetRoundSelect.value = '';
       if (venueSheetModalitySelect) venueSheetModalitySelect.value = '';
@@ -1362,7 +1371,7 @@
       control.addEventListener('input', applyIncidentFilters);
       control.addEventListener('change', applyIncidentFilters);
     });
-    [venueSheetVenueSelect, venueSheetRoundSelect, venueSheetModalitySelect, venueSheetLinkageSelect].forEach(function(control){
+    [venueSheetVenueTextInput, venueSheetVenueSelect, venueSheetRoundSelect, venueSheetModalitySelect, venueSheetLinkageSelect].forEach(function(control){
       if (!control) return;
       control.addEventListener('input', applyVenueSheetFilters);
       control.addEventListener('change', applyVenueSheetFilters);

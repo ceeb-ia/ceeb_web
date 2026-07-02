@@ -21,6 +21,8 @@
   var chartNodes = Array.from(document.querySelectorAll('[data-impact-chart]'));
   var kpiRoot = document.getElementById('workspaceImpactKpis');
   var totalTeams = parseInt((kpiRoot && kpiRoot.dataset.totalTeams) || '0', 10) || 0;
+  var totalMatches = parseInt((kpiRoot && kpiRoot.dataset.totalMatches) || '0', 10) || 0;
+  var totalLinkages = parseInt((kpiRoot && kpiRoot.dataset.totalLinkages) || '0', 10) || 0;
 
   function normalize(value){
     return String(value || '').trim().toLocaleLowerCase();
@@ -63,6 +65,11 @@
     if (node) node.textContent = String(value);
   }
 
+  function setKpiSubtitle(key, value){
+    var node = document.querySelector('[data-impact-kpi="' + key + '"] .workspace-kpi-sub');
+    if (node) node.textContent = String(value);
+  }
+
   function formatDecimal(value){
     var numeric = Number(value || 0);
     if (!isFinite(numeric)) return '0';
@@ -75,6 +82,16 @@
     return isNaN(parsed) ? 0 : parsed;
   }
 
+  function uniqueTokens(rowsForTokens, key){
+    var seen = {};
+    rowsForTokens.forEach(function(row){
+      normalize(row.dataset[key]).split(/\s+/).forEach(function(token){
+        if (token) seen[token] = true;
+      });
+    });
+    return Object.keys(seen);
+  }
+
   function updateKpis(visibleRows){
     var roundValues = [];
     visibleRows.forEach(function(row){
@@ -84,10 +101,18 @@
     });
     var affectedTeams = uniqueCount(visibleRows.map(function(row){ return row.dataset.teamId; }));
     var affectedIncidents = uniqueCount(visibleRows.map(function(row){ return row.dataset.incidentId; }));
+    var affectedMatches = uniqueTokens(visibleRows.filter(function(row){
+      return normalize(row.dataset.type) === 'resource_excess';
+    }), 'matchIds');
+    var affectedLinkages = uniqueCount(visibleRows.filter(function(row){
+      return normalize(row.dataset.type) === 'linkage_violation';
+    }).map(function(row){ return row.dataset.linkageGroup; }));
+    var entityConflictTeams = uniqueCount(visibleRows.filter(function(row){
+      return normalize(row.dataset.type) === 'assignment_conflict';
+    }).map(function(row){ return row.dataset.teamId; }));
     var severityTotal = visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'severity'); }, 0);
     var excessTotal = visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'excess'); }, 0);
     var impactScoreTotal = visibleRows.reduce(function(total, row){ return total + rowNumber(row, 'impactScore'); }, 0);
-    setKpi('affected_teams', affectedTeams);
     setKpi('affected_incidents', affectedIncidents);
     setKpi('affected_entities', uniqueCount(visibleRows.map(function(row){ return row.dataset.entityLabel; })));
     setKpi('affected_rounds', uniqueCount(roundValues));
@@ -97,6 +122,13 @@
     setKpi('avg_severity_per_incident', formatDecimal(affectedIncidents ? severityTotal / affectedIncidents : 0));
     setKpi('avg_impact_score', formatDecimal(visibleRows.length ? impactScoreTotal / visibleRows.length : 0));
     setKpi('affected_team_ratio', formatDecimal(totalTeams ? (affectedTeams / totalTeams) * 100 : 0) + '%');
+    setKpiSubtitle('affected_team_ratio', affectedTeams + ' de ' + totalTeams + ' equips');
+    setKpi('entity_conflict_team_ratio', formatDecimal(totalTeams ? (entityConflictTeams / totalTeams) * 100 : 0) + '%');
+    setKpiSubtitle('entity_conflict_team_ratio', entityConflictTeams + ' de ' + totalTeams + ' equips');
+    setKpi('affected_linkage_ratio', formatDecimal(totalLinkages ? (affectedLinkages / totalLinkages) * 100 : 0) + '%');
+    setKpiSubtitle('affected_linkage_ratio', affectedLinkages + ' de ' + totalLinkages + ' linkages');
+    setKpi('affected_match_ratio', formatDecimal(totalMatches ? (affectedMatches.length / totalMatches) * 100 : 0) + '%');
+    setKpiSubtitle('affected_match_ratio', affectedMatches.length + ' de ' + totalMatches + ' partits');
   }
 
   function addBucket(buckets, key, label, row){

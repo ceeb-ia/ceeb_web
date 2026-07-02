@@ -28,6 +28,8 @@ TYPE_LABELS = {
 
 EMPTY_VIEW = {
     "total_teams": 0,
+    "total_matches": 0,
+    "total_linkages": 0,
     "kpis": [],
     "filters": {
         "modalities": [],
@@ -71,13 +73,26 @@ def get_workspace_impact_view(workspace: AssignmentWorkspace) -> dict[str, Any]:
         WorkspaceResourceMatch.objects.filter(workspace=workspace).order_by("group_id", "round_index", "id")
     )
     rounds_by_group, rounds_by_team = _round_indexes(matches)
+    resource_match_ids = _resource_match_ids(matches)
+    linkage_groups = _workspace_linkage_groups(assignments.values())
 
     affected_rows = []
     for incident in incidents:
         team_ids = [str(team_id) for team_id in (incident.team_ids or []) if str(team_id or "")]
         if not team_ids:
-            affected_rows.append(_row_for_unassigned_incident(incident, rounds_by_group))
+            affected_rows.append(
+                _row_for_unassigned_incident(
+                    incident,
+                    rounds_by_group,
+                    resource_match_ids=resource_match_ids,
+                    linkage_groups_by_team={},
+                )
+            )
             continue
+        linkage_groups_by_team = {
+            team_id: _assignment_linkage_group(assignments.get(team_id))
+            for team_id in team_ids
+        }
         for team_id in team_ids:
             affected_rows.append(
                 _row_for_team_incident(
@@ -86,13 +101,23 @@ def get_workspace_impact_view(workspace: AssignmentWorkspace) -> dict[str, Any]:
                     assignment=assignments.get(team_id),
                     rounds_by_group=rounds_by_group,
                     rounds_by_team=rounds_by_team,
+                    resource_match_ids=resource_match_ids,
+                    linkage_groups_by_team=linkage_groups_by_team,
                 )
             )
 
     affected_rows = _with_interpretable_impact(affected_rows)
     return {
         "total_teams": total_teams,
-        "kpis": _kpis(incidents, affected_rows, total_teams=total_teams),
+        "total_matches": len(matches),
+        "total_linkages": len(linkage_groups),
+        "kpis": _kpis(
+            incidents,
+            affected_rows,
+            total_teams=total_teams,
+            total_matches=len(matches),
+            total_linkages=len(linkage_groups),
+        ),
         "filters": _filters(affected_rows),
         "modality_rows": _aggregate_rows(affected_rows, "modality", "modality_token", total_teams=total_teams, include=("entity",)),
         "entity_rows": _aggregate_rows(affected_rows, "entity", "entity_token", total_teams=total_teams, include=("modality",))[:25],
@@ -107,6 +132,8 @@ def get_workspace_impact_view(workspace: AssignmentWorkspace) -> dict[str, Any]:
 def _empty_view() -> dict[str, Any]:
     return {
         "total_teams": 0,
+        "total_matches": 0,
+        "total_linkages": 0,
         "kpis": _kpis([], [], total_teams=0),
         "filters": dict(EMPTY_VIEW["filters"]),
         "modality_rows": [],
@@ -126,6 +153,8 @@ def _row_for_team_incident(
     assignment: WorkspaceAssignment | None,
     rounds_by_group: dict[str, set[int]],
     rounds_by_team: dict[str, set[int]],
+    resource_match_ids: dict[str, list[int]],
+    linkage_groups_by_team: dict[str, str],
 ) -> dict[str, Any]:
     team = _assignment_team(assignment)
     team_name = (assignment.team_name if assignment else "") or str(team.get("name") or team_id)
@@ -150,6 +179,8 @@ def _row_for_team_incident(
         "rounds": rounds,
         "round_tokens": _round_tokens(rounds),
         "round_labels": _round_labels(rounds),
+        "match_ids": _match_id_tokens(resource_match_ids.get(str(incident.resource_id or ""), [])),
+        "linkage_group": _incident_linkage_group(incident, linkage_groups_by_team),
         "excess": int(incident.excess or 0),
         "severity": int(incident.severity or 0),
         "impact_score": 0,
@@ -172,6 +203,9 @@ def _row_for_team_incident(
 def _row_for_unassigned_incident(
     incident: WorkspaceResourceIncident,
     rounds_by_group: dict[str, set[int]],
+    *,
+    resource_match_ids: dict[str, list[int]],
+    linkage_groups_by_team: dict[str, str],
 ) -> dict[str, Any]:
     group_id = _incident_group_id(incident)
     rounds = _incident_rounds(incident, team_id="", group_id=group_id, rounds_by_group=rounds_by_group, rounds_by_team={})
@@ -193,6 +227,8 @@ def _row_for_unassigned_incident(
         "rounds": rounds,
         "round_tokens": _round_tokens(rounds),
         "round_labels": _round_labels(rounds),
+        "match_ids": _match_id_tokens(resource_match_ids.get(str(incident.resource_id or ""), [])),
+        "linkage_group": _incident_linkage_group(incident, linkage_groups_by_team),
         "excess": int(incident.excess or 0),
         "severity": int(incident.severity or 0),
         "impact_score": 0,
@@ -227,6 +263,39 @@ def _round_indexes(
             if team_id:
                 rounds_by_team[team_id].add(round_index)
     return rounds_by_group, rounds_by_team
+
+
+def _resource_match_ids(matches: list[WorkspaceResourceMatch]) -> dict[str, list[int]]:
+    by_resource: dict[str, list[int]] = defaultdict(list)
+    for match in matches:
+        if match.home_resource_id:
+            by_resource[str(match.home_resource_id)].append(int(match.pk))
+    return by_resource
+
+
+def _workspace_linkage_groups(assignments: Any) -> set[str]:
+    return {
+        group
+        for group in (_assignment_linkage_group(assignment) for assignment in assignments)
+        if group
+    }
+
+
+def _assignment_linkage_group(assignment: WorkspaceAssignment | None) -> str:
+    if assignment is None:
+        return ""
+    payload = assignment.payload or {}
+    team = payload.get("team") if isinstance(payload.get("team"), dict) else {}
+    return str(team.get("linkage_group") or payload.get("linkage_group") or "").strip()
+
+
+def _incident_linkage_group(incident: WorkspaceResourceIncident, linkage_groups_by_team: dict[str, str]) -> str:
+    payload = incident.payload or {}
+    group = str(payload.get("linkage_group") or payload.get("linkage_group_id") or payload.get("group") or "").strip()
+    if group:
+        return group
+    groups = sorted({value for value in linkage_groups_by_team.values() if value}, key=_text_sort)
+    return groups[0] if len(groups) == 1 else ""
 
 
 def _incident_rounds(
@@ -293,6 +362,8 @@ def _kpis(
     rows: list[dict[str, Any]],
     *,
     total_teams: int,
+    total_matches: int = 0,
+    total_linkages: int = 0,
 ) -> list[dict[str, Any]]:
     affected_teams = {row["team_id"] for row in rows if row.get("team_id")}
     affected_entities = {row["entity"] for row in rows if row.get("entity")}
@@ -302,45 +373,44 @@ def _kpis(
         for round_index in row.get("rounds", [])
     }
     affected_modalities = {row["modality"] for row in rows if row.get("modality")}
-    raw_severity_total = sum(int(row.get("severity") or 0) for row in rows)
-    material_excess_total = sum(
-        int(incident.excess or 0)
-        for incident in incidents
-        if incident.incident_type
-        in {
-            WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS,
-            WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT,
-        }
-    )
+    affected_matches = {
+        match_id
+        for row in rows
+        if row.get("type_key") == WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS
+        for match_id in str(row.get("match_ids") or "").split()
+        if match_id
+    }
+    affected_linkages = {
+        str(row.get("linkage_group") or "").strip()
+        for row in rows
+        if row.get("type_key") == WorkspaceResourceIncident.TYPE_LINKAGE_VIOLATION
+        and str(row.get("linkage_group") or "").strip()
+    }
+    entity_conflict_teams = {
+        row["team_id"]
+        for row in rows
+        if row.get("type_key") == WorkspaceResourceIncident.TYPE_ASSIGNMENT_CONFLICT
+        and row.get("team_id")
+    }
     impact_score_total = sum(float(row.get("impact_score") or 0) for row in rows)
-    incident_scores: dict[Any, float] = {}
-    for row in rows:
-        incident_id = row.get("incident_id")
-        if not incident_id:
-            continue
-        incident_scores[incident_id] = max(
-            incident_scores.get(incident_id, 0.0),
-            float(row.get("impact_score") or 0),
-        )
     affected_team_count = len(affected_teams)
     incident_count = len(incidents)
-    avg_severity_per_team = min(10.0, _safe_div(impact_score_total, affected_team_count))
-    avg_severity_per_incident = _safe_div(sum(incident_scores.values()), incident_count)
     avg_impact_score = _safe_div(impact_score_total, len(rows))
     max_impact_score = max((float(row.get("impact_score") or 0) for row in rows), default=0.0)
     affected_ratio = _safe_div(affected_team_count * 100, total_teams)
+    entity_conflict_team_ratio = _safe_div(len(entity_conflict_teams) * 100, total_teams)
+    affected_match_ratio = _safe_div(len(affected_matches) * 100, total_matches)
+    affected_linkage_ratio = _safe_div(len(affected_linkages) * 100, total_linkages)
     return [
-        {"key": "affected_teams", "label": "Equips afectats", "value": affected_team_count, "subtitle": f"{_fmt_decimal(affected_ratio)}% del total", "status": "warning" if affected_teams else "success"},
-        {"key": "affected_team_ratio", "label": "% equips afectats", "value": f"{_fmt_decimal(affected_ratio)}%", "subtitle": f"Sobre {total_teams} equips", "status": "warning" if affected_ratio else "success"},
-        {"key": "avg_severity_per_team", "label": "Severitat mitjana/equip", "value": _fmt_decimal(avg_severity_per_team), "subtitle": "Mitjana sobre equips afectats", "status": _score_status(avg_impact_score)},
-        {"key": "avg_severity_per_incident", "label": "Severitat mitjana/inc.", "value": _fmt_decimal(avg_severity_per_incident), "subtitle": "Mitjana sobre incidencies", "status": _score_status(avg_impact_score)},
+        {"key": "affected_team_ratio", "label": "% equips afectats", "value": f"{_fmt_decimal(affected_ratio)}%", "subtitle": f"{affected_team_count} de {total_teams} equips", "status": "warning" if affected_ratio else "success"},
+        {"key": "entity_conflict_team_ratio", "label": "% equips conflicte entitat", "value": f"{_fmt_decimal(entity_conflict_team_ratio)}%", "subtitle": f"{len(entity_conflict_teams)} de {total_teams} equips", "status": "warning" if entity_conflict_teams else "success"},
+        {"key": "affected_linkage_ratio", "label": "% linkages afectats", "value": f"{_fmt_decimal(affected_linkage_ratio)}%", "subtitle": f"{len(affected_linkages)} de {total_linkages} linkages", "status": "warning" if affected_linkages else "success"},
+        {"key": "affected_match_ratio", "label": "% partits afectats", "value": f"{_fmt_decimal(affected_match_ratio)}%", "subtitle": f"{len(affected_matches)} de {total_matches} partits", "status": "danger" if affected_matches else "success"},
         {"key": "avg_impact_score", "label": "Impacte mitja 0-10", "value": _fmt_decimal(avg_impact_score), "subtitle": f"Maxim {_fmt_decimal(max_impact_score)}/10", "status": _score_status(avg_impact_score)},
-        {"key": "affected_incidents", "label": "Incidencies", "value": incident_count, "subtitle": f"{_fmt_decimal(avg_severity_per_incident)} severitat/inc.", "status": "warning" if incidents else "success"},
+        {"key": "affected_incidents", "label": "Incidencies", "value": incident_count, "status": "warning" if incidents else "success"},
         {"key": "affected_rounds", "label": "Jornades afectades", "value": len(affected_rounds), "status": "neutral"},
         {"key": "affected_entities", "label": "Entitats afectades", "value": len(affected_entities), "status": "neutral"},
         {"key": "affected_modalities", "label": "Modalitats", "value": len(affected_modalities), "status": "neutral"},
-        {"key": "excess_per_team", "label": "Exces material/equip", "value": _fmt_decimal(_safe_div(material_excess_total, affected_team_count)), "subtitle": f"Total {material_excess_total}", "status": "danger" if material_excess_total else "success"},
-        {"key": "severity_total", "label": "Severitat bruta", "value": raw_severity_total, "subtitle": "Pes intern acumulat", "status": "warning" if incidents else "success"},
     ]
 
 
@@ -611,6 +681,10 @@ def _round_tokens(rounds: list[int]) -> str:
 
 def _round_labels(rounds: list[int]) -> str:
     return ", ".join(f"J{round_index}" for round_index in rounds)
+
+
+def _match_id_tokens(match_ids: list[int]) -> str:
+    return " ".join(str(match_id) for match_id in match_ids)
 
 
 def _filter_text(row: dict[str, Any]) -> str:

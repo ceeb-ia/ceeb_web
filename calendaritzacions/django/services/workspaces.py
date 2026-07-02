@@ -2527,9 +2527,9 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
         {"label": "Equips assignats", "value": assignments_count, "status": "neutral"},
         {"label": "Partits", "value": matches_count, "status": "neutral"},
         {
-            "label": "Exces recursos",
+            "label": "Exces total",
             "value": excess_total,
-            "subtitle": f"{resource_count} recursos afectats",
+            "subtitle": f"En {resource_count} recursos",
             "status": "danger" if excess_total else "success",
         },
         {
