@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Count
 
 from calendaritzacions.domain.phases import phase_calendar, slot_count_for_numbers
 from calendaritzacions.django.models import (
@@ -789,6 +790,7 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
                 "rounds": [column["round"] for column in columns],
                 "rows": rows,
                 "team_count": len(rows),
+                "is_incomplete": _is_incomplete_calendar(len(rows)),
                 "match_count": len(matches_by_group.get(group_id, [])),
                 "level_summary": level_summary,
                 "has_level_dispersion": len([item for item in level_summary if item["token"] != "sense-nivell"]) > 1,
@@ -820,6 +822,7 @@ def get_workspace_calendar_view(workspace: AssignmentWorkspace) -> dict[str, Any
         "rounds": [column["round"] for column in global_columns],
         "filters": filters,
         "groups": groups,
+        "incomplete_group_count": sum(1 for group in groups if group["is_incomplete"]),
     }
 
 
@@ -1019,6 +1022,7 @@ def get_workspace_linkage_view(workspace: AssignmentWorkspace) -> dict[str, Any]
         "filters": filters,
         "group_count": len(groups),
         "team_count": sum(group["team_count"] for group in groups),
+        "violated_group_count": sum(1 for group in groups if group["incident_count"]),
         "violation_count": sum(group["incident_count"] for group in groups),
     }
 
@@ -2494,9 +2498,24 @@ def _build_persisted_summary(workspace: AssignmentWorkspace) -> dict[str, Any]:
     }
 
 
+def _is_incomplete_calendar(team_count: int) -> bool:
+    return int(team_count or 0) < 6
+
+
+def _incomplete_calendar_count(workspace: AssignmentWorkspace) -> int:
+    return sum(
+        1
+        for row in WorkspaceAssignment.objects.filter(workspace=workspace)
+        .values("group_id")
+        .annotate(team_count=Count("id"))
+        if _is_incomplete_calendar(row["team_count"])
+    )
+
+
 def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
     assignments_count = WorkspaceAssignment.objects.filter(workspace=workspace).count()
     matches_count = WorkspaceResourceMatch.objects.filter(workspace=workspace).count()
+    incomplete_calendar_count = _incomplete_calendar_count(workspace)
     resource_incidents = WorkspaceResourceIncident.objects.filter(
         workspace=workspace,
         incident_type=WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS,
@@ -2527,9 +2546,9 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
         {"label": "Equips assignats", "value": assignments_count, "status": "neutral"},
         {"label": "Partits", "value": matches_count, "status": "neutral"},
         {
-            "label": "Exces total",
+            "label": "Partits sense pista",
             "value": excess_total,
-            "subtitle": f"En {resource_count} recursos",
+            "subtitle": f"En {resource_count} franges",
             "status": "danger" if excess_total else "success",
         },
         {
@@ -2557,6 +2576,12 @@ def _workspace_kpis(workspace: AssignmentWorkspace) -> list[dict[str, Any]]:
             "label": "Lligues",
             "value": len({row["name"] for row in _league_summaries(workspace)}),
             "status": "neutral",
+        },
+        {
+            "label": "Calendaris incomplets",
+            "value": incomplete_calendar_count,
+            "subtitle": "Menys de 6 equips",
+            "status": "warning" if incomplete_calendar_count else "success",
         },
         {"label": "Workspace", "value": workspace.get_status_display(), "status": "neutral"},
     ]

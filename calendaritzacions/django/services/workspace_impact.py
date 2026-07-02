@@ -373,13 +373,18 @@ def _kpis(
         for round_index in row.get("rounds", [])
     }
     affected_modalities = {row["modality"] for row in rows if row.get("modality")}
-    affected_matches = {
-        match_id
-        for row in rows
-        if row.get("type_key") == WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS
-        for match_id in str(row.get("match_ids") or "").split()
-        if match_id
-    }
+    resource_excess_by_incident: dict[Any, int] = {}
+    for row in rows:
+        if row.get("type_key") != WorkspaceResourceIncident.TYPE_RESOURCE_EXCESS:
+            continue
+        incident_id = row.get("incident_id")
+        if not incident_id:
+            continue
+        resource_excess_by_incident[incident_id] = max(
+            resource_excess_by_incident.get(incident_id, 0),
+            int(row.get("excess") or 0),
+        )
+    affected_match_count = sum(resource_excess_by_incident.values())
     affected_linkages = {
         str(row.get("linkage_group") or "").strip()
         for row in rows
@@ -399,13 +404,13 @@ def _kpis(
     max_impact_score = max((float(row.get("impact_score") or 0) for row in rows), default=0.0)
     affected_ratio = _safe_div(affected_team_count * 100, total_teams)
     entity_conflict_team_ratio = _safe_div(len(entity_conflict_teams) * 100, total_teams)
-    affected_match_ratio = _safe_div(len(affected_matches) * 100, total_matches)
+    affected_match_ratio = _safe_div(affected_match_count * 100, total_matches)
     affected_linkage_ratio = _safe_div(len(affected_linkages) * 100, total_linkages)
     return [
         {"key": "affected_team_ratio", "label": "% equips afectats", "value": f"{_fmt_decimal(affected_ratio)}%", "subtitle": f"{affected_team_count} de {total_teams} equips", "status": "warning" if affected_ratio else "success"},
         {"key": "entity_conflict_team_ratio", "label": "% equips conflicte entitat", "value": f"{_fmt_decimal(entity_conflict_team_ratio)}%", "subtitle": f"{len(entity_conflict_teams)} de {total_teams} equips", "status": "warning" if entity_conflict_teams else "success"},
         {"key": "affected_linkage_ratio", "label": "% linkages afectats", "value": f"{_fmt_decimal(affected_linkage_ratio)}%", "subtitle": f"{len(affected_linkages)} de {total_linkages} linkages", "status": "warning" if affected_linkages else "success"},
-        {"key": "affected_match_ratio", "label": "% partits afectats", "value": f"{_fmt_decimal(affected_match_ratio)}%", "subtitle": f"{len(affected_matches)} de {total_matches} partits", "status": "danger" if affected_matches else "success"},
+        {"key": "affected_match_ratio", "label": "% partits afectats", "value": f"{_fmt_decimal(affected_match_ratio)}%", "subtitle": f"{affected_match_count} de {total_matches} partits", "status": "danger" if affected_match_count else "success"},
         {"key": "avg_impact_score", "label": "Impacte mitja 0-10", "value": _fmt_decimal(avg_impact_score), "subtitle": f"Maxim {_fmt_decimal(max_impact_score)}/10", "status": _score_status(avg_impact_score)},
         {"key": "affected_incidents", "label": "Incidencies", "value": incident_count, "status": "warning" if incidents else "success"},
         {"key": "affected_rounds", "label": "Jornades afectades", "value": len(affected_rounds), "status": "neutral"},

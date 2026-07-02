@@ -391,7 +391,11 @@
           <strong>{{ linkage_view.team_count }}</strong>
         </div>
         <div>
-          <span class="workspace-venue-summary__label">Violacions</span>
+          <span class="workspace-venue-summary__label">Grups amb violacio</span>
+          <strong>{{ linkage_view.violated_group_count }}</strong>
+        </div>
+        <div>
+          <span class="workspace-venue-summary__label">Incidencies violacio</span>
           <strong>{{ linkage_view.violation_count }}</strong>
         </div>
       </div>
@@ -543,6 +547,7 @@
                   <option value="">Tots</option>
                   <option value="entity">Conflicte entitat</option>
                   <option value="resource">Exces recurs</option>
+                  <option value="incomplete">Calendari incomplet</option>
                   <option value="clean">Sense incidencies</option>
                 </select>
               </div>
@@ -555,6 +560,17 @@
         </div>
       </div>
 
+      <div class="workspace-venue-summary mb-3">
+        <div>
+          <span class="workspace-venue-summary__label">Calendaris</span>
+          <strong>{{ calendar_view.groups|length }}</strong>
+        </div>
+        <div>
+          <span class="workspace-venue-summary__label">Calendaris incomplets</span>
+          <strong>{{ calendar_view.incomplete_group_count }}</strong>
+        </div>
+      </div>
+
       {% for group in calendar_view.groups %}
       <div class="workspace-panel workspace-calendar-group mb-3"
            data-text="{{ group.filter_text }}"
@@ -564,7 +580,8 @@
            data-level="{{ group.level_tokens }}"
            data-league="{{ group.league_tokens }}"
            data-has-entity="{% if group.has_entity_conflict %}1{% else %}0{% endif %}"
-           data-has-resource="{% if group.has_resource_excess %}1{% else %}0{% endif %}">
+           data-has-resource="{% if group.has_resource_excess %}1{% else %}0{% endif %}"
+           data-is-incomplete="{% if group.is_incomplete %}1{% else %}0{% endif %}">
         <div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
           <div>
             <div class="text-muted small">{{ group.competition }}</div>
@@ -572,6 +589,7 @@
           </div>
           <div class="workspace-venue-sheet__badges">
             <span class="badge badge-light">{{ group.team_count }} equips</span>
+            {% if group.is_incomplete %}<span class="badge badge-warning">Calendari incomplet</span>{% endif %}
             {% for level in group.level_summary %}
             <span class="workspace-level-badge workspace-level-{{ level.class }}">{{ level.label }}: {{ level.count }}</span>
             {% endfor %}
@@ -1225,9 +1243,11 @@
       if (!status) return true;
       var hasEntity = group.dataset.hasEntity === '1';
       var hasResource = group.dataset.hasResource === '1';
+      var isIncomplete = group.dataset.isIncomplete === '1';
       if (status === 'entity') return hasEntity;
       if (status === 'resource') return hasResource;
-      if (status === 'clean') return !hasEntity && !hasResource;
+      if (status === 'incomplete') return isIncomplete;
+      if (status === 'clean') return !hasEntity && !hasResource && !isIncomplete;
       return true;
     }
 

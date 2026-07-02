@@ -740,6 +740,8 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
         self.assertEqual(detail["team_calendars"][0]["calendar"][0]["side"], "Casa")
         self.assertEqual(summary["assignment_summaries"][0]["linkage_group"], "LG-1")
         self.assertEqual(linkage_view["group_count"], 1)
+        self.assertEqual(linkage_view["violated_group_count"], 1)
+        self.assertEqual(linkage_view["violation_count"], 1)
         self.assertEqual(linkage_view["groups"][0]["status"], "violation")
         self.assertEqual(linkage_view["groups"][0]["teams"][0]["side_label"], "Casa")
         self.assertEqual(venue_sheets["sheets"][0]["linkage_groups"], ["LG-1"])
@@ -1239,9 +1241,11 @@ class DjangoCalendarizationWorkspaceTests(TestCase):
             payload["filters"]["entity"],
             [{"label": "Altre", "token": "altre"}, {"label": "Club", "token": "club"}],
         )
+        self.assertEqual(payload["incomplete_group_count"], 1)
 
         group = payload["groups"][0]
         self.assertEqual(group["group_id"], "G1")
+        self.assertTrue(group["is_incomplete"])
         self.assertEqual(group["competition"], "Lliga 1 / Futbol / Mini / Mixt")
         self.assertEqual(group["modality"], "Futbol")
         self.assertEqual(group["category"], "Mini")

@@ -82,14 +82,17 @@
     return isNaN(parsed) ? 0 : parsed;
   }
 
-  function uniqueTokens(rowsForTokens, key){
-    var seen = {};
-    rowsForTokens.forEach(function(row){
-      normalize(row.dataset[key]).split(/\s+/).forEach(function(token){
-        if (token) seen[token] = true;
-      });
+  function resourceExcessCount(visibleRows){
+    var byIncident = {};
+    visibleRows.forEach(function(row){
+      if (normalize(row.dataset.type) !== 'resource_excess') return;
+      var incidentId = String(row.dataset.incidentId || '').trim();
+      if (!incidentId) return;
+      byIncident[incidentId] = Math.max(byIncident[incidentId] || 0, rowNumber(row, 'excess'));
     });
-    return Object.keys(seen);
+    return Object.keys(byIncident).reduce(function(total, key){
+      return total + byIncident[key];
+    }, 0);
   }
 
   function updateKpis(visibleRows){
@@ -101,9 +104,7 @@
     });
     var affectedTeams = uniqueCount(visibleRows.map(function(row){ return row.dataset.teamId; }));
     var affectedIncidents = uniqueCount(visibleRows.map(function(row){ return row.dataset.incidentId; }));
-    var affectedMatches = uniqueTokens(visibleRows.filter(function(row){
-      return normalize(row.dataset.type) === 'resource_excess';
-    }), 'matchIds');
+    var affectedMatches = resourceExcessCount(visibleRows);
     var affectedLinkages = uniqueCount(visibleRows.filter(function(row){
       return normalize(row.dataset.type) === 'linkage_violation';
     }).map(function(row){ return row.dataset.linkageGroup; }));
@@ -127,8 +128,8 @@
     setKpiSubtitle('entity_conflict_team_ratio', entityConflictTeams + ' de ' + totalTeams + ' equips');
     setKpi('affected_linkage_ratio', formatDecimal(totalLinkages ? (affectedLinkages / totalLinkages) * 100 : 0) + '%');
     setKpiSubtitle('affected_linkage_ratio', affectedLinkages + ' de ' + totalLinkages + ' linkages');
-    setKpi('affected_match_ratio', formatDecimal(totalMatches ? (affectedMatches.length / totalMatches) * 100 : 0) + '%');
-    setKpiSubtitle('affected_match_ratio', affectedMatches.length + ' de ' + totalMatches + ' partits');
+    setKpi('affected_match_ratio', formatDecimal(totalMatches ? (affectedMatches / totalMatches) * 100 : 0) + '%');
+    setKpiSubtitle('affected_match_ratio', affectedMatches + ' de ' + totalMatches + ' partits');
   }
 
   function addBucket(buckets, key, label, row){
